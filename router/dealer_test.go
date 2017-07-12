@@ -1,0 +1,241 @@
+package router
+
+import (
+	"testing"
+
+	"github.com/gammazero/nexus/wamp"
+)
+
+func TestBasicRegister(t *testing.T) {
+	dealer := NewDealer(false, true).(*dealer)
+	callee := newTestPeer()
+	testProcedure := wamp.URI("nexus.test.endpoint")
+	msg := &wamp.Register{Request: 123, Procedure: testProcedure}
+	sess := &Session{Peer: callee}
+	dealer.Register(sess, msg)
+
+	rsp := <-callee.Recv()
+	// Test that callee receives a registered message.
+	reg := rsp.(*wamp.Registered).Registration
+	if reg == 0 {
+		t.Fatal("invalid registration ID")
+	}
+
+	// Check that dealer has the correct endpoint registered.
+	regs := dealer.registrations[testProcedure]
+	if len(regs) != 1 {
+		t.Fatal("dealer has wrong number of registrations")
+	}
+	if reg != regs[0] {
+		t.Fatal("dealer reg ID different that what was returned to callee")
+	}
+
+	// Check that dealer has correct procedure registered.
+	proc, ok := dealer.procedures[reg]
+	if !ok {
+		t.Fatal("dealer has no registered procedures")
+	}
+	if proc.procedure != testProcedure {
+		t.Fatal("dealer has different test procedure than registered")
+	}
+
+	// Check the procedure cannot be registered more than once.
+	msg = &wamp.Register{Request: 456, Procedure: testProcedure}
+	dealer.Register(sess, msg)
+	rsp = <-callee.Recv()
+	errMsg := rsp.(*wamp.Error)
+	if errMsg.Error != wamp.ErrProcedureAlreadyExists {
+		t.Error("expected error: ", wamp.ErrProcedureAlreadyExists)
+	}
+	if errMsg.Details == nil {
+		t.Error("missing expected error details")
+	}
+}
+
+func TestUnregister(t *testing.T) {
+	dealer := NewDealer(false, true).(*dealer)
+	callee := newTestPeer()
+	testProcedure := wamp.URI("nexus.test.endpoint")
+
+	// Register a procedure.
+	msg := &wamp.Register{Request: 123, Procedure: testProcedure}
+	sess := &Session{Peer: callee}
+	dealer.Register(sess, msg)
+	rsp := <-callee.Recv()
+	reg := rsp.(*wamp.Registered).Registration
+
+	// Unregister the procedure.
+	umsg := &wamp.Unregister{Request: 124, Registration: reg}
+	dealer.Unregister(sess, umsg)
+
+	// Check that callee received UNREGISTERED message.
+	rsp = <-callee.Recv()
+	unreg, ok := rsp.(*wamp.Unregistered)
+	if !ok {
+		t.Fatal("received wrong response type: ", rsp.MessageType())
+	}
+	if unreg.Request == 0 {
+		t.Fatal("invalid unreg ID")
+	}
+
+	// Check that dealer does not have registered endpoint
+	_, ok = dealer.registrations[testProcedure]
+	if ok {
+		t.Fatal("dealer still has registered endpoint")
+	}
+
+	// Check that dealer does not have registered procedure
+	_, ok = dealer.procedures[reg]
+	if ok {
+		t.Fatal("dealer still has registered procedure")
+	}
+}
+
+func TestBasicCall(t *testing.T) {
+	dealer := NewDealer(false, true).(*dealer)
+	callee := newTestPeer()
+	testProcedure := wamp.URI("nexus.test.endpoint")
+
+	// Register a procedure.
+	msg := &wamp.Register{Request: 123, Procedure: testProcedure}
+	calleeSess := &Session{Peer: callee}
+	dealer.Register(calleeSess, msg)
+	rsp := <-callee.Recv()
+	_, ok := rsp.(*wamp.Registered)
+	if !ok {
+		t.Fatal("did not receive REGISTERED response")
+	}
+
+	caller := newTestPeer()
+	callerSession := &Session{Peer: caller}
+
+	// Test calling invalid procedure
+	callMsg := &wamp.Call{Request: 124, Procedure: wamp.URI("nexus.test.bad")}
+	dealer.Call(callerSession, callMsg)
+	rsp = <-caller.Recv()
+	errMsg, ok := rsp.(*wamp.Error)
+	if !ok {
+		t.Fatal("expected ERROR response, got: ", rsp.MessageType())
+	}
+	if errMsg.Error != wamp.ErrNoSuchProcedure {
+		t.Fatal("expected error ", wamp.ErrNoSuchProcedure)
+	}
+	if errMsg.Details == nil {
+		t.Fatal("expected error details")
+	}
+
+	// Test calling valid procedure
+	callMsg = &wamp.Call{Request: 125, Procedure: testProcedure}
+	dealer.Call(callerSession, callMsg)
+
+	// Test that callee received an INVOCATION message.
+	rsp = <-callee.Recv()
+	inv, ok := rsp.(*wamp.Invocation)
+	if !ok {
+		t.Fatal("expected INVOCATION, got: ", rsp.MessageType())
+	}
+
+	// Callee responds with a YIELD message
+	yieldMsg := &wamp.Yield{Request: inv.Request}
+	dealer.Yield(calleeSess, yieldMsg)
+	// Check that caller received a RESULT message.
+	rsp = <-caller.Recv()
+	rslt, ok := rsp.(*wamp.Result)
+	if !ok {
+		t.Fatal("expected RESULT, got: ", rsp.MessageType())
+	}
+	if rslt.Request != 125 {
+		t.Fatal("wrong request ID in RESULT")
+	}
+
+	// Test calling valid procedure, with callee responding with error.
+	callMsg = &wamp.Call{Request: 126, Procedure: testProcedure}
+	dealer.Call(callerSession, callMsg)
+	// callee received an INVOCATION message.
+	rsp = <-callee.Recv()
+	inv = rsp.(*wamp.Invocation)
+
+	// Callee responds with a ERROR message
+	errMsg = &wamp.Error{Request: inv.Request}
+	dealer.Error(calleeSess, errMsg)
+
+	// Check that caller received an ERROR message.
+	rsp = <-caller.Recv()
+	errMsg, ok = rsp.(*wamp.Error)
+	if !ok {
+		t.Fatal("expected ERROR response, got: ", rsp.MessageType())
+	}
+	if errMsg.Request != 126 {
+		t.Fatal("wrong request ID in ERROR, should match call ID")
+	}
+}
+
+func TestRemovePeer(t *testing.T) {
+	dealer := NewDealer(false, true).(*dealer)
+	callee := newTestPeer()
+	testProcedure := wamp.URI("nexus.test.endpoint")
+
+	// Register a procedure.
+	msg := &wamp.Register{Request: 123, Procedure: testProcedure}
+	sess := &Session{Peer: callee}
+	dealer.Register(sess, msg)
+	rsp := <-callee.Recv()
+	reg := rsp.(*wamp.Registered).Registration
+
+	if _, ok := dealer.registrations[testProcedure]; !ok {
+		t.Fatal("dealer does not have registered procedure")
+	}
+	if _, ok := dealer.procedures[reg]; !ok {
+		t.Fatal("dealer does not have registration")
+	}
+
+	// Test that removing the callee session removes the registration.
+	dealer.RemoveSession(sess)
+	dealer.sync()
+	if _, ok := dealer.registrations[testProcedure]; ok {
+		t.Fatal("dealer still has registered procedure")
+	}
+	if _, ok := dealer.procedures[reg]; ok {
+		t.Fatal("dealer still has registration")
+	}
+
+	// Tests that registering the callee again succeeds.
+	msg.Request = 124
+	dealer.Register(sess, msg)
+	rsp = <-callee.Recv()
+	if rsp.MessageType() != wamp.REGISTERED {
+		t.Fatal("expected ", wamp.REGISTERED, " got: ", rsp.MessageType())
+	}
+}
+
+// ----- WAMP v.2 Testing -----
+
+func TestCancelCall(t *testing.T) {
+	// Test mode=kill
+	// Test mode=killnowait
+	// Test mode=skip
+}
+
+func TestCallTimeout(t *testing.T) {
+}
+
+func TestCallerIdentification(t *testing.T) {
+	// Test disclose_caller
+	// Test disclose_me
+}
+
+func TestPatternBasedRegistration(t *testing.T) {
+	// Test match=prefix
+	// Test match=wildcard
+}
+
+func TestProgressiveCallResults(t *testing.T) {
+}
+
+func TestSharedRegistration(t *testing.T) {
+	// Test policy=single
+	// Test policy=first
+	// Test policy=last
+	// Test policy=round_robin
+	// Test policy=random
+}
