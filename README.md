@@ -10,7 +10,28 @@ The nexus project provides a WAMP router library, client library, and stand-alon
  - The router library can be used to build custom WAMP routers or to embed a WAMP router in an aplication.
  - The client libaray can be used to build clients that connect to any WAMP server.
  - The router service can be run as-is to provide WAMP routing.
- 
+
+## Project Status
+Nearly complete - currently in active development.
+
+#### Items to complete:
+- websocket server
+- websocket client
+- additional transports
+- examples
+- documentation
+- cool logo
+
+#### Features to complete:
+- publisher trust levels                                                     
+- event history                                                              
+- testament_meta_api                                                         
+- session_meta_api
+- call timeout (need timeout goroutine)                                      
+- call trust levels                                                          
+- session_meta_api                                                           
+- registration_meta_api   
+
 ## Advanced Profile Feature Support
 
 ### RPC Features
