@@ -9,37 +9,37 @@ type Message interface {
 
 // Message Codes and Direction
 const (
-	//                           // Pub   Brk   Subs  Calr  Dealr Callee
-	//                           // ----  ----  ----  ----  ----  ----
-	HELLO        MessageType = 1 // Tx    Rx    Tx    Tx    Rx    Tx
-	WELCOME      MessageType = 2 // Rx    Tx    Rx    Rx    Tx    Rx
-	ABORT        MessageType = 3 // Rx    TxRx  Rx    Rx    TxRx  Rx
-	CHALLENGE    MessageType = 4 //
-	AUTHENTICATE MessageType = 5 //
-	GOODBYE      MessageType = 6 // TxRx  TxRx  TxRx  TxRx  TxRx  TxRx
-	// HEARTBEAT    MessageType = 7
-	ERROR MessageType = 8 // Rx    Tx    Rx    Rx    TxRx  TxRx
-
-	PUBLISH   MessageType = 16 //   Tx    Rx
-	PUBLISHED MessageType = 17 //   Rx    Tx
-
-	SUBSCRIBE    MessageType = 32 //      Rx    Tx
-	SUBSCRIBED   MessageType = 33 //      Tx    Rx
-	UNSUBSCRIBE  MessageType = 34 //      Rx    Tx
-	UNSUBSCRIBED MessageType = 35 //      Tx    Rx
-	EVENT        MessageType = 36 //      Tx    Rx
-
-	CALL   MessageType = 48 //                        Tx    Rx
-	CANCEL MessageType = 49 //                        Tx    Rx
-	RESULT MessageType = 50 //                        Rx    Tx
-
-	REGISTER     MessageType = 64 //                        Rx    Tx
-	REGISTERED   MessageType = 65 //                        Tx    Rx
-	UNREGISTER   MessageType = 66 //                        Rx    Tx
-	UNREGISTERED MessageType = 67 //                        Tx    Rx
-	INVOCATION   MessageType = 68 //                        Tx    Rx
-	INTERRUPT    MessageType = 69 //                        Tx    Rx
-	YIELD        MessageType = 70 //                        Rx    Tx
+	//                           // | Pub  | Brk  | Subs | Calr | Dealr| Calee|
+	//                           // | ---- | ---- | ---- | ---- | ---- | ---- |
+	HELLO        MessageType = 1 // | Tx   | Rx   | Tx   | Tx   | Rx   | Tx   |
+	WELCOME      MessageType = 2 // | Rx   | Tx   | Rx   | Rx   | Tx   | Rx   |
+	ABORT        MessageType = 3 // | Rx   | TxRx | Rx   | Rx   | TxRx | Rx   |
+	CHALLENGE    MessageType = 4 // |      |      |      |      |      |      |
+	AUTHENTICATE MessageType = 5 // |      |      |      |      |      |      |
+	GOODBYE      MessageType = 6 // | TxRx | TxRx | TxRx | TxRx | TxRx | TxRx |
+	// HEARTBEAT    MessageType = 7 |      |      |      |      |      |      |
+	ERROR MessageType = 8 //        | Rx   | Tx   | Rx   | Rx   | TxRx | TxRx |
+	//                              |      |      |      |      |      |      |
+	PUBLISH   MessageType = 16 //   | Tx   | Rx   |      |      |      |      |
+	PUBLISHED MessageType = 17 //   | Rx   | Tx   |      |      |      |      |
+	//                              |      |      |      |      |      |      |
+	SUBSCRIBE    MessageType = 32 //|      | Rx   | Tx   |      |      |      |
+	SUBSCRIBED   MessageType = 33 //|      | Tx   | Rx   |      |      |      |
+	UNSUBSCRIBE  MessageType = 34 //|      | Rx   | Tx   |      |      |      |
+	UNSUBSCRIBED MessageType = 35 //|      | Tx   | Rx   |      |      |      |
+	EVENT        MessageType = 36 //|      | Tx   | Rx   |      |      |      |
+	//                              |      |      |      |      |      |      |
+	CALL   MessageType = 48 //      |      |      |      | Tx   | Rx   |      |
+	CANCEL MessageType = 49 //      |      |      |      | Tx   | Rx   |      |
+	RESULT MessageType = 50 //      |      |      |      | Rx   | Tx   |      |
+	//                              |      |      |      |      |      |      |
+	REGISTER     MessageType = 64 //|      |      |      |      | Rx   | Tx   |
+	REGISTERED   MessageType = 65 //|      |      |      |      | Tx   | Rx   |
+	UNREGISTER   MessageType = 66 //|      |      |      |      | Rx   | Tx   |
+	UNREGISTERED MessageType = 67 //|      |      |      |      | Tx   | Rx   |
+	INVOCATION   MessageType = 68 //|      |      |      |      | Tx   | Rx   |
+	INTERRUPT    MessageType = 69 //|      |      |      |      | Tx   | Rx   |
+	YIELD        MessageType = 70 //|      |      |      |      | Rx   | Tx   |
 )
 
 var mtStrings = map[MessageType]string{
@@ -143,9 +143,7 @@ type Hello struct {
 	Details map[string]interface{}
 }
 
-func (msg *Hello) MessageType() MessageType {
-	return HELLO
-}
+func (msg *Hello) MessageType() MessageType { return HELLO }
 
 // Sent by a Router to accept a Client. The WAMP session is now open.
 //
@@ -155,11 +153,9 @@ type Welcome struct {
 	Details map[string]interface{}
 }
 
-func (msg *Welcome) MessageType() MessageType {
-	return WELCOME
-}
+func (msg *Welcome) MessageType() MessageType { return WELCOME }
 
-// Sent by a Peer*to abort the opening of a WAMP session. No response is
+// Sent by a Peer to abort the opening of a WAMP session. No response is
 // expected.
 //
 // [ABORT, Details|dict, Reason|uri]
@@ -168,9 +164,7 @@ type Abort struct {
 	Reason  URI
 }
 
-func (msg *Abort) MessageType() MessageType {
-	return ABORT
-}
+func (msg *Abort) MessageType() MessageType { return ABORT }
 
 // Sent by a Peer to close a previously opened WAMP session. Must be echo'ed by
 // the receiving Peer.
@@ -181,9 +175,7 @@ type Goodbye struct {
 	Reason  URI
 }
 
-func (msg *Goodbye) MessageType() MessageType {
-	return GOODBYE
-}
+func (msg *Goodbye) MessageType() MessageType { return GOODBYE }
 
 // Error reply sent by a Peer as an error response to different kinds of
 // requests.
@@ -202,9 +194,7 @@ type Error struct {
 	ArgumentsKw map[string]interface{} `wamp:"omitempty"`
 }
 
-func (msg *Error) MessageType() MessageType {
-	return ERROR
-}
+func (msg *Error) MessageType() MessageType { return ERROR }
 
 // ----- Publish & Subscribe -----
 
@@ -222,9 +212,7 @@ type Publish struct {
 	ArgumentsKw map[string]interface{} `wamp:"omitempty"`
 }
 
-func (msg *Publish) MessageType() MessageType {
-	return PUBLISH
-}
+func (msg *Publish) MessageType() MessageType { return PUBLISH }
 
 // Acknowledge sent by a Broker to a Publisher for acknowledged publications.
 //
@@ -234,9 +222,7 @@ type Published struct {
 	Publication ID
 }
 
-func (msg *Published) MessageType() MessageType {
-	return PUBLISHED
-}
+func (msg *Published) MessageType() MessageType { return PUBLISHED }
 
 // Subscribe request sent by a Subscriber to a Broker to subscribe to a topic.
 //
@@ -247,9 +233,7 @@ type Subscribe struct {
 	Topic   URI
 }
 
-func (msg *Subscribe) MessageType() MessageType {
-	return SUBSCRIBE
-}
+func (msg *Subscribe) MessageType() MessageType { return SUBSCRIBE }
 
 // Acknowledge sent by a Broker to a Subscriber to acknowledge a subscription.
 //
@@ -259,9 +243,7 @@ type Subscribed struct {
 	Subscription ID
 }
 
-func (msg *Subscribed) MessageType() MessageType {
-	return SUBSCRIBED
-}
+func (msg *Subscribed) MessageType() MessageType { return SUBSCRIBED }
 
 // Unsubscribe request sent by a Subscriber to a Broker to unsubscribe a
 // subscription.
@@ -272,9 +254,7 @@ type Unsubscribe struct {
 	Subscription ID
 }
 
-func (msg *Unsubscribe) MessageType() MessageType {
-	return UNSUBSCRIBE
-}
+func (msg *Unsubscribe) MessageType() MessageType { return UNSUBSCRIBE }
 
 // Acknowledge sent by a Broker to a Subscriber to acknowledge unsubscription.
 //
@@ -283,9 +263,7 @@ type Unsubscribed struct {
 	Request ID
 }
 
-func (msg *Unsubscribed) MessageType() MessageType {
-	return UNSUBSCRIBED
-}
+func (msg *Unsubscribed) MessageType() MessageType { return UNSUBSCRIBED }
 
 // Event dispatched by Broker to Subscribers for subscriptions the event was
 // matching.
@@ -303,9 +281,7 @@ type Event struct {
 	ArgumentsKw  map[string]interface{} `wamp:"omitempty"`
 }
 
-func (msg *Event) MessageType() MessageType {
-	return EVENT
-}
+func (msg *Event) MessageType() MessageType { return EVENT }
 
 // ----- Router Remote Procedure Calls -----
 
@@ -319,9 +295,7 @@ type Register struct {
 	Procedure URI
 }
 
-func (msg *Register) MessageType() MessageType {
-	return REGISTER
-}
+func (msg *Register) MessageType() MessageType { return REGISTER }
 
 // If the Dealer is able to fulfill and allowing the registration, it answers
 // by sending a REGISTERED message to the Callee:
@@ -332,9 +306,7 @@ type Registered struct {
 	Registration ID
 }
 
-func (msg *Registered) MessageType() MessageType {
-	return REGISTERED
-}
+func (msg *Registered) MessageType() MessageType { return REGISTERED }
 
 // When a Callee is no longer willing to provide an implementation of the
 // registered procedure, it sends an UNREGISTER message to the Dealer:
@@ -345,9 +317,7 @@ type Unregister struct {
 	Registration ID
 }
 
-func (msg *Unregister) MessageType() MessageType {
-	return UNREGISTER
-}
+func (msg *Unregister) MessageType() MessageType { return UNREGISTER }
 
 // Upon successful unregistration, the Dealer sends an UNREGISTERED message to
 // the Callee:
@@ -357,9 +327,7 @@ type Unregistered struct {
 	Request ID
 }
 
-func (msg *Unregistered) MessageType() MessageType {
-	return UNREGISTERED
-}
+func (msg *Unregistered) MessageType() MessageType { return UNREGISTERED }
 
 // When a Caller wishes to call a remote procedure, it sends a CALL message to
 // a Dealer:
@@ -376,9 +344,7 @@ type Call struct {
 	ArgumentsKw map[string]interface{} `wamp:"omitempty"`
 }
 
-func (msg *Call) MessageType() MessageType {
-	return CALL
-}
+func (msg *Call) MessageType() MessageType { return CALL }
 
 // If the Dealer is able to fulfill (mediate) the call and it allows the call,
 // it sends a INVOCATION message to the respective Callee implementing the
@@ -397,9 +363,7 @@ type Invocation struct {
 	ArgumentsKw  map[string]interface{} `wamp:"omitempty"`
 }
 
-func (msg *Invocation) MessageType() MessageType {
-	return INVOCATION
-}
+func (msg *Invocation) MessageType() MessageType { return INVOCATION }
 
 // If the Callee is able to successfully process and finish the execution of
 // the call, it answers by sending a YIELD message to the Dealer:
@@ -415,9 +379,7 @@ type Yield struct {
 	ArgumentsKw map[string]interface{} `wamp:"omitempty"`
 }
 
-func (msg *Yield) MessageType() MessageType {
-	return YIELD
-}
+func (msg *Yield) MessageType() MessageType { return YIELD }
 
 // The Dealer will then send a RESULT message to the original Caller:
 //
@@ -432,9 +394,7 @@ type Result struct {
 	ArgumentsKw map[string]interface{} `wamp:"omitempty"`
 }
 
-func (msg *Result) MessageType() MessageType {
-	return RESULT
-}
+func (msg *Result) MessageType() MessageType { return RESULT }
 
 // ----- Advanced Profile Messages -----
 
@@ -447,9 +407,7 @@ type Challenge struct {
 	Extra      map[string]interface{}
 }
 
-func (msg *Challenge) MessageType() MessageType {
-	return CHALLENGE
-}
+func (msg *Challenge) MessageType() MessageType { return CHALLENGE }
 
 // The AUTHENTICATE message is used with certain Authentication Methods. A
 // Client having received a challenge is expected to respond by sending a
@@ -461,9 +419,7 @@ type Authenticate struct {
 	Extra     map[string]interface{}
 }
 
-func (msg *Authenticate) MessageType() MessageType {
-	return AUTHENTICATE
-}
+func (msg *Authenticate) MessageType() MessageType { return AUTHENTICATE }
 
 // The CANCEL message is used with the Call Canceling advanced feature. A
 // Caller can cancel an issued call actively by sending a cancel message to
@@ -475,9 +431,7 @@ type Cancel struct {
 	Options map[string]interface{}
 }
 
-func (msg *Cancel) MessageType() MessageType {
-	return CANCEL
-}
+func (msg *Cancel) MessageType() MessageType { return CANCEL }
 
 // The INTERRUPT message is used with the Call Canceling advanced feature. Upon
 // receiving a cancel for a pending call, a Dealer will issue an interrupt to
@@ -489,9 +443,7 @@ type Interrupt struct {
 	Options map[string]interface{}
 }
 
-func (msg *Interrupt) MessageType() MessageType {
-	return INTERRUPT
-}
+func (msg *Interrupt) MessageType() MessageType { return INTERRUPT }
 
 // OptionString returns the string value of the option with the specified name.
 // If the option is not present, an empty string is returned.
