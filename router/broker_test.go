@@ -26,8 +26,7 @@ func TestBasicSubscribe(t *testing.T) {
 	subscriber := newTestPeer()
 	sess := &Session{Peer: subscriber}
 	testTopic := wamp.URI("nexus.test.topic")
-	msg := &wamp.Subscribe{Request: 123, Topic: testTopic}
-	broker.Subscribe(sess, msg)
+	broker.Submit(sess, &wamp.Subscribe{Request: 123, Topic: testTopic})
 
 	// Test that subscriber received SUBSCRIBED message
 	rsp := <-sess.Recv()
@@ -58,8 +57,7 @@ func TestBasicSubscribe(t *testing.T) {
 	}
 
 	// Test subscribing to same topic again.
-	msg = &wamp.Subscribe{Request: 123, Topic: testTopic}
-	broker.Subscribe(sess, msg)
+	broker.Submit(sess, &wamp.Subscribe{Request: 123, Topic: testTopic})
 	// Test that subscriber received SUBSCRIBED message
 	rsp = <-sess.Recv()
 	sub, ok = rsp.(*wamp.Subscribed)
@@ -83,8 +81,7 @@ func TestBasicSubscribe(t *testing.T) {
 
 	// Test subscribing to different topic.
 	testTopic2 := wamp.URI("nexus.test.topic2")
-	msg = &wamp.Subscribe{Request: 123, Topic: testTopic2}
-	broker.Subscribe(sess, msg)
+	broker.Submit(sess, &wamp.Subscribe{Request: 123, Topic: testTopic2})
 	// Test that subscriber received SUBSCRIBED message
 	rsp = <-sess.Recv()
 	sub, ok = rsp.(*wamp.Subscribed)
@@ -115,14 +112,12 @@ func TestUnsubscribe(t *testing.T) {
 	subscriber := newTestPeer()
 	sess := &Session{Peer: subscriber}
 	testTopic := wamp.URI("nexus.test.topic")
-	msg := &wamp.Subscribe{Request: 123, Topic: testTopic}
-	broker.Subscribe(sess, msg)
+	broker.Submit(sess, &wamp.Subscribe{Request: 123, Topic: testTopic})
 	rsp := <-sess.Recv()
 	subID := rsp.(*wamp.Subscribed).Subscription
 
 	// Test unsubscribing from topic.
-	umsg := &wamp.Unsubscribe{Request: 124, Subscription: subID}
-	broker.Unsubscribe(sess, umsg)
+	broker.Submit(sess, &wamp.Unsubscribe{Request: 124, Subscription: subID})
 	// Check that session received UNSUBSCRIBED message.
 	rsp = <-sess.Recv()
 	unsub, ok := rsp.(*wamp.Unsubscribed)
@@ -151,14 +146,12 @@ func TestRemove(t *testing.T) {
 	subscriber := newTestPeer()
 	sess := &Session{Peer: subscriber}
 	testTopic := wamp.URI("nexus.test.topic")
-	msg := &wamp.Subscribe{Request: 123, Topic: testTopic}
-	broker.Subscribe(sess, msg)
+	broker.Submit(sess, &wamp.Subscribe{Request: 123, Topic: testTopic})
 	rsp := <-sess.Recv()
 	subID := rsp.(*wamp.Subscribed).Subscription
 
 	testTopic2 := wamp.URI("nexus.test.topic2")
-	msg2 := &wamp.Subscribe{Request: 456, Topic: testTopic2}
-	broker.Subscribe(sess, msg2)
+	broker.Submit(sess, &wamp.Subscribe{Request: 456, Topic: testTopic2})
 	rsp = <-sess.Recv()
 	subID2 := rsp.(*wamp.Subscribed).Subscription
 
@@ -198,7 +191,7 @@ func TestPrefxPatternBasedSubscription(t *testing.T) {
 		Topic:   testTopicPfx,
 		Options: map[string]interface{}{"match": "prefix"},
 	}
-	broker.Subscribe(sess, msg)
+	broker.Submit(sess, msg)
 
 	// Test that subscriber received SUBSCRIBED message
 	rsp := <-sess.Recv()
@@ -230,11 +223,7 @@ func TestPrefxPatternBasedSubscription(t *testing.T) {
 
 	publisher := newTestPeer()
 	pubSess := &Session{Peer: publisher}
-	pubMsg := &wamp.Publish{
-		Request: 124,
-		Topic:   testTopic,
-	}
-	broker.Publish(pubSess, pubMsg)
+	broker.Submit(pubSess, &wamp.Publish{Request: 124, Topic: testTopic})
 	rsp = <-sess.Recv()
 	evt, ok := rsp.(*wamp.Event)
 	if !ok {
@@ -262,7 +251,7 @@ func TestWildcardPatternBasedSubscription(t *testing.T) {
 		Topic:   testTopicWc,
 		Options: map[string]interface{}{"match": "wildcard"},
 	}
-	broker.Subscribe(sess, msg)
+	broker.Submit(sess, msg)
 
 	// Test that subscriber received SUBSCRIBED message
 	rsp := <-sess.Recv()
@@ -294,11 +283,7 @@ func TestWildcardPatternBasedSubscription(t *testing.T) {
 
 	publisher := newTestPeer()
 	pubSess := &Session{Peer: publisher}
-	pubMsg := &wamp.Publish{
-		Request: 124,
-		Topic:   testTopic,
-	}
-	broker.Publish(pubSess, pubMsg)
+	broker.Submit(pubSess, &wamp.Publish{Request: 124, Topic: testTopic})
 	rsp = <-sess.Recv()
 	evt, ok := rsp.(*wamp.Event)
 	if !ok {

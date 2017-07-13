@@ -29,6 +29,8 @@ type Realm struct {
 	clients map[wamp.ID]*Session
 
 	metaClient wamp.Peer
+	metaSess   *Session
+
 	actionChan chan func()
 
 	// Used by Close() to wait for sessions to exit.
@@ -91,7 +93,7 @@ func NewCustomRealm(uri wamp.URI, strictURI, anonymousAuth, allowDisclose bool, 
 	// the peer returned, which is the remote side of the router uplink.
 	// Sending a PUBLISH message to p will result in the router publishing the
 	// event to any subscribers.
-	p, _ := r.bridgeSession(nil)
+	p, _ := r.bridgeSession(nil, true)
 	r.metaClient = p
 
 	go r.run()
@@ -146,6 +148,15 @@ func (r *Realm) Close() {
 	// Wait until handleSession for all clients has exited.
 	r.waitHandlers.Wait()
 	close(r.actionChan)
+
+	// All normal handlers have exited.  There may still be pending meta events
+	// from the session getting booted off the router.  Send the meta session a
+	// kill signal.  When the meta client receives GOODBYE from the meta
+	// session, this means the meta session is done and will not try to publish
+	// anything more to the broker, and it is finally save to exit and close
+	// the broker.
+	r.metaSess.kill <- wamp.ErrSystemShutdown
+	<-r.metaClient.Recv()
 }
 
 // Single goroutine used to read and modify Reaml data.
@@ -161,7 +172,7 @@ func (r *Realm) run() {
 // This is used for creating a local client for publishing meta events, and for
 // the router to create local sessions used by an application that the router
 // is embedded in.
-func (r *Realm) bridgeSession(details map[string]interface{}) (wamp.Peer, error) {
+func (r *Realm) bridgeSession(details map[string]interface{}, meta bool) (wamp.Peer, error) {
 	cli, rtr := LinkedPeers()
 	if details == nil {
 		details = map[string]interface{}{}
@@ -174,7 +185,8 @@ func (r *Realm) bridgeSession(details map[string]interface{}) (wamp.Peer, error)
 		Details: details,
 		kill:    make(chan wamp.URI, 1),
 	}
-	go r.handleSession(&sess)
+	// Run the session handler for the
+	go r.handleSession(&sess, meta)
 	log.Println("Created internal session:", sess)
 
 	// Return the session that is the remote leg of the router uplink.
@@ -208,8 +220,6 @@ func (r *Realm) onJoin(sess *Session) {
 // Note: onLeave() must be called from outside handleSession() so that it is
 // not called for the meta client.
 func (r *Realm) onLeave(sess *Session) {
-	// Need to wait for sesson to be removed before allowing session handler to
-	// exit, which shuts down broker and dealer.
 	sync := make(chan struct{})
 	r.actionChan <- func() {
 		delete(r.clients, sess.ID)
@@ -244,7 +254,21 @@ func (r *Realm) sessionCount(sess *Session, msg *wamp.Invocation) {
 // handleSession starts a session attached to this realm.
 //
 // Routing occurs only between WAMP Sessions that have joined the same Realm.
-func (r *Realm) handleSession(sess *Session) {
+func (r *Realm) handleSession(sess *Session, meta bool) {
+	var sname string
+	if !meta {
+		sname = "session"
+		// Add the client session the realm and send meta event.
+		r.onJoin(sess)
+		// Remove client session from realm, and send meta event.
+		defer r.onLeave(sess)
+	} else {
+		sname = "meta-session"
+		r.metaSess = sess
+	}
+	log.Println("started", sname, sess)
+	defer log.Println("ended", sname, sess)
+
 	recvChan := sess.Recv()
 	for {
 		var msg wamp.Message
@@ -252,11 +276,11 @@ func (r *Realm) handleSession(sess *Session) {
 		select {
 		case msg, open = <-recvChan:
 			if !open {
-				log.Println("lost session:", sess)
+				log.Println("lost", sname, sess)
 				return
 			}
 		case reason := <-sess.kill:
-			log.Printf("kill session %s: %v", sess, reason)
+			log.Printf("kill %s %s: %v", sname, sess, reason)
 			sess.Send(&wamp.Goodbye{
 				Reason:  reason,
 				Details: map[string]interface{}{},
@@ -265,7 +289,7 @@ func (r *Realm) handleSession(sess *Session) {
 		}
 
 		// Debug
-		log.Printf("sssion %s %s: %+v", sess, msg.MessageType(), msg)
+		log.Printf("%s %s submitting %s: %+v", sname, sess, msg.MessageType(), msg)
 
 		if isAuthz, err := r.authorizer.Authorize(sess, msg); !isAuthz {
 			errMsg := &wamp.Error{Type: msg.MessageType()}
@@ -289,57 +313,93 @@ func (r *Realm) handleSession(sess *Session) {
 			if err != nil {
 				// Error trying to authorize.
 				errMsg.Error = wamp.ErrAuthorizationFailed
-				log.Printf("client", sess, "authorization failed:", err)
+				log.Println("client", sess, "authorization failed:", err)
 			} else {
 				// Session not authorized.
 				errMsg.Error = wamp.ErrNotAuthorized
-				log.Printf("client", sess, msg.MessageType(), "UNAUTHORIZED")
+				log.Println("client", sess, msg.MessageType(), "UNAUTHORIZED")
 			}
 			sess.Send(errMsg)
 			continue
 		}
 
-		switch msg := msg.(type) {
-		// Dispatch to broker.
-		case *wamp.Publish:
-			r.broker.Publish(sess, msg)
-		case *wamp.Subscribe:
-			r.broker.Subscribe(sess, msg)
-		case *wamp.Unsubscribe:
-			r.broker.Unsubscribe(sess, msg)
+		switch msg.MessageType() {
+		// Dispatch pub/sub messages to broker.
+		case wamp.PUBLISH, wamp.SUBSCRIBE, wamp.UNSUBSCRIBE:
+			r.broker.Submit(sess, msg)
 
-		// Dispatch to dealer.
-		case *wamp.Register:
-			r.dealer.Register(sess, msg)
-		case *wamp.Unregister:
-			r.dealer.Unregister(sess, msg)
-		case *wamp.Call:
-			r.dealer.Call(sess, msg)
-		case *wamp.Yield:
-			r.dealer.Yield(sess, msg)
-
-		// Error messages.
-		case *wamp.Error:
+		// Dispatch RPC messages and invocation errors to dealer.
+		case wamp.REGISTER, wamp.UNREGISTER, wamp.CALL, wamp.YIELD:
+			r.dealer.Submit(sess, msg)
+		case wamp.ERROR:
+			msg := msg.(*wamp.Error)
 			// An INVOCATION error is the only type of ERROR message the
 			// router should receive.
 			if msg.Type == wamp.INVOCATION {
-				r.dealer.Error(sess, msg)
+				r.dealer.Submit(sess, msg)
 			} else {
-				log.Println("session", sess, "invalid ERROR message received:",
-					msg)
+				log.Println(sname, sess, "invalid ERROR message received:", msg)
 			}
 
-		case *wamp.Goodbye:
+		// Handle client leaving realm.
+		case wamp.GOODBYE:
 			sess.Send(&wamp.Goodbye{
 				Reason:  wamp.ErrGoodbyeAndOut,
 				Details: map[string]interface{}{},
 			})
-			log.Println("session", sess, "goodbye:", msg.Reason)
+			msg := msg.(*wamp.Goodbye)
+			log.Println(sname, sess, "goodbye:", msg.Reason)
 			return
 
+		// Where did the come from?  Log and drop.
 		default:
-			log.Println("session", sess, "unhandled message:", msg.MessageType())
+			log.Println(sname, sess, "unhandled message:",
+				msg.MessageType())
 		}
+
+		/*
+			switch msg := msg.(type) {
+			// Dispatch to broker.
+			case *wamp.Publish:
+				r.broker.Publish(sess, msg)
+			case *wamp.Subscribe:
+				r.broker.Subscribe(sess, msg)
+			case *wamp.Unsubscribe:
+				r.broker.Unsubscribe(sess, msg)
+
+			// Dispatch to dealer.
+			case *wamp.Register:
+				r.dealer.Register(sess, msg)
+			case *wamp.Unregister:
+				r.dealer.Unregister(sess, msg)
+			case *wamp.Call:
+				r.dealer.Call(sess, msg)
+			case *wamp.Yield:
+				r.dealer.Yield(sess, msg)
+
+			// Error messages.
+			case *wamp.Error:
+				// An INVOCATION error is the only type of ERROR message the
+				// router should receive.
+				if msg.Type == wamp.INVOCATION {
+					r.dealer.Error(sess, msg)
+				} else {
+					log.Println("session", sess, "invalid ERROR message received:",
+						msg)
+				}
+
+			case *wamp.Goodbye:
+				sess.Send(&wamp.Goodbye{
+					Reason:  wamp.ErrGoodbyeAndOut,
+					Details: map[string]interface{}{},
+				})
+				log.Println("session", sess, "goodbye:", msg.Reason)
+				return
+
+			default:
+				log.Println("session", sess, "unhandled message:", msg.MessageType())
+			}
+		*/
 	}
 }
 

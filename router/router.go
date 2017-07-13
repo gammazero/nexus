@@ -301,7 +301,7 @@ func (r *router) Attach(client wamp.Peer) error {
 		kill:  make(chan wamp.URI, 1),
 	}
 
-	log.Println("Created session:", welcome.ID)
+	log.Println("created session:", welcome.ID)
 
 	// Need synchronized access to r.sessionCreateCallbacks.
 	r.actionChan <- func() {
@@ -310,11 +310,7 @@ func (r *router) Attach(client wamp.Peer) error {
 		}
 	}
 	go func() {
-		// Add the client session the realm and send meta event.
-		realm.onJoin(sess)
-		realm.handleSession(sess)
-		// Remove client session from realm, and send meta event.
-		realm.onLeave(sess)
+		realm.handleSession(sess, false)
 		sess.Close()
 
 		// Need synchronized access to r.sessionCloseCallbacks.
@@ -344,7 +340,7 @@ func (r *router) LocalClient(realmURI wamp.URI, details map[string]interface{}) 
 	}
 
 	// Start internal session and return remote leg of router uplink.
-	return realm.bridgeSession(details)
+	return realm.bridgeSession(details, false)
 }
 
 // AddSessionCreateCallback registers a function to call when a new router

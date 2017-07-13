@@ -26,14 +26,9 @@ var brokerFeatures = map[string]interface{}{
 // Broker is the interface implemented by an object that handles routing EVENTS
 // from Publishers to Subscribers.
 type Broker interface {
-	// Publish publishes a message to all Subscribers.
-	Publish(*Session, *wamp.Publish)
-
-	// Subscribe subscribes to messages on a URI.
-	Subscribe(*Session, *wamp.Subscribe)
-
-	// Unsubscribe unsubscribes from messages on a URI.
-	Unsubscribe(*Session, *wamp.Unsubscribe)
+	// Submit dispatches a Publish, Subscribe, or Unsubscribe message to the
+	// broker.
+	Submit(sess *Session, msg wamp.Message)
 
 	// RemoveSession removes all subscriptions of the subscriber.
 	RemoveSession(*Session)
@@ -108,58 +103,8 @@ func (b *broker) Features() map[string]interface{} {
 	return brokerFeatures
 }
 
-func (b *broker) Publish(pub *Session, msg *wamp.Publish) {
-	// Validate URI.  For PUBLISH, must be valid URI (either strict or loose),
-	// and all URI components must be non-empty.
-	if !msg.Topic.ValidURI(b.strictURI, "") {
-		opt, ok := msg.Options["acknowledge"]
-		if !ok {
-			return
-		}
-		if ack, ok := opt.(bool); ok && ack {
-			errMsg := fmt.Sprintf(
-				"publish with invalid topic URI %s (URI strict checking %s)",
-				msg.Topic, b.strictURI)
-			pub.Send(&wamp.Error{
-				Type:      msg.MessageType(),
-				Request:   msg.Request,
-				Error:     wamp.ErrInvalidURI,
-				Arguments: []interface{}{errMsg},
-			})
-		}
-		return
-	}
-
-	b.reqChan <- routerReq{session: pub, msg: msg}
-}
-
-func (b *broker) Subscribe(sub *Session, msg *wamp.Subscribe) {
-	// Validate topic URI.  For SUBSCRIBE, must be valid URI (either strict or
-	// loose), and all URI components must be non-empty for normal
-	// subscriptions, may be empty for wildcard subscriptions and must be
-	// non-empty for all but the last component for prefix subscriptions.
-	var match string
-	if _match, ok := msg.Options["match"]; ok && _match != nil {
-		match = _match.(string)
-	}
-	if !msg.Topic.ValidURI(b.strictURI, match) {
-		errMsg := fmt.Sprintf("subscribe for invalid topic URI %s",
-			msg.Topic, b.strictURI)
-		sub.Send(&wamp.Error{
-			Type:      msg.MessageType(),
-			Request:   msg.Request,
-			Error:     wamp.ErrInvalidURI,
-			Arguments: []interface{}{errMsg},
-		})
-		return
-	}
-
-	b.reqChan <- routerReq{session: sub, msg: msg}
-	return
-}
-
-func (b *broker) Unsubscribe(sub *Session, msg *wamp.Unsubscribe) {
-	b.reqChan <- routerReq{session: sub, msg: msg}
+func (b *broker) Submit(sess *Session, msg wamp.Message) {
+	b.reqChan <- routerReq{session: sess, msg: msg}
 }
 
 func (b *broker) RemoveSession(sub *Session) {
@@ -199,6 +144,7 @@ func (b *broker) reqHandler() {
 	for req := range b.reqChan {
 		if req.session == nil {
 			b.syncChan <- struct{}{}
+			continue
 		}
 		if req.msg == nil {
 			b.removeSession(req.session)
@@ -212,6 +158,9 @@ func (b *broker) reqHandler() {
 			b.subscribe(sess, msg)
 		case *wamp.Unsubscribe:
 			b.unsubscribe(sess, msg)
+		default:
+			panic(fmt.Sprint("broker received message type: ",
+				req.msg.MessageType()))
 		}
 	}
 }
@@ -226,6 +175,27 @@ func (b *broker) reqHandler() {
 // The Subscriber can detect the delivery of that same event on multiple
 // subscriptions via EVENT.PUBLISHED.Publication, which will be identical.
 func (b *broker) publish(pub *Session, msg *wamp.Publish) {
+	// Validate URI.  For PUBLISH, must be valid URI (either strict or loose),
+	// and all URI components must be non-empty.
+	if !msg.Topic.ValidURI(b.strictURI, "") {
+		opt, ok := msg.Options["acknowledge"]
+		if !ok {
+			return
+		}
+		if ack, ok := opt.(bool); ok && ack {
+			errMsg := fmt.Sprintf(
+				"publish with invalid topic URI %s (URI strict checking %s)",
+				msg.Topic, b.strictURI)
+			pub.Send(&wamp.Error{
+				Type:      msg.MessageType(),
+				Request:   msg.Request,
+				Error:     wamp.ErrInvalidURI,
+				Arguments: []interface{}{errMsg},
+			})
+		}
+		return
+	}
+
 	pubID := wamp.GlobalID()
 
 	excludePublisher := true
@@ -268,10 +238,27 @@ func (b *broker) publish(pub *Session, msg *wamp.Publish) {
 // Broker and the Subscriber support pattern-based subscriptions, this matching
 // can happen by prefix-matching policy or wildcard-matching policy.
 func (b *broker) subscribe(sub *Session, msg *wamp.Subscribe) {
+	// Validate topic URI.  For SUBSCRIBE, must be valid URI (either strict or
+	// loose), and all URI components must be non-empty for normal
+	// subscriptions, may be empty for wildcard subscriptions and must be
+	// non-empty for all but the last component for prefix subscriptions.
+	match := wamp.OptionString(msg.Options, "match")
+	if !msg.Topic.ValidURI(b.strictURI, match) {
+		errMsg := fmt.Sprintf("subscribe for invalid topic URI %s",
+			msg.Topic, b.strictURI)
+		sub.Send(&wamp.Error{
+			Type:      msg.MessageType(),
+			Request:   msg.Request,
+			Error:     wamp.ErrInvalidURI,
+			Arguments: []interface{}{errMsg},
+		})
+		return
+	}
+
 	var idSub map[wamp.ID]*Session
 	var subscriptions map[wamp.ID]wamp.URI
 	var ok bool
-	switch wamp.OptionString(msg.Options, "match") {
+	switch match {
 	case "prefix":
 		// Subscribe to any topic that matches by the given prefix URI
 		idSub, ok = b.pfxTopicSubscribers[msg.Topic]

@@ -31,23 +31,9 @@ var dealerFeatures = map[string]interface{}{
 // Dealers route calls incoming from Callers to Callees implementing the
 // procedure called, and route call results back from Callees to Callers.
 type Dealer interface {
-	// Register a procedure on an endpoint (callee -> dealer)
-	Register(*Session, *wamp.Register)
-
-	// Unregister a procedure on a registered endpoint (callee -> dealer)
-	Unregister(*Session, *wamp.Unregister)
-
-	// Call a procedure on a registered endpoint (caller -> dealer)
-	Call(*Session, *wamp.Call)
-
-	// Cancel a call that is in progress (caller -> dealer)
-	Cancel(*Session, *wamp.Cancel)
-
-	// Return the result of a procedure call (callee -> dealer)
-	Yield(*Session, *wamp.Yield)
-
-	// Handle an ERROR message from an invocation (callee -> dealer)
-	Error(*Session, *wamp.Error)
+	// Submit dispatches a Resister, Unregister, Call, Cancel, Yield, or Error
+	// message to the dealer.
+	Submit(sess *Session, msg wamp.Message)
 
 	// Remove a callee's registrations.
 	RemoveSession(*Session)
@@ -152,53 +138,10 @@ func NewDealer(strictURI, allowDisclose bool) Dealer {
 	return d
 }
 
-func (d *dealer) Register(callee *Session, msg *wamp.Register) {
-	// Validate procedure URI.  For REGISTER, must be valid URI (either strict
-	// or loose), and all URI components must be non-empty other than for
-	// wildcard or prefix matched procedures.
-	match := wamp.OptionString(msg.Options, "match")
-	if !msg.Procedure.ValidURI(d.strictURI, match) {
-		errMsg := fmt.Sprintf(
-			"register for invalid procedure URI %s (URI strict checking %s)",
-			msg.Procedure, d.strictURI)
-		callee.Send(&wamp.Error{
-			Type:      msg.MessageType(),
-			Request:   msg.Request,
-			Error:     wamp.ErrInvalidURI,
-			Arguments: []interface{}{errMsg},
-		})
-		return
-	}
-
-	// Disallow registration of procedures starting with "wamp.", except for
-	// trusted sessions that are built into router.
-	if callee.AuthRole != "" && callee.AuthRole != "trusted" {
-		if strings.HasPrefix(string(msg.Procedure), "wamp.") {
-			errMsg := fmt.Sprintf("register for restricted procedure URI %s",
-				msg.Procedure)
-			callee.Send(&wamp.Error{
-				Type:      msg.MessageType(),
-				Request:   msg.Request,
-				Error:     wamp.ErrInvalidURI,
-				Arguments: []interface{}{errMsg},
-			})
-			return
-		}
-	}
-
-	// If callee requests disclosure of caller identity, but dealer does not
-	// allow, then send error as registration response.
-	if !d.allowDisclose && wamp.OptionFlag(msg.Options, "disclose_caller") {
-		callee.Send(&wamp.Error{
-			Type:    msg.MessageType(),
-			Request: msg.Request,
-			Details: map[string]interface{}{},
-			Error:   wamp.ErrOptionDisallowedDiscloseMe,
-		})
-		return
-	}
-
-	d.reqChan <- routerReq{session: callee, msg: msg}
+// Submit dispatches a Resister, Unregister, Call, Cancel, Yield, or Error
+// message to the dealer.
+func (d *dealer) Submit(sess *Session, msg wamp.Message) {
+	d.reqChan <- routerReq{session: sess, msg: msg}
 }
 
 func (d *dealer) Unregister(callee *Session, msg *wamp.Unregister) {
@@ -258,6 +201,7 @@ func (d *dealer) reqHandler() {
 	for req := range d.reqChan {
 		if req.session == nil {
 			d.syncChan <- struct{}{}
+			continue
 		}
 		if req.msg == nil {
 			d.removeSession(req.session)
@@ -276,6 +220,9 @@ func (d *dealer) reqHandler() {
 			d.yield(req.session, msg)
 		case *wamp.Error:
 			d.error(req.session, msg)
+		default:
+			panic(fmt.Sprint("dealer received message type: ",
+				req.msg.MessageType()))
 		}
 	}
 }
@@ -286,9 +233,54 @@ func (d *dealer) reqHandler() {
 // invocation policy, multiple callees may register to handle the same
 // procedure.
 func (d *dealer) register(callee *Session, msg *wamp.Register) {
+	// Validate procedure URI.  For REGISTER, must be valid URI (either strict
+	// or loose), and all URI components must be non-empty other than for
+	// wildcard or prefix matched procedures.
+	match := wamp.OptionString(msg.Options, "match")
+	if !msg.Procedure.ValidURI(d.strictURI, match) {
+		errMsg := fmt.Sprintf(
+			"register for invalid procedure URI %s (URI strict checking %s)",
+			msg.Procedure, d.strictURI)
+		callee.Send(&wamp.Error{
+			Type:      msg.MessageType(),
+			Request:   msg.Request,
+			Error:     wamp.ErrInvalidURI,
+			Arguments: []interface{}{errMsg},
+		})
+		return
+	}
+
+	// Disallow registration of procedures starting with "wamp.", except for
+	// trusted sessions that are built into router.
+	if callee.AuthRole != "" && callee.AuthRole != "trusted" {
+		if strings.HasPrefix(string(msg.Procedure), "wamp.") {
+			errMsg := fmt.Sprintf("register for restricted procedure URI %s",
+				msg.Procedure)
+			callee.Send(&wamp.Error{
+				Type:      msg.MessageType(),
+				Request:   msg.Request,
+				Error:     wamp.ErrInvalidURI,
+				Arguments: []interface{}{errMsg},
+			})
+			return
+		}
+	}
+
+	// If callee requests disclosure of caller identity, but dealer does not
+	// allow, then send error as registration response.
+	discloseCaller := wamp.OptionFlag(msg.Options, "disclose_caller")
+	if !d.allowDisclose && discloseCaller {
+		callee.Send(&wamp.Error{
+			Type:    msg.MessageType(),
+			Request: msg.Request,
+			Details: map[string]interface{}{},
+			Error:   wamp.ErrOptionDisallowedDiscloseMe,
+		})
+		return
+	}
+
 	var regs []wamp.ID
 
-	match := wamp.OptionString(msg.Options, "match")
 	switch match {
 	default:
 		regs = d.registrations[msg.Procedure]
@@ -338,7 +330,6 @@ func (d *dealer) register(callee *Session, msg *wamp.Register) {
 		}
 	}
 
-	discloseCaller := wamp.OptionFlag(msg.Options, "disclose_caller")
 	regID := d.idGen.Next()
 	d.procedures[regID] = remoteProcedure{
 		callee:    callee,
