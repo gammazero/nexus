@@ -115,10 +115,7 @@ func TestRouterSubscribe(t *testing.T) {
 	}
 
 	pub, pubServer := LinkedPeers()
-	pub.Send(&wamp.Hello{Realm: testRealm})
-	if err := r.Attach(pubServer); err != nil {
-		t.Fatal("Error pubing publisher")
-	}
+	handShake(r, pub, pubServer)
 	pubID := wamp.GlobalID()
 	pub.Send(&wamp.Publish{Request: pubID, Topic: testTopic})
 

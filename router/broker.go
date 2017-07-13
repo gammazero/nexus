@@ -23,8 +23,6 @@ var brokerFeatures = map[string]interface{}{
 	},
 }
 
-const reqChanSize = 16
-
 // Broker is the interface implemented by an object that handles routing EVENTS
 // from Publishers to Subscribers.
 type Broker interface {
@@ -88,7 +86,11 @@ func NewBroker(strictURI, allowDisclose bool) Broker {
 
 		sessionSubIDSet: map[*Session]map[wamp.ID]struct{}{},
 
-		reqChan:    make(chan routerReq, reqChanSize),
+		// The request handler channel does not need to be more than size one,
+		// since the incoming messages will be processed at the same rate
+		// whether the messages sit in the recv channel of peers, or they sit
+		// in the reqChan.
+		reqChan:    make(chan routerReq, 1),
 		closedChan: make(chan struct{}),
 		syncChan:   make(chan struct{}),
 
@@ -393,7 +395,6 @@ func (b *broker) unsubscribe(sub *Session, msg *wamp.Unsubscribe) {
 func (b *broker) removeSession(sub *Session) {
 	var topicSubscribers map[wamp.URI]map[wamp.ID]*Session
 	for id, _ := range b.sessionSubIDSet[sub] {
-		log.Println("---> found subID:", id)
 		// For each subscription ID, delete the subscription: topic map entry.
 		topic, ok := b.subscriptions[id]
 		if !ok {

@@ -4,7 +4,7 @@ import (
 	"errors"
 	"fmt"
 	"log"
-	"time"
+	"sync"
 
 	"github.com/gammazero/nexus/auth"
 	"github.com/gammazero/nexus/wamp"
@@ -30,6 +30,9 @@ type Realm struct {
 
 	metaClient wamp.Peer
 	actionChan chan func()
+
+	// Used by Close() to wait for sessions to exit.
+	waitHandlers sync.WaitGroup
 }
 
 // NewRealm creates a new Realm with default broker, dealer, and authorizer
@@ -130,34 +133,18 @@ func (r *Realm) DelCRAuthenticator(method string) {
 }
 
 // Close kills all clients, causing them to send a goodbye message.
-func (r Realm) Close() {
+func (r *Realm) Close() {
 	defer r.broker.Close()
 	defer r.dealer.Close()
 
-	sync := make(chan bool)
 	r.actionChan <- func() {
 		for _, client := range r.clients {
 			client.kill <- wamp.ErrSystemShutdown
 		}
-		sync <- false
 	}
-	<-sync
 
 	// Wait until handleSession for all clients has exited.
-	for {
-		r.actionChan <- func() {
-			if len(r.clients) == 0 {
-				sync <- true
-			} else {
-				sync <- false
-			}
-		}
-		done := <-sync
-		if done {
-			break
-		}
-		time.Sleep(time.Millisecond)
-	}
+	r.waitHandlers.Wait()
 	close(r.actionChan)
 }
 
@@ -175,14 +162,14 @@ func (r *Realm) run() {
 // the router to create local sessions used by an application that the router
 // is embedded in.
 func (r *Realm) bridgeSession(details map[string]interface{}) (wamp.Peer, error) {
-	peerA, peerB := LinkedPeers()
+	cli, rtr := LinkedPeers()
 	if details == nil {
 		details = map[string]interface{}{}
 	}
 
 	// This session is the local leg of the router uplink.
 	sess := Session{
-		Peer:    peerA,
+		Peer:    rtr,
 		ID:      wamp.GlobalID(),
 		Details: details,
 		kill:    make(chan wamp.URI, 1),
@@ -191,41 +178,54 @@ func (r *Realm) bridgeSession(details map[string]interface{}) (wamp.Peer, error)
 	log.Println("Created internal session:", sess)
 
 	// Return the session that is the remote leg of the router uplink.
-	return peerB, nil
+	return cli, nil
 }
 
 // onJoin is called when a session joins this realm.  The session is stored in
 // the realm's clients and a meta event is published.
+//
+// Note: onJoin() must be called from outside handleSession() so that it is not
+// called for the meta client.
 func (r *Realm) onJoin(sess *Session) {
+	r.waitHandlers.Add(1)
 	sync := make(chan struct{})
 	r.actionChan <- func() {
 		r.clients[sess.ID] = sess
-
-		r.metaClient.Send(&wamp.Publish{
-			Request:   wamp.GlobalID(),
-			Topic:     wamp.MetaEventSessionOnJoin,
-			Arguments: []interface{}{sess.Details},
-		})
-
 		sync <- struct{}{}
 	}
 	<-sync
+
+	r.metaClient.Send(&wamp.Publish{
+		Request:   wamp.GlobalID(),
+		Topic:     wamp.MetaEventSessionOnJoin,
+		Arguments: []interface{}{sess.Details},
+	})
 }
 
 // onLeave is called when a session leaves this realm.  The session is removed
 // from the realm's clients and a meta event is published.
+//
+// Note: onLeave() must be called from outside handleSession() so that it is
+// not called for the meta client.
 func (r *Realm) onLeave(sess *Session) {
+	// Need to wait for sesson to be removed before allowing session handler to
+	// exit, which shuts down broker and dealer.
+	sync := make(chan struct{})
 	r.actionChan <- func() {
 		delete(r.clients, sess.ID)
 		r.dealer.RemoveSession(sess)
 		r.broker.RemoveSession(sess)
-
-		r.metaClient.Send(&wamp.Publish{
-			Request:   wamp.GlobalID(),
-			Topic:     wamp.MetaEventSessionOnLeave,
-			Arguments: []interface{}{sess.ID},
-		})
+		sync <- struct{}{}
 	}
+	<-sync
+
+	r.metaClient.Send(&wamp.Publish{
+		Request:   wamp.GlobalID(),
+		Topic:     wamp.MetaEventSessionOnLeave,
+		Arguments: []interface{}{sess.ID},
+	})
+
+	r.waitHandlers.Done()
 }
 
 /*
@@ -245,11 +245,6 @@ func (r *Realm) sessionCount(sess *Session, msg *wamp.Invocation) {
 //
 // Routing occurs only between WAMP Sessions that have joined the same Realm.
 func (r *Realm) handleSession(sess *Session) {
-	// Add the client session the realm and send meta event.
-	r.onJoin(sess)
-	// Remove client session from realm, and send meta event when handler done.
-	defer r.onLeave(sess)
-
 	recvChan := sess.Recv()
 	for {
 		var msg wamp.Message
@@ -261,11 +256,11 @@ func (r *Realm) handleSession(sess *Session) {
 				return
 			}
 		case reason := <-sess.kill:
+			log.Printf("kill session %s: %v", sess, reason)
 			sess.Send(&wamp.Goodbye{
 				Reason:  reason,
 				Details: map[string]interface{}{},
 			})
-			log.Printf("kill session %s: %v", sess, reason)
 			return
 		}
 

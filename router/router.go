@@ -4,7 +4,6 @@ import (
 	"errors"
 	"fmt"
 	"log"
-	"sync"
 	"time"
 
 	"github.com/gammazero/nexus/wamp"
@@ -64,8 +63,6 @@ type router struct {
 
 	autoRealm bool
 	strictURI bool
-
-	waitHandlers sync.WaitGroup
 }
 
 // NewRouter creates a WAMP router.
@@ -312,17 +309,20 @@ func (r *router) Attach(client wamp.Peer) error {
 			go callback(sess, string(hello.Realm))
 		}
 	}
-	r.waitHandlers.Add(1)
 	go func() {
+		// Add the client session the realm and send meta event.
+		realm.onJoin(sess)
 		realm.handleSession(sess)
+		// Remove client session from realm, and send meta event.
+		realm.onLeave(sess)
 		sess.Close()
+
 		// Need synchronized access to r.sessionCloseCallbacks.
 		r.actionChan <- func() {
 			for _, callback := range r.sessionCloseCallbacks {
 				go callback(sess, string(hello.Realm))
 			}
 		}
-		r.waitHandlers.Done()
 	}()
 	return nil
 }
@@ -377,7 +377,6 @@ func (r *router) Close() {
 		sync <- struct{}{}
 	}
 	<-sync
-	r.waitHandlers.Wait()
 	close(r.actionChan)
 }
 

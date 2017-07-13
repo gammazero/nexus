@@ -134,7 +134,11 @@ func NewDealer(strictURI, allowDisclose bool) Dealer {
 		invocationByCall: map[wamp.ID]wamp.ID{},
 		calleeRegIDSet:   map[*Session]map[wamp.ID]struct{}{},
 
-		reqChan:    make(chan routerReq, reqChanSize),
+		// The request handler channel does not need to be more than size one,
+		// since the incoming messages will be processed at the same rate
+		// whether the messages sit in the recv channel of peers, or they sit
+		// in the reqChan.
+		reqChan:    make(chan routerReq, 1),
 		closedChan: make(chan struct{}),
 		syncChan:   make(chan struct{}),
 

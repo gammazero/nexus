@@ -105,28 +105,51 @@ func CheckFeature(role, feature string, sessions ...Session) bool {
 //
 // Exported since it is used in test code for creating in-process test clients.
 func LinkedPeers() (*localPeer, *localPeer) {
-	aToB := make(chan wamp.Message, peerChanSize)
-	bToA := make(chan wamp.Message, peerChanSize)
+	// The channel used for the router to send messages to the client should be
+	// large enough to prevent blocking while waiting for a slow client. If the
+	// client does block, then the message should be dropped and the client
+	// removed.
+	rToC := make(chan wamp.Message, 16)
 
-	// A reads from B and writes to B
-	a := &localPeer{rd: bToA, wr: aToB}
-	// B read from A and writes to A
-	b := &localPeer{rd: aToB, wr: bToA}
+	// Messages read from the websocket can be handled immediately, since
+	// they have traveled over the websocket and the read channel does not
+	// need to be more than size 1.
+	cToR := make(chan wamp.Message, 1)
 
-	return a, b
+	// router reads from and writes to client
+	r := &localPeer{rd: cToR, wr: rToC, wrRtoC: true}
+	// client reads from and writes to router
+	c := &localPeer{rd: rToC, wr: cToR}
+
+	return c, r
 }
 
 // localPeer implements Peer
 type localPeer struct {
-	wr chan<- wamp.Message
-	rd <-chan wamp.Message
+	wr     chan<- wamp.Message
+	rd     <-chan wamp.Message
+	wrRtoC bool
 }
 
 // Recv returns the channel this peer reads incoming messages from.
 func (p *localPeer) Recv() <-chan wamp.Message { return p.rd }
 
 // Send write a message to the channel the peer sends outgoing messages to.
-func (p *localPeer) Send(msg wamp.Message) { p.wr <- msg }
+func (p *localPeer) Send(msg wamp.Message) {
+	if p.wrRtoC {
+		select {
+		case p.wr <- msg:
+		default:
+			fmt.Println("WARNING: client blocked router.  Dropped:",
+				msg.MessageType())
+		}
+		return
+	}
+	// It is OK for the router to block a client since routing should be very
+	// quick compared to the time to transfer a message over websocket, and a
+	// blocked client will not block other clients.
+	p.wr <- msg
+}
 
 // Close closes the outgoing channel, waking any readers waiting on data from
 // this peer.
