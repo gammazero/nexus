@@ -448,6 +448,7 @@ func (b *broker) pubEvent(pub *Session, msg *wamp.Publish, pubID wamp.ID, subs m
 					Error:   wamp.ErrOptionDisallowedDiscloseMe,
 				})
 			}
+
 			// TODO: Check for feature support, or let recipient ignore?
 			if sub.HasFeature("subscriber", "publisher_identification") {
 				details["publisher"] = pub.ID
@@ -471,36 +472,40 @@ func (b *broker) pubEvent(pub *Session, msg *wamp.Publish, pubID wamp.ID, subs m
 // publish message.
 func publishAllowed(msg *wamp.Publish, sub *Session) bool {
 	if blacklist, ok := msg.Options["exclude"]; ok {
-		blacklist := blacklist.([]string)
-		for i := range blacklist {
-			if blacklist[i] == string(sub.ID) {
-				return false
+		if blacklist, ok := blacklist.([]string); ok {
+			for i := range blacklist {
+				if blacklist[i] == string(sub.ID) {
+					return false
+				}
 			}
 		}
 	}
 	if blacklist, ok := msg.Options["exclude_authid"]; ok {
-		blacklist := blacklist.([]string)
-		for i := range blacklist {
-			if blacklist[i] == sub.AuthID {
-				return false
+		if blacklist, ok := blacklist.([]string); ok {
+			for i := range blacklist {
+				if blacklist[i] == sub.AuthID {
+					return false
+				}
 			}
 		}
 	}
 	if blacklist, ok := msg.Options["exclude_authrole"]; ok {
-		blacklist := blacklist.([]string)
-		for i := range blacklist {
-			if blacklist[i] == sub.AuthRole {
-				return false
+		if blacklist, ok := blacklist.([]string); ok {
+			for i := range blacklist {
+				if blacklist[i] == sub.AuthRole {
+					return false
+				}
 			}
 		}
 	}
 	if whitelist, ok := msg.Options["eligible"]; ok {
 		eligible := false
-		whitelist := whitelist.([]string)
-		for i := range whitelist {
-			if whitelist[i] == string(sub.ID) {
-				eligible = true
-				break
+		if whitelist, ok := whitelist.([]string); ok {
+			for i := range whitelist {
+				if whitelist[i] == string(sub.ID) {
+					eligible = true
+					break
+				}
 			}
 		}
 		if !eligible {
@@ -509,11 +514,12 @@ func publishAllowed(msg *wamp.Publish, sub *Session) bool {
 	}
 	if whitelist, ok := msg.Options["eligible_authid"]; ok {
 		eligible := false
-		whitelist := whitelist.([]string)
-		for i := range whitelist {
-			if whitelist[i] == sub.AuthID {
-				eligible = true
-				break
+		if whitelist, ok := whitelist.([]string); ok {
+			for i := range whitelist {
+				if whitelist[i] == sub.AuthID {
+					eligible = true
+					break
+				}
 			}
 		}
 		if !eligible {
@@ -522,11 +528,12 @@ func publishAllowed(msg *wamp.Publish, sub *Session) bool {
 	}
 	if whitelist, ok := msg.Options["eligible_authrole"]; ok {
 		eligible := false
-		whitelist := whitelist.([]string)
-		for i := range whitelist {
-			if whitelist[i] == sub.AuthRole {
-				eligible = true
-				break
+		if whitelist, ok := whitelist.([]string); ok {
+			for i := range whitelist {
+				if whitelist[i] == sub.AuthRole {
+					eligible = true
+					break
+				}
 			}
 		}
 		if !eligible {

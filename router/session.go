@@ -27,7 +27,6 @@ func (s Session) String() string { return fmt.Sprintf("%d", s.ID) }
 func (s Session) HasRole(role string) bool {
 	roles, ok := s.Details["roles"]
 	if !ok {
-		fmt.Println("no roles")
 		return false
 	}
 
@@ -74,7 +73,10 @@ func (s Session) HasFeature(role, feature string) bool {
 
 	switch features := features.(type) {
 	case map[string]interface{}:
-		_, ok = features[feature]
+		var val interface{}
+		if val, ok = features[feature]; ok && val != nil {
+			ok = val.(bool)
+		}
 	case map[string]map[string]interface{}:
 		_, ok = features[feature]
 	case map[string]map[string]struct{}:
