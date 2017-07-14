@@ -11,11 +11,11 @@ The nexus project provides a WAMP router library, client library, and stand-alon
  - The client library can be used to build clients that connect to any WAMP server.
  - The router service can be run as-is to provide WAMP routing.
 
-## Project Objective
+## Project Objectives
 
 ### Performance 
 
-Nexus achieves high throughput by never blocking on I/O.  Messages received from clients are dispatched to the appropriate handlers for routing and are then written to the outbound message queues of the receiving clients.  This way the router never delays processing of messages due to wait for slow clients.
+Nexus achieves high throughput by never blocking on I/O.  Messages received from clients are dispatched to the appropriate handlers for routing and are then written to the outbound message queues of the receiving clients.  This way the router never delays processing of messages due to waiting for slow clients.
 
 ### Feature availability
 
