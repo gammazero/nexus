@@ -4,6 +4,7 @@ import (
 	"errors"
 	"fmt"
 	"log"
+	"sync"
 	"time"
 
 	"github.com/gammazero/nexus/wamp"
@@ -60,6 +61,7 @@ type router struct {
 
 	actionChan  chan func()
 	closingChan chan struct{}
+	waitReamls  sync.WaitGroup
 
 	autoRealm bool
 	strictURI bool
@@ -309,6 +311,7 @@ func (r *router) Attach(client wamp.Peer) error {
 			go callback(sess, string(hello.Realm))
 		}
 	}
+	r.waitReamls.Add(1)
 	go func() {
 		realm.handleSession(sess, false)
 		sess.Close()
@@ -319,6 +322,7 @@ func (r *router) Attach(client wamp.Peer) error {
 				go callback(sess, string(hello.Realm))
 			}
 		}
+		r.waitReamls.Done()
 	}()
 	return nil
 }
@@ -373,6 +377,7 @@ func (r *router) Close() {
 		sync <- struct{}{}
 	}
 	<-sync
+	r.waitReamls.Wait()
 	close(r.actionChan)
 }
 

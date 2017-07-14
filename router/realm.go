@@ -356,50 +356,6 @@ func (r *Realm) handleSession(sess *Session, meta bool) {
 			log.Println(sname, sess, "unhandled message:",
 				msg.MessageType())
 		}
-
-		/*
-			switch msg := msg.(type) {
-			// Dispatch to broker.
-			case *wamp.Publish:
-				r.broker.Publish(sess, msg)
-			case *wamp.Subscribe:
-				r.broker.Subscribe(sess, msg)
-			case *wamp.Unsubscribe:
-				r.broker.Unsubscribe(sess, msg)
-
-			// Dispatch to dealer.
-			case *wamp.Register:
-				r.dealer.Register(sess, msg)
-			case *wamp.Unregister:
-				r.dealer.Unregister(sess, msg)
-			case *wamp.Call:
-				r.dealer.Call(sess, msg)
-			case *wamp.Yield:
-				r.dealer.Yield(sess, msg)
-
-			// Error messages.
-			case *wamp.Error:
-				// An INVOCATION error is the only type of ERROR message the
-				// router should receive.
-				if msg.Type == wamp.INVOCATION {
-					r.dealer.Error(sess, msg)
-				} else {
-					log.Println("session", sess, "invalid ERROR message received:",
-						msg)
-				}
-
-			case *wamp.Goodbye:
-				sess.Send(&wamp.Goodbye{
-					Reason:  wamp.ErrGoodbyeAndOut,
-					Details: map[string]interface{}{},
-				})
-				log.Println("session", sess, "goodbye:", msg.Reason)
-				return
-
-			default:
-				log.Println("session", sess, "unhandled message:", msg.MessageType())
-			}
-		*/
 	}
 }
 
