@@ -2,6 +2,7 @@ package router
 
 import (
 	"testing"
+	"time"
 
 	"github.com/gammazero/nexus/wamp"
 )
@@ -177,6 +178,41 @@ func TestRemove(t *testing.T) {
 	}
 }
 
+func TestBasicPubSub(t *testing.T) {
+	broker := NewBroker(false, true).(*broker)
+	subscriber := newTestPeer()
+	sess := &Session{Peer: subscriber}
+	testTopic := wamp.URI("nexus.test.topic")
+	msg := &wamp.Subscribe{
+		Request: 123,
+		Topic:   testTopic,
+	}
+	broker.Submit(sess, msg)
+
+	// Test that subscriber received SUBSCRIBED message
+	rsp := <-sess.Recv()
+	_, ok := rsp.(*wamp.Subscribed)
+	if !ok {
+		t.Fatal("expected ", wamp.SUBSCRIBED, " got: ", rsp.MessageType())
+	}
+
+	publisher := newTestPeer()
+	pubSess := &Session{Peer: publisher}
+	broker.Submit(pubSess, &wamp.Publish{Request: 124, Topic: testTopic,
+		Arguments: []interface{}{"hello world"}})
+	rsp = <-sess.Recv()
+	evt, ok := rsp.(*wamp.Event)
+	if !ok {
+		t.Fatal("expected", wamp.EVENT, "got:", rsp.MessageType())
+	}
+	if len(evt.Arguments) == 0 {
+		t.Fatal("missing event payload")
+	}
+	if evt.Arguments[0].(string) != "hello world" {
+		t.Fatal("wrong argument value in payload:", evt.Arguments[0])
+	}
+}
+
 // ----- WAMP v.2 Testing -----
 
 func TestPrefxPatternBasedSubscription(t *testing.T) {
@@ -227,7 +263,7 @@ func TestPrefxPatternBasedSubscription(t *testing.T) {
 	rsp = <-sess.Recv()
 	evt, ok := rsp.(*wamp.Event)
 	if !ok {
-		t.Fatal("expected", wamp.EVENT, "got:", rsp.MessageType)
+		t.Fatal("expected", wamp.EVENT, "got:", rsp.MessageType())
 	}
 	_topic, ok := evt.Details["topic"]
 	if !ok {
@@ -300,13 +336,212 @@ func TestWildcardPatternBasedSubscription(t *testing.T) {
 }
 
 func TestSubscriberBlackwhiteListing(t *testing.T) {
-	// TODO: code here
+	broker := NewBroker(false, true).(*broker)
+	subscriber := newTestPeer()
+	sess := &Session{
+		Peer:     subscriber,
+		ID:       wamp.GlobalID(),
+		AuthID:   "jdoe",
+		AuthRole: "admin",
+	}
+	testTopic := wamp.URI("nexus.test.topic")
+
+	broker.Submit(sess, &wamp.Subscribe{Request: 123, Topic: testTopic})
+
+	// Test that subscriber received SUBSCRIBED message
+	rsp := <-sess.Recv()
+	_, ok := rsp.(*wamp.Subscribed)
+	if !ok {
+		t.Fatal("expected ", wamp.SUBSCRIBED, " got: ", rsp.MessageType())
+	}
+
+	publisher := newTestPeer()
+	featFlag := map[string]interface{}{"subscriber_blackwhite_listing": true}
+	featMap := map[string]interface{}{"features": featFlag}
+	pubFeat := map[string]map[string]interface{}{"publisher": featMap}
+	pubSess := &Session{Peer: publisher,
+		Details: map[string]interface{}{"roles": pubFeat},
+	}
+	// Test whilelist
+	broker.Submit(pubSess, &wamp.Publish{
+		Request: 124,
+		Topic:   testTopic,
+		Options: map[string]interface{}{"eligible": []string{string(sess.ID)}},
+	})
+	rsp, err := wamp.RecvTimeout(sess, time.Millisecond)
+	if err != nil {
+		t.Fatal("not allowed by whitelist")
+	}
+	// Test whitelist authrole
+	broker.Submit(pubSess, &wamp.Publish{
+		Request: 125,
+		Topic:   testTopic,
+		Options: map[string]interface{}{"eligible_authrole": []string{"admin"}},
+	})
+	rsp, err = wamp.RecvTimeout(sess, time.Millisecond)
+	if err != nil {
+		t.Fatal("not allowed by authrole whitelist")
+	}
+	// Test whitelist authid
+	broker.Submit(pubSess, &wamp.Publish{
+		Request: 126,
+		Topic:   testTopic,
+		Options: map[string]interface{}{"eligible_authid": []string{"jdoe"}},
+	})
+	rsp, err = wamp.RecvTimeout(sess, time.Millisecond)
+	if err != nil {
+		t.Fatal("not allowed by authid whitelist")
+	}
+
+	// Test blacklist.
+	broker.Submit(pubSess, &wamp.Publish{
+		Request: 127,
+		Topic:   testTopic,
+		Options: map[string]interface{}{"exclude": []string{string(sess.ID)}},
+	})
+	rsp, err = wamp.RecvTimeout(sess, time.Millisecond)
+	if err == nil {
+		t.Fatal("not excluded by blacklist")
+	}
+	// Test blacklist authrole
+	broker.Submit(pubSess, &wamp.Publish{
+		Request: 128,
+		Topic:   testTopic,
+		Options: map[string]interface{}{"exclude_authrole": []string{"admin"}},
+	})
+	rsp, err = wamp.RecvTimeout(sess, time.Millisecond)
+	if err == nil {
+		t.Fatal("not excluded by authrole blacklist")
+	}
+	// Test blacklist authid
+	broker.Submit(pubSess, &wamp.Publish{
+		Request: 129,
+		Topic:   testTopic,
+		Options: map[string]interface{}{"exclude_authid": []string{"jdoe"}},
+	})
+	rsp, err = wamp.RecvTimeout(sess, time.Millisecond)
+	if err == nil {
+		t.Fatal("not excluded by authid blacklist")
+	}
+
+	// Test that blacklist takes precedence over whitelist.
+	broker.Submit(pubSess, &wamp.Publish{
+		Request: 126,
+		Topic:   testTopic,
+		Options: map[string]interface{}{"eligible_authid": []string{"jdoe"},
+			"exclude_authid": []string{"jdoe"}},
+	})
+	rsp, err = wamp.RecvTimeout(sess, time.Millisecond)
+	if err == nil {
+		t.Fatal("should have been excluded by blacklist")
+	}
 }
 
 func TestPublisherExclusion(t *testing.T) {
-	// TODO: code here
+	broker := NewBroker(false, true).(*broker)
+	subscriber := newTestPeer()
+	sess := &Session{Peer: subscriber}
+	testTopic := wamp.URI("nexus.test.topic")
+
+	broker.Submit(sess, &wamp.Subscribe{Request: 123, Topic: testTopic})
+
+	// Test that subscriber received SUBSCRIBED message
+	rsp, err := wamp.RecvTimeout(sess, time.Millisecond)
+	if err != nil {
+		t.Fatal("subscribe session did not get response to SUBSCRIBE")
+	}
+	_, ok := rsp.(*wamp.Subscribed)
+	if !ok {
+		t.Fatal("expected ", wamp.SUBSCRIBED, " got: ", rsp.MessageType())
+	}
+
+	publisher := newTestPeer()
+	featFlag := map[string]interface{}{"publisher_exclusion": true}
+	featMap := map[string]interface{}{"features": featFlag}
+	pubFeat := map[string]map[string]interface{}{"publisher": featMap}
+	pubSess := &Session{Peer: publisher,
+		Details: map[string]interface{}{"roles": pubFeat},
+	}
+	// Subscribe the publish session also.
+	broker.Submit(pubSess, &wamp.Subscribe{Request: 123, Topic: testTopic})
+	// Test that pub session received SUBSCRIBED message
+	rsp, err = wamp.RecvTimeout(pubSess, time.Millisecond)
+	if err != nil {
+		t.Fatal("publish session did not get response to SUBSCRIBE")
+	}
+	_, ok = rsp.(*wamp.Subscribed)
+	if !ok {
+		t.Fatal("expected ", wamp.SUBSCRIBED, " got: ", rsp.MessageType())
+	}
+
+	// Publish message with exclud_me = false.
+	broker.Submit(pubSess, &wamp.Publish{
+		Request: 124,
+		Topic:   testTopic,
+		Options: map[string]interface{}{"exclude_me": false},
+	})
+	rsp, err = wamp.RecvTimeout(sess, time.Millisecond)
+	if err != nil {
+		t.Fatal("subscriber did not receive event")
+	}
+	rsp, err = wamp.RecvTimeout(pubSess, time.Millisecond)
+	if err != nil {
+		t.Fatal("pub session should have received event")
+	}
+
+	// Publish message with exclud_me = true.
+	broker.Submit(pubSess, &wamp.Publish{
+		Request: 124,
+		Topic:   testTopic,
+		Options: map[string]interface{}{"exclude_me": true},
+	})
+	rsp, err = wamp.RecvTimeout(sess, time.Millisecond)
+	if err != nil {
+		t.Fatal("subscriber did not receive event")
+	}
+	rsp, err = wamp.RecvTimeout(pubSess, time.Millisecond)
+	if err == nil {
+		t.Fatal("pub session should NOT have received event")
+	}
 }
 
 func TestPublisherIdentification(t *testing.T) {
-	// TODO: code here
+	broker := NewBroker(false, true).(*broker)
+	subscriber := newTestPeer()
+	featFlag := map[string]interface{}{"publisher_identification": true}
+	featMap := map[string]interface{}{"features": featFlag}
+	subFeat := map[string]map[string]interface{}{"subscriber": featMap}
+	sess := &Session{Peer: subscriber,
+		Details: map[string]interface{}{"roles": subFeat},
+	}
+	testTopic := wamp.URI("nexus.test.topic")
+
+	broker.Submit(sess, &wamp.Subscribe{Request: 123, Topic: testTopic})
+
+	// Test that subscriber received SUBSCRIBED message
+	rsp := <-sess.Recv()
+	_, ok := rsp.(*wamp.Subscribed)
+	if !ok {
+		t.Fatal("expected ", wamp.SUBSCRIBED, " got: ", rsp.MessageType())
+	}
+
+	publisher := newTestPeer()
+	pubSess := &Session{Peer: publisher, ID: wamp.GlobalID()}
+	broker.Submit(pubSess, &wamp.Publish{
+		Request: 124,
+		Topic:   testTopic,
+		Options: map[string]interface{}{"disclose_me": true},
+	})
+	rsp = <-sess.Recv()
+	evt, ok := rsp.(*wamp.Event)
+	if !ok {
+		t.Fatal("expected", wamp.EVENT, "got:", rsp.MessageType())
+	}
+	pub, ok := evt.Details["publisher"]
+	if !ok {
+		t.Fatal("missing publisher ID")
+	}
+	if pub.(wamp.ID) != pubSess.ID {
+		t.Fatal("incorrect publisher ID disclosed")
+	}
 }

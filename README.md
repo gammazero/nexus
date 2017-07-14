@@ -12,12 +12,12 @@ The nexus project provides a WAMP router library, client library, and stand-alon
  - The router service can be run as-is to provide WAMP routing.
 
 ## Project Status
-Nearly complete - currently in active development.
+Currently in active development - not stable yet.
 
 #### Items to complete:
 - websocket server
 - websocket client
-- additional transports
+- RawSocket transport
 - examples
 - documentation
 - cool logo
