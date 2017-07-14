@@ -108,14 +108,14 @@ func CheckFeature(role, feature string, sessions ...Session) bool {
 // Exported since it is used in test code for creating in-process test clients.
 func LinkedPeers() (*localPeer, *localPeer) {
 	// The channel used for the router to send messages to the client should be
-	// large enough to prevent blocking while waiting for a slow client. If the
-	// client does block, then the message should be dropped and the client
-	// removed.
+	// large enough to prevent blocking while waiting for a slow client, as a
+	// client may block on I/O.  If the client does block, then the message
+	// should be dropped.
 	rToC := make(chan wamp.Message, 16)
 
-	// Messages read from the websocket can be handled immediately, since
-	// they have traveled over the websocket and the read channel does not
-	// need to be more than size 1.
+	// Messages read from a client can usually be handled immediately, since
+	// routing is fast and does not block on I/O.  Therefore this channle does
+	// not need to be more than size 1.
 	cToR := make(chan wamp.Message, 1)
 
 	// router reads from and writes to client
@@ -147,9 +147,8 @@ func (p *localPeer) Send(msg wamp.Message) {
 		}
 		return
 	}
-	// It is OK for the router to block a client since routing should be very
-	// quick compared to the time to transfer a message over websocket, and a
-	// blocked client will not block other clients.
+	// It is OK for the router to block a client since this will not block
+	// other clients.
 	p.wr <- msg
 }
 

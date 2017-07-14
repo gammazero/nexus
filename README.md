@@ -1,5 +1,5 @@
 # nexus
-Go Implementation of [WAMP](http://wamp-proto.org/)v2
+Go Implementation of [WAMP](http://wamp-proto.org/) v2
 
 The Web Application Messaging Protocol (WAMP) is an open standard WebSocket subprotocol that provides two application messaging patterns in one unified protocol:
 [Remote Procedure Calls](http://wamp-proto.org/faq/#rpc) and [Publish & Subscribe](http://wamp-proto.org/faq/#pubsub)
@@ -7,30 +7,47 @@ The Web Application Messaging Protocol (WAMP) is an open standard WebSocket subp
 Using WAMP you can build distributed systems out of application components which are loosely coupled and communicate in (soft) real-time.
 
 The nexus project provides a WAMP router library, client library, and stand-alone WAMP router service.
- - The router library can be used to build custom WAMP routers or to embed a WAMP router in an aplication.
- - The client libaray can be used to build clients that connect to any WAMP server.
+ - The router library can be used to build custom WAMP routers or to embed a WAMP router in an application.
+ - The client library can be used to build clients that connect to any WAMP server.
  - The router service can be run as-is to provide WAMP routing.
+
+## Project Objective
+
+### Performance 
+
+Nexus achieves high throughput by never blocking on I/O.  Messages received from clients are dispatched to the appropriate handlers for routing and are then written to the outbound message queues of the receiving clients.  This way the router never delays processing of messages due to wait for slow clients.
+
+### Feature availability
+
+This project intends to implement most or all of the advanced profile features in WAMP v2.
+
+### Flexibility
+
+Multiple transports and serialization options will be supported to maximize interoperability.
+
+### Security
+
+Transport security, such as TLS over websockets will be included.  Router library provides interfaces for integration of client authentication logic.
 
 ## Project Status
 Currently in active development - not stable yet.
 
 #### Items to complete:
-- websocket server
-- websocket client
-- RawSocket transport
-- examples
-- documentation
-- cool logo
+- websocket server (in progress)
+- websocket client (in progress)
+- RawSocket transport (planned)
+- documentation (in progress)
+- examples (planned)
+- cool logo (maybe)
 
-#### Features to complete:
-- publisher trust levels                                                     
-- event history                                                              
-- testament_meta_api                                                         
+#### Features to complete - priority order:
+- call timeout (need handling by router)
 - session_meta_api
-- call timeout (need timeout goroutine)                                      
-- call trust levels                                                          
-- session_meta_api                                                           
-- registration_meta_api   
+- registration_meta_api
+- event history
+- call trust levels
+- publisher trust levels
+- testament_meta_api
 
 ## Advanced Profile Feature Support
 

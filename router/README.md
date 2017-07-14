@@ -1,4 +1,12 @@
 ## Router Concurrency
+
+The nexus WAMP router does not block on I/O.  Messages received from clients are dispatched to the appropriate handlers for routing and are then written to the outbound message queues of the receiving clients.  This way the router never delays processing of messages due to wait for slow clients.
+
+If an outbound message queue becomes full and blocks, due to a slow client that
+is receiving a high volume of message, the router drops the message.  Outbound
+message queue sizes are configurable (can be unlimited).  A size limit limits
+the number of pending messages that can pile up waiting for a slow client.
+
 ```
       Router
         Reaml1
