@@ -15,7 +15,7 @@ import (
 
 // Features supported by this broker.
 var brokerFeatures = map[string]interface{}{
-	"features": map[string]bool{
+	"features": map[string]interface{}{
 		"subscriber_blackwhite_listing": true,
 		"pattern_based_subscription":    true,
 		"publisher_exclusion":           true,

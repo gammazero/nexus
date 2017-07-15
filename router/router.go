@@ -216,47 +216,34 @@ func (r *router) Attach(client wamp.Peer) error {
 		return err
 	}
 
+	hello.Details = wamp.NormalizeDict(hello.Details)
+
 	// A Client must announce the roles it supports via
 	// Hello.Details.roles|dict, where the keys can be: publisher, subscriber,
 	// caller, callee.  If the client announces any roles, to list specific
 	// features for the role, then check that the role is something this router
 	// recognizes.
-	if roles, ok := hello.Details["roles"]; ok {
-		checkRole := func(roleName string) bool {
-			switch roleName {
-			case "publisher", "subscriber", "caller", "callee":
-			default:
-				return false
-			}
-			return true
-		}
-
-		switch roles := roles.(type) {
-		case map[string]interface{}:
-			for role := range roles {
-				if !checkRole(role) {
-					ok = false
-					break
-				}
-			}
-		case map[string]map[string]interface{}:
-			for role := range roles {
-				if !checkRole(role) {
-					ok = false
-					break
-				}
-			}
-		case map[string]map[string]struct{}:
-			for role := range roles {
-				if !checkRole(role) {
-					ok = false
-					break
-				}
-			}
-		}
-		if !ok {
-			sendAbort(wamp.ErrNoSuchRole, nil)
-			return errors.New("invalid client role specified")
+	_roleVals, err := wamp.DictValue(hello.Details, []string{"roles"})
+	if err != nil {
+		err = errors.New("no client roles specified")
+		log.Println(err.Error())
+		sendAbort(wamp.ErrNoSuchRole, err)
+		return err
+	}
+	roleVals, ok := _roleVals.(map[string]interface{})
+	if !ok || len(roleVals) == 0 {
+		err = errors.New("no client roles specified")
+		log.Println(err.Error())
+		sendAbort(wamp.ErrNoSuchRole, err)
+		return err
+	}
+	for roleName, _ := range roleVals {
+		switch roleName {
+		case "publisher", "subscriber", "caller", "callee":
+		default:
+			err = errors.New("invalid client role specified: " + roleName)
+			sendAbort(wamp.ErrNoSuchRole, err)
+			return err
 		}
 	}
 
@@ -297,10 +284,11 @@ func (r *router) Attach(client wamp.Peer) error {
 
 	// Create new session.
 	sess := &Session{
-		Peer:  client,
-		ID:    welcome.ID,
-		Realm: hello.Realm,
-		kill:  make(chan wamp.URI, 1),
+		Peer:    client,
+		ID:      welcome.ID,
+		Realm:   hello.Realm,
+		Details: hello.Details,
+		kill:    make(chan wamp.URI, 1),
 	}
 
 	log.Println("created session:", welcome.ID)

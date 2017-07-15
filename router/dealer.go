@@ -18,7 +18,7 @@ import (
 
 // Features supported by this dealer.
 var dealerFeatures = map[string]interface{}{
-	"features": map[string]bool{
+	"features": map[string]interface{}{
 		"call_canceling":             true,
 		"call_timeout":               true,
 		"caller_identification":      true,
@@ -464,12 +464,8 @@ func (d *dealer) call(caller *Session, msg *wamp.Call) {
 	//
 	// A timeout allows to automatically cancel a call after a specified time
 	// either at the Callee or at the Dealer.
-	var timeout int32
-	if _to, ok := msg.Options["timeout"]; ok && _to != nil {
-		timeout = _to.(int32)
-	}
-
-	if timeout != 0 {
+	timeout := wamp.OptionInt64(msg.Options, "timeout")
+	if timeout > 0 {
 		// Check that callee supports call_timeout.
 		if proc.callee.HasFeature("callee", "call_timeout") {
 			details["timeout"] = timeout

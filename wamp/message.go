@@ -444,23 +444,3 @@ type Interrupt struct {
 }
 
 func (msg *Interrupt) MessageType() MessageType { return INTERRUPT }
-
-// OptionString returns the string value of the option with the specified name.
-// If the option is not present, an empty string is returned.
-func OptionString(opts map[string]interface{}, optionName string) string {
-	var opt string
-	if _opt, ok := opts[optionName]; ok && _opt != nil {
-		opt = _opt.(string)
-	}
-	return opt
-}
-
-// OptionString returns the boolean value of the option with the specified
-// name.  If the option is not present, false is returned.
-func OptionFlag(opts map[string]interface{}, optionName string) bool {
-	var opt bool
-	if _opt, ok := opts[optionName]; ok && _opt != nil {
-		opt = _opt.(bool)
-	}
-	return opt
-}

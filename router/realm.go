@@ -149,6 +149,9 @@ func (r *Realm) Close() {
 	r.waitHandlers.Wait()
 	close(r.actionChan)
 
+	if r.metaSess == nil {
+		return
+	}
 	// All normal handlers have exited.  There may still be pending meta events
 	// from the session getting booted off the router.  Send the meta session a
 	// kill signal.  When the meta client receives GOODBYE from the meta
@@ -176,6 +179,8 @@ func (r *Realm) bridgeSession(details map[string]interface{}, meta bool) (wamp.P
 	cli, rtr := LinkedPeers()
 	if details == nil {
 		details = map[string]interface{}{}
+	} else {
+		wamp.NormalizeDict(details)
 	}
 
 	// This session is the local leg of the router uplink.

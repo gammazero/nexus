@@ -10,6 +10,24 @@ import (
 
 const testRealm = wamp.URI("nexus.test.realm")
 
+var clientRoles = map[string]interface{}{
+	"roles": map[string]interface{}{
+		"subscriber": map[string]interface{}{
+			"features": map[string]interface{}{
+				"publisher_identification": true,
+			},
+		},
+		"publisher": struct{}{},
+		"callee":    struct{}{},
+		"caller": map[string]interface{}{
+			"features": map[string]interface{}{
+				"call_timeout": true,
+			},
+		},
+	},
+	"authmethods": []string{"anonymous", "ticket"},
+}
+
 func newTestRouter() Router {
 	const (
 		autoRealm = false
@@ -24,7 +42,8 @@ func newTestRouter() Router {
 }
 
 func handShake(r Router, client, server wamp.Peer) error {
-	client.Send(&wamp.Hello{Realm: testRealm})
+	client.Send(&wamp.Hello{Realm: testRealm, Details: clientRoles})
+
 	if err := r.Attach(server); err != nil {
 		return err
 	}
@@ -239,9 +258,9 @@ func TestRouterCall(t *testing.T) {
 	}
 
 	caller, callerServer := LinkedPeers()
-	caller.Send(&wamp.Hello{Realm: testRealm})
+	caller.Send(&wamp.Hello{Realm: testRealm, Details: clientRoles})
 	if err := r.Attach(callerServer); err != nil {
-		t.Fatal("Error connecting caller")
+		t.Fatal("Error connecting caller:", err)
 	}
 	if msg := <-caller.Recv(); msg.MessageType() != wamp.WELCOME {
 		t.Fatal("expected first message to be ", wamp.WELCOME)

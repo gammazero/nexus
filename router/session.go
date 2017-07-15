@@ -25,66 +25,15 @@ func (s Session) String() string { return fmt.Sprintf("%d", s.ID) }
 
 // HasRole returns true if the session supports the specified role.
 func (s Session) HasRole(role string) bool {
-	roles, ok := s.Details["roles"]
-	if !ok {
-		return false
-	}
-
-	switch roles := roles.(type) {
-	case map[string]interface{}:
-		_, ok = roles[role]
-	case map[string]map[string]interface{}:
-		_, ok = roles[role]
-	case map[string]map[string]struct{}:
-		_, ok = roles[role]
-	default:
-		ok = false
-	}
-	return ok
+	_, err := wamp.DictValue(s.Details, []string{"roles", role})
+	return err == nil
 }
 
 // HasFeature returns true if the session has the specified feature for the
 // specified role.
 func (s Session) HasFeature(role, feature string) bool {
-	_roles, ok := s.Details["roles"]
-	if !ok {
-		// Session has no roles.
-		return false
-	}
-	roles, ok := _roles.(map[string]map[string]interface{})
-	if !ok {
-		// type cannot support role data
-		return false
-	}
-	roleData, ok := roles[role]
-	if !ok {
-		// Session does not support specified role.
-		return false
-	}
-	if roleData == nil {
-		// no data for the role
-		return false
-	}
-	features, ok := roleData["features"]
-	if !ok {
-		// role has no features
-		return false
-	}
-
-	switch features := features.(type) {
-	case map[string]interface{}:
-		var val interface{}
-		if val, ok = features[feature]; ok && val != nil {
-			ok = val.(bool)
-		}
-	case map[string]map[string]interface{}:
-		_, ok = features[feature]
-	case map[string]map[string]struct{}:
-		_, ok = features[feature]
-	default:
-		ok = false
-	}
-	return ok
+	b, _ := wamp.DictFlag(s.Details, []string{"roles", role, "features", feature})
+	return b
 }
 
 // CheckFeature returns true all the sessions have the feature for the role.

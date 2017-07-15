@@ -356,12 +356,18 @@ func TestSubscriberBlackwhiteListing(t *testing.T) {
 	}
 
 	publisher := newTestPeer()
-	featFlag := map[string]interface{}{"subscriber_blackwhite_listing": true}
-	featMap := map[string]interface{}{"features": featFlag}
-	pubFeat := map[string]map[string]interface{}{"publisher": featMap}
-	pubSess := &Session{Peer: publisher,
-		Details: map[string]interface{}{"roles": pubFeat},
+
+	details := map[string]interface{}{
+		"roles": map[string]interface{}{
+			"publisher": map[string]interface{}{
+				"features": map[string]interface{}{
+					"subscriber_blackwhite_listing": true,
+				},
+			},
+		},
 	}
+	pubSess := &Session{Peer: publisher, Details: details}
+
 	// Test whilelist
 	broker.Submit(pubSess, &wamp.Publish{
 		Request: 124,
@@ -456,12 +462,18 @@ func TestPublisherExclusion(t *testing.T) {
 	}
 
 	publisher := newTestPeer()
-	featFlag := map[string]interface{}{"publisher_exclusion": true}
-	featMap := map[string]interface{}{"features": featFlag}
-	pubFeat := map[string]map[string]interface{}{"publisher": featMap}
-	pubSess := &Session{Peer: publisher,
-		Details: map[string]interface{}{"roles": pubFeat},
+
+	details := map[string]interface{}{
+		"roles": map[string]interface{}{
+			"publisher": map[string]interface{}{
+				"features": map[string]interface{}{
+					"publisher_exclusion": true,
+				},
+			},
+		},
 	}
+	pubSess := &Session{Peer: publisher, Details: details}
+
 	// Subscribe the publish session also.
 	broker.Submit(pubSess, &wamp.Subscribe{Request: 123, Topic: testTopic})
 	// Test that pub session received SUBSCRIBED message
@@ -508,12 +520,18 @@ func TestPublisherExclusion(t *testing.T) {
 func TestPublisherIdentification(t *testing.T) {
 	broker := NewBroker(false, true).(*broker)
 	subscriber := newTestPeer()
-	featFlag := map[string]interface{}{"publisher_identification": true}
-	featMap := map[string]interface{}{"features": featFlag}
-	subFeat := map[string]map[string]interface{}{"subscriber": featMap}
-	sess := &Session{Peer: subscriber,
-		Details: map[string]interface{}{"roles": subFeat},
+
+	details := map[string]interface{}{
+		"roles": map[string]interface{}{
+			"subscriber": map[string]interface{}{
+				"features": map[string]interface{}{
+					"publisher_identification": true,
+				},
+			},
+		},
 	}
+	sess := &Session{Peer: subscriber, Details: details}
+
 	testTopic := wamp.URI("nexus.test.topic")
 
 	broker.Submit(sess, &wamp.Subscribe{Request: 123, Topic: testTopic})
