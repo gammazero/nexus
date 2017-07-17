@@ -93,7 +93,6 @@ type dealer struct {
 
 	reqChan    chan routerReq
 	closedChan chan struct{}
-	syncChan   chan struct{}
 
 	// Generate registration IDs.
 	idGen *wamp.IDGen
@@ -126,7 +125,6 @@ func NewDealer(strictURI, allowDisclose bool) Dealer {
 		// in the reqChan.
 		reqChan:    make(chan routerReq, 1),
 		closedChan: make(chan struct{}),
-		syncChan:   make(chan struct{}),
 
 		idGen: wamp.NewIDGen(),
 		prng:  rand.New(rand.NewSource(time.Now().Unix())),
@@ -187,22 +185,12 @@ func (d *dealer) Closed() bool {
 	return false
 }
 
-// Wait until all previous requests have been processed.
-func (d *dealer) sync() {
-	d.reqChan <- routerReq{}
-	<-d.syncChan
-}
-
 // reqHandler is dealer's main processing function that is run by a single
 // goroutine.  All functions that access dealer data structures run on this
 // routine.
 func (d *dealer) reqHandler() {
 	defer close(d.closedChan)
 	for req := range d.reqChan {
-		if req.session == nil {
-			d.syncChan <- struct{}{}
-			continue
-		}
 		if req.msg == nil {
 			d.removeSession(req.session)
 			continue

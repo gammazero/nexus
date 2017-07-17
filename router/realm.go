@@ -30,6 +30,7 @@ type Realm struct {
 
 	metaClient wamp.Peer
 	metaSess   *Session
+	metaIDGen  *wamp.IDGen
 
 	actionChan chan func()
 
@@ -63,6 +64,7 @@ func NewCustomRealm(uri wamp.URI, strictURI, anonymousAuth, allowDisclose bool, 
 		authorizer: authorizer,
 		clients:    map[wamp.ID]*Session{},
 		actionChan: make(chan func()),
+		metaIDGen:  wamp.NewIDGen(),
 	}
 
 	// If allowing anonymous authentication, then install the anonymous
@@ -204,16 +206,20 @@ func (r *Realm) bridgeSession(details map[string]interface{}, meta bool) (wamp.P
 // Note: onJoin() must be called from outside handleSession() so that it is not
 // called for the meta client.
 func (r *Realm) onJoin(sess *Session) {
+	var metaID wamp.ID
 	r.waitHandlers.Add(1)
 	sync := make(chan struct{})
 	r.actionChan <- func() {
 		r.clients[sess.ID] = sess
+		metaID = r.metaIDGen.Next()
 		sync <- struct{}{}
 	}
 	<-sync
 
+	// Session Meta Events MUST be dispatched by the Router to the same realm
+	// as the WAMP session which triggered the event.
 	r.metaClient.Send(&wamp.Publish{
-		Request:   wamp.GlobalID(),
+		Request:   metaID,
 		Topic:     wamp.MetaEventSessionOnJoin,
 		Arguments: []interface{}{sess.Details},
 	})
@@ -225,17 +231,19 @@ func (r *Realm) onJoin(sess *Session) {
 // Note: onLeave() must be called from outside handleSession() so that it is
 // not called for the meta client.
 func (r *Realm) onLeave(sess *Session) {
+	var metaID wamp.ID
 	sync := make(chan struct{})
 	r.actionChan <- func() {
 		delete(r.clients, sess.ID)
 		r.dealer.RemoveSession(sess)
 		r.broker.RemoveSession(sess)
+		metaID = r.metaIDGen.Next()
 		sync <- struct{}{}
 	}
 	<-sync
 
 	r.metaClient.Send(&wamp.Publish{
-		Request:   wamp.GlobalID(),
+		Request:   metaID,
 		Topic:     wamp.MetaEventSessionOnLeave,
 		Arguments: []interface{}{sess.ID},
 	})
@@ -328,15 +336,16 @@ func (r *Realm) handleSession(sess *Session, meta bool) {
 			continue
 		}
 
-		switch msg.MessageType() {
-		// Dispatch pub/sub messages to broker.
-		case wamp.PUBLISH, wamp.SUBSCRIBE, wamp.UNSUBSCRIBE:
+		switch msg.(type) {
+		case *wamp.Publish, *wamp.Subscribe, *wamp.Unsubscribe:
+			// Dispatch pub/sub messages to broker.
 			r.broker.Submit(sess, msg)
 
-		// Dispatch RPC messages and invocation errors to dealer.
-		case wamp.REGISTER, wamp.UNREGISTER, wamp.CALL, wamp.YIELD:
+		case *wamp.Register, *wamp.Unregister, *wamp.Call, *wamp.Yield:
+			// Dispatch RPC messages and invocation errors to dealer.
 			r.dealer.Submit(sess, msg)
-		case wamp.ERROR:
+
+		case *wamp.Error:
 			msg := msg.(*wamp.Error)
 			// An INVOCATION error is the only type of ERROR message the
 			// router should receive.
@@ -346,8 +355,8 @@ func (r *Realm) handleSession(sess *Session, meta bool) {
 				log.Println(sname, sess, "invalid ERROR message received:", msg)
 			}
 
-		// Handle client leaving realm.
-		case wamp.GOODBYE:
+		case *wamp.Goodbye:
+			// Handle client leaving realm.
 			sess.Send(&wamp.Goodbye{
 				Reason:  wamp.ErrGoodbyeAndOut,
 				Details: map[string]interface{}{},
@@ -356,8 +365,8 @@ func (r *Realm) handleSession(sess *Session, meta bool) {
 			log.Println(sname, sess, "goodbye:", msg.Reason)
 			return
 
-		// Where did the come from?  Log and drop.
 		default:
+			// Received unrecognized message type.
 			log.Println(sname, sess, "unhandled message:",
 				msg.MessageType())
 		}

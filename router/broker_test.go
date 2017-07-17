@@ -156,8 +156,15 @@ func TestRemove(t *testing.T) {
 	rsp = <-sess.Recv()
 	subID2 := rsp.(*wamp.Subscribed).Subscription
 
+	// Subscribe to unregister meta events
 	broker.RemoveSession(sess)
-	broker.sync()
+
+	// Wait for another subscriber as a way to wait for the RemoveSession to
+	// complete.
+	sess2 := &Session{Peer: subscriber}
+	broker.Submit(sess2,
+		&wamp.Subscribe{Request: 789, Topic: wamp.URI("nexus.test.sync")})
+	rsp = <-sess2.Recv()
 
 	// Check the broker removed subscription.
 	_, ok := broker.subscriptions[subID]

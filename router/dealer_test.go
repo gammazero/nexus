@@ -185,7 +185,13 @@ func TestRemovePeer(t *testing.T) {
 
 	// Test that removing the callee session removes the registration.
 	dealer.RemoveSession(sess)
-	dealer.sync()
+
+	// Register as a way to sync with dealer.
+	sess2 := &Session{Peer: callee}
+	dealer.Submit(sess2,
+		&wamp.Register{Request: 789, Procedure: wamp.URI("nexus.test.p2")})
+	rsp = <-callee.Recv()
+
 	if _, ok := dealer.registrations[testProcedure]; ok {
 		t.Fatal("dealer still has registered procedure")
 	}

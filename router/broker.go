@@ -59,7 +59,6 @@ type broker struct {
 
 	reqChan    chan routerReq
 	closedChan chan struct{}
-	syncChan   chan struct{}
 
 	// Generate subscription IDs.
 	idGen *wamp.IDGen
@@ -87,7 +86,6 @@ func NewBroker(strictURI, allowDisclose bool) Broker {
 		// in the reqChan.
 		reqChan:    make(chan routerReq, 1),
 		closedChan: make(chan struct{}),
-		syncChan:   make(chan struct{}),
 
 		idGen: wamp.NewIDGen(),
 
@@ -104,10 +102,16 @@ func (b *broker) Features() map[string]interface{} {
 }
 
 func (b *broker) Submit(sess *Session, msg wamp.Message) {
+	if msg == nil || sess == nil {
+		panic("nil session or message")
+	}
 	b.reqChan <- routerReq{session: sess, msg: msg}
 }
 
 func (b *broker) RemoveSession(sub *Session) {
+	if sub == nil {
+		panic("nil subscriber")
+	}
 	b.reqChan <- routerReq{session: sub}
 }
 
@@ -130,22 +134,12 @@ func (b *broker) Closed() bool {
 	return false
 }
 
-// Wait until all previous requests have been processed.
-func (b *broker) sync() {
-	b.reqChan <- routerReq{}
-	<-b.syncChan
-}
-
 // reqHandler is broker's main processing function that is run by a single
 // goroutine.  All functions that access broker data structures run on this
 // routine.
 func (b *broker) reqHandler() {
 	defer close(b.closedChan)
 	for req := range b.reqChan {
-		if req.session == nil {
-			b.syncChan <- struct{}{}
-			continue
-		}
 		if req.msg == nil {
 			b.removeSession(req.session)
 			continue
@@ -203,21 +197,39 @@ func (b *broker) publish(pub *Session, msg *wamp.Publish) {
 		excludePublisher = exclude
 	}
 
+	// A Broker may also (automatically) disclose the identity of a
+	// Publisher even without the Publisher having explicitly requested to
+	// do so when the Broker configuration (for the publication topic) is
+	// set up to do so.  TODO: Currently no broker config for this.
+	var disclose bool
+	if wamp.OptionFlag(msg.Options, "disclose_me") {
+		// Broker MAY deny a publisher's request to disclose its identity.
+		if !b.allowDisclose {
+			pub.Send(&wamp.Error{
+				Type:    msg.MessageType(),
+				Request: msg.Request,
+				Details: map[string]interface{}{},
+				Error:   wamp.ErrOptionDisallowedDiscloseMe,
+			})
+		}
+		disclose = true
+	}
+
 	// Publish to subscribers with exact match.
 	subs := b.topicSubscribers[msg.Topic]
-	b.pubEvent(pub, msg, pubID, subs, excludePublisher, false)
+	b.pubEvent(pub, msg, pubID, subs, excludePublisher, false, disclose)
 
 	// Publish to subscribers with prefix match.
 	for pfxTopic, subs := range b.pfxTopicSubscribers {
 		if msg.Topic.PrefixMatch(pfxTopic) {
-			b.pubEvent(pub, msg, pubID, subs, excludePublisher, true)
+			b.pubEvent(pub, msg, pubID, subs, excludePublisher, true, disclose)
 		}
 	}
 
 	// Publish to subscribers with wildcard match.
 	for wcTopic, subs := range b.wcTopicSubscribers {
 		if msg.Topic.WildcardMatch(wcTopic) {
-			b.pubEvent(pub, msg, pubID, subs, excludePublisher, true)
+			b.pubEvent(pub, msg, pubID, subs, excludePublisher, true, disclose)
 		}
 	}
 
@@ -287,7 +299,9 @@ func (b *broker) subscribe(sub *Session, msg *wamp.Subscribe) {
 
 	// If the topic already has subscribers, then see if the session requesting
 	// a subscription is already subscribed to the topic.
+	newSub := true
 	if ok {
+		newSub = false
 		for alreadyID, alreadySub := range idSub {
 			if alreadySub == sub {
 				// Already subscribed, send existing subscription ID.
@@ -315,11 +329,17 @@ func (b *broker) subscribe(sub *Session, msg *wamp.Subscribe) {
 	// Tell sender the new subscription ID.
 	sub.Send(&wamp.Subscribed{Request: msg.Request, Subscription: id})
 
-	// TODO: publish WAMP meta events
+	if newSub {
+		b.pubSubCreateMeta(msg.Topic, sub.ID, id, match)
+	}
+
+	// Publish WAMP on_subscribe meta event.
+	b.pubSubMeta(wamp.MetaEventSubOnSubscribe, sub.ID, id)
 }
 
 // unsubscribe removes the requested subscription.
 func (b *broker) unsubscribe(sub *Session, msg *wamp.Unsubscribe) {
+	var delLastSub bool
 	var topicSubscribers map[wamp.URI]map[wamp.ID]*Session
 	topic, ok := b.subscriptions[msg.Subscription]
 	if !ok {
@@ -357,6 +377,7 @@ func (b *broker) unsubscribe(sub *Session, msg *wamp.Unsubscribe) {
 		delete(subs, msg.Subscription)
 		if len(subs) == 0 {
 			delete(b.topicSubscribers, topic)
+			delLastSub = true
 		}
 	}
 
@@ -376,7 +397,12 @@ func (b *broker) unsubscribe(sub *Session, msg *wamp.Unsubscribe) {
 	// Tell sender they are unsubscribed.
 	sub.Send(&wamp.Unsubscribed{Request: msg.Request})
 
-	// TODO: publish WAMP meta events
+	// Publish WAMP unsubscribe meta event.
+	if delLastSub {
+		// Fired when a subscription is deleted after the last session attached
+		// to it has been removed.
+		b.pubSubMeta(wamp.MetaEventSubOnDelete, sub.ID, msg.Subscription)
+	}
 }
 
 func (b *broker) removeSession(sub *Session) {
@@ -400,24 +426,25 @@ func (b *broker) removeSession(sub *Session) {
 			topicSubscribers = b.topicSubscribers
 		}
 
-		// clean up topic: subscriber session
+		// clean up topic -> subscriber session
 		if subs, ok := topicSubscribers[topic]; ok {
 			if _, ok := subs[id]; ok {
 				delete(subs, id)
 				if len(subs) == 0 {
 					delete(b.topicSubscribers, topic)
+					// Fired when a subscription is deleted after the last
+					// session attached to it has been removed.
+					b.pubSubMeta(wamp.MetaEventSubOnDelete, sub.ID, id)
 				}
 			}
 		}
 	}
 	delete(b.sessionSubIDSet, sub)
-
-	// TODO: publish WAMP meta events
 }
 
 // pubEvent sends an event to all subscribers that are not excluded from
 // receiving the event.
-func (b *broker) pubEvent(pub *Session, msg *wamp.Publish, pubID wamp.ID, subs map[wamp.ID]*Session, excludePublisher, sendTopic bool) {
+func (b *broker) pubEvent(pub *Session, msg *wamp.Publish, pubID wamp.ID, subs map[wamp.ID]*Session, excludePublisher, sendTopic, disclose bool) {
 	for id, sub := range subs {
 		// Do not send event to publisher.
 		if sub == pub && excludePublisher {
@@ -438,17 +465,7 @@ func (b *broker) pubEvent(pub *Session, msg *wamp.Publish, pubID wamp.ID, subs m
 			details["topic"] = msg.Topic
 		}
 
-		if wamp.OptionFlag(msg.Options, "disclose_me") {
-			// Broker MAY deny a publisher's request to disclose its identity.
-			if !b.allowDisclose {
-				pub.Send(&wamp.Error{
-					Type:    msg.MessageType(),
-					Request: msg.Request,
-					Details: map[string]interface{}{},
-					Error:   wamp.ErrOptionDisallowedDiscloseMe,
-				})
-			}
-
+		if disclose {
 			// TODO: Check for feature support, or let recipient ignore?
 			if sub.HasFeature("subscriber", "publisher_identification") {
 				details["publisher"] = pub.ID
@@ -465,6 +482,77 @@ func (b *broker) pubEvent(pub *Session, msg *wamp.Publish, pubID wamp.ID, subs m
 			Details:      details,
 		})
 	}
+}
+
+// pubMeta publishes the subscription meta event, using the supplied function,
+// to the matching subscribers.
+func (b *broker) pubMeta(metaTopic wamp.URI, sendMeta func(subs map[wamp.ID]*Session, sendTopic bool)) {
+	// Publish to subscribers with exact match.
+	subs := b.topicSubscribers[metaTopic]
+	sendMeta(subs, false)
+	// Publish to subscribers with prefix match.
+	for pfxTopic, subs := range b.pfxTopicSubscribers {
+		if metaTopic.PrefixMatch(pfxTopic) {
+			sendMeta(subs, true)
+		}
+	}
+	// Publish to subscribers with wildcard match.
+	for wcTopic, subs := range b.wcTopicSubscribers {
+		if metaTopic.WildcardMatch(wcTopic) {
+			sendMeta(subs, true)
+		}
+	}
+}
+
+// pubSubMeta publishes a subscription meta event when a subscription is added,
+// removed, or deleted.
+func (b *broker) pubSubMeta(metaTopic wamp.URI, subSessID, subID wamp.ID) {
+	pubID := wamp.GlobalID()
+	sendMeta := func(subs map[wamp.ID]*Session, sendTopic bool) {
+		for id, sub := range subs {
+			details := map[string]interface{}{}
+			if sendTopic {
+				details["topic"] = metaTopic
+			}
+			sub.Send(&wamp.Event{
+				Publication:  pubID,
+				Subscription: id,
+				Details:      details,
+				Arguments:    []interface{}{subSessID, subID},
+			})
+		}
+	}
+	b.pubMeta(metaTopic, sendMeta)
+}
+
+// pubSubCreateMeta publishes a meta event on subscription creation.
+//
+// Fired when a subscription is created through a subscription request for a
+// topic which was previously without subscribers.
+func (b *broker) pubSubCreateMeta(subTopic wamp.URI, subSessID, subID wamp.ID, match string) {
+	created := wamp.NowISO8601()
+	pubID := wamp.GlobalID()
+	sendMeta := func(subs map[wamp.ID]*Session, sendTopic bool) {
+		for id, sub := range subs {
+			details := map[string]interface{}{}
+			if sendTopic {
+				details["topic"] = wamp.MetaEventSubOnCreate
+			}
+			subDetails := map[string]interface{}{
+				"id":      subID,
+				"created": created,
+				"uri":     subTopic,
+				"match":   match,
+			}
+			sub.Send(&wamp.Event{
+				Publication:  pubID,
+				Subscription: id,
+				Details:      details,
+				Arguments:    []interface{}{subSessID, subDetails},
+			})
+		}
+	}
+	b.pubMeta(wamp.MetaEventSubOnCreate, sendMeta)
 }
 
 // publishAllowed determines if a message is allowed to be published to a
