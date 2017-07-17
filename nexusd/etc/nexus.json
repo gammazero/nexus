@@ -1,0 +1,15 @@
+{
+	"port": 8080,
+    "send_queue_size": 16,
+    "log_path": "/var/somelog",
+    "autocreate_realm": false,
+    "strict_uri": false,
+    "realms": [
+		{
+			"allow_disclose": true,
+			"uri": "nexus.reaml1",
+			"allow_anonymous": true
+		}
+    ]
+}
+

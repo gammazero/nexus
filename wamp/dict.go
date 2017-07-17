@@ -19,6 +19,9 @@ func NormalizeDict(v interface{}) map[string]interface{} {
 	}
 	dict := map[string]interface{}{}
 	for _, key := range val.MapKeys() {
+		if key.Kind() == reflect.Interface {
+			key = key.Elem()
+		}
 		if key.Kind() != reflect.String {
 			continue
 		}
@@ -28,7 +31,7 @@ func NormalizeDict(v interface{}) map[string]interface{} {
 			dict[key.String()] = cv.Interface()
 			continue
 		}
-		dict[key.String()] = interface{}(newVal)
+		dict[key.String()] = newVal
 	}
 	return dict
 }

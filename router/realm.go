@@ -376,9 +376,6 @@ func (r *Realm) handleSession(sess *Session, meta bool) {
 // authClient authenticates the client according to the authmethods in the
 // HELLO message details and the authenticators available for this realm.
 func (r *Realm) authClient(client wamp.Peer, details map[string]interface{}) (*wamp.Welcome, error) {
-	// The JSON unmarshaller always gives []interface{}. Other serializers may
-	// preserve more of original type.  Assume that each authmethods is a slice
-	// of something that can be type-asserted to a string.
 	var authmethods []string
 	if _authmethods, ok := details["authmethods"]; ok {
 		switch _authmethods := _authmethods.(type) {
