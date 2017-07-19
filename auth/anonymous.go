@@ -13,8 +13,10 @@ var AnonymousAuth Authenticator = &anonymousAuth{}
 func (a *anonymousAuth) Authenticate(details map[string]interface{}) (*wamp.Welcome, error) {
 	// Create welcome details containing auth info.
 	details = map[string]interface{}{
-		"authid":     wamp.GlobalID(),
-		"authmethod": "anonymous",
-		"authrole":   "anonymous"}
+		"authid":       wamp.GlobalID(),
+		"authmethod":   "anonymous",
+		"authrole":     "anonymous",
+		"authprovider": "static",
+	}
 	return &wamp.Welcome{Details: details}, nil
 }

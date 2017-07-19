@@ -143,7 +143,7 @@ func (r *Realm) Close() {
 
 	r.actionChan <- func() {
 		for _, client := range r.clients {
-			client.kill <- wamp.ErrSystemShutdown
+			client.stop <- wamp.ErrSystemShutdown
 		}
 	}
 
@@ -156,11 +156,11 @@ func (r *Realm) Close() {
 	}
 	// All normal handlers have exited.  There may still be pending meta events
 	// from the session getting booted off the router.  Send the meta session a
-	// kill signal.  When the meta client receives GOODBYE from the meta
+	// stop signal.  When the meta client receives GOODBYE from the meta
 	// session, this means the meta session is done and will not try to publish
 	// anything more to the broker, and it is finally save to exit and close
 	// the broker.
-	r.metaSess.kill <- wamp.ErrSystemShutdown
+	r.metaSess.stop <- wamp.ErrSystemShutdown
 	<-r.metaClient.Recv()
 }
 
@@ -190,7 +190,7 @@ func (r *Realm) bridgeSession(details map[string]interface{}, meta bool) (wamp.P
 		Peer:    rtr,
 		ID:      wamp.GlobalID(),
 		Details: details,
-		kill:    make(chan wamp.URI, 1),
+		stop:    make(chan wamp.URI, 1),
 	}
 	// Run the session handler for the
 	go r.handleSession(&sess, meta)
@@ -301,8 +301,8 @@ func (r *Realm) handleSession(sess *Session, meta bool) {
 				log.Println("lost", sname, sess)
 				return
 			}
-		case reason := <-sess.kill:
-			log.Printf("kill %s %s: %v", sname, sess, reason)
+		case reason := <-sess.stop:
+			log.Printf("stop %s %s: %v", sname, sess, reason)
 			sess.Send(&wamp.Goodbye{
 				Reason:  reason,
 				Details: map[string]interface{}{},

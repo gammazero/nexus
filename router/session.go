@@ -12,10 +12,9 @@ const peerChanSize = 16
 type Session struct {
 	wamp.Peer
 	ID      wamp.ID
-	Realm   wamp.URI
 	Details map[string]interface{}
 
-	kill chan wamp.URI
+	stop chan wamp.URI
 }
 
 // String returns the session ID as a string.

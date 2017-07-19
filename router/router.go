@@ -282,13 +282,21 @@ func (r *router) Attach(client wamp.Peer) error {
 
 	client.Send(welcome)
 
+	// Populate session details.
+	details := map[string]interface{}{}
+	details["realm"] = hello.Realm
+	details["roles"] = roles
+	details["authid"] = welcome.Details["authid"]
+	details["authrole"] = welcome.Details["authrole"]
+	details["authmethod"] = welcome.Details["authmethod"]
+	details["authprovider"] = welcome.Details["authprovider"]
+
 	// Create new session.
 	sess := &Session{
 		Peer:    client,
 		ID:      welcome.ID,
-		Realm:   hello.Realm,
-		Details: hello.Details,
-		kill:    make(chan wamp.URI, 1),
+		Details: details,
+		stop:    make(chan wamp.URI, 1),
 	}
 
 	log.Println("created session:", welcome.ID)
