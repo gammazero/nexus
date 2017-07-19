@@ -30,14 +30,12 @@ Multiple transports and serialization options will be supported to maximize inte
 Transport security, such as TLS over websockets will be included.  Router library provides interfaces for integration of client authentication logic.
 
 ## Project Status
-Currently in active development - not stable yet.
+Currently in active development - contributions welcome.
 
 #### Items to complete:
-- websocket server (in progress)
-- websocket client (in progress)
 - RawSocket transport (planned)
 - documentation (in progress)
-- examples (planned)
+- examples (in progress)
 - cool logo (maybe)
 
 #### Features to complete - priority order:

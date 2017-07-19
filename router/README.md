@@ -1,6 +1,6 @@
 ## Router Concurrency
 
-The nexus WAMP router does not block on I/O.  Messages received from clients are dispatched to the appropriate handlers for routing and are then written to the outbound message queues of the receiving clients.  This way the router never delays processing of messages due to wait for slow clients.
+The nexus WAMP router operates as a concurrent pipeline that does not block on I/O at any stage (src-client -> router/realm -> broker -> sendQueue -> dst-client).  Messages received from clients are dispatched to the appropriate handlers for routing and are then written to the outbound message queues of the receiving clients.  This way the router never delays processing of messages due to wait for slow clients.
 
 If an outbound message queue becomes full and blocks, due to a slow client that
 is receiving a high volume of message, the router drops the message.  Outbound
