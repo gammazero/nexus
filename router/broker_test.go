@@ -345,11 +345,14 @@ func TestWildcardPatternBasedSubscription(t *testing.T) {
 func TestSubscriberBlackwhiteListing(t *testing.T) {
 	broker := NewBroker(false, true).(*broker)
 	subscriber := newTestPeer()
+	details := map[string]interface{}{
+		"authid":   "jdoe",
+		"authrole": "admin",
+	}
 	sess := &Session{
-		Peer:     subscriber,
-		ID:       wamp.GlobalID(),
-		AuthID:   "jdoe",
-		AuthRole: "admin",
+		Peer:    subscriber,
+		ID:      wamp.GlobalID(),
+		Details: details,
 	}
 	testTopic := wamp.URI("nexus.test.topic")
 
@@ -364,7 +367,7 @@ func TestSubscriberBlackwhiteListing(t *testing.T) {
 
 	publisher := newTestPeer()
 
-	details := map[string]interface{}{
+	details = map[string]interface{}{
 		"roles": map[string]interface{}{
 			"publisher": map[string]interface{}{
 				"features": map[string]interface{}{

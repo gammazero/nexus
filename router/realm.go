@@ -216,12 +216,21 @@ func (r *Realm) onJoin(sess *Session) {
 	}
 	<-sync
 
+	// The event payload consists of a single positional argument details|dict.
+	details := map[string]interface{}{
+		"session":      sess.ID,
+		"authid":       wamp.OptionString(sess.Details, "authid"),
+		"authrole":     wamp.OptionString(sess.Details, "authrole"),
+		"authmethod":   wamp.OptionString(sess.Details, "authmethod"),
+		"authprovider": wamp.OptionString(sess.Details, "authprovider"),
+	}
+
 	// Session Meta Events MUST be dispatched by the Router to the same realm
 	// as the WAMP session which triggered the event.
 	r.metaClient.Send(&wamp.Publish{
 		Request:   metaID,
 		Topic:     wamp.MetaEventSessionOnJoin,
-		Arguments: []interface{}{sess.Details},
+		Arguments: []interface{}{details},
 	})
 }
 
@@ -393,10 +402,15 @@ func (r *Realm) authClient(client wamp.Peer, details map[string]interface{}) (*w
 		return nil, errors.New("no authentication supplied")
 	}
 
-	authr, crAuthr := r.getAuthenticator(authmethods)
+	authr, crAuthr, method := r.getAuthenticator(authmethods)
 	if authr != nil {
 		// Return welcome message or error.
-		return authr.Authenticate(details)
+		welcome, err := authr.Authenticate(details)
+		if err != nil {
+			return nil, err
+		}
+		welcome.Details["authmethod"] = method
+		return welcome, nil
 	}
 
 	var pendingCRAuth auth.PendingCRAuth
@@ -428,11 +442,16 @@ func (r *Realm) authClient(client wamp.Peer, details map[string]interface{}) (*w
 	}
 	log.Println("received", authRsp.MessageType(), "response from client")
 
-	return pendingCRAuth.Authenticate(authRsp)
+	welcome, err := pendingCRAuth.Authenticate(authRsp)
+	if err != nil {
+		return nil, err
+	}
+	welcome.Details["authmethod"] = method
+	return welcome, nil
 }
 
 // getAuthenticator finds the first authenticator registered for the methods.
-func (r *Realm) getAuthenticator(methods []string) (auth auth.Authenticator, crAuth auth.CRAuthenticator) {
+func (r *Realm) getAuthenticator(methods []string) (auth auth.Authenticator, crAuth auth.CRAuthenticator, authMethod string) {
 	sync := make(chan struct{})
 	r.actionChan <- func() {
 		// Iterate through the methods and see if there is an Authenticator or
@@ -441,12 +460,14 @@ func (r *Realm) getAuthenticator(methods []string) (auth auth.Authenticator, crA
 			if len(r.authenticators) != 0 {
 				if a, ok := r.authenticators[method]; ok {
 					auth = a
+					authMethod = method
 					break
 				}
 			}
 			if len(r.crAuthenticators) != 0 {
 				if a, ok := r.crAuthenticators[method]; ok {
 					crAuth = a
+					authMethod = method
 					break
 				}
 			}

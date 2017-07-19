@@ -11,11 +11,9 @@ const peerChanSize = 16
 // Session is an active WAMP session.
 type Session struct {
 	wamp.Peer
-	ID       wamp.ID
-	AuthID   string
-	AuthRole string
-	Realm    wamp.URI
-	Details  map[string]interface{}
+	ID      wamp.ID
+	Realm   wamp.URI
+	Details map[string]interface{}
 
 	kill chan wamp.URI
 }

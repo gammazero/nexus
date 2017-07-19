@@ -226,7 +226,8 @@ func (d *dealer) register(callee *Session, msg *wamp.Register) {
 
 	// Disallow registration of procedures starting with "wamp.", except for
 	// trusted sessions that are built into router.
-	if callee.AuthRole != "" && callee.AuthRole != "trusted" {
+	authrole := wamp.OptionString(callee.Details, "authrole")
+	if authrole != "" && authrole != "trusted" {
 		if strings.HasPrefix(string(msg.Procedure), "wamp.") {
 			errMsg := fmt.Sprintf("register for restricted procedure URI %s",
 				msg.Procedure)

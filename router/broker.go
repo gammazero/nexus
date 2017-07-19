@@ -571,8 +571,9 @@ func publishAllowed(msg *wamp.Publish, sub *Session) bool {
 	}
 	if blacklist, ok := msg.Options["exclude_authid"]; ok {
 		if blacklist, ok := blacklist.([]string); ok {
+			authid := wamp.OptionString(sub.Details, "authid")
 			for i := range blacklist {
-				if blacklist[i] == sub.AuthID {
+				if blacklist[i] == authid {
 					return false
 				}
 			}
@@ -580,8 +581,9 @@ func publishAllowed(msg *wamp.Publish, sub *Session) bool {
 	}
 	if blacklist, ok := msg.Options["exclude_authrole"]; ok {
 		if blacklist, ok := blacklist.([]string); ok {
+			authrole := wamp.OptionString(sub.Details, "authrole")
 			for i := range blacklist {
-				if blacklist[i] == sub.AuthRole {
+				if blacklist[i] == authrole {
 					return false
 				}
 			}
@@ -604,8 +606,9 @@ func publishAllowed(msg *wamp.Publish, sub *Session) bool {
 	if whitelist, ok := msg.Options["eligible_authid"]; ok {
 		eligible := false
 		if whitelist, ok := whitelist.([]string); ok {
+			authid := wamp.OptionString(sub.Details, "authid")
 			for i := range whitelist {
-				if whitelist[i] == sub.AuthID {
+				if whitelist[i] == authid {
 					eligible = true
 					break
 				}
@@ -618,8 +621,9 @@ func publishAllowed(msg *wamp.Publish, sub *Session) bool {
 	if whitelist, ok := msg.Options["eligible_authrole"]; ok {
 		eligible := false
 		if whitelist, ok := whitelist.([]string); ok {
+			authrole := wamp.OptionString(sub.Details, "authrole")
 			for i := range whitelist {
-				if whitelist[i] == sub.AuthRole {
+				if whitelist[i] == authrole {
 					eligible = true
 					break
 				}
