@@ -139,30 +139,16 @@ func NewDealer(strictURI, allowDisclose bool) Dealer {
 // Submit dispatches a Resister, Unregister, Call, Cancel, Yield, or Error
 // message to the dealer.
 func (d *dealer) Submit(sess *Session, msg wamp.Message) {
+	if msg == nil || sess == nil {
+		panic("nil session or message")
+	}
 	d.reqChan <- routerReq{session: sess, msg: msg}
 }
 
-func (d *dealer) Unregister(callee *Session, msg *wamp.Unregister) {
-	d.reqChan <- routerReq{session: callee, msg: msg}
-}
-
-func (d *dealer) Call(caller *Session, msg *wamp.Call) {
-	d.reqChan <- routerReq{session: caller, msg: msg}
-}
-
-func (d *dealer) Cancel(caller *Session, msg *wamp.Cancel) {
-	d.reqChan <- routerReq{session: caller, msg: msg}
-}
-
-func (d *dealer) Yield(callee *Session, msg *wamp.Yield) {
-	d.reqChan <- routerReq{session: callee, msg: msg}
-}
-
-func (d *dealer) Error(peer *Session, msg *wamp.Error) {
-	d.reqChan <- routerReq{session: peer, msg: msg}
-}
-
 func (d *dealer) RemoveSession(peer *Session) {
+	if peer == nil {
+		panic("nil session")
+	}
 	d.reqChan <- routerReq{session: peer}
 }
 
