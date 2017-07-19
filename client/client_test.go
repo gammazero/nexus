@@ -135,7 +135,7 @@ func TestSubscribe(t *testing.T) {
 	}
 
 	// Subscribe should work with match set. wildcard
-	err = sub.Subscribe(wcTopic, evtHandler, SetOption(nil, "match", "wildcard"))
+	err = sub.Subscribe(wcTopic, evtHandler, wamp.SetOption(nil, "match", "wildcard"))
 	if err != nil {
 		t.Fatal("subscribe error: ", err)
 	}

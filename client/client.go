@@ -172,6 +172,7 @@ func (c *Client) JoinRealm(realm string, details map[string]interface{}, authHan
 		return nil, err
 	}
 
+	// Only expect CHALLENGE if client offered authmethod(s).
 	if len(authHandlers) > 0 {
 		// See if router sent CHALLENGE in response to client HELLO.
 		if challenge, ok := msg.(*wamp.Challenge); ok {
@@ -591,15 +592,6 @@ func (c *Client) Close() error {
 	return nil
 }
 
-// SetOption sets a single option name-value pair in message options dict.
-func SetOption(dict map[string]interface{}, name string, value interface{}) map[string]interface{} {
-	if dict == nil {
-		dict = map[string]interface{}{}
-	}
-	dict[name] = value
-	return dict
-}
-
 func (c *Client) handleCRAuth(challenge *wamp.Challenge, details map[string]interface{}, authHandlers map[string]AuthFunc) (wamp.Message, error) {
 	// Look up the authentication function for the specified authmethod.
 	authFunc, ok := authHandlers[challenge.AuthMethod]
@@ -870,7 +862,7 @@ func (c *Client) waitForReplyWithCancel(id wamp.ID, cancelAfter time.Duration, m
 	case <-time.After(cancelAfter):
 		c.Send(&wamp.Cancel{
 			Request: id,
-			Options: SetOption(nil, "mode", mode),
+			Options: wamp.SetOption(nil, "mode", mode),
 		})
 	}
 	if msg == nil {

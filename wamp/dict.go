@@ -146,3 +146,12 @@ func OptionFlag(opts map[string]interface{}, optionName string) bool {
 	}
 	return opt
 }
+
+// SetOption sets a single option name-value pair in message options dict.
+func SetOption(dict map[string]interface{}, name string, value interface{}) map[string]interface{} {
+	if dict == nil {
+		dict = map[string]interface{}{}
+	}
+	dict[name] = value
+	return dict
+}

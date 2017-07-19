@@ -214,6 +214,77 @@ func TestCancelCall(t *testing.T) {
 	// Test mode=kill
 	// Test mode=killnowait
 	// Test mode=skip
+
+	dealer := NewDealer(false, true).(*dealer)
+	callee := newTestPeer()
+	testProcedure := wamp.URI("nexus.test.endpoint")
+
+	// Register a procedure.
+
+	calleeRoles := map[string]interface{}{
+		"roles": map[string]interface{}{
+			"callee": map[string]interface{}{
+				"features": map[string]interface{}{
+					"call_canceling": true,
+				},
+			},
+		},
+	}
+
+	calleeSess := &Session{Peer: callee, Details: calleeRoles}
+	dealer.Submit(calleeSess,
+		&wamp.Register{Request: 123, Procedure: testProcedure})
+	rsp := <-callee.Recv()
+	_, ok := rsp.(*wamp.Registered)
+	if !ok {
+		t.Fatal("did not receive REGISTERED response")
+	}
+
+	caller := newTestPeer()
+	callerSession := &Session{Peer: caller}
+
+	// Test calling valid procedure
+	dealer.Submit(callerSession,
+		&wamp.Call{Request: 125, Procedure: testProcedure})
+
+	// Test that callee received an INVOCATION message.
+	rsp = <-callee.Recv()
+	inv, ok := rsp.(*wamp.Invocation)
+	if !ok {
+		t.Fatal("expected INVOCATION, got: ", rsp.MessageType())
+	}
+
+	// Test caller cancelling call. mode=kill
+	opts := wamp.SetOption(nil, "mode", "kill")
+	dealer.Submit(callerSession, &wamp.Cancel{Request: 125, Options: opts})
+
+	// callee should receive an INTERRUPT request
+	rsp = <-callee.Recv()
+	interrupt, ok := rsp.(*wamp.Interrupt)
+	if !ok {
+		t.Fatal("callee expected INTERRUPT, got: ", rsp.MessageType())
+	}
+	if interrupt.Request != inv.Request {
+		t.Fatal("INTERRUPT request ID does not match INVOCATION request ID")
+	}
+
+	// callee responds with ERROR message
+	dealer.Submit(calleeSess, &wamp.Error{
+		Type:    wamp.INVOCATION,
+		Request: inv.Request,
+		Error:   wamp.ErrCanceled,
+		Details: map[string]interface{}{},
+	})
+
+	// Check that caller receives the ERROR message.
+	rsp = <-caller.Recv()
+	rslt, ok := rsp.(*wamp.Error)
+	if !ok {
+		t.Fatal("expected ERROR, got: ", rsp.MessageType())
+	}
+	if rslt.Error != wamp.ErrCanceled {
+		t.Fatal("wrong error, want ", wamp.ErrCanceled, " got ", rslt.Error)
+	}
 }
 
 func TestCallTimeout(t *testing.T) {
