@@ -320,6 +320,8 @@ func (r *Realm) handleSession(sess *Session, meta bool) {
 				errMsg.Request = msg.Request
 			case *wamp.Call:
 				errMsg.Request = msg.Request
+			case *wamp.Cancel:
+				errMsg.Request = msg.Request
 			case *wamp.Yield:
 				errMsg.Request = msg.Request
 			}
@@ -341,7 +343,7 @@ func (r *Realm) handleSession(sess *Session, meta bool) {
 			// Dispatch pub/sub messages to broker.
 			r.broker.Submit(sess, msg)
 
-		case *wamp.Register, *wamp.Unregister, *wamp.Call, *wamp.Yield:
+		case *wamp.Register, *wamp.Unregister, *wamp.Call, *wamp.Yield, *wamp.Cancel:
 			// Dispatch RPC messages and invocation errors to dealer.
 			r.dealer.Submit(sess, msg)
 
@@ -388,7 +390,7 @@ func (r *Realm) authClient(client wamp.Peer, details map[string]interface{}) (*w
 		}
 	}
 	if len(authmethods) == 0 {
-		return nil, errors.New("No authentication supplied")
+		return nil, errors.New("no authentication supplied")
 	}
 
 	authr, crAuthr := r.getAuthenticator(authmethods)
