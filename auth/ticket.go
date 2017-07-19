@@ -51,14 +51,14 @@ func (t *ticketAuthenticator) Challenge(details map[string]interface{}) (Pending
 	// this MUST be provided.
 	_authID, ok := details["authid"]
 	if !ok {
-		return nil, errors.New("Missing authid")
+		return nil, errors.New("missing authid")
 	}
 	authID := _authID.(string)
 
 	// Ticket authenticator should not have been used for authmethod other than
 	// "ticket", but check anyway.
 	if "ticket" != details["authmethod"].(string) {
-		return nil, errors.New("Invalid authmethod for ticket authentication")
+		return nil, errors.New("invalid authmethod for ticket authentication")
 	}
 
 	// If the server is willing to let the client authenticate using a ticket
@@ -89,7 +89,7 @@ func (p *pendingTicketAuth) Authenticate(msg *wamp.Authenticate) (*wamp.Welcome,
 	// server will then check if the ticket provided is permissible (for the
 	// authid given).
 	if p.secret != msg.Signature {
-		return nil, errors.New("Invalid ticket")
+		return nil, errors.New("invalid ticket")
 	}
 
 	// Create welcome details containing auth info.

@@ -67,7 +67,7 @@ func ConnectWebsocketPeer(url string, serialization serialize.Serialization, tls
 		payloadType = websocket.BinaryMessage
 		serializer = &serialize.MessagePackSerializer{}
 	default:
-		return nil, fmt.Errorf("Unsupported serialization: %v", serialization)
+		return nil, fmt.Errorf("unsupported serialization: %v", serialization)
 	}
 
 	dialer := websocket.Dialer{

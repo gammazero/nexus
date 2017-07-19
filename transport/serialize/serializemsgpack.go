@@ -26,12 +26,12 @@ func (s *MessagePackSerializer) Deserialize(data []byte) (wamp.Message, error) {
 		return nil, err
 	}
 	if len(v) == 0 {
-		return nil, errors.New("Invalid message")
+		return nil, errors.New("invalid message")
 	}
 
 	typ, ok := v[0].(int64)
 	if !ok {
-		return nil, errors.New("Unsupported message format")
+		return nil, errors.New("unsupported message format")
 	}
 	return listToMsg(wamp.MessageType(typ), v)
 }

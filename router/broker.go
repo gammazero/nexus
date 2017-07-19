@@ -20,6 +20,7 @@ var brokerFeatures = map[string]interface{}{
 		"pattern_based_subscription":    true,
 		"publisher_exclusion":           true,
 		"publisher_identification":      true,
+		"subscription_meta_api":         true,
 	},
 }
 

@@ -24,12 +24,12 @@ func (s *JSONSerializer) Deserialize(data []byte) (wamp.Message, error) {
 		return nil, err
 	}
 	if len(v) == 0 {
-		return nil, errors.New("Invalid message")
+		return nil, errors.New("invalid message")
 	}
 
 	typ, ok := v[0].(float64)
 	if !ok {
-		return nil, errors.New("Unsupported message format")
+		return nil, errors.New("unsupported message format")
 	}
 	return listToMsg(wamp.MessageType(typ), v)
 }
@@ -55,7 +55,7 @@ func (b *BinaryData) UnmarshalJSON(v []byte) error {
 		return nil
 	}
 	if s[0] != '\x00' {
-		return errors.New("Binary string does not start with NUL")
+		return errors.New("binary string does not start with NUL")
 	}
 	*b, err = base64.StdEncoding.DecodeString(s[1:])
 	return err

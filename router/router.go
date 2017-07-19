@@ -158,7 +158,7 @@ func (r *router) Attach(client wamp.Peer) error {
 	// Check that router is not shutting down.
 	if r.closing() {
 		sendAbort(wamp.ErrSystemShutdown, nil)
-		return errors.New("Router is closing, not accepting new clients")
+		return errors.New("router is closing, not accepting new clients")
 	}
 
 	// Receive HELLO message from the client.

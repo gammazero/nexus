@@ -92,7 +92,7 @@ func (db *staticUserDB) Name() string { return db.name }
 
 func (db *staticUserDB) CreateUser(authID string, userInfo map[string]string) error {
 	if _, ok := db.userMap[authID]; ok {
-		return errors.New("User already exists: " + authID)
+		return errors.New("user already exists: " + authID)
 	}
 	info := make(map[string]string, len(userInfo))
 	for k, v := range userInfo {
@@ -105,7 +105,7 @@ func (db *staticUserDB) CreateUser(authID string, userInfo map[string]string) er
 func (db *staticUserDB) DeleteUser(authID string) error {
 	_, ok := db.userMap[authID]
 	if !ok {
-		return errors.New("User not found: " + authID)
+		return errors.New("user not found: " + authID)
 	}
 	delete(db.userMap, authID)
 	return nil
@@ -114,7 +114,7 @@ func (db *staticUserDB) DeleteUser(authID string) error {
 func (db *staticUserDB) ReadUserInfo(authID string) (map[string]string, error) {
 	userInfo, ok := db.userMap[authID]
 	if !ok {
-		return nil, errors.New("User not found: " + authID)
+		return nil, errors.New("user not found: " + authID)
 	}
 	return userInfo, nil
 }
@@ -122,7 +122,7 @@ func (db *staticUserDB) ReadUserInfo(authID string) (map[string]string, error) {
 func (db *staticUserDB) UpdateUserInfo(authID, field, value string) error {
 	userInfo, ok := db.userMap[authID]
 	if !ok {
-		return errors.New("User not found: " + authID)
+		return errors.New("user not found: " + authID)
 	}
 	if value == "" {
 		delete(userInfo, field)

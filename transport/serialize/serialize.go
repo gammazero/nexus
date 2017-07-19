@@ -31,7 +31,7 @@ type Serializer interface {
 func listToMsg(msgType wamp.MessageType, vlist []interface{}) (wamp.Message, error) {
 	msg := wamp.NewMessage(msgType)
 	if msg == nil {
-		return nil, errors.New("Unsupported message type")
+		return nil, errors.New("unsupported message type")
 	}
 	val := reflect.ValueOf(msg)
 	if val.Kind() == reflect.Ptr {
@@ -116,13 +116,13 @@ func assignMap(dst reflect.Value, src reflect.Value) error {
 		}
 		var err error
 		if k, err = convertType(k, dstKeyType); err != nil {
-			return fmt.Errorf("Cannot convert src key '%v', invalid type: %s",
+			return fmt.Errorf("cannot convert src key '%v', invalid type: %s",
 				k.Interface(), err)
 		}
 		v := src.MapIndex(k)
 		if v, err = convertType(v, dstValType); err != nil {
 			return fmt.Errorf(
-				"Cannot convert src value for key '%v', invalid type: %s",
+				"cannot convert src value for key '%v', invalid type: %s",
 				k.Interface(), err)
 		}
 		dst.SetMapIndex(k, v)
@@ -138,7 +138,7 @@ func assignSlice(dst reflect.Value, src reflect.Value) error {
 	for i := 0; i < src.Len(); i++ {
 		v, err := convertType(src.Index(i), dstElemType)
 		if err != nil {
-			return fmt.Errorf("Cannot convert value at index %d: %s", i, err)
+			return fmt.Errorf("cannot convert value at index %d: %s", i, err)
 		}
 		dst.Index(i).Set(v)
 	}
