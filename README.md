@@ -58,7 +58,7 @@ Currently in active development - contributions welcome.
 | Feature | Supported |
 | ------- | --------- |
 | progressive_call_results | Yes |
-| progressive_calls |  Yes |
+| progressive_calls | No |
 | call_timeout | Yes |
 | call_canceling | Yes |
 | caller_identification | Yes | 
