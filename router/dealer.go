@@ -324,6 +324,7 @@ func (d *dealer) register(callee *Session, msg *wamp.Register) {
 	})
 }
 
+// Unregister removes a remote procedure previously registered by the callee.
 func (d *dealer) unregister(callee *Session, msg *wamp.Unregister) {
 	proc, ok := d.procedures[msg.Registration]
 	if !ok {
@@ -350,6 +351,7 @@ func (d *dealer) unregister(callee *Session, msg *wamp.Unregister) {
 	})
 }
 
+// Call invokes a registered remote procedure.
 func (d *dealer) call(caller *Session, msg *wamp.Call) {
 	// Find registered procedures with exact match.
 	regs, ok := d.registrations[msg.Procedure]
@@ -604,6 +606,7 @@ func (d *dealer) cancel(caller *Session, msg *wamp.Cancel) {
 		invocationID, msg.Request)
 }
 
+// yield handles the result of successfully processing and finishing the execution of a call, send from callee to dealer.
 func (d *dealer) yield(callee *Session, msg *wamp.Yield) {
 	// Find and delete pending invocation.
 	invk, ok := d.invocations[msg.Request]

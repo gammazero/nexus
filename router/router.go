@@ -14,7 +14,7 @@ const helloTimeout = 5 * time.Second
 
 // Advertise roles supported by this router.  Feature information is provided
 // by the broker and dealer implementations.
-var routerWelcomeDetails = map[string]interface{}{
+var routerRoles = map[string]interface{}{
 	"roles": map[string]interface{}{
 		"broker": map[string]interface{}{},
 		"dealer": map[string]interface{}{},
@@ -271,7 +271,7 @@ func (r *router) Attach(client wamp.Peer) error {
 	if welcome.Details == nil {
 		welcome.Details = map[string]interface{}{}
 	}
-	for k, v := range routerWelcomeDetails {
+	for k, v := range routerRoles {
 		if _, ok := welcome.Details[k]; !ok {
 			welcome.Details[k] = v
 		}

@@ -35,24 +35,25 @@ type WebsocketServer struct {
 	BinarySerializer serialize.Serializer
 }
 
-// NewWebsocketServer creates
-func NewWebsocketServer(r router.Router) (*WebsocketServer, error) {
+// NewWebsocketServer takes a router instance and creates a new websocket
+// server.
+func NewWebsocketServer(r router.Router) *WebsocketServer {
 	s := &WebsocketServer{
 		Router:    r,
 		protocols: map[string]protocol{},
 	}
 
 	s.Upgrader = &websocket.Upgrader{}
-	s.RegisterProtocol(jsonWebsocketProtocol, websocket.TextMessage,
+	s.AddProtocol(jsonWebsocketProtocol, websocket.TextMessage,
 		&serialize.JSONSerializer{})
-	s.RegisterProtocol(msgpackWebsocketProtocol, websocket.BinaryMessage,
+	s.AddProtocol(msgpackWebsocketProtocol, websocket.BinaryMessage,
 		&serialize.MessagePackSerializer{})
-	return s, nil
+	return s
 }
 
-// RegisterProtocol registers a serializer that should be used for a given protocol string and payload type.
-func (s *WebsocketServer) RegisterProtocol(proto string, payloadType int, serializer serialize.Serializer) error {
-	log.Println("RegisterProtocol:", proto)
+// AddProtocol registers a serializer for protocol and payload type.
+func (s *WebsocketServer) AddProtocol(proto string, payloadType int, serializer serialize.Serializer) error {
+	log.Println("AddProtocol:", proto)
 	if payloadType != websocket.TextMessage && payloadType != websocket.BinaryMessage {
 		return fmt.Errorf("invalid payload type: %d", payloadType)
 	}
@@ -64,7 +65,7 @@ func (s *WebsocketServer) RegisterProtocol(proto string, payloadType int, serial
 	return nil
 }
 
-// ServeHTTP handles a new HTTP connection.
+// ServeHTTP handles HTTP connections.
 func (s *WebsocketServer) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	log.Println("WebsocketServer.ServeHTTP", r.Method, r.RequestURI)
 	conn, err := s.Upgrader.Upgrade(w, r, nil)
@@ -79,6 +80,7 @@ func (s *WebsocketServer) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 func (s *WebsocketServer) handleWebsocket(conn *websocket.Conn) {
 	var serializer serialize.Serializer
 	var payloadType int
+	// Get serializer and payload type for protocol.
 	if proto, ok := s.protocols[conn.Subprotocol()]; ok {
 		serializer = proto.serializer
 		payloadType = proto.payloadType
@@ -98,6 +100,8 @@ func (s *WebsocketServer) handleWebsocket(conn *websocket.Conn) {
 		}
 	}
 
+	// Create a websocket peer from the websocket connection and attach the
+	// peer to the router.
 	peer := transport.NewWebsocketPeer(conn, serializer, payloadType, 16)
 	if err := s.Router.Attach(peer); err != nil {
 		log.Println(err)

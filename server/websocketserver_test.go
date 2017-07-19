@@ -41,10 +41,7 @@ func newTestWebsocketServer(t *testing.T) (int, router.Router, io.Closer) {
 	r := router.NewRouter(autoCreateRealm, strictURI)
 	r.AddRealm(testRealm, allowAnonymous, allowDisclose)
 
-	s, err := NewWebsocketServer(r)
-	if err != nil {
-		t.Fatal(err)
-	}
+	s := NewWebsocketServer(r)
 	server := &http.Server{
 		Handler: s,
 	}

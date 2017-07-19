@@ -83,7 +83,7 @@ func ConnectWebsocketPeer(url string, serialization serialize.Serialization, tls
 	return NewWebsocketPeer(conn, serializer, payloadType, outQueueSize), nil
 }
 
-// NewWebsockerPeer created a websocket peer from an existing websocket
+// NewWebsockerPeer creates a websocket peer from an existing websocket
 // connection.  This is used for for hanndling clients connecting to the WAMP
 // service.
 func NewWebsocketPeer(conn *websocket.Conn, serializer serialize.Serializer, payloadType int, outQueueSize int) wamp.Peer {
