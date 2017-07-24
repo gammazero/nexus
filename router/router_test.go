@@ -10,6 +10,10 @@ import (
 
 const testRealm = wamp.URI("nexus.test.realm")
 
+func init() {
+	DebugEnabled = true
+}
+
 var clientRoles = map[string]interface{}{
 	"roles": map[string]interface{}{
 		"subscriber": map[string]interface{}{

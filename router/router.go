@@ -10,6 +10,9 @@ import (
 	"github.com/gammazero/nexus/wamp"
 )
 
+// Enable debug logging for router package.
+var DebugEnabled bool
+
 const helloTimeout = 5 * time.Second
 
 // Advertise roles supported by this router.  Feature information is provided
@@ -27,7 +30,7 @@ type Router interface {
 	AddRealm(wamp.URI, bool, bool) (*Realm, error)
 
 	// AddCustomRealm the given realm to the router.
-	AddCustomRealm(realm *Realm) error
+	//AddCustomRealm(realm *Realm) error
 
 	// Attach connects a client to the router and to the requested realm.
 	Attach(wamp.Peer) error
@@ -117,31 +120,10 @@ func (r *router) AddRealm(uri wamp.URI, anonymousAuth, allowDisclose bool) (*Rea
 	}
 	err := <-sync
 	if err != nil {
-		log.Println("error adding realm:", err)
-		return nil, err
+		return nil, fmt.Errorf("error adding realm: %v", err)
 	}
-	log.Println("added realm:", uri)
+	log.Print("Added realm: ", uri)
 	return realm, nil
-}
-
-// AddCustomRealm adds the given realm to the router.
-func (r *router) AddCustomRealm(realm *Realm) error {
-	uri := realm.uri
-	sync := make(chan error)
-	r.actionChan <- func() {
-		if _, ok := r.realms[uri]; ok {
-			sync <- errors.New("realm already exists: " + string(uri))
-			return
-		}
-		r.realms[uri] = realm
-		sync <- nil
-	}
-	err := <-sync
-	if err != nil {
-		log.Println("error adding realm:", err)
-		return err
-	}
-	return nil
 }
 
 // Attach connects a client to the router and to the requested realm.
@@ -150,6 +132,7 @@ func (r *router) Attach(client wamp.Peer) error {
 		abortMsg := wamp.Abort{Reason: reason}
 		if abortErr != nil {
 			abortMsg.Details = map[string]interface{}{"error": abortErr.Error()}
+			log.Print("Aborting client connection: ", abortErr)
 		}
 		client.Send(&abortMsg)
 		client.Close()
@@ -166,7 +149,7 @@ func (r *router) Attach(client wamp.Peer) error {
 	if err != nil {
 		return errors.New("did not receive HELLO: " + err.Error())
 	}
-	log.Printf("%s: %+v", msg.MessageType(), msg)
+	log.Printf("New client sent: %s: %+v", msg.MessageType(), msg)
 
 	// A WAMP session is initiated by the Client sending a HELLO message to the
 	// Router.  The HELLO message MUST be the very first message sent by the
@@ -176,15 +159,17 @@ func (r *router) Attach(client wamp.Peer) error {
 		// Note: This URI is not official and there is no requirement to send
 		// an error back to the client in this case.  Seems helpful to at least
 		// let the client know what was wrong.
-		sendAbort(wamp.URI("wamp.exception.protocol_violation"), nil)
-		return fmt.Errorf("protocol error: expected HELLO, received %s",
+		err = fmt.Errorf("protocol error: expected HELLO, received %s",
 			msg.MessageType())
+		sendAbort(wamp.URI("wamp.exception.protocol_violation"), err)
+		return err
 	}
 
 	// Client is required to provide a non-empty realm.
 	if string(hello.Realm) == "" {
-		sendAbort(wamp.ErrNoSuchRealm, nil)
-		return fmt.Errorf("no realm requested")
+		err = errors.New("no realm requested")
+		sendAbort(wamp.ErrNoSuchRealm, err)
+		return err
 	}
 	// Lookup or create realm to attach to.
 	var realm *Realm
@@ -207,7 +192,7 @@ func (r *router) Attach(client wamp.Peer) error {
 			// allows disclosing caller ID.
 			realm = NewRealm(hello.Realm, r.strictURI, true, true)
 			r.realms[hello.Realm] = realm
-			log.Println("added realm:", hello.Realm)
+			log.Print("Auto-added realm: ", hello.Realm)
 		}
 		sync <- nil
 	}
@@ -226,14 +211,12 @@ func (r *router) Attach(client wamp.Peer) error {
 	_roleVals, err := wamp.DictValue(hello.Details, []string{"roles"})
 	if err != nil {
 		err = errors.New("no client roles specified")
-		log.Println(err.Error())
 		sendAbort(wamp.ErrNoSuchRole, err)
 		return err
 	}
 	roleVals, ok := _roleVals.(map[string]interface{})
 	if !ok || len(roleVals) == 0 {
 		err = errors.New("no client roles specified")
-		log.Println(err.Error())
 		sendAbort(wamp.ErrNoSuchRole, err)
 		return err
 	}
@@ -299,7 +282,7 @@ func (r *router) Attach(client wamp.Peer) error {
 		stop:    make(chan wamp.URI, 1),
 	}
 
-	log.Println("created session:", welcome.ID)
+	log.Print("Created session: ", welcome.ID)
 
 	// Need synchronized access to r.sessionCreateCallbacks.
 	r.actionChan <- func() {

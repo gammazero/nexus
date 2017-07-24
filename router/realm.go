@@ -41,54 +41,21 @@ type Realm struct {
 // NewRealm creates a new Realm with default broker, dealer, and authorizer
 // implementtions.  The Realm has no authorizers unless anonymousAuth is true.
 func NewRealm(uri wamp.URI, strictURI, anonymousAuth, allowDisclose bool) *Realm {
-	return NewCustomRealm(uri, strictURI, anonymousAuth, allowDisclose, nil,
-		nil, nil, nil, nil)
-}
-
-// NewCustomerRealm creates a new Realm with the specified components, or will use default implementations if they are nil.
-func NewCustomRealm(uri wamp.URI, strictURI, anonymousAuth, allowDisclose bool, broker Broker, dealer Dealer, authorizer Authorizer, auths map[string]auth.Authenticator, crAuths map[string]auth.CRAuthenticator) *Realm {
-	if broker == nil {
-		broker = NewBroker(strictURI, allowDisclose)
-	}
-	if dealer == nil {
-		dealer = NewDealer(strictURI, allowDisclose)
-	}
-	if authorizer == nil {
-		authorizer = NewAuthorizer()
-	}
-
 	r := &Realm{
 		uri:        uri,
-		broker:     broker,
-		dealer:     dealer,
-		authorizer: authorizer,
+		broker:     NewBroker(strictURI, allowDisclose),
+		dealer:     NewDealer(strictURI, allowDisclose),
+		authorizer: NewAuthorizer(),
 		clients:    map[wamp.ID]*Session{},
 		actionChan: make(chan func()),
 		metaIDGen:  wamp.NewIDGen(),
 	}
-
 	// If allowing anonymous authentication, then install the anonymous
 	// authenticator.  Install this first so that it is replaced in case a
 	// custom anonymous authenticator is supplied.
 	if anonymousAuth {
 		r.authenticators = map[string]auth.Authenticator{
 			"anonymous": auth.AnonymousAuth}
-	}
-	// Add any supplied Authenticators.
-	if len(auths) != 0 {
-		if r.authenticators == nil {
-			r.authenticators = make(map[string]auth.Authenticator, len(auths))
-		}
-		for method, auth := range auths {
-			r.authenticators[method] = auth
-		}
-	}
-	// Add any supplied CRAuthenticators.
-	if len(crAuths) != 0 {
-		r.crAuthenticators = make(map[string]auth.CRAuthenticator, len(crAuths))
-		for method, auth := range crAuths {
-			r.crAuthenticators[method] = auth
-		}
 	}
 
 	// Create a session that bridges two peers.  Meta events are published by
@@ -119,6 +86,12 @@ func (r *Realm) AddCRAuthenticator(method string, athr auth.CRAuthenticator) {
 			r.crAuthenticators = map[string]auth.CRAuthenticator{}
 		}
 		r.crAuthenticators[method] = athr
+	}
+}
+
+func (r *Realm) SetAuthorizer(authorizer Authorizer) {
+	r.actionChan <- func() {
+		r.authorizer = authorizer
 	}
 }
 
@@ -194,7 +167,7 @@ func (r *Realm) bridgeSession(details map[string]interface{}, meta bool) (wamp.P
 	}
 	// Run the session handler for the
 	go r.handleSession(&sess, meta)
-	log.Println("Created internal session:", sess)
+	log.Print("Created internal session: ", sess)
 
 	// Return the session that is the remote leg of the router uplink.
 	return cli, nil
@@ -288,8 +261,8 @@ func (r *Realm) handleSession(sess *Session, meta bool) {
 		sname = "meta-session"
 		r.metaSess = sess
 	}
-	log.Println("started", sname, sess)
-	defer log.Println("ended", sname, sess)
+	log.Println("Started", sname, sess)
+	defer log.Println("Ended", sname, sess)
 
 	recvChan := sess.Recv()
 	for {
@@ -298,11 +271,11 @@ func (r *Realm) handleSession(sess *Session, meta bool) {
 		select {
 		case msg, open = <-recvChan:
 			if !open {
-				log.Println("lost", sname, sess)
+				log.Println("Lost", sname, sess)
 				return
 			}
 		case reason := <-sess.stop:
-			log.Printf("stop %s %s: %v", sname, sess, reason)
+			log.Printf("Stop %s %s: %v", sname, sess, reason)
 			sess.Send(&wamp.Goodbye{
 				Reason:  reason,
 				Details: map[string]interface{}{},
@@ -311,7 +284,10 @@ func (r *Realm) handleSession(sess *Session, meta bool) {
 		}
 
 		// Debug
-		log.Printf("%s %s submitting %s: %+v", sname, sess, msg.MessageType(), msg)
+		if DebugEnabled {
+			log.Printf("%s %s submitting %s: %+v", sname, sess,
+				msg.MessageType(), msg)
+		}
 
 		if isAuthz, err := r.authorizer.Authorize(sess, msg); !isAuthz {
 			errMsg := &wamp.Error{Type: msg.MessageType()}
@@ -337,11 +313,11 @@ func (r *Realm) handleSession(sess *Session, meta bool) {
 			if err != nil {
 				// Error trying to authorize.
 				errMsg.Error = wamp.ErrAuthorizationFailed
-				log.Println("client", sess, "authorization failed:", err)
+				log.Println("Client", sess, "authorization failed:", err)
 			} else {
 				// Session not authorized.
 				errMsg.Error = wamp.ErrNotAuthorized
-				log.Println("client", sess, msg.MessageType(), "UNAUTHORIZED")
+				log.Println("Client", sess, msg.MessageType(), "UNAUTHORIZED")
 			}
 			sess.Send(errMsg)
 			continue
@@ -378,8 +354,7 @@ func (r *Realm) handleSession(sess *Session, meta bool) {
 
 		default:
 			// Received unrecognized message type.
-			log.Println(sname, sess, "unhandled message:",
-				msg.MessageType())
+			log.Println(sname, sess, "unhandled message:", msg.MessageType())
 		}
 	}
 }
@@ -427,7 +402,7 @@ func (r *Realm) authClient(client wamp.Peer, details map[string]interface{}) (*w
 	}
 
 	// Challenge response needed.  Send CHALLENGE message to client.
-	log.Println("sending auth challenge to client")
+	log.Print("Sending auth challenge to client")
 	client.Send(pendingCRAuth.Msg())
 
 	// Read AUTHENTICATE response from client.
@@ -440,7 +415,7 @@ func (r *Realm) authClient(client wamp.Peer, details map[string]interface{}) (*w
 		return nil, fmt.Errorf("unexpected %v message received ",
 			msg.MessageType())
 	}
-	log.Println("received", authRsp.MessageType(), "response from client")
+	log.Println("Received", authRsp.MessageType(), "response from client")
 
 	welcome, err := pendingCRAuth.Authenticate(authRsp)
 	if err != nil {
