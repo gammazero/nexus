@@ -4,10 +4,10 @@ import (
 	"crypto/tls"
 	"errors"
 	"fmt"
-	"log"
 	"strings"
 	"time"
 
+	"github.com/gammazero/alog"
 	"github.com/gammazero/nexus/transport"
 	"github.com/gammazero/nexus/transport/serialize"
 	"github.com/gammazero/nexus/wamp"
@@ -83,13 +83,15 @@ type Client struct {
 
 	realm        string
 	realmDetails map[string]interface{}
+
+	log alog.StdLogger
 }
 
 // NewClient takes a connected Peer and returns a new Client.
 //
 // responseTimeout specifies the amount of time that the client will block
 // waiting for a response from the router.  A value of 0 uses default.
-func NewClient(p wamp.Peer, responseTimeout time.Duration) *Client {
+func NewClient(p wamp.Peer, responseTimeout time.Duration, logger alog.StdLogger) *Client {
 	if responseTimeout == 0 {
 		responseTimeout = defaultResponseTimeout
 	}
@@ -108,6 +110,8 @@ func NewClient(p wamp.Peer, responseTimeout time.Duration) *Client {
 
 		actionChan: make(chan func()),
 		idGen:      wamp.NewIDGen(),
+
+		log: logger,
 	}
 	go c.run()
 	return c
@@ -115,13 +119,13 @@ func NewClient(p wamp.Peer, responseTimeout time.Duration) *Client {
 
 // NewWebsocketClient creates a new websocket client connected to the specified
 // URL and using the specified serialization.
-func NewWebsocketClient(url string, serialization serialize.Serialization, tlscfg *tls.Config, dial transport.DialFunc, responseTimeout time.Duration) (*Client, error) {
+func NewWebsocketClient(url string, serialization serialize.Serialization, tlscfg *tls.Config, dial transport.DialFunc, responseTimeout time.Duration, logger alog.StdLogger) (*Client, error) {
 	p, err := transport.ConnectWebsocketPeer(
-		url, serialization, tlscfg, dial, 0)
+		url, serialization, tlscfg, dial, 0, logger)
 	if err != nil {
 		return nil, err
 	}
-	return NewClient(p, responseTimeout), nil
+	return NewClient(p, responseTimeout, logger), nil
 }
 
 func (c *Client) run() {
@@ -687,23 +691,23 @@ func (c *Client) receiveFromRouter() {
 			c.signalReply(msg, msg.Request)
 
 		case *wamp.Goodbye:
-			log.Println("client received GOODBYE")
+			c.log.Println("client received GOODBYE")
 			break
 
 		default:
-			log.Println("unhandled message from router:", msg.MessageType(), msg)
+			c.log.Println("unhandled message from router:", msg.MessageType(), msg)
 		}
 	}
 
 	close(c.actionChan)
-	log.Println("client closed")
+	c.log.Println("client closed")
 }
 
 func (c *Client) handleEvent(msg *wamp.Event) {
 	c.actionChan <- func() {
 		handler, ok := c.eventHandlers[msg.Subscription]
 		if !ok {
-			log.Println("no handler registered for subscription:",
+			c.log.Println("no handler registered for subscription:",
 				msg.Subscription)
 			return
 		}
@@ -717,7 +721,7 @@ func (c *Client) handleInvocation(msg *wamp.Invocation) {
 		if !ok {
 			errMsg := fmt.Sprintf("no handler for registration: %v",
 				msg.Registration)
-			log.Println(errMsg)
+			c.log.Println(errMsg)
 			c.Send(&wamp.Error{
 				Type:      wamp.INVOCATION,
 				Request:   msg.Request,
@@ -756,7 +760,7 @@ func (c *Client) handleInvocation(msg *wamp.Invocation) {
 			case <-cancelChan:
 				// Received an INTERRUPT message from the router.
 				result = &InvokeResult{Err: wamp.ErrCanceled}
-				log.Println("INVOCATION", msg.Request, "canceled by router")
+				c.log.Println("INVOCATION", msg.Request, "canceled by router")
 			}
 
 			if result.Err != "" {
@@ -786,7 +790,7 @@ func (c *Client) handleInterrupt(msg *wamp.Interrupt) {
 	c.actionChan <- func() {
 		cancelChan, ok := c.invHandlerKill[msg.Request]
 		if !ok {
-			log.Println("received INTERRUPT for message that no longer exists")
+			c.log.Println("received INTERRUPT for message that no longer exists")
 			return
 		}
 		close(cancelChan)
@@ -798,7 +802,7 @@ func (c *Client) signalReply(msg wamp.Message, requestID wamp.ID) {
 	c.actionChan <- func() {
 		w, ok := c.awaitingReply[requestID]
 		if !ok {
-			log.Println("received", msg.MessageType(), requestID,
+			c.log.Println("received", msg.MessageType(), requestID,
 				"that client is no longer waiting for")
 			return
 		}

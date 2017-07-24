@@ -3,7 +3,6 @@ package router
 import (
 	"errors"
 	"fmt"
-	"log"
 	"sync"
 
 	"github.com/gammazero/nexus/auth"

@@ -3,12 +3,24 @@ package router
 import (
 	"errors"
 	"fmt"
-	"log"
 	"sync"
 	"time"
 
+	"github.com/gammazero/alog"
 	"github.com/gammazero/nexus/wamp"
 )
+
+var log alog.StdLogger
+
+var once sync.Once
+
+// Set logger sets the logger for the router package.
+func SetLogger(logger alog.StdLogger) {
+	once.Do(func() { log = logger })
+}
+
+// Log returns the logger that the router package i
+func Logger() alog.StdLogger { return log }
 
 // Enable debug logging for router package.
 var DebugEnabled bool

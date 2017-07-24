@@ -2,7 +2,6 @@ package router
 
 import (
 	"fmt"
-	"log"
 	"math/rand"
 	"strings"
 	"time"

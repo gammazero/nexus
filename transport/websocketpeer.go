@@ -3,11 +3,11 @@ package transport
 import (
 	"crypto/tls"
 	"fmt"
-	"log"
 	"net"
 	"net/http"
 	"time"
 
+	"github.com/gammazero/alog"
 	"github.com/gammazero/nexus/transport/serialize"
 	"github.com/gammazero/nexus/wamp"
 	"github.com/gorilla/websocket"
@@ -29,6 +29,8 @@ type websocketPeer struct {
 
 	// Stop send handler without closing wr channel.
 	stopSend chan struct{}
+
+	log alog.StdLogger
 }
 
 const (
@@ -50,7 +52,7 @@ type DialFunc func(network, addr string) (net.Conn, error)
 // to the websocker.  Once the queue has reached this limit, the WAMP router
 // will drop messages in order to not block.  A value of < 1 uses the default
 // size.
-func ConnectWebsocketPeer(url string, serialization serialize.Serialization, tlsConfig *tls.Config, dial DialFunc, outQueueSize int) (wamp.Peer, error) {
+func ConnectWebsocketPeer(url string, serialization serialize.Serialization, tlsConfig *tls.Config, dial DialFunc, outQueueSize int, logger alog.StdLogger) (wamp.Peer, error) {
 	var (
 		protocol    string
 		payloadType int
@@ -80,13 +82,13 @@ func ConnectWebsocketPeer(url string, serialization serialize.Serialization, tls
 	if err != nil {
 		return nil, err
 	}
-	return NewWebsocketPeer(conn, serializer, payloadType, outQueueSize), nil
+	return NewWebsocketPeer(conn, serializer, payloadType, outQueueSize, logger), nil
 }
 
 // NewWebsockerPeer creates a websocket peer from an existing websocket
 // connection.  This is used for for hanndling clients connecting to the WAMP
 // service.
-func NewWebsocketPeer(conn *websocket.Conn, serializer serialize.Serializer, payloadType int, outQueueSize int) wamp.Peer {
+func NewWebsocketPeer(conn *websocket.Conn, serializer serialize.Serializer, payloadType int, outQueueSize int, logger alog.StdLogger) wamp.Peer {
 	if outQueueSize < 1 {
 		outQueueSize = defaultOutQueueSize
 	}
@@ -107,6 +109,8 @@ func NewWebsocketPeer(conn *websocket.Conn, serializer serialize.Serializer, pay
 		// to send messages.  For this reason it may be necessary for these
 		// messages to be put into an outbound queue that can grow.
 		wr: make(chan wamp.Message, outQueueSize),
+
+		log: logger,
 	}
 	// Sending to and receiving from websocket is handled concurrently.
 	go w.recvHandler()
@@ -121,7 +125,7 @@ func (w *websocketPeer) Send(msg wamp.Message) {
 	select {
 	case w.wr <- msg:
 	default:
-		log.Println("WARNING: client blocked router.  Dropped:",
+		w.log.Println("WARNING: client blocked router.  Dropped:",
 			msg.MessageType())
 	}
 }
@@ -132,11 +136,11 @@ func (w *websocketPeer) Close() {
 	err := w.conn.WriteControl(websocket.CloseMessage, closeMsg,
 		time.Now().Add(ctrlTimeout))
 	if err != nil {
-		log.Println("error sending close message:", err)
+		w.log.Println("error sending close message:", err)
 	}
 	close(w.closed)
 	if err = w.conn.Close(); err != nil {
-		log.Println("error closing connection:", err)
+		w.log.Println("error closing connection:", err)
 	}
 }
 
@@ -150,11 +154,11 @@ func (w *websocketPeer) sendHandler() {
 		}
 		b, err := w.serializer.Serialize(msg.(wamp.Message))
 		if err != nil {
-			log.Println(err)
+			w.log.Println(err)
 		}
 
 		if err = w.conn.WriteMessage(w.payloadType, b); err != nil {
-			log.Println(err)
+			w.log.Println(err)
 		}
 	case <-w.stopSend:
 		return
@@ -170,9 +174,9 @@ func (w *websocketPeer) recvHandler() {
 		if err != nil {
 			select {
 			case <-w.closed:
-				log.Println("peer connection closed")
+				w.log.Println("peer connection closed")
 			default:
-				log.Println("error reading from peer:", err)
+				w.log.Println("error reading from peer:", err)
 				w.conn.Close()
 			}
 			break
@@ -186,7 +190,7 @@ func (w *websocketPeer) recvHandler() {
 		msg, err := w.serializer.Deserialize(b)
 		if err != nil {
 			// TODO: something more than merely logging?
-			log.Println("error deserializing peer message:", err)
+			w.log.Println("error deserializing peer message:", err)
 			continue
 		}
 		// It is OK for the router to block a client since routing should be
