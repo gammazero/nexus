@@ -10,16 +10,16 @@ import (
 	"github.com/gammazero/nexus/wamp"
 )
 
+// log is an instance of a logger that implements the alog.StdLogger interface.
 var log alog.StdLogger
 
-var once sync.Once
+// SetLogger assigns a logger instance to the router package.  Use this to
+// assign an instance of *alog.Logger or stdlib *log.Logger, or any other
+// logger that implements the alog.StdLogger interface, before using the router
+// package.
+func SetLogger(logger alog.StdLogger) { log = logger }
 
-// Set logger sets the logger for the router package.
-func SetLogger(logger alog.StdLogger) {
-	once.Do(func() { log = logger })
-}
-
-// Log returns the logger that the router package i
+// Log returns the logger that the router package is set to use.
 func Logger() alog.StdLogger { return log }
 
 // Enable debug logging for router package.
@@ -90,6 +90,9 @@ type router struct {
 //
 // The strictURI parameter enabled strict URI validation.
 func NewRouter(autoRealm, strictURI bool) Router {
+	if log == nil {
+		panic("logger not set for router package")
+	}
 	r := &router{
 		realms:                 map[wamp.URI]*Realm{},
 		sessionCreateCallbacks: []func(*Session, string){},

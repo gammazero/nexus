@@ -26,8 +26,8 @@ type Serializer interface {
 	Deserialize([]byte) (wamp.Message, error)
 }
 
-// listToMessage takes a list of values from a WAMP message and pupolates the
-// fileds of a message type.
+// listToMessage takes a list of values from a WAMP message and populates the
+// fields of a message type.
 func listToMsg(msgType wamp.MessageType, vlist []interface{}) (wamp.Message, error) {
 	msg := wamp.NewMessage(msgType)
 	if msg == nil {
@@ -38,7 +38,7 @@ func listToMsg(msgType wamp.MessageType, vlist []interface{}) (wamp.Message, err
 		val = val.Elem()
 	}
 	// Iterate each field of the target message and populate the field with
-	// correcponding value from the WAMP message.
+	// corresponding value from the WAMP message.
 	for i := 0; i < val.NumField() && i < len(vlist)-1; i++ {
 		f := val.Field(i)
 		if vlist[i+1] == nil {
@@ -49,7 +49,7 @@ func listToMsg(msgType wamp.MessageType, vlist []interface{}) (wamp.Message, err
 		if arg.Kind() == reflect.Ptr {
 			arg = arg.Elem()
 		}
-		// Try to assignable the item to the message field.
+		// Try to assign the item to the message field.
 		if arg.Type().AssignableTo(f.Type()) {
 			f.Set(arg)
 			continue
@@ -92,12 +92,12 @@ func convertType(val reflect.Value, typ reflect.Type) (reflect.Value, error) {
 	valType := val.Type()
 	// See if value is directly assignable.
 	if !valType.AssignableTo(typ) {
-		// Not directly assignable, so see if it is convertable.
+		// Not directly assignable, so see if it is convertible.
 		if !valType.ConvertibleTo(typ) {
 			return val, fmt.Errorf("type %s not convertible to %s",
 				valType.Kind(), typ.Kind())
 		}
-		// Convertable, so convert value.
+		// Convertible, so convert value.
 		return val.Convert(typ), nil
 	}
 	return val, nil
