@@ -40,7 +40,6 @@ Currently in active development - contributions welcome.
 
 #### Features to complete - priority order:
 - active call timeout (need handling by router)
-- session_meta_api (only meta procedures)
 - registration_meta_api
 - testament_meta_api
 - event history
