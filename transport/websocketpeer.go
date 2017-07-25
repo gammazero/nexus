@@ -7,7 +7,7 @@ import (
 	"net/http"
 	"time"
 
-	"github.com/gammazero/alog"
+	"github.com/gammazero/nexus/logger"
 	"github.com/gammazero/nexus/transport/serialize"
 	"github.com/gammazero/nexus/wamp"
 	"github.com/gorilla/websocket"
@@ -30,7 +30,7 @@ type websocketPeer struct {
 	// Stop send handler without closing wr channel.
 	stopSend chan struct{}
 
-	log alog.StdLogger
+	log logger.Logger
 }
 
 const (
@@ -52,7 +52,7 @@ type DialFunc func(network, addr string) (net.Conn, error)
 // to the websocker.  Once the queue has reached this limit, the WAMP router
 // will drop messages in order to not block.  A value of < 1 uses the default
 // size.
-func ConnectWebsocketPeer(url string, serialization serialize.Serialization, tlsConfig *tls.Config, dial DialFunc, outQueueSize int, logger alog.StdLogger) (wamp.Peer, error) {
+func ConnectWebsocketPeer(url string, serialization serialize.Serialization, tlsConfig *tls.Config, dial DialFunc, outQueueSize int, logger logger.Logger) (wamp.Peer, error) {
 	var (
 		protocol    string
 		payloadType int
@@ -88,7 +88,7 @@ func ConnectWebsocketPeer(url string, serialization serialize.Serialization, tls
 // NewWebsockerPeer creates a websocket peer from an existing websocket
 // connection.  This is used for for hanndling clients connecting to the WAMP
 // service.
-func NewWebsocketPeer(conn *websocket.Conn, serializer serialize.Serializer, payloadType int, outQueueSize int, logger alog.StdLogger) wamp.Peer {
+func NewWebsocketPeer(conn *websocket.Conn, serializer serialize.Serializer, payloadType int, outQueueSize int, logger logger.Logger) wamp.Peer {
 	if outQueueSize < 1 {
 		outQueueSize = defaultOutQueueSize
 	}

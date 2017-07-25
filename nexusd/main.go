@@ -3,12 +3,12 @@ package main
 import (
 	"flag"
 	"fmt"
-	"log"
 	"net/http"
 	"os"
 	"os/signal"
 	"time"
 
+	"github.com/gammazero/alog"
 	"github.com/gammazero/nexus/router"
 	"github.com/gammazero/nexus/server"
 	"github.com/gammazero/nexus/wamp"
@@ -19,6 +19,10 @@ func usage() {
 }
 
 func main() {
+	log := router.SetLogger(alog.New(os.Stdout, "", ""))
+	defer log.Close()
+	router.SetLogger(logger)
+
 	var cfgFile string
 	fs := flag.NewFlagSet("nexus", flag.ExitOnError)
 	fs.StringVar(&cfgFile, "c", "nexus.json", "Path to config file")

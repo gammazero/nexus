@@ -5,7 +5,7 @@ import (
 	"fmt"
 	"net/http"
 
-	"github.com/gammazero/alog"
+	"github.com/gammazero/nexus/logger"
 	"github.com/gammazero/nexus/router"
 	"github.com/gammazero/nexus/transport"
 	"github.com/gammazero/nexus/transport/serialize"
@@ -22,7 +22,7 @@ type protocol struct {
 	serializer  serialize.Serializer
 }
 
-var log alog.StdLogger
+var log logger.Logger
 
 // WebsocketServer handles websocket connections.
 type WebsocketServer struct {

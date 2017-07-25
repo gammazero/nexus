@@ -2,12 +2,13 @@ package client
 
 import (
 	"errors"
+	stdlog "log"
 	"os"
 	"testing"
 	"time"
 
-	"github.com/gammazero/alog"
 	"github.com/gammazero/nexus/auth"
+	"github.com/gammazero/nexus/logger"
 	"github.com/gammazero/nexus/router"
 	"github.com/gammazero/nexus/wamp"
 )
@@ -21,10 +22,10 @@ const (
 	testRealm = "nexus.test"
 )
 
-var log alog.StdLogger
+var log logger.Logger
 
 func init() {
-	log = alog.New(os.Stdout, "", "")
+	log = stdlog.New(os.Stdout, "", stdlog.LstdFlags)
 	router.SetLogger(log)
 }
 

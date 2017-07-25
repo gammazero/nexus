@@ -5,10 +5,8 @@ import (
 	"io"
 	"net"
 	"net/http"
-	"os"
 	"testing"
 
-	"github.com/gammazero/alog"
 	"github.com/gammazero/nexus/router"
 	"github.com/gammazero/nexus/transport"
 	"github.com/gammazero/nexus/transport/serialize"
@@ -23,10 +21,6 @@ const (
 	allowDisclose   = true
 	outQueueSize    = 16
 )
-
-func init() {
-	router.SetLogger(alog.New(os.Stdout, "", ""))
-}
 
 func clientRoles() map[string]interface{} {
 	return map[string]interface{}{

@@ -6,7 +6,6 @@ import (
 	"testing"
 	"time"
 
-	"github.com/gammazero/alog"
 	"github.com/gammazero/nexus/wamp"
 )
 
@@ -14,7 +13,6 @@ const testRealm = wamp.URI("nexus.test.realm")
 
 func init() {
 	DebugEnabled = true
-	SetLogger(alog.New(nil, "", ""))
 }
 
 var clientRoles = map[string]interface{}{

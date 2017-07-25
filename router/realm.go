@@ -470,14 +470,16 @@ func (r *Realm) registerMetaProcedure(procedure wamp.URI, peer wamp.Peer) wamp.I
 	if !ok {
 		err, ok := msg.(*wamp.Error)
 		if !ok {
-			log.Panic("Received unexpected ", msg.MessageType())
+			log.Println("PANIC! Received unexpected ", msg.MessageType())
+			panic("cannot register metapocedure")
 		}
-		errMsg := fmt.Sprintf("Failed to register session meta procedure: %v",
-			err.Error)
+		errMsg := fmt.Sprintf(
+			"PANIC! Failed to register session meta procedure: %v", err.Error)
 		if len(err.Arguments) != 0 {
 			errMsg += fmt.Sprint(": ", err.Arguments[0])
 		}
-		log.Panic(errMsg)
+		log.Print(errMsg)
+		panic(errMsg)
 	}
 	return reg.Registration
 }

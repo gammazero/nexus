@@ -3,24 +3,27 @@ package router
 import (
 	"errors"
 	"fmt"
+	stdlog "log"
+	"os"
 	"sync"
 	"time"
 
-	"github.com/gammazero/alog"
+	"github.com/gammazero/nexus/logger"
 	"github.com/gammazero/nexus/wamp"
 )
 
-// log is an instance of a logger that implements the alog.StdLogger interface.
-var log alog.StdLogger
+// log is an instance of a logger that implements the logger.Logger interface.
+// A stdlib logger is assigned by default (for convenience), but this can be
+// reassigned, using SetLogger(), to use any other logging package.
+var log logger.Logger = stdlog.New(os.Stdout, "", stdlog.LstdFlags)
 
 // SetLogger assigns a logger instance to the router package.  Use this to
-// assign an instance of *alog.Logger or stdlib *log.Logger, or any other
-// logger that implements the alog.StdLogger interface, before using the router
-// package.
-func SetLogger(logger alog.StdLogger) { log = logger }
+// assign an instance of anything that that implements the logger.Logger
+// interface, before using the router package.
+func SetLogger(logger logger.Logger) { log = logger }
 
 // Log returns the logger that the router package is set to use.
-func Logger() alog.StdLogger { return log }
+func Logger() logger.Logger { return log }
 
 // Enable debug logging for router package.
 var DebugEnabled bool
@@ -90,9 +93,6 @@ type router struct {
 //
 // The strictURI parameter enabled strict URI validation.
 func NewRouter(autoRealm, strictURI bool) Router {
-	if log == nil {
-		panic("logger not set for router package")
-	}
 	r := &router{
 		realms:                 map[wamp.URI]*Realm{},
 		sessionCreateCallbacks: []func(*Session, string){},

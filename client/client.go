@@ -7,7 +7,7 @@ import (
 	"strings"
 	"time"
 
-	"github.com/gammazero/alog"
+	"github.com/gammazero/nexus/logger"
 	"github.com/gammazero/nexus/transport"
 	"github.com/gammazero/nexus/transport/serialize"
 	"github.com/gammazero/nexus/wamp"
@@ -84,14 +84,17 @@ type Client struct {
 	realm        string
 	realmDetails map[string]interface{}
 
-	log alog.StdLogger
+	log logger.Logger
 }
 
 // NewClient takes a connected Peer and returns a new Client.
 //
 // responseTimeout specifies the amount of time that the client will block
 // waiting for a response from the router.  A value of 0 uses default.
-func NewClient(p wamp.Peer, responseTimeout time.Duration, logger alog.StdLogger) *Client {
+//
+// Each client can be give a separate Logger instance, which my be desirable
+// when clients are used for different purposes.
+func NewClient(p wamp.Peer, responseTimeout time.Duration, logger logger.Logger) *Client {
 	if responseTimeout == 0 {
 		responseTimeout = defaultResponseTimeout
 	}
@@ -119,7 +122,7 @@ func NewClient(p wamp.Peer, responseTimeout time.Duration, logger alog.StdLogger
 
 // NewWebsocketClient creates a new websocket client connected to the specified
 // URL and using the specified serialization.
-func NewWebsocketClient(url string, serialization serialize.Serialization, tlscfg *tls.Config, dial transport.DialFunc, responseTimeout time.Duration, logger alog.StdLogger) (*Client, error) {
+func NewWebsocketClient(url string, serialization serialize.Serialization, tlscfg *tls.Config, dial transport.DialFunc, responseTimeout time.Duration, logger logger.Logger) (*Client, error) {
 	p, err := transport.ConnectWebsocketPeer(
 		url, serialization, tlscfg, dial, 0, logger)
 	if err != nil {
