@@ -2,9 +2,11 @@ package client
 
 import (
 	"errors"
+	"os"
 	"testing"
 	"time"
 
+	"github.com/gammazero/alog"
 	"github.com/gammazero/nexus/auth"
 	"github.com/gammazero/nexus/router"
 	"github.com/gammazero/nexus/wamp"
@@ -18,6 +20,13 @@ const (
 
 	testRealm = "nexus.test"
 )
+
+var log alog.StdLogger
+
+func init() {
+	log = alog.New(os.Stdout, "", "")
+	router.SetLogger(log)
+}
 
 func getTestPeer(r router.Router) wamp.Peer {
 	cli, rtr := router.LinkedPeers()
@@ -42,7 +51,7 @@ func connectedTestClients() (*Client, *Client, error) {
 }
 
 func newTestClient(p wamp.Peer) (*Client, error) {
-	client := NewClient(p, 200*time.Millisecond)
+	client := NewClient(p, 200*time.Millisecond, log)
 	_, err := client.JoinRealm(testRealm, nil, nil)
 	if err != nil {
 		return nil, err
@@ -55,7 +64,7 @@ func TestJoinRealm(t *testing.T) {
 	r.AddRealm(wamp.URI(testRealm), anonAuth, disclose)
 
 	// Test that client can join realm.
-	client := NewClient(getTestPeer(r), 0)
+	client := NewClient(getTestPeer(r), 0, log)
 	_, err := client.JoinRealm("nexus.test", nil, nil)
 	if err != nil {
 		t.Fatal(err)
@@ -63,7 +72,7 @@ func TestJoinRealm(t *testing.T) {
 
 	// Test that client cannot join realm when anonymous auth is disabled.
 	r.AddRealm("nexus.testnoanon", false, false)
-	client = NewClient(getTestPeer(r), 0)
+	client = NewClient(getTestPeer(r), 0, log)
 	if _, err = client.JoinRealm("nexus.testnoanon", nil, nil); err == nil {
 		t.Fatal("expected error due to no anonymous authentication")
 	}
@@ -79,7 +88,7 @@ func TestJoinRealmWithCRAuth(t *testing.T) {
 	realm.AddCRAuthenticator("testauth", crAuth)
 
 	peer := getTestPeer(r)
-	client := NewClient(peer, 0)
+	client := NewClient(peer, 0, log)
 
 	details := map[string]interface{}{
 		"username": "jdoe", "authmethods": []string{"testauth"}}

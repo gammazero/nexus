@@ -3,7 +3,6 @@ package router
 import (
 	"errors"
 	"fmt"
-	"log"
 	"sync"
 
 	"github.com/gammazero/nexus/auth"
@@ -36,6 +35,13 @@ type Realm struct {
 
 	// Used by Close() to wait for sessions to exit.
 	waitHandlers sync.WaitGroup
+
+	// Session meta-procedure registration IDs.
+	metaSessionCount wamp.ID
+	metaSessionList  wamp.ID
+	metaSessionGet   wamp.ID
+
+	metaDone chan struct{}
 }
 
 // NewRealm creates a new Realm with default broker, dealer, and authorizer
@@ -49,6 +55,7 @@ func NewRealm(uri wamp.URI, strictURI, anonymousAuth, allowDisclose bool) *Realm
 		clients:    map[wamp.ID]*Session{},
 		actionChan: make(chan func()),
 		metaIDGen:  wamp.NewIDGen(),
+		metaDone:   make(chan struct{}),
 	}
 	// If allowing anonymous authentication, then install the anonymous
 	// authenticator.  Install this first so that it is replaced in case a
@@ -65,6 +72,12 @@ func NewRealm(uri wamp.URI, strictURI, anonymousAuth, allowDisclose bool) *Realm
 	p, _ := r.bridgeSession(nil, true)
 	r.metaClient = p
 
+	// Register to handle session meta procedures.
+	r.metaSessionCount = r.registerMetaProcedure(wamp.MetaProcSessionCount, p)
+	r.metaSessionList = r.registerMetaProcedure(wamp.MetaProcSessionList, p)
+	r.metaSessionGet = r.registerMetaProcedure(wamp.MetaProcSessionGet, p)
+
+	go r.metaProcedureHandler()
 	go r.run()
 	return r
 }
@@ -77,6 +90,7 @@ func (r *Realm) AddAuthenticator(method string, athr auth.Authenticator) {
 		}
 		r.authenticators[method] = athr
 	}
+	log.Print("Added authenticator for method: ", method)
 }
 
 // AddCRAuthenticator registers the CRAuthenticator for the specified method.
@@ -93,6 +107,7 @@ func (r *Realm) SetAuthorizer(authorizer Authorizer) {
 	r.actionChan <- func() {
 		r.authorizer = authorizer
 	}
+	log.Print("Set authorizer")
 }
 
 // DelAuthenticator deletes the Authenticator for the specified method.
@@ -100,6 +115,7 @@ func (r *Realm) DelAuthenticator(method string) {
 	r.actionChan <- func() {
 		delete(r.authenticators, method)
 	}
+	log.Print("Deleted authenticator for method: ", method)
 }
 
 // DelCRAuthenticator deletes the CRAuthenticator for the specified method.
@@ -107,6 +123,7 @@ func (r *Realm) DelCRAuthenticator(method string) {
 	r.actionChan <- func() {
 		delete(r.crAuthenticators, method)
 	}
+	log.Print("Deleted CR authenticator for method: ", method)
 }
 
 // Close kills all clients, causing them to send a goodbye message.
@@ -134,7 +151,8 @@ func (r *Realm) Close() {
 	// anything more to the broker, and it is finally save to exit and close
 	// the broker.
 	r.metaSess.stop <- wamp.ErrSystemShutdown
-	<-r.metaClient.Recv()
+	<-r.metaDone
+	log.Println("Realm", r.uri, "completed shutdown")
 }
 
 // Single goroutine used to read and modify Reaml data.
@@ -142,6 +160,7 @@ func (r *Realm) run() {
 	for action := range r.actionChan {
 		action()
 	}
+	log.Println("Realm", r.uri, "stopped")
 }
 
 // bridgeSession creates and starts a session that runs in this realm, and
@@ -157,6 +176,7 @@ func (r *Realm) bridgeSession(details map[string]interface{}, meta bool) (wamp.P
 	} else {
 		wamp.NormalizeDict(details)
 	}
+	details = wamp.SetOption(details, "authrole", "trusted")
 
 	// This session is the local leg of the router uplink.
 	sess := Session{
@@ -232,19 +252,6 @@ func (r *Realm) onLeave(sess *Session) {
 
 	r.waitHandlers.Done()
 }
-
-/*
-func (r *Realm) sessionCount(sess *Session, msg *wamp.Invocation) {
-	var nclients int
-	sycn := make(chan struct{})
-	r.actionChan <- func() {
-		nclients = len(r.clients)
-		sync <- struct{}{}
-	}
-	<-sync
-	sess.Send(&wamp.Yield{Request: msg.Request, Arguments: []int{nclients}})
-}
-*/
 
 // handleSession starts a session attached to this realm.
 //
@@ -451,4 +458,172 @@ func (r *Realm) getAuthenticator(methods []string) (auth auth.Authenticator, crA
 	}
 	<-sync
 	return
+}
+
+func (r *Realm) registerMetaProcedure(procedure wamp.URI, peer wamp.Peer) wamp.ID {
+	peer.Send(&wamp.Register{
+		Request:   r.metaIDGen.Next(),
+		Procedure: procedure,
+	})
+	msg := <-peer.Recv()
+	reg, ok := msg.(*wamp.Registered)
+	if !ok {
+		err, ok := msg.(*wamp.Error)
+		if !ok {
+			log.Panic("Received unexpected ", msg.MessageType())
+		}
+		errMsg := fmt.Sprintf("Failed to register session meta procedure: %v",
+			err.Error)
+		if len(err.Arguments) != 0 {
+			errMsg += fmt.Sprint(": ", err.Arguments[0])
+		}
+		log.Panic(errMsg)
+	}
+	return reg.Registration
+}
+
+func (r *Realm) metaProcedureHandler() {
+	defer close(r.metaDone)
+	var rsp wamp.Message
+	for msg := range r.metaClient.Recv() {
+		switch msg := msg.(type) {
+		case *wamp.Invocation:
+			rsp = r.handleInvocation(msg)
+		case *wamp.Goodbye:
+			log.Println("Session meta procedure handler exiting GOODBYE")
+			return
+		default:
+			log.Print("Meta procedure received unexpected ", msg.MessageType())
+		}
+		r.metaClient.Send(rsp)
+	}
+}
+
+func (r *Realm) handleInvocation(msg *wamp.Invocation) wamp.Message {
+	if msg.Registration == r.metaSessionCount {
+		return r.sessionCount(msg)
+	}
+	if msg.Registration == r.metaSessionList {
+		return r.sessionList(msg)
+	}
+	if msg.Registration == r.metaSessionGet {
+		return r.sessionGet(msg)
+	}
+	return &wamp.Error{
+		Type:    msg.MessageType(),
+		Request: msg.Request,
+		Details: map[string]interface{}{},
+		Error:   wamp.ErrNoSuchProcedure,
+	}
+}
+
+func (r *Realm) sessionCount(msg *wamp.Invocation) wamp.Message {
+	var filter []string
+	if len(msg.Arguments) != 0 {
+		filter = msg.Arguments[0].([]string)
+	}
+	retChan := make(chan int)
+
+	if len(filter) == 0 {
+		r.actionChan <- func() {
+			retChan <- len(r.clients)
+		}
+	} else {
+		r.actionChan <- func() {
+			var nclients int
+			for _, sess := range r.clients {
+				authrole := wamp.OptionString(sess.Details, "authrole")
+				for j := range filter {
+					if filter[j] == authrole {
+						nclients++
+						break
+					}
+				}
+			}
+			retChan <- nclients
+		}
+	}
+	nclients := <-retChan
+	return &wamp.Yield{
+		Request:   msg.Request,
+		Arguments: []interface{}{nclients},
+	}
+}
+
+func (r *Realm) sessionList(msg *wamp.Invocation) wamp.Message {
+	var filter []string
+	if len(msg.Arguments) != 0 {
+		filter = msg.Arguments[0].([]string)
+	}
+	retChan := make(chan []wamp.ID)
+
+	if len(filter) == 0 {
+		r.actionChan <- func() {
+			ids := make([]wamp.ID, len(r.clients))
+			count := 0
+			for sessID := range r.clients {
+				ids[count] = sessID
+				count++
+			}
+			retChan <- ids
+		}
+	} else {
+		r.actionChan <- func() {
+			var ids []wamp.ID
+			for sessID, sess := range r.clients {
+				authrole := wamp.OptionString(sess.Details, "authrole")
+				for j := range filter {
+					if filter[j] == authrole {
+						ids = append(ids, sessID)
+						break
+					}
+				}
+			}
+			retChan <- ids
+		}
+	}
+	list := <-retChan
+	return &wamp.Yield{Request: msg.Request, Arguments: []interface{}{list}}
+}
+
+func (r *Realm) sessionGet(msg *wamp.Invocation) wamp.Message {
+	makeErr := func() *wamp.Error {
+		return &wamp.Error{
+			Type:    wamp.INVOCATION,
+			Request: msg.Request,
+			Details: map[string]interface{}{},
+			Error:   wamp.ErrNoSuchSession,
+		}
+	}
+
+	if len(msg.Arguments) == 0 {
+		return makeErr()
+	}
+
+	sessID, ok := wamp.AsInt64(msg.Arguments[0])
+	if !ok {
+		return makeErr()
+	}
+
+	retChan := make(chan *Session)
+	r.actionChan <- func() {
+		sess, _ := r.clients[wamp.ID(sessID)]
+		retChan <- sess
+	}
+	sess := <-retChan
+	if sess == nil {
+		log.Print("session not found")
+		return makeErr()
+	}
+	dict := wamp.SetOption(nil, "session", sessID)
+	for _, name := range []string{"authid", "authrole", "authmethod", "authprovider", "transport"} {
+		opt := wamp.OptionString(sess.Details, name)
+		if opt != "" {
+			dict = wamp.SetOption(dict, name, opt)
+		}
+	}
+	return &wamp.Yield{
+		Request:   msg.Request,
+		Arguments: []interface{}{dict},
+	}
 }

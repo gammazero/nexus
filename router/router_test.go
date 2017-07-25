@@ -1,10 +1,12 @@
 package router
 
 import (
+	"errors"
 	"fmt"
 	"testing"
 	"time"
 
+	"github.com/gammazero/alog"
 	"github.com/gammazero/nexus/wamp"
 )
 
@@ -12,6 +14,7 @@ const testRealm = wamp.URI("nexus.test.realm")
 
 func init() {
 	DebugEnabled = true
+	SetLogger(alog.New(nil, "", ""))
 }
 
 var clientRoles = map[string]interface{}{
@@ -45,31 +48,31 @@ func newTestRouter() Router {
 	return r
 }
 
-func handShake(r Router, client, server wamp.Peer) error {
+func handShake(r Router, client, server wamp.Peer) (wamp.ID, error) {
 	client.Send(&wamp.Hello{Realm: testRealm, Details: clientRoles})
-
 	if err := r.Attach(server); err != nil {
-		return err
+		return 0, err
 	}
 
-	if len(client.Recv()) != 1 {
-		return fmt.Errorf("Expected 1 message in the handshake, received %d",
-			len(client.Recv()))
+	var sid wamp.ID
+	select {
+	case <-time.After(time.Millisecond):
+		return 0, errors.New("timed out waiting for welcome")
+	case msg := <-client.Recv():
+		if msg.MessageType() != wamp.WELCOME {
+			return 0, fmt.Errorf("expected %v, got %v", wamp.WELCOME,
+				msg.MessageType())
+		}
+		sid = msg.(*wamp.Welcome).ID
 	}
-
-	msg := <-client.Recv()
-	if msg.MessageType() != wamp.WELCOME {
-		return fmt.Errorf("expected %v, got %v", wamp.WELCOME,
-			msg.MessageType())
-	}
-	return nil
+	return sid, nil
 }
 
 func TestHandshake(t *testing.T) {
 	client, server := LinkedPeers()
 	r := newTestRouter()
 	defer r.Close()
-	err := handShake(r, client, server)
+	_, err := handShake(r, client, server)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -114,7 +117,7 @@ func TestRouterSubscribe(t *testing.T) {
 	sub, subServer := LinkedPeers()
 	r := newTestRouter()
 	defer r.Close()
-	err := handShake(r, sub, subServer)
+	_, err := handShake(r, sub, subServer)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -160,7 +163,7 @@ func TestPublishAcknowledge(t *testing.T) {
 	client, server := LinkedPeers()
 	r := newTestRouter()
 	defer r.Close()
-	err := handShake(r, client, server)
+	_, err := handShake(r, client, server)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -190,7 +193,7 @@ func TestPublishFalseAcknowledge(t *testing.T) {
 	client, server := LinkedPeers()
 	r := newTestRouter()
 	defer r.Close()
-	err := handShake(r, client, server)
+	_, err := handShake(r, client, server)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -215,7 +218,7 @@ func TestPublishNoAcknowledge(t *testing.T) {
 	client, server := LinkedPeers()
 	r := newTestRouter()
 	defer r.Close()
-	err := handShake(r, client, server)
+	_, err := handShake(r, client, server)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -237,7 +240,7 @@ func TestRouterCall(t *testing.T) {
 	callee, calleeServer := LinkedPeers()
 	r := newTestRouter()
 	defer r.Close()
-	err := handShake(r, callee, calleeServer)
+	_, err := handShake(r, callee, calleeServer)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -302,5 +305,124 @@ func TestRouterCall(t *testing.T) {
 		if result.Request != callID {
 			t.Fatal("wrong result ID")
 		}
+	}
+}
+
+func TestSessionMetaProcedures(t *testing.T) {
+	r := newTestRouter()
+	defer r.Close()
+
+	caller, callerServer := LinkedPeers()
+	sessID, err := handShake(r, caller, callerServer)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var result *wamp.Result
+	var ok bool
+
+	// Call session meta-procedure to get session count.
+	callID := wamp.GlobalID()
+	caller.Send(&wamp.Call{Request: callID, Procedure: wamp.MetaProcSessionCount})
+	select {
+	case <-time.After(10 * time.Millisecond):
+		t.Fatal("Timed out waiting for RESULT")
+	case msg := <-caller.Recv():
+		result, ok = msg.(*wamp.Result)
+		if !ok {
+			t.Fatal("expected RESULT, got ", msg.MessageType())
+		}
+		if result.Request != callID {
+			t.Fatal("wrong result ID")
+		}
+	}
+	if len(result.Arguments) == 0 {
+		t.Fatal("missing expected arguemnt")
+	}
+	count, ok := result.Arguments[0].(int)
+	if !ok {
+		t.Fatal("expected int arguemnt")
+	}
+	if count != 1 {
+		t.Fatal("wrong session count")
+	}
+
+	// Call session meta-procedure to get session list.
+	callID = wamp.GlobalID()
+	caller.Send(&wamp.Call{Request: callID, Procedure: wamp.MetaProcSessionList})
+	select {
+	case <-time.After(10 * time.Millisecond):
+		t.Fatal("Timed out waiting for RESULT")
+	case msg := <-caller.Recv():
+		result, ok = msg.(*wamp.Result)
+		if !ok {
+			t.Fatal("expected RESULT, got ", msg.MessageType())
+		}
+		if result.Request != callID {
+			t.Fatal("wrong result ID")
+		}
+	}
+	if len(result.Arguments) == 0 {
+		t.Fatal("missing expected arguemnt")
+	}
+	ids, ok := result.Arguments[0].([]wamp.ID)
+	if !ok {
+		t.Fatal("wrong arg type")
+	}
+	if len(ids) != count {
+		t.Fatal("wrong number of session IDs")
+	}
+	if sessID != ids[0] {
+		t.Fatal("wrong session ID")
+	}
+
+	// Call session meta-procedure with bad session ID
+	callID = wamp.GlobalID()
+	caller.Send(&wamp.Call{
+		Request:   callID,
+		Procedure: wamp.MetaProcSessionGet,
+		Arguments: []interface{}{wamp.ID(123456789)},
+	})
+	select {
+	case <-time.After(10 * time.Millisecond):
+		t.Fatal("Timed out waiting for RESULT")
+	case msg := <-caller.Recv():
+		errRsp, ok := msg.(*wamp.Error)
+		if !ok {
+			t.Fatal("expected ERROR, got ", msg.MessageType())
+		}
+		if errRsp.Error != wamp.ErrNoSuchSession {
+			t.Fatal("wrong error value")
+		}
+	}
+
+	// Call session meta-procedure to get session get.
+	callID = wamp.GlobalID()
+	caller.Send(&wamp.Call{
+		Request:   callID,
+		Procedure: wamp.MetaProcSessionGet,
+		Arguments: []interface{}{sessID},
+	})
+	select {
+	case <-time.After(10 * time.Millisecond):
+		t.Fatal("Timed out waiting for RESULT")
+	case msg := <-caller.Recv():
+		result, ok = msg.(*wamp.Result)
+		if !ok {
+			t.Fatal("expected RESULT, got ", msg.MessageType())
+		}
+		if result.Request != callID {
+			t.Fatal("wrong result ID")
+		}
+	}
+	if len(result.Arguments) == 0 {
+		t.Fatal("missing expected arguemnt")
+	}
+	dict, ok := result.Arguments[0].(map[string]interface{})
+	if !ok {
+		t.Fatal("expected dict type arg")
+	}
+	sid := wamp.ID(wamp.OptionInt64(dict, "session"))
+	if sid != sessID {
+		t.Fatal("wrong session ID")
 	}
 }

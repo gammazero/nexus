@@ -3,9 +3,9 @@ package server
 import (
 	"errors"
 	"fmt"
-	"log"
 	"net/http"
 
+	"github.com/gammazero/alog"
 	"github.com/gammazero/nexus/router"
 	"github.com/gammazero/nexus/transport"
 	"github.com/gammazero/nexus/transport/serialize"
@@ -21,6 +21,8 @@ type protocol struct {
 	payloadType int
 	serializer  serialize.Serializer
 }
+
+var log alog.StdLogger
 
 // WebsocketServer handles websocket connections.
 type WebsocketServer struct {
@@ -38,6 +40,7 @@ type WebsocketServer struct {
 // NewWebsocketServer takes a router instance and creates a new websocket
 // server.
 func NewWebsocketServer(r router.Router) *WebsocketServer {
+	log = router.Logger()
 	s := &WebsocketServer{
 		Router:    r,
 		protocols: map[string]protocol{},
@@ -102,7 +105,7 @@ func (s *WebsocketServer) handleWebsocket(conn *websocket.Conn) {
 
 	// Create a websocket peer from the websocket connection and attach the
 	// peer to the router.
-	peer := transport.NewWebsocketPeer(conn, serializer, payloadType, 16)
+	peer := transport.NewWebsocketPeer(conn, serializer, payloadType, 16, log)
 	if err := s.Router.Attach(peer); err != nil {
 		log.Println(err)
 	}

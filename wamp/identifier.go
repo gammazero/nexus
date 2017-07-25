@@ -32,9 +32,6 @@ var (
 )
 
 func (u URI) ValidURI(strict bool, match string) bool {
-	if strings.HasPrefix(string(u), "wamp.") {
-		return false
-	}
 	if strict {
 		if match == "wildcard" {
 			return strictURIEmpty.MatchString(string(u))

@@ -115,23 +115,34 @@ func OptionString(opts map[string]interface{}, optionName string) string {
 	return opt
 }
 
+func AsInt64(v interface{}) (int64, bool) {
+	switch v := v.(type) {
+	case int64:
+		return v, true
+	case ID:
+		return int64(v), true
+	case uint64:
+		return int64(v), true
+	case int:
+		return int64(v), true
+	case int32:
+		return int64(v), true
+	case float64:
+		return int64(v), true
+	case uint:
+		return int64(v), true
+	case uint32:
+		return int64(v), true
+	}
+	return 0, false
+}
+
 // OptionInt64 returns the int64 value of the option with the specified name.
 // If the option is not present, a value of 0 is returned.
 func OptionInt64(opts map[string]interface{}, optionName string) int64 {
 	if opt, ok := opts[optionName]; ok && opt != nil {
-		switch opt := opt.(type) {
-		case int:
-			return int64(opt)
-		case int32:
-			return int64(opt)
-		case float64:
-			return int64(opt)
-		case uint:
-			return int64(opt)
-		case uint32:
-			return int64(opt)
-		case uint64:
-			return int64(opt)
+		if i64, ok := AsInt64(opt); ok {
+			return i64
 		}
 	}
 	return 0

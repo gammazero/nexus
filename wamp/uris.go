@@ -116,6 +116,9 @@ const (
 	// Retrieves information on a specific session.
 	MetaProcSessionGet = URI("wamp.session.get")
 
+	// No session with the given ID exists on the router.
+	ErrNoSuchSession = URI("wamp.error.no_such_session")
+
 	// -- Registration Meta Events --
 
 	// Fired when a registration is created through a registration request for

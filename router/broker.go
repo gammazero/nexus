@@ -2,7 +2,6 @@ package router
 
 import (
 	"fmt"
-	"log"
 
 	"github.com/gammazero/nexus/wamp"
 )
@@ -179,7 +178,7 @@ func (b *broker) publish(pub *Session, msg *wamp.Publish) {
 		}
 		if ack, ok := opt.(bool); ok && ack {
 			errMsg := fmt.Sprintf(
-				"publish with invalid topic URI %s (URI strict checking %s)",
+				"publish with invalid topic URI %v (URI strict checking %v)",
 				msg.Topic, b.strictURI)
 			pub.Send(&wamp.Error{
 				Type:      msg.MessageType(),
@@ -257,7 +256,7 @@ func (b *broker) subscribe(sub *Session, msg *wamp.Subscribe) {
 	// non-empty for all but the last component for prefix subscriptions.
 	match := wamp.OptionString(msg.Options, "match")
 	if !msg.Topic.ValidURI(b.strictURI, match) {
-		errMsg := fmt.Sprintf("subscribe for invalid topic URI %s",
+		errMsg := fmt.Sprintf("subscribe for invalid topic URI %v",
 			msg.Topic, b.strictURI)
 		sub.Send(&wamp.Error{
 			Type:      msg.MessageType(),

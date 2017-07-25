@@ -2,7 +2,6 @@ package router
 
 import (
 	"fmt"
-	"log"
 	"math/rand"
 	"strings"
 	"time"
@@ -213,7 +212,7 @@ func (d *dealer) register(callee *Session, msg *wamp.Register) {
 	match := wamp.OptionString(msg.Options, "match")
 	if !msg.Procedure.ValidURI(d.strictURI, match) {
 		errMsg := fmt.Sprintf(
-			"register for invalid procedure URI %s (URI strict checking %s)",
+			"register for invalid procedure URI %v (URI strict checking %v)",
 			msg.Procedure, d.strictURI)
 		callee.Send(&wamp.Error{
 			Type:      msg.MessageType(),
@@ -229,7 +228,7 @@ func (d *dealer) register(callee *Session, msg *wamp.Register) {
 	authrole := wamp.OptionString(callee.Details, "authrole")
 	if authrole != "" && authrole != "trusted" {
 		if strings.HasPrefix(string(msg.Procedure), "wamp.") {
-			errMsg := fmt.Sprintf("register for restricted procedure URI %s",
+			errMsg := fmt.Sprintf("register for restricted procedure URI %v",
 				msg.Procedure)
 			callee.Send(&wamp.Error{
 				Type:      msg.MessageType(),
@@ -271,7 +270,7 @@ func (d *dealer) register(callee *Session, msg *wamp.Register) {
 		// the same policy, so use the first one.
 		proc, ok := d.procedures[regs[0]]
 		if !ok {
-			panic("registration exist without any procedure")
+			panic("registration exists without any procedure")
 		}
 		foundPolicy := proc.policy
 
@@ -316,7 +315,7 @@ func (d *dealer) register(callee *Session, msg *wamp.Register) {
 	d.registrations[msg.Procedure] = append(d.registrations[msg.Procedure], regID)
 	d.addCalleeRegistration(callee, regID)
 
-	log.Printf("registered procedure %v (regID=%v) to callee %v",
+	log.Printf("Dealer registered procedure %v (regID=%v) to callee %v",
 		msg.Procedure, regID, callee)
 	callee.Send(&wamp.Registered{
 		Request:      msg.Request,
@@ -344,7 +343,7 @@ func (d *dealer) unregister(callee *Session, msg *wamp.Unregister) {
 	// Delete the registration according to what match type it is.
 	d.delRegistration(msg.Registration, proc.procedure, proc.match)
 	d.removeCalleeRegistration(callee, msg.Registration)
-	log.Printf("unregistered procedure %v (reg=%v)", proc.procedure,
+	log.Printf("Dealer unregistered procedure %v (reg=%v)", proc.procedure,
 		msg.Registration)
 	callee.Send(&wamp.Unregistered{
 		Request: msg.Request,
@@ -511,7 +510,7 @@ func (d *dealer) call(caller *Session, msg *wamp.Call) {
 		Arguments:    msg.Arguments,
 		ArgumentsKw:  msg.ArgumentsKw,
 	})
-	log.Printf("dispatched CALL: %v [%v] to callee as INVOCATION %v",
+	log.Printf("Dealer dispatched CALL: %v [%v] to callee as INVOCATION %v",
 		msg.Request, msg.Procedure, invocationID,
 	)
 }
@@ -543,7 +542,10 @@ func (d *dealer) cancel(caller *Session, msg *wamp.Cancel) {
 
 	// Check if the caller of cancel is also the caller of the procedure.
 	if caller != procCaller {
-		log.Println("CANCEL received for call owned by different session")
+		// The caller it trying to cancel calls that it does not own.  It it
+		// either confused or trying to do something bad.
+		log.Println("CANCEL received from caller", caller,
+			"for call owned by different session")
 		return
 	}
 
@@ -551,12 +553,12 @@ func (d *dealer) cancel(caller *Session, msg *wamp.Cancel) {
 	invocationID, ok := d.invocationByCall[msg.Request]
 	if !ok {
 		// If there is no pending invocation, ignore cancel.
-		log.Println("found call with no pending invocation")
+		log.Println("Found call with no pending invocation")
 		return
 	}
 	invk, ok := d.invocations[invocationID]
 	if !ok {
-		log.Println("critical: missing caller for pending invocation")
+		log.Println("CRITICAL: missing caller for pending invocation")
 		return
 	}
 	// For those who repeatedly press elevator buttons.
@@ -593,7 +595,7 @@ func (d *dealer) cancel(caller *Session, msg *wamp.Cancel) {
 
 	// Check that callee supports call canceling.
 	if !invk.callee.HasFeature("callee", "call_canceling") {
-		log.Println("callee", invk.callee, "does not support call canceling")
+		log.Println("Callee", invk.callee, "does not support call canceling")
 		return
 	}
 
@@ -602,7 +604,7 @@ func (d *dealer) cancel(caller *Session, msg *wamp.Cancel) {
 		Request: invocationID,
 		Options: map[string]interface{}{},
 	})
-	log.Printf("sent INTERRUPT to to cancel invocation %v for call %v",
+	log.Printf("Dealer sent INTERRUPT to to cancel invocation %v for call %v",
 		invocationID, msg.Request)
 }
 
@@ -646,7 +648,7 @@ func (d *dealer) yield(callee *Session, msg *wamp.Yield) {
 		Arguments:   msg.Arguments,
 		ArgumentsKw: msg.ArgumentsKw,
 	})
-	log.Printf("sent RESULT %v to caller from YIELD %v", callID, msg.Request)
+	log.Printf("Dealer sent RESULT %v to caller from YIELD %v", callID, msg.Request)
 }
 
 func (d *dealer) error(peer *Session, msg *wamp.Error) {
@@ -668,7 +670,7 @@ func (d *dealer) error(peer *Session, msg *wamp.Error) {
 	// call canceled with mode "skip" or "killnowait".
 	caller, ok := d.calls[callID]
 	if !ok {
-		log.Println("received ERROR for call that was already canceled:",
+		log.Println("Received ERROR for call that was already canceled:",
 			callID)
 		return
 	}
@@ -683,7 +685,7 @@ func (d *dealer) error(peer *Session, msg *wamp.Error) {
 		Arguments:   msg.Arguments,
 		ArgumentsKw: msg.ArgumentsKw,
 	})
-	log.Printf("sent ERROR %v to caller as ERROR %v", msg.Request, callID)
+	log.Printf("Dealer sent ERROR %v to caller as ERROR %v", msg.Request, callID)
 }
 
 func (d *dealer) removeSession(callee *Session) {
