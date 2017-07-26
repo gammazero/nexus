@@ -3,12 +3,12 @@ package main
 import (
 	"flag"
 	"fmt"
+	"log"
 	"net/http"
 	"os"
 	"os/signal"
 	"time"
 
-	"github.com/gammazero/alog"
 	"github.com/gammazero/nexus/router"
 	"github.com/gammazero/nexus/server"
 	"github.com/gammazero/nexus/wamp"
@@ -19,8 +19,7 @@ func usage() {
 }
 
 func main() {
-	log := router.SetLogger(alog.New(os.Stdout, "", ""))
-	defer log.Close()
+	logger := log.New(os.Stdout, "", log.LstdFlags)
 	router.SetLogger(logger)
 
 	var cfgFile string
@@ -45,10 +44,7 @@ func main() {
 	}
 
 	// Create a new websocket server with the router.
-	s, err := server.NewWebsocketServer(r)
-	if err != nil {
-		log.Fatalln(err)
-	}
+	s := server.NewWebsocketServer(r)
 
 	shutdown := make(chan os.Signal, 1)
 	signal.Notify(shutdown, os.Interrupt)
