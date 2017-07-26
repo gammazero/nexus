@@ -277,8 +277,8 @@ func (d *dealer) register(callee *Session, msg *wamp.Register) {
 		// Found an existing registration has an invocation strategy that only
 		// allows a single callee on a the given registration.
 		if foundPolicy == "" || foundPolicy == "single" {
-			log.Println("REGISTER for already registered procedure:",
-				msg.Procedure)
+			log.Println("REGISTER for already registered procedure",
+				msg.Procedure, "from callee", callee)
 			callee.Send(&wamp.Error{
 				Type:    msg.MessageType(),
 				Request: msg.Request,
@@ -328,7 +328,7 @@ func (d *dealer) unregister(callee *Session, msg *wamp.Unregister) {
 	proc, ok := d.procedures[msg.Registration]
 	if !ok {
 		// the registration doesn't exist
-		log.Println("error: no such registration:", msg.Registration)
+		log.Println("No such registration:", msg.Registration)
 		callee.Send(&wamp.Error{
 			Type:    msg.MessageType(),
 			Request: msg.Request,
@@ -422,8 +422,7 @@ func (d *dealer) call(caller *Session, msg *wamp.Call) {
 	}
 
 	if !ok {
-		log.Println(
-			"critical: found a registration id that has no remote procedure")
+		log.Println("!!! Found registration id that has no remote procedure")
 		caller.Send(&wamp.Error{
 			Type:    msg.MessageType(),
 			Request: msg.Request,
@@ -510,9 +509,8 @@ func (d *dealer) call(caller *Session, msg *wamp.Call) {
 		Arguments:    msg.Arguments,
 		ArgumentsKw:  msg.ArgumentsKw,
 	})
-	log.Printf("Dealer dispatched CALL: %v [%v] to callee as INVOCATION %v",
-		msg.Request, msg.Procedure, invocationID,
-	)
+	//log.Printf("dispatched CALL: %v [%v] to callee as INVOCATION %v",
+	//	msg.Request, msg.Procedure, invocationID)
 }
 
 // cancel actively cancels a call that is in progress.
@@ -631,7 +629,7 @@ func (d *dealer) yield(callee *Session, msg *wamp.Yield) {
 	caller, ok := d.calls[callID]
 	if !ok {
 		// Found invocation id that does not have any call id.
-		log.Println("CRITICAL: no matching caller for invocation from YIELD:",
+		log.Println("!!! No matching caller for invocation from YIELD:",
 			msg.Request)
 		return
 	}
@@ -648,14 +646,14 @@ func (d *dealer) yield(callee *Session, msg *wamp.Yield) {
 		Arguments:   msg.Arguments,
 		ArgumentsKw: msg.ArgumentsKw,
 	})
-	log.Printf("Dealer sent RESULT %v to caller from YIELD %v", callID, msg.Request)
+	//log.Printf("Sent RESULT %v to caller from YIELD %v", callID, msg.Request)
 }
 
 func (d *dealer) error(peer *Session, msg *wamp.Error) {
 	// Find and delete pending invocation.
 	invk, ok := d.invocations[msg.Request]
 	if !ok {
-		log.Println("received ERROR (INVOCATION) with invalid request ID:",
+		log.Println("Received ERROR (INVOCATION) with invalid request ID:",
 			msg.Request)
 		return
 	}
@@ -685,7 +683,7 @@ func (d *dealer) error(peer *Session, msg *wamp.Error) {
 		Arguments:   msg.Arguments,
 		ArgumentsKw: msg.ArgumentsKw,
 	})
-	log.Printf("Dealer sent ERROR %v to caller as ERROR %v", msg.Request, callID)
+	//log.Printf("Sent ERROR %v to caller as ERROR %v", msg.Request, callID)
 }
 
 func (d *dealer) removeSession(callee *Session) {

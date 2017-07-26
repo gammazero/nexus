@@ -90,7 +90,7 @@ func (r *Realm) AddAuthenticator(method string, athr auth.Authenticator) {
 		}
 		r.authenticators[method] = athr
 	}
-	log.Print("Added authenticator for method: ", method)
+	log.Printf("Added authenticator for method %s (realm=%v)", method, r.uri)
 }
 
 // AddCRAuthenticator registers the CRAuthenticator for the specified method.
@@ -101,13 +101,14 @@ func (r *Realm) AddCRAuthenticator(method string, athr auth.CRAuthenticator) {
 		}
 		r.crAuthenticators[method] = athr
 	}
+	log.Printf("Added CR authenticator for method %s (realm=%v)", method, r.uri)
 }
 
 func (r *Realm) SetAuthorizer(authorizer Authorizer) {
 	r.actionChan <- func() {
 		r.authorizer = authorizer
 	}
-	log.Print("Set authorizer")
+	log.Print("Set authorizer for realm ", r.uri)
 }
 
 // DelAuthenticator deletes the Authenticator for the specified method.
@@ -115,7 +116,7 @@ func (r *Realm) DelAuthenticator(method string) {
 	r.actionChan <- func() {
 		delete(r.authenticators, method)
 	}
-	log.Print("Deleted authenticator for method: ", method)
+	log.Printf("Deleted authenticator for method %s (realm=%v)", method, r.uri)
 }
 
 // DelCRAuthenticator deletes the CRAuthenticator for the specified method.
@@ -123,7 +124,8 @@ func (r *Realm) DelCRAuthenticator(method string) {
 	r.actionChan <- func() {
 		delete(r.crAuthenticators, method)
 	}
-	log.Print("Deleted CR authenticator for method: ", method)
+	//log.Print("Deleted CR authenticator for method: ", method)
+	log.Printf("Deleted CR authenticator for method %s (realm=%v)", method, r.uri)
 }
 
 // Close kills all clients, causing them to send a goodbye message.
@@ -409,7 +411,7 @@ func (r *Realm) authClient(client wamp.Peer, details map[string]interface{}) (*w
 	}
 
 	// Challenge response needed.  Send CHALLENGE message to client.
-	log.Print("Sending auth challenge to client")
+	log.Print("Sending auth challenge to client %v", client)
 	client.Send(pendingCRAuth.Msg())
 
 	// Read AUTHENTICATE response from client.
@@ -419,10 +421,11 @@ func (r *Realm) authClient(client wamp.Peer, details map[string]interface{}) (*w
 	}
 	authRsp, ok := msg.(*wamp.Authenticate)
 	if !ok {
-		return nil, fmt.Errorf("unexpected %v message received ",
-			msg.MessageType())
+		return nil, fmt.Errorf("unexpected %v message received from client %v",
+			msg.MessageType(), client)
 	}
-	log.Println("Received", authRsp.MessageType(), "response from client")
+	log.Println("Received", authRsp.MessageType(), "response from client %v",
+		client)
 
 	welcome, err := pendingCRAuth.Authenticate(authRsp)
 	if err != nil {
@@ -614,7 +617,6 @@ func (r *Realm) sessionGet(msg *wamp.Invocation) wamp.Message {
 	}
 	sess := <-retChan
 	if sess == nil {
-		log.Print("session not found")
 		return makeErr()
 	}
 	dict := wamp.SetOption(nil, "session", sessID)
