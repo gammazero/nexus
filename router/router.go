@@ -67,12 +67,12 @@ type routerReq struct {
 type router struct {
 	realms map[wamp.URI]*Realm
 
-	actionChan  chan func()
-	closingChan chan struct{}
-	waitReamls  sync.WaitGroup
+	actionChan chan func()
+	waitReamls sync.WaitGroup
 
 	autoRealm bool
 	strictURI bool
+	closed    bool
 }
 
 // NewRouter creates a WAMP router.
@@ -84,9 +84,8 @@ type router struct {
 // The strictURI parameter enabled strict URI validation.
 func NewRouter(autoRealm, strictURI bool) Router {
 	r := &router{
-		realms:      map[wamp.URI]*Realm{},
-		closingChan: make(chan struct{}),
-		actionChan:  make(chan func()),
+		realms:     map[wamp.URI]*Realm{},
+		actionChan: make(chan func()),
 
 		autoRealm: autoRealm,
 		strictURI: strictURI,
@@ -113,6 +112,10 @@ func (r *router) AddRealm(uri wamp.URI, anonymousAuth, allowDisclose bool) (*Rea
 	var realm *Realm
 	sync := make(chan error)
 	r.actionChan <- func() {
+		if r.closed {
+			sync <- errors.New("router closed")
+			return
+		}
 		if _, ok := r.realms[uri]; ok {
 			sync <- errors.New("realm already exists: " + string(uri))
 			return
@@ -139,12 +142,6 @@ func (r *router) Attach(client wamp.Peer) error {
 		}
 		client.Send(&abortMsg)
 		client.Close()
-	}
-
-	// Check that router is not shutting down.
-	if r.closing() {
-		sendAbort(wamp.ErrSystemShutdown, nil)
-		return errors.New("router is closing, not accepting new clients")
 	}
 
 	// Receive HELLO message from the client.
@@ -178,6 +175,11 @@ func (r *router) Attach(client wamp.Peer) error {
 	var realm *Realm
 	sync := make(chan error)
 	r.actionChan <- func() {
+		if r.closed {
+			sendAbort(wamp.ErrSystemShutdown, nil)
+			sync <- errors.New("router is closing, not accepting new clients")
+			return
+		}
 		// Realm is a string identifying the realm this session should attach
 		// to.  Check if the requested realm exists.
 		var ok bool
@@ -318,28 +320,17 @@ func (r *router) LocalClient(realmURI wamp.URI, details map[string]interface{}) 
 
 // Close stops the router and waits message processing to stop.
 func (r *router) Close() {
-	if r.closing() {
-		return
-	}
-	close(r.closingChan)
 	sync := make(chan struct{})
 	r.actionChan <- func() {
+		// Prevent new or attachment to existing realms.
+		r.closed = true
+		// Close all existing realms.
 		for i := range r.realms {
 			r.realms[i].Close()
 		}
 		sync <- struct{}{}
 	}
 	<-sync
+	// Wait for all existing realms to close.
 	r.waitReamls.Wait()
-	close(r.actionChan)
-}
-
-// Closed returns true if the router has been closed.
-func (r *router) closing() bool {
-	select {
-	case <-r.closingChan:
-		return true
-	default:
-	}
-	return false
 }
