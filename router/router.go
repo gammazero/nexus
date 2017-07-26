@@ -54,14 +54,6 @@ type Router interface {
 	// with that session.
 	LocalClient(wamp.URI, map[string]interface{}) (wamp.Peer, error)
 
-	// AddSessionCreateCallback registers a function to call when a new router
-	// session is created.
-	AddSessionCreateCallback(func(*Session, string))
-
-	// AddSessionCloseCallback registers a function to call when a router
-	// session is closed.
-	AddSessionCloseCallback(func(*Session, string))
-
 	// Close stops the router and waits message processing to stop.
 	Close()
 }
@@ -73,9 +65,7 @@ type routerReq struct {
 
 // DefaultRouter is the default WAMP router implementation.
 type router struct {
-	realms                 map[wamp.URI]*Realm
-	sessionCreateCallbacks []func(*Session, string)
-	sessionCloseCallbacks  []func(*Session, string)
+	realms map[wamp.URI]*Realm
 
 	actionChan  chan func()
 	closingChan chan struct{}
@@ -94,11 +84,9 @@ type router struct {
 // The strictURI parameter enabled strict URI validation.
 func NewRouter(autoRealm, strictURI bool) Router {
 	r := &router{
-		realms:                 map[wamp.URI]*Realm{},
-		sessionCreateCallbacks: []func(*Session, string){},
-		sessionCloseCallbacks:  []func(*Session, string){},
-		closingChan:            make(chan struct{}),
-		actionChan:             make(chan func()),
+		realms:      map[wamp.URI]*Realm{},
+		closingChan: make(chan struct{}),
+		actionChan:  make(chan func()),
 
 		autoRealm: autoRealm,
 		strictURI: strictURI,
@@ -299,23 +287,10 @@ func (r *router) Attach(client wamp.Peer) error {
 
 	log.Print("Created session: ", welcome.ID)
 
-	// Need synchronized access to r.sessionCreateCallbacks.
-	r.actionChan <- func() {
-		for _, callback := range r.sessionCreateCallbacks {
-			go callback(sess, string(hello.Realm))
-		}
-	}
 	r.waitReamls.Add(1)
 	go func() {
 		realm.handleSession(sess, false)
 		sess.Close()
-
-		// Need synchronized access to r.sessionCloseCallbacks.
-		r.actionChan <- func() {
-			for _, callback := range r.sessionCloseCallbacks {
-				go callback(sess, string(hello.Realm))
-			}
-		}
 		r.waitReamls.Done()
 	}()
 	return nil
@@ -339,22 +314,6 @@ func (r *router) LocalClient(realmURI wamp.URI, details map[string]interface{}) 
 
 	// Start internal session and return remote leg of router uplink.
 	return realm.bridgeSession(details, false)
-}
-
-// AddSessionCreateCallback registers a function to call when a new router
-// session is created.
-func (r *router) AddSessionCreateCallback(fn func(*Session, string)) {
-	r.actionChan <- func() {
-		r.sessionCreateCallbacks = append(r.sessionCreateCallbacks, fn)
-	}
-}
-
-// AddSessionCloseCallback registers a function to call when a router session
-// is closed.
-func (r *router) AddSessionCloseCallback(fn func(*Session, string)) {
-	r.actionChan <- func() {
-		r.sessionCloseCallbacks = append(r.sessionCloseCallbacks, fn)
-	}
 }
 
 // Close stops the router and waits message processing to stop.
