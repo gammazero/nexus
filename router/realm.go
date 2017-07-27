@@ -21,8 +21,7 @@ type Realm struct {
 	authorizer Authorizer
 
 	// authmethod -> Authenticator
-	crAuthenticators map[string]auth.CRAuthenticator
-	authenticators   map[string]auth.Authenticator
+	authenticators map[string]auth.Authenticator
 
 	// session ID -> Session
 	clients map[wamp.ID]*Session
@@ -48,21 +47,21 @@ type Realm struct {
 // implementtions.  The Realm has no authorizers unless anonymousAuth is true.
 func NewRealm(uri wamp.URI, strictURI, anonymousAuth, allowDisclose bool) *Realm {
 	r := &Realm{
-		uri:        uri,
-		broker:     NewBroker(strictURI, allowDisclose),
-		dealer:     NewDealer(strictURI, allowDisclose),
-		authorizer: NewAuthorizer(),
-		clients:    map[wamp.ID]*Session{},
-		actionChan: make(chan func()),
-		metaIDGen:  wamp.NewIDGen(),
-		metaDone:   make(chan struct{}),
+		uri:            uri,
+		broker:         NewBroker(strictURI, allowDisclose),
+		dealer:         NewDealer(strictURI, allowDisclose),
+		authorizer:     NewAuthorizer(),
+		authenticators: map[string]auth.Authenticator{},
+		clients:        map[wamp.ID]*Session{},
+		actionChan:     make(chan func()),
+		metaIDGen:      wamp.NewIDGen(),
+		metaDone:       make(chan struct{}),
 	}
 	// If allowing anonymous authentication, then install the anonymous
 	// authenticator.  Install this first so that it is replaced in case a
 	// custom anonymous authenticator is supplied.
 	if anonymousAuth {
-		r.authenticators = map[string]auth.Authenticator{
-			"anonymous": auth.AnonymousAuth}
+		r.authenticators["anonymous"] = auth.AnonymousAuth
 	}
 
 	// Create a session that bridges two peers.  Meta events are published by
@@ -85,30 +84,9 @@ func NewRealm(uri wamp.URI, strictURI, anonymousAuth, allowDisclose bool) *Realm
 // AddAuthenticator registers the Authenticator for the specified method.
 func (r *Realm) AddAuthenticator(method string, athr auth.Authenticator) {
 	r.actionChan <- func() {
-		if r.authenticators == nil {
-			r.authenticators = map[string]auth.Authenticator{}
-		}
 		r.authenticators[method] = athr
 	}
 	log.Printf("Added authenticator for method %s (realm=%v)", method, r.uri)
-}
-
-// AddCRAuthenticator registers the CRAuthenticator for the specified method.
-func (r *Realm) AddCRAuthenticator(method string, athr auth.CRAuthenticator) {
-	r.actionChan <- func() {
-		if r.crAuthenticators == nil {
-			r.crAuthenticators = map[string]auth.CRAuthenticator{}
-		}
-		r.crAuthenticators[method] = athr
-	}
-	log.Printf("Added CR authenticator for method %s (realm=%v)", method, r.uri)
-}
-
-func (r *Realm) SetAuthorizer(authorizer Authorizer) {
-	r.actionChan <- func() {
-		r.authorizer = authorizer
-	}
-	log.Print("Set authorizer for realm ", r.uri)
 }
 
 // DelAuthenticator deletes the Authenticator for the specified method.
@@ -119,13 +97,11 @@ func (r *Realm) DelAuthenticator(method string) {
 	log.Printf("Deleted authenticator for method %s (realm=%v)", method, r.uri)
 }
 
-// DelCRAuthenticator deletes the CRAuthenticator for the specified method.
-func (r *Realm) DelCRAuthenticator(method string) {
+func (r *Realm) SetAuthorizer(authorizer Authorizer) {
 	r.actionChan <- func() {
-		delete(r.crAuthenticators, method)
+		r.authorizer = authorizer
 	}
-	//log.Print("Deleted CR authenticator for method: ", method)
-	log.Printf("Deleted CR authenticator for method %s (realm=%v)", method, r.uri)
+	log.Print("Set authorizer for realm ", r.uri)
 }
 
 // Close kills all clients, causing them to send a goodbye message.
@@ -386,48 +362,13 @@ func (r *Realm) authClient(client wamp.Peer, details map[string]interface{}) (*w
 		return nil, errors.New("no authentication supplied")
 	}
 
-	authr, crAuthr, method := r.getAuthenticator(authmethods)
-	if authr != nil {
-		// Return welcome message or error.
-		welcome, err := authr.Authenticate(details)
-		if err != nil {
-			return nil, err
-		}
-		welcome.Details["authmethod"] = method
-		return welcome, nil
-	}
-
-	var pendingCRAuth auth.PendingCRAuth
-	var err error
-	if crAuthr != nil {
-		pendingCRAuth, err = crAuthr.Challenge(details)
-		if err != nil {
-			return nil, err
-		}
-	}
-
-	if pendingCRAuth == nil {
+	authr, method := r.getAuthenticator(authmethods)
+	if authr == nil {
 		return nil, errors.New("could not authenticate with any method")
 	}
 
-	// Challenge response needed.  Send CHALLENGE message to client.
-	log.Print("Sending auth challenge to client %v", client)
-	client.Send(pendingCRAuth.Msg())
-
-	// Read AUTHENTICATE response from client.
-	msg, err := wamp.RecvTimeout(client, pendingCRAuth.Timeout())
-	if err != nil {
-		return nil, err
-	}
-	authRsp, ok := msg.(*wamp.Authenticate)
-	if !ok {
-		return nil, fmt.Errorf("unexpected %v message received from client %v",
-			msg.MessageType(), client)
-	}
-	log.Println("Received", authRsp.MessageType(), "response from client %v",
-		client)
-
-	welcome, err := pendingCRAuth.Authenticate(authRsp)
+	// Return welcome message or error.
+	welcome, err := authr.Authenticate(details, client)
 	if err != nil {
 		return nil, err
 	}
@@ -436,7 +377,7 @@ func (r *Realm) authClient(client wamp.Peer, details map[string]interface{}) (*w
 }
 
 // getAuthenticator finds the first authenticator registered for the methods.
-func (r *Realm) getAuthenticator(methods []string) (auth auth.Authenticator, crAuth auth.CRAuthenticator, authMethod string) {
+func (r *Realm) getAuthenticator(methods []string) (auth auth.Authenticator, authMethod string) {
 	sync := make(chan struct{})
 	r.actionChan <- func() {
 		// Iterate through the methods and see if there is an Authenticator or
@@ -445,13 +386,6 @@ func (r *Realm) getAuthenticator(methods []string) (auth auth.Authenticator, crA
 			if len(r.authenticators) != 0 {
 				if a, ok := r.authenticators[method]; ok {
 					auth = a
-					authMethod = method
-					break
-				}
-			}
-			if len(r.crAuthenticators) != 0 {
-				if a, ok := r.crAuthenticators[method]; ok {
-					crAuth = a
 					authMethod = method
 					break
 				}
