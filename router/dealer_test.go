@@ -1,13 +1,29 @@
 package router
 
 import (
+	"errors"
+	"fmt"
 	"testing"
+	"time"
 
 	"github.com/gammazero/nexus/wamp"
 )
 
+func checkMetaReg(metaClient wamp.Peer) error {
+	select {
+	case <-time.After(time.Millisecond):
+		return errors.New("timed out waiting for event")
+	case msg := <-metaClient.Recv():
+		if _, ok := msg.(*wamp.Event); !ok {
+			return fmt.Errorf("expected EVENT, got", msg.MessageType())
+		}
+	}
+	return nil
+}
+
 func TestBasicRegister(t *testing.T) {
-	dealer := NewDealer(false, true).(*dealer)
+	metaClient, rtr := LinkedPeers()
+	dealer := NewDealer(false, true, rtr).(*dealer)
 	callee := newTestPeer()
 	testProcedure := wamp.URI("nexus.test.endpoint")
 	sess := &Session{Peer: callee}
@@ -18,6 +34,10 @@ func TestBasicRegister(t *testing.T) {
 	reg := rsp.(*wamp.Registered).Registration
 	if reg == 0 {
 		t.Fatal("invalid registration ID")
+	}
+
+	if err := checkMetaReg(metaClient); err != nil {
+		t.Fatal("Registration meta event fail: ", err)
 	}
 
 	// Check that dealer has the correct endpoint registered.
@@ -51,7 +71,8 @@ func TestBasicRegister(t *testing.T) {
 }
 
 func TestUnregister(t *testing.T) {
-	dealer := NewDealer(false, true).(*dealer)
+	metaClient, rtr := LinkedPeers()
+	dealer := NewDealer(false, true, rtr).(*dealer)
 	callee := newTestPeer()
 	testProcedure := wamp.URI("nexus.test.endpoint")
 
@@ -60,6 +81,10 @@ func TestUnregister(t *testing.T) {
 	dealer.Submit(sess, &wamp.Register{Request: 123, Procedure: testProcedure})
 	rsp := <-callee.Recv()
 	reg := rsp.(*wamp.Registered).Registration
+
+	if err := checkMetaReg(metaClient); err != nil {
+		t.Fatal("Registration meta event fail: ", err)
+	}
 
 	// Unregister the procedure.
 	dealer.Submit(sess, &wamp.Unregister{Request: 124, Registration: reg})
@@ -88,7 +113,8 @@ func TestUnregister(t *testing.T) {
 }
 
 func TestBasicCall(t *testing.T) {
-	dealer := NewDealer(false, true).(*dealer)
+	metaClient, rtr := LinkedPeers()
+	dealer := NewDealer(false, true, rtr).(*dealer)
 	callee := newTestPeer()
 	testProcedure := wamp.URI("nexus.test.endpoint")
 
@@ -100,6 +126,10 @@ func TestBasicCall(t *testing.T) {
 	_, ok := rsp.(*wamp.Registered)
 	if !ok {
 		t.Fatal("did not receive REGISTERED response")
+	}
+
+	if err := checkMetaReg(metaClient); err != nil {
+		t.Fatal("Registration meta event fail: ", err)
 	}
 
 	caller := newTestPeer()
@@ -165,7 +195,8 @@ func TestBasicCall(t *testing.T) {
 }
 
 func TestRemovePeer(t *testing.T) {
-	dealer := NewDealer(false, true).(*dealer)
+	metaClient, rtr := LinkedPeers()
+	dealer := NewDealer(false, true, rtr).(*dealer)
 	callee := newTestPeer()
 	testProcedure := wamp.URI("nexus.test.endpoint")
 
@@ -181,6 +212,10 @@ func TestRemovePeer(t *testing.T) {
 	}
 	if _, ok := dealer.procedures[reg]; !ok {
 		t.Fatal("dealer does not have registration")
+	}
+
+	if err := checkMetaReg(metaClient); err != nil {
+		t.Fatal("Registration meta event fail: ", err)
 	}
 
 	// Test that removing the callee session removes the registration.
@@ -214,8 +249,8 @@ func TestCancelCall(t *testing.T) {
 	// Test mode=kill
 	// Test mode=killnowait
 	// Test mode=skip
-
-	dealer := NewDealer(false, true).(*dealer)
+	metaClient, rtr := LinkedPeers()
+	dealer := NewDealer(false, true, rtr).(*dealer)
 	callee := newTestPeer()
 	testProcedure := wamp.URI("nexus.test.endpoint")
 
@@ -238,6 +273,10 @@ func TestCancelCall(t *testing.T) {
 	_, ok := rsp.(*wamp.Registered)
 	if !ok {
 		t.Fatal("did not receive REGISTERED response")
+	}
+
+	if err := checkMetaReg(metaClient); err != nil {
+		t.Fatal("Registration meta event fail: ", err)
 	}
 
 	caller := newTestPeer()

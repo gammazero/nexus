@@ -50,7 +50,6 @@ func NewRealm(uri wamp.URI, strictURI, anonymousAuth, allowDisclose bool) *Realm
 	r := &Realm{
 		uri:        uri,
 		broker:     NewBroker(strictURI, allowDisclose),
-		dealer:     NewDealer(strictURI, allowDisclose),
 		authorizer: NewAuthorizer(),
 		clients:    map[wamp.ID]*Session{},
 		actionChan: make(chan func()),
@@ -71,6 +70,8 @@ func NewRealm(uri wamp.URI, strictURI, anonymousAuth, allowDisclose bool) *Realm
 	// event to any subscribers.
 	p, _ := r.bridgeSession(nil, true)
 	r.metaClient = p
+
+	r.dealer = NewDealer(strictURI, allowDisclose, p)
 
 	// Register to handle session meta procedures.
 	r.metaSessionCount = r.registerMetaProcedure(wamp.MetaProcSessionCount, p)
@@ -204,12 +205,10 @@ func (r *Realm) bridgeSession(details map[string]interface{}, meta bool) (wamp.P
 // Note: onJoin() must be called from outside handleSession() so that it is not
 // called for the meta client.
 func (r *Realm) onJoin(sess *Session) {
-	var metaID wamp.ID
 	r.waitHandlers.Add(1)
 	sync := make(chan struct{})
 	r.actionChan <- func() {
 		r.clients[sess.ID] = sess
-		metaID = r.metaIDGen.Next()
 		sync <- struct{}{}
 	}
 	<-sync
@@ -226,7 +225,7 @@ func (r *Realm) onJoin(sess *Session) {
 	// Session Meta Events MUST be dispatched by the Router to the same realm
 	// as the WAMP session which triggered the event.
 	r.metaClient.Send(&wamp.Publish{
-		Request:   metaID,
+		Request:   wamp.GlobalID(),
 		Topic:     wamp.MetaEventSessionOnJoin,
 		Arguments: []interface{}{details},
 	})
@@ -238,19 +237,17 @@ func (r *Realm) onJoin(sess *Session) {
 // Note: onLeave() must be called from outside handleSession() so that it is
 // not called for the meta client.
 func (r *Realm) onLeave(sess *Session) {
-	var metaID wamp.ID
 	sync := make(chan struct{})
 	r.actionChan <- func() {
 		delete(r.clients, sess.ID)
 		r.dealer.RemoveSession(sess)
 		r.broker.RemoveSession(sess)
-		metaID = r.metaIDGen.Next()
 		sync <- struct{}{}
 	}
 	<-sync
 
 	r.metaClient.Send(&wamp.Publish{
-		Request:   metaID,
+		Request:   wamp.GlobalID(),
 		Topic:     wamp.MetaEventSessionOnLeave,
 		Arguments: []interface{}{sess.ID},
 	})

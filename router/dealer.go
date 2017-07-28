@@ -101,10 +101,12 @@ type dealer struct {
 	// Dealer behavior flags.
 	strictURI     bool
 	allowDisclose bool
+
+	metaClient wamp.Peer
 }
 
 // NewDealer creates a the default Dealer implementation.
-func NewDealer(strictURI, allowDisclose bool) Dealer {
+func NewDealer(strictURI, allowDisclose bool, metaClient wamp.Peer) Dealer {
 	d := &dealer{
 		procedures: map[wamp.ID]remoteProcedure{},
 
@@ -128,6 +130,8 @@ func NewDealer(strictURI, allowDisclose bool) Dealer {
 
 		strictURI:     strictURI,
 		allowDisclose: allowDisclose,
+
+		metaClient: metaClient,
 	}
 	go d.reqHandler()
 	return d
@@ -237,7 +241,6 @@ func (d *dealer) register(callee *Session, msg *wamp.Register) {
 	}
 
 	var regs []wamp.ID
-
 	switch match {
 	default:
 		regs = d.registrations[msg.Procedure]
@@ -247,6 +250,7 @@ func (d *dealer) register(callee *Session, msg *wamp.Register) {
 		regs = d.wcRegistrations[msg.Procedure]
 	}
 
+	var regID wamp.ID
 	invokePolicy := wamp.OptionString(msg.Options, "invoke")
 	if len(regs) != 0 {
 		// Get invocation policy of existing registration.  All regs must have
@@ -257,8 +261,8 @@ func (d *dealer) register(callee *Session, msg *wamp.Register) {
 		}
 		foundPolicy := proc.policy
 
-		// Found an existing registration has an invocation strategy that only
-		// allows a single callee on a the given registration.
+		// Found an existing registration that has an invocation strategy that
+		// only allows a single callee on a the given registration.
 		if foundPolicy == "" || foundPolicy == "single" {
 			log.Println("REGISTER for already registered procedure",
 				msg.Procedure, "from callee", callee)
@@ -285,9 +289,26 @@ func (d *dealer) register(callee *Session, msg *wamp.Register) {
 			})
 			return
 		}
+		regID = d.idGen.Next()
+	} else {
+		regID = d.idGen.Next()
+		// wamp.registration.on_create is fired when a registration is created
+		// through a registration request for an URI which was previously
+		// without a registration.
+		details := map[string]interface{}{
+			"id":      regID,
+			"created": wamp.NowISO8601(),
+			"uri":     msg.Procedure,
+			"match":   match,
+			"invoke":  invokePolicy,
+		}
+		d.metaClient.Send(&wamp.Publish{
+			Request:   wamp.GlobalID(),
+			Topic:     wamp.MetaEventRegOnCreate,
+			Arguments: []interface{}{callee.ID, details},
+		})
 	}
 
-	regID := d.idGen.Next()
 	d.procedures[regID] = remoteProcedure{
 		callee:    callee,
 		procedure: msg.Procedure,
