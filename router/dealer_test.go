@@ -116,6 +116,13 @@ func TestUnregister(t *testing.T) {
 		t.Fatal("invalid unreg ID")
 	}
 
+	if err := checkMetaReg(metaClient, sess.ID); err != nil {
+		t.Fatal("Registration meta event fail: ", err)
+	}
+	if err := checkMetaReg(metaClient, sess.ID); err != nil {
+		t.Fatal("Registration meta event fail: ", err)
+	}
+
 	// Check that dealer does not have registered endpoint
 	_, ok = dealer.registrations[testProcedure]
 	if ok {

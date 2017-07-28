@@ -343,7 +343,10 @@ func (d *dealer) register(callee *Session, msg *wamp.Register) {
 	})
 
 	// Publish wamp.registration.on_register meta event.  Fired when a session
-	// is added to a registration.
+	// is added to a registration.  A wamp.registration.on_register event MUST
+	// be fired subsequent to a wamp.registration.on_create event, since the
+	// first registration results in both the creation of the registration and
+	// the addition of a session.
 	d.metaClient.Send(&wamp.Publish{
 		Request:   wamp.GlobalID(),
 		Topic:     wamp.MetaEventRegOnRegister,
@@ -369,13 +372,34 @@ func (d *dealer) unregister(callee *Session, msg *wamp.Unregister) {
 	delete(d.procedures, msg.Registration)
 
 	// Delete the registration according to what match type it is.
-	d.delRegistration(msg.Registration, proc.procedure, proc.match)
+	onDel := d.delRegistration(msg.Registration, proc.procedure, proc.match)
+	// Delete the registration for the callee's set of registrations.
 	d.removeCalleeRegistration(callee, msg.Registration)
 	log.Printf("Dealer unregistered procedure %v (reg=%v)", proc.procedure,
 		msg.Registration)
 	callee.Send(&wamp.Unregistered{
 		Request: msg.Request,
 	})
+
+	// Publish wamp.registration.on_unregister meta event.  Fired when a
+	// session is removed from a subscription.
+	d.metaClient.Send(&wamp.Publish{
+		Request:   wamp.GlobalID(),
+		Topic:     wamp.MetaEventRegOnUnregister,
+		Arguments: []interface{}{callee.ID, msg.Registration},
+	})
+
+	if onDel {
+		// Publish wamp.registration.on_delete meta event.  Fired when a
+		// registration is deleted after the last session attached to it has
+		// been removed.  The wamp.registration.on_delete event MUST be
+		// preceded by a wamp.registration.on_unregister event.
+		d.metaClient.Send(&wamp.Publish{
+			Request:   wamp.GlobalID(),
+			Topic:     wamp.MetaEventRegOnDelete,
+			Arguments: []interface{}{callee.ID, msg.Registration},
+		})
+	}
 }
 
 // Call invokes a registered remote procedure.
@@ -715,22 +739,46 @@ func (d *dealer) error(peer *Session, msg *wamp.Error) {
 }
 
 func (d *dealer) removeSession(callee *Session) {
+	var onDel bool
 	for reg := range d.calleeRegIDSet[callee] {
+		onDel = false
 		if proc, ok := d.procedures[reg]; ok {
 			delete(d.procedures, reg)
-			d.delRegistration(reg, proc.procedure, proc.match)
+			onDel = d.delRegistration(reg, proc.procedure, proc.match)
 		}
 		d.removeCalleeRegistration(callee, reg)
+
+		// Publish wamp.registration.on_unregister meta event.  Fired when a
+		// callee session is removed from a subscription.
+		d.metaClient.Send(&wamp.Publish{
+			Request:   wamp.GlobalID(),
+			Topic:     wamp.MetaEventRegOnUnregister,
+			Arguments: []interface{}{callee.ID, reg},
+		})
+
+		if onDel {
+			// Publish wamp.registration.on_delete meta event.  Fired when a
+			// registration is deleted after the last session attached to it
+			// has been removed.  The wamp.registration.on_delete event MUST be
+			// preceded by a wamp.registration.on_unregister event.
+			d.metaClient.Send(&wamp.Publish{
+				Request:   wamp.GlobalID(),
+				Topic:     wamp.MetaEventRegOnDelete,
+				Arguments: []interface{}{callee.ID, reg},
+			})
+		}
 	}
 }
 
-func (d *dealer) delRegistration(reg wamp.ID, proc wamp.URI, match string) {
+func (d *dealer) delRegistration(reg wamp.ID, proc wamp.URI, match string) bool {
 	// Delete the registration according to what type it is.
+	var sendOnDelete bool
 	switch match {
 	default:
 		regs := d.registrations[proc]
 		if len(regs) <= 1 {
 			delete(d.registrations, proc)
+			sendOnDelete = true
 		} else {
 			// If there multiple registrations for the procedure, only remove
 			// the one that is being unregistered.
@@ -746,6 +794,7 @@ func (d *dealer) delRegistration(reg wamp.ID, proc wamp.URI, match string) {
 		regs := d.pfxRegistrations[proc]
 		if len(regs) <= 1 {
 			delete(d.pfxRegistrations, proc)
+			sendOnDelete = true
 		} else {
 			for i := range regs {
 				if regs[i] == reg {
@@ -758,6 +807,7 @@ func (d *dealer) delRegistration(reg wamp.ID, proc wamp.URI, match string) {
 		regs := d.wcRegistrations[proc]
 		if len(regs) <= 1 {
 			delete(d.wcRegistrations, proc)
+			sendOnDelete = true
 		} else {
 			for i := range regs {
 				if regs[i] == reg {
@@ -767,6 +817,7 @@ func (d *dealer) delRegistration(reg wamp.ID, proc wamp.URI, match string) {
 			}
 		}
 	}
+	return sendOnDelete
 }
 
 func (d *dealer) addCalleeRegistration(callee *Session, reg wamp.ID) {
