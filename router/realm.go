@@ -104,8 +104,11 @@ func (r *Realm) SetAuthorizer(authorizer Authorizer) {
 	log.Print("Set authorizer for realm ", r.uri)
 }
 
-// Close kills all clients, causing them to send a goodbye message.
-func (r *Realm) Close() {
+// closeRealm kills all clients, causing them to send a goodbye message.  This
+// is only called from the router's single action goroutine, so will never be
+// called by multiple goroutines.
+func (r *Realm) closeRealm() {
+	// Stop broker and dealer so they can be GC'd, and then so can this realm.
 	defer r.broker.Close()
 	defer r.dealer.Close()
 
