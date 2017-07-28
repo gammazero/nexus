@@ -44,9 +44,6 @@ type Router interface {
 	// AddRealm creates a new Realm and adds that to the router.
 	AddRealm(wamp.URI, bool, bool) (*Realm, error)
 
-	// AddCustomRealm the given realm to the router.
-	//AddCustomRealm(realm *Realm) error
-
 	// Attach connects a client to the router and to the requested realm.
 	Attach(wamp.Peer) error
 
@@ -325,8 +322,10 @@ func (r *router) Close() {
 		// Prevent new or attachment to existing realms.
 		r.closed = true
 		// Close all existing realms.
-		for i := range r.realms {
-			r.realms[i].Close()
+		for uri, realm := range r.realms {
+			realm.closeRealm()
+			// Delete the realm, in case of pending call to LocalClient.
+			delete(r.realms, uri)
 		}
 		sync <- struct{}{}
 	}
