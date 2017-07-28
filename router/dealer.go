@@ -325,6 +325,14 @@ func (d *dealer) register(callee *Session, msg *wamp.Register) {
 		Request:      msg.Request,
 		Registration: regID,
 	})
+
+	// Publish wamp.registration.on_register meta event.  Fired when a session
+	// is added to a registration.
+	d.metaClient.Send(&wamp.Publish{
+		Request:   wamp.GlobalID(),
+		Topic:     wamp.MetaEventRegOnRegister,
+		Arguments: []interface{}{callee.ID, regID},
+	})
 }
 
 // Unregister removes a remote procedure previously registered by the callee.

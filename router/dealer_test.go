@@ -9,13 +9,24 @@ import (
 	"github.com/gammazero/nexus/wamp"
 )
 
-func checkMetaReg(metaClient wamp.Peer) error {
+func checkMetaReg(metaClient wamp.Peer, sessID wamp.ID) error {
 	select {
 	case <-time.After(time.Millisecond):
 		return errors.New("timed out waiting for event")
 	case msg := <-metaClient.Recv():
-		if _, ok := msg.(*wamp.Event); !ok {
-			return fmt.Errorf("expected EVENT, got", msg.MessageType())
+		event, ok := msg.(*wamp.Publish)
+		if !ok {
+			return fmt.Errorf("expected PUBLISH, got %s", msg.MessageType())
+		}
+		if len(event.Arguments) != 2 {
+			return errors.New("expected reg meta event to have 2 args")
+		}
+		sid, ok := event.Arguments[0].(wamp.ID)
+		if !ok {
+			return errors.New("wrong type for session ID arg")
+		}
+		if sid != sessID {
+			return errors.New("reg meta returned wrong session ID")
 		}
 	}
 	return nil
@@ -36,7 +47,10 @@ func TestBasicRegister(t *testing.T) {
 		t.Fatal("invalid registration ID")
 	}
 
-	if err := checkMetaReg(metaClient); err != nil {
+	if err := checkMetaReg(metaClient, sess.ID); err != nil {
+		t.Fatal("Registration meta event fail: ", err)
+	}
+	if err := checkMetaReg(metaClient, sess.ID); err != nil {
 		t.Fatal("Registration meta event fail: ", err)
 	}
 
@@ -82,7 +96,10 @@ func TestUnregister(t *testing.T) {
 	rsp := <-callee.Recv()
 	reg := rsp.(*wamp.Registered).Registration
 
-	if err := checkMetaReg(metaClient); err != nil {
+	if err := checkMetaReg(metaClient, sess.ID); err != nil {
+		t.Fatal("Registration meta event fail: ", err)
+	}
+	if err := checkMetaReg(metaClient, sess.ID); err != nil {
 		t.Fatal("Registration meta event fail: ", err)
 	}
 
@@ -128,7 +145,10 @@ func TestBasicCall(t *testing.T) {
 		t.Fatal("did not receive REGISTERED response")
 	}
 
-	if err := checkMetaReg(metaClient); err != nil {
+	if err := checkMetaReg(metaClient, calleeSess.ID); err != nil {
+		t.Fatal("Registration meta event fail: ", err)
+	}
+	if err := checkMetaReg(metaClient, calleeSess.ID); err != nil {
 		t.Fatal("Registration meta event fail: ", err)
 	}
 
@@ -214,7 +234,10 @@ func TestRemovePeer(t *testing.T) {
 		t.Fatal("dealer does not have registration")
 	}
 
-	if err := checkMetaReg(metaClient); err != nil {
+	if err := checkMetaReg(metaClient, sess.ID); err != nil {
+		t.Fatal("Registration meta event fail: ", err)
+	}
+	if err := checkMetaReg(metaClient, sess.ID); err != nil {
 		t.Fatal("Registration meta event fail: ", err)
 	}
 
@@ -275,7 +298,7 @@ func TestCancelCall(t *testing.T) {
 		t.Fatal("did not receive REGISTERED response")
 	}
 
-	if err := checkMetaReg(metaClient); err != nil {
+	if err := checkMetaReg(metaClient, calleeSess.ID); err != nil {
 		t.Fatal("Registration meta event fail: ", err)
 	}
 
