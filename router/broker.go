@@ -2,6 +2,7 @@ package router
 
 import (
 	"fmt"
+	"time"
 
 	"github.com/gammazero/nexus/wamp"
 )
@@ -115,7 +116,7 @@ func (b *broker) RemoveSession(sub *Session) {
 
 // Close stops the broker and waits message processing to stop.
 func (b *broker) Close() {
-	close(b.reqChan)
+	b.reqChan <- routerReq{}
 }
 
 // reqHandler is broker's main processing function that is run by a single
@@ -124,6 +125,10 @@ func (b *broker) Close() {
 func (b *broker) reqHandler() {
 	for req := range b.reqChan {
 		if req.msg == nil {
+			if req.session == nil {
+				// Exit request handler.
+				break
+			}
 			b.removeSession(req.session)
 			continue
 		}
@@ -138,6 +143,18 @@ func (b *broker) reqHandler() {
 		default:
 			panic(fmt.Sprint("broker received message type: ",
 				req.msg.MessageType()))
+		}
+	}
+	// Discard any more incoming requests and return once a second has elapsed
+	// without receiving a new request.
+	t := time.NewTimer(time.Second)
+	for {
+		select {
+		case <-b.reqChan:
+			t.Reset(time.Second)
+			continue
+		case <-t.C:
+			return
 		}
 	}
 }
