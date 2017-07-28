@@ -151,7 +151,7 @@ func (d *dealer) RemoveSession(peer *Session) {
 
 // Close stops the dealer and waits message processing to stop.
 func (d *dealer) Close() {
-	close(d.reqChan)
+	d.reqChan <- routerReq{}
 }
 
 // reqHandler is dealer's main processing function that is run by a single
@@ -160,6 +160,10 @@ func (d *dealer) Close() {
 func (d *dealer) reqHandler() {
 	for req := range d.reqChan {
 		if req.msg == nil {
+			if req.session == nil {
+				// Exit request handler.
+				break
+			}
 			d.removeSession(req.session)
 			continue
 		}
@@ -179,6 +183,18 @@ func (d *dealer) reqHandler() {
 		default:
 			panic(fmt.Sprint("dealer received message type: ",
 				req.msg.MessageType()))
+		}
+	}
+	// Discard any more incoming requests and return once a second has elapsed
+	// without receiving a new request.
+	t := time.NewTimer(time.Second)
+	for {
+		select {
+		case <-d.reqChan:
+			t.Reset(time.Second)
+			continue
+		case <-t.C:
+			return
 		}
 	}
 }
