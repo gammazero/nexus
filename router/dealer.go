@@ -12,8 +12,6 @@ import (
 // TODO: Implement the following:
 // - call timeout (need timeout goroutine)
 // - call trust levels
-// - session_meta_api
-// - registration_meta_api
 
 // Features supported by this dealer.
 var dealerFeatures = map[string]interface{}{
@@ -24,6 +22,7 @@ var dealerFeatures = map[string]interface{}{
 		"pattern_based_registration": true,
 		"progressive_call_results":   true,
 		"shared_registration":        true,
+		"registration_meta_api":      true,
 	},
 }
 
