@@ -174,7 +174,7 @@ func (d *dealer) RemoveSession(peer *Session) {
 
 // Close stops the dealer and waits message processing to stop.
 func (d *dealer) Close() {
-	d.reqChan <- routerReq{}
+	close(d.reqChan)
 }
 
 // reqHandler is dealer's main processing function that is run by a single
@@ -183,10 +183,6 @@ func (d *dealer) Close() {
 func (d *dealer) reqHandler() {
 	for req := range d.reqChan {
 		if req.msg == nil {
-			if req.session == nil {
-				// Exit request handler.
-				break
-			}
 			d.removeSession(req.session)
 			continue
 		}
@@ -230,18 +226,6 @@ func (d *dealer) reqHandler() {
 		default:
 			panic(fmt.Sprint("dealer received message type: ",
 				req.msg.MessageType()))
-		}
-	}
-	// Discard any more incoming requests and return once a second has elapsed
-	// without receiving a new request.
-	t := time.NewTimer(time.Second)
-	for {
-		select {
-		case <-d.reqChan:
-			t.Reset(time.Second)
-			continue
-		case <-t.C:
-			return
 		}
 	}
 }
@@ -903,24 +887,25 @@ func (d *dealer) regList(msg *wamp.Invocation) wamp.Message {
 func (d *dealer) regLookup(msg *wamp.Invocation) wamp.Message {
 	var regID wamp.ID
 	if len(msg.Arguments) != 0 {
-		procedure := wamp.URI(msg.Arguments[0].(string))
-		var match string
-		if len(msg.Arguments) > 1 {
-			opts := msg.Arguments[1].(map[string]interface{})
-			match = wamp.OptionString(opts, "match")
-		}
-		var reg *registration
-		var ok bool
-		switch match {
-		default:
-			reg, ok = d.procRegMap[procedure]
-		case "prefix":
-			reg, ok = d.pfxProcRegMap[procedure]
-		case "wildcard":
-			reg, ok = d.wcProcRegMap[procedure]
-		}
-		if ok {
-			regID = reg.id
+		if procedure, ok := wamp.AsURI(msg.Arguments[0]); ok {
+			var match string
+			if len(msg.Arguments) > 1 {
+				opts := msg.Arguments[1].(map[string]interface{})
+				match = wamp.OptionString(opts, "match")
+			}
+			var reg *registration
+			var ok bool
+			switch match {
+			default:
+				reg, ok = d.procRegMap[procedure]
+			case "prefix":
+				reg, ok = d.pfxProcRegMap[procedure]
+			case "wildcard":
+				reg, ok = d.wcProcRegMap[procedure]
+			}
+			if ok {
+				regID = reg.id
+			}
 		}
 	}
 	return &wamp.Yield{
@@ -933,9 +918,10 @@ func (d *dealer) regLookup(msg *wamp.Invocation) wamp.Message {
 func (d *dealer) regMatch(msg *wamp.Invocation) wamp.Message {
 	var regID wamp.ID
 	if len(msg.Arguments) != 0 {
-		procedure := wamp.URI(msg.Arguments[0].(string))
-		if reg, ok := d.matchProcedure(procedure); ok {
-			regID = reg.id
+		if procedure, ok := wamp.AsURI(msg.Arguments[0]); ok {
+			if reg, ok := d.matchProcedure(procedure); ok {
+				regID = reg.id
+			}
 		}
 	}
 	return &wamp.Yield{
