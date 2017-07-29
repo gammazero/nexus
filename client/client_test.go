@@ -1,6 +1,7 @@
 package client
 
 import (
+	"context"
 	"errors"
 	stdlog "log"
 	"os"
@@ -184,7 +185,7 @@ func TestRemoteProcedureCall(t *testing.T) {
 	}
 
 	// Test registering a valid procedure.
-	handler := func(args []interface{}, kwargs, details map[string]interface{}, cancel <-chan struct{}) *InvokeResult {
+	handler := func(ctx context.Context, args []interface{}, kwargs, details map[string]interface{}) *InvokeResult {
 		return &InvokeResult{Args: []interface{}{args[0].(int) * 37}}
 	}
 	procName := "myproc"
@@ -194,7 +195,8 @@ func TestRemoteProcedureCall(t *testing.T) {
 
 	// Test calling the procedure.
 	callArgs := []interface{}{73}
-	result, err := caller.Call(procName, nil, callArgs, nil, 0, "")
+	ctx := context.Background()
+	result, err := caller.Call(ctx, procName, nil, callArgs, nil, "")
 	if err != nil {
 		t.Fatal("failed to call procedure: ", err)
 	}
@@ -209,12 +211,64 @@ func TestRemoteProcedureCall(t *testing.T) {
 
 	// Test calling unregistered procedure.
 	callArgs = []interface{}{555}
-	result, err = caller.Call(procName, nil, callArgs, nil, 0, "")
+	result, err = caller.Call(ctx, procName, nil, callArgs, nil, "")
 	if err == nil {
 		t.Fatal("expected error calling unregistered procedure")
 	}
 	if result != nil {
 		t.Fatal("result should be nil on error")
+	}
+}
+
+func TestTimeoutCancelRemoteProcedureCall(t *testing.T) {
+	// Connect to clients to the same server
+	callee, caller, err := connectedTestClients()
+	if err != nil {
+		t.Fatal("failed to connect test clients: ", err)
+	}
+
+	// Test registering a valid procedure.
+	handler := func(ctx context.Context, args []interface{}, kwargs, details map[string]interface{}) *InvokeResult {
+		<-ctx.Done() // handler will block forever until canceled.
+		return &InvokeResult{Err: wamp.ErrCanceled}
+	}
+	procName := "myproc"
+	if err = callee.Register(procName, handler, nil); err != nil {
+		t.Fatal("failed to register procedure: ", err)
+	}
+
+	errChan := make(chan error)
+	ctx, _ := context.WithTimeout(context.Background(), time.Second)
+	// Calling the procedure, should block.
+	go func() {
+		callArgs := []interface{}{73}
+		_, err := caller.Call(ctx, procName, nil, callArgs, nil, "killnowait")
+		errChan <- err
+	}()
+
+	// Make sure the call is blocked.
+	select {
+	case err = <-errChan:
+		t.Fatal("call should have been blocked")
+	case <-time.After(200 * time.Millisecond):
+	}
+
+	// Make sure the call is canceled.
+	select {
+	case err = <-errChan:
+	case <-time.After(2 * time.Second):
+		t.Fatal("call should have been canceled")
+	}
+
+	rpcError, ok := err.(RPCError)
+	if !ok {
+		t.Fatal("expected RPCError type of error")
+	}
+	if rpcError.Err.Error != wamp.ErrCanceled {
+		t.Fatal("expected canceled error, got:", err)
+	}
+	if err = callee.Unregister(procName); err != nil {
+		t.Fatal("failed to unregister procedure: ", err)
 	}
 }
 
@@ -226,8 +280,8 @@ func TestCancelRemoteProcedureCall(t *testing.T) {
 	}
 
 	// Test registering a valid procedure.
-	handler := func(args []interface{}, kwargs, details map[string]interface{}, cancel <-chan struct{}) *InvokeResult {
-		<-cancel // handler will block forever until canceled.
+	handler := func(ctx context.Context, args []interface{}, kwargs, details map[string]interface{}) *InvokeResult {
+		<-ctx.Done() // handler will block forever until canceled.
 		return &InvokeResult{Err: wamp.ErrCanceled}
 	}
 	procName := "myproc"
@@ -236,11 +290,11 @@ func TestCancelRemoteProcedureCall(t *testing.T) {
 	}
 
 	errChan := make(chan error)
-
+	ctx, cancel := context.WithCancel(context.Background())
 	// Calling the procedure, should block.
 	go func() {
 		callArgs := []interface{}{73}
-		_, err := caller.Call(procName, nil, callArgs, nil, time.Second, "killnowait")
+		_, err := caller.Call(ctx, procName, nil, callArgs, nil, "killnowait")
 		errChan <- err
 	}()
 
@@ -250,6 +304,8 @@ func TestCancelRemoteProcedureCall(t *testing.T) {
 		t.Fatal("call should have been blocked")
 	case <-time.After(200 * time.Millisecond):
 	}
+
+	cancel()
 
 	// Make sure the call is canceled.
 	select {

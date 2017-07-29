@@ -1,6 +1,7 @@
 package client
 
 import (
+	"context"
 	"crypto/tls"
 	"errors"
 	"fmt"
@@ -76,7 +77,7 @@ type Client struct {
 
 	invHandlers    map[wamp.ID]InvocationHandler
 	nameProcID     map[string]wamp.ID
-	invHandlerKill map[wamp.ID]chan struct{}
+	invHandlerKill map[wamp.ID]context.CancelFunc
 
 	actionChan chan func()
 	idGen      *wamp.IDGen
@@ -109,7 +110,7 @@ func NewClient(p wamp.Peer, responseTimeout time.Duration, logger logger.Logger)
 
 		invHandlers:    map[wamp.ID]InvocationHandler{},
 		nameProcID:     map[string]wamp.ID{},
-		invHandlerKill: map[wamp.ID]chan struct{}{},
+		invHandlerKill: map[wamp.ID]context.CancelFunc{},
 
 		actionChan: make(chan func()),
 		idGen:      wamp.NewIDGen(),
@@ -371,10 +372,10 @@ func (c *Client) Publish(topic string, options map[string]interface{}, args []in
 
 // InvocationHandler handles a remote procedure call.
 //
-// The cancel channel signals that the router issues an INTERRUPT request to
+// The Context is used to signal that the router issues an INTERRUPT request to
 // cancel the call-in-progress.  The client application can use this to
-// abandon what it is doing, if it chooses to pay attention to the channel.
-type InvocationHandler func(args []interface{}, kwargs map[string]interface{}, details map[string]interface{}, cancel <-chan struct{}) (result *InvokeResult)
+// abandon what it is doing, if it chooses to pay attention to ctx.Done().
+type InvocationHandler func(context.Context, []interface{}, map[string]interface{}, map[string]interface{}) (result *InvokeResult)
 
 // Register registers the client to handle invocations of the specified
 // procedure.  The InvocationHandler is set to be called for each procedure
@@ -499,13 +500,14 @@ func (werr RPCError) Error() string {
 // message.  This may be necessary for the client application to process error
 // data from the RPC invocation.
 //
-// Setting cancelAfter to a non-zero duration will cause Call() to wait for
-// that amount of time for a result.  If a result is not received in the
-// specified time, then a CANCEL message is sent to the router to cancel the
-// call using the specified mode.
+// The provided Context can be used to cancel a call, or to set a deadline that
+// cancels the call when the deadline expires.  If the call is canceled before
+// a result is received, then a CANCEL message is sent to the router to cancel
+// the call according to the specified mode.
 //
-// If cancelAfter is non-zero, then cancelMode must be one of the following:
-// "kill", "killnowait', "skip".
+// If cancelMode must be one of the following:
+//     "kill", "killnowait', "skip".
+// Setting to "" specifies using the default value: "killnowait"
 //
 // Cancellation behaves differently depending on the mode:
 //
@@ -523,14 +525,14 @@ func (werr RPCError) Error() string {
 // invocation or interrupt from the callee is discarded when received.
 //
 // If the callee does not support call canceling, then behavior is "skip".
-func (c *Client) Call(procedure string, options map[string]interface{}, args []interface{}, kwargs map[string]interface{}, cancelAfter time.Duration, cancelMode string) (*wamp.Result, error) {
-	if cancelAfter != 0 {
-		switch cancelMode {
-		case "kill", "killnowait", "skip":
-		default:
-			return nil, errors.New(
-				"cancel mode not one of: 'kill', 'killnowait', 'skip'")
-		}
+func (c *Client) Call(ctx context.Context, procedure string, options map[string]interface{}, args []interface{}, kwargs map[string]interface{}, cancelMode string) (*wamp.Result, error) {
+	switch cancelMode {
+	case "kill", "killnowait", "skip":
+	case "":
+		cancelMode = "killnowait"
+	default:
+		return nil, errors.New(
+			"cancel mode not one of: 'kill', 'killnowait', 'skip'")
 	}
 
 	id := c.idGen.Next()
@@ -547,11 +549,7 @@ func (c *Client) Call(procedure string, options map[string]interface{}, args []i
 	// Wait to receive RESULT message.
 	var msg wamp.Message
 	var err error
-	if cancelAfter != 0 {
-		msg, err = c.waitForReplyWithCancel(id, cancelAfter, cancelMode)
-	} else {
-		msg, err = c.waitForReply(id)
-	}
+	msg, err = c.waitForReplyWithCancel(ctx, id, cancelMode)
 	if err != nil {
 		return nil, err
 	}
@@ -736,17 +734,19 @@ func (c *Client) handleInvocation(msg *wamp.Invocation) {
 		}
 
 		// Create a kill switch so that invocation can be canceled.
-		cancelChan := make(chan struct{})
-		c.invHandlerKill[msg.Request] = cancelChan
+		var cancel context.CancelFunc
+		ctx, cancel := context.WithCancel(context.Background())
+		c.invHandlerKill[msg.Request] = cancel
 
 		go func() {
+			defer cancel()
 			resChan := make(chan *InvokeResult)
 			go func() {
-				// The cancelChan is passed into the handler to tell the client
+				// The Context is passed into the handler to tell the client
 				// application to stop whatever it is doing if it cares to pay
 				// attention.
-				resChan <- handler(msg.Arguments, msg.ArgumentsKw, msg.Details,
-					cancelChan)
+				resChan <- handler(ctx, msg.Arguments, msg.ArgumentsKw,
+					msg.Details)
 			}()
 
 			// Remove the kill switch when done processing invocation.
@@ -760,7 +760,7 @@ func (c *Client) handleInvocation(msg *wamp.Invocation) {
 			var result *InvokeResult
 			select {
 			case result = <-resChan:
-			case <-cancelChan:
+			case <-ctx.Done():
 				// Received an INTERRUPT message from the router.
 				result = &InvokeResult{Err: wamp.ErrCanceled}
 				c.log.Println("INVOCATION", msg.Request, "canceled by router")
@@ -791,12 +791,12 @@ func (c *Client) handleInvocation(msg *wamp.Invocation) {
 // requesting that a pending call be canceled.
 func (c *Client) handleInterrupt(msg *wamp.Interrupt) {
 	c.actionChan <- func() {
-		cancelChan, ok := c.invHandlerKill[msg.Request]
+		cancel, ok := c.invHandlerKill[msg.Request]
 		if !ok {
 			c.log.Println("received INTERRUPT for message that no longer exists")
 			return
 		}
-		close(cancelChan)
+		cancel()
 		delete(c.invHandlerKill, msg.Request)
 	}
 }
@@ -849,7 +849,7 @@ func (c *Client) waitForReply(id wamp.ID) (wamp.Message, error) {
 	return msg, err
 }
 
-func (c *Client) waitForReplyWithCancel(id wamp.ID, cancelAfter time.Duration, mode string) (wamp.Message, error) {
+func (c *Client) waitForReplyWithCancel(ctx context.Context, id wamp.ID, mode string) (wamp.Message, error) {
 	sync := make(chan struct{})
 	var wait chan wamp.Message
 	var ok bool
@@ -862,11 +862,20 @@ func (c *Client) waitForReplyWithCancel(id wamp.ID, cancelAfter time.Duration, m
 		return nil, fmt.Errorf("not expecting reply for ID: %v", id)
 	}
 
+	// If the context does not have a deadline, then give it the default
+	// response timeout.
+	if _, ok := ctx.Deadline(); !ok {
+		var cancel context.CancelFunc
+		ctx, cancel = context.WithTimeout(ctx, c.responseTimeout)
+		defer cancel()
+	}
+
 	var msg wamp.Message
 	var err error
 	select {
 	case msg = <-wait:
-	case <-time.After(cancelAfter):
+	case <-ctx.Done():
+		log.Print("Caller cancelling call %v (mode=%s)", id, mode)
 		c.Send(&wamp.Cancel{
 			Request: id,
 			Options: wamp.SetOption(nil, "mode", mode),
