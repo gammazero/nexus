@@ -27,6 +27,15 @@ var dealerFeatures = map[string]interface{}{
 	},
 }
 
+const (
+	RegList = wamp.ID(iota)
+	RegLookup
+	RegMatch
+	RegGet
+	RegListCallees
+	RegCountCallees
+)
+
 // Dealers route calls incoming from Callers to Callees implementing the
 // procedure called, and route call results back from Callees to Callers.
 type Dealer interface {
@@ -48,12 +57,18 @@ type Dealer interface {
 }
 
 // remoteProcedure tracks in-progress remote procedure call
-type remoteProcedure struct {
-	callee    *Session
-	procedure wamp.URI
-	match     string
-	policy    string
-	disclose  bool
+type registration struct {
+	id         wamp.ID  // registration ID
+	procedure  wamp.URI // procedure this registration is for
+	created    string   // when registration was created
+	match      string   // how procedure uri is matched to registration
+	policy     string   // how callee is selected if shared registration
+	disclose   bool     //
+	nextCallee int      // choose callee for round-robin invocation.
+
+	// Multiple sessions can register as callees depending on invocation policy
+	// resulting in multiple procedures for the same registration ID.
+	callees []*Session
 }
 
 // invocation tracks in-progress invocation
@@ -69,14 +84,14 @@ func (d *dealer) Features() map[string]interface{} {
 }
 
 type dealer struct {
-	// procedure URI -> registration ID list
-	// Multiple sessions can register as callees depending on invocation policy
-	registrations    map[wamp.URI][]wamp.ID
-	pfxRegistrations map[wamp.URI][]wamp.ID
-	wcRegistrations  map[wamp.URI][]wamp.ID
+	// procedure URI -> registration ID
+	procRegMap    map[wamp.URI]*registration
+	pfxProcRegMap map[wamp.URI]*registration
+	wcProcRegMap  map[wamp.URI]*registration
 
-	// registration ID -> procedure
-	procedures map[wamp.ID]remoteProcedure
+	// registration ID -> registration
+	// Used to lookup registration by ID, needed for unregister.
+	registrations map[wamp.ID]*registration
 
 	// call ID -> caller session
 	calls map[wamp.ID]*Session
@@ -88,6 +103,7 @@ type dealer struct {
 	invocationByCall map[wamp.ID]wamp.ID
 
 	// callee session -> registration ID set.
+	// Used to lookup registrations when removing a callee session.
 	calleeRegIDSet map[*Session]map[wamp.ID]struct{}
 
 	reqChan chan routerReq
@@ -103,16 +119,19 @@ type dealer struct {
 	allowDisclose bool
 
 	metaClient wamp.Peer
+
+	// Meta-procedure registration ID -> handler func.
+	metaProcMap map[wamp.ID]func(*wamp.Invocation) wamp.Message
 }
 
 // NewDealer creates a the default Dealer implementation.
 func NewDealer(strictURI, allowDisclose bool, metaClient wamp.Peer) Dealer {
 	d := &dealer{
-		procedures: map[wamp.ID]remoteProcedure{},
+		procRegMap:    map[wamp.URI]*registration{},
+		pfxProcRegMap: map[wamp.URI]*registration{},
+		wcProcRegMap:  map[wamp.URI]*registration{},
 
-		registrations:    map[wamp.URI][]wamp.ID{},
-		pfxRegistrations: map[wamp.URI][]wamp.ID{},
-		wcRegistrations:  map[wamp.URI][]wamp.ID{},
+		registrations: map[wamp.ID]*registration{},
 
 		calls:            map[wamp.ID]*Session{},
 		invocations:      map[wamp.ID]*invocation{},
@@ -184,6 +203,30 @@ func (d *dealer) reqHandler() {
 			d.yield(req.session, msg)
 		case *wamp.Error:
 			d.error(req.session, msg)
+
+		case *wamp.Invocation:
+			// Invoke only happens as a result of calling registration meta.
+			// Look at Invocation.Registration to determine which registration
+			// meta procedure to call.
+			var rsp wamp.Message
+			switch msg.Registration {
+			case RegList:
+				rsp = d.regList(msg)
+			case RegLookup:
+				rsp = d.regLookup(msg)
+			case RegMatch:
+				rsp = d.regMatch(msg)
+			case RegGet:
+				rsp = d.regGet(msg)
+			case RegListCallees:
+				rsp = d.regListCallees(msg)
+			case RegCountCallees:
+				rsp = d.regCountCallees(msg)
+			default:
+				panic("illegal registration meta procedure index")
+			}
+			d.metaClient.Send(rsp)
+
 		default:
 			panic(fmt.Sprint("dealer received message type: ",
 				req.msg.MessageType()))
@@ -256,30 +299,65 @@ func (d *dealer) register(callee *Session, msg *wamp.Register) {
 		return
 	}
 
-	var regs []wamp.ID
+	var reg *registration
 	switch match {
 	default:
-		regs = d.registrations[msg.Procedure]
+		reg = d.procRegMap[msg.Procedure]
 	case "prefix":
-		regs = d.pfxRegistrations[msg.Procedure]
+		reg = d.pfxProcRegMap[msg.Procedure]
 	case "wildcard":
-		regs = d.wcRegistrations[msg.Procedure]
+		reg = d.wcProcRegMap[msg.Procedure]
 	}
 
+	var created string
 	var regID wamp.ID
 	invokePolicy := wamp.OptionString(msg.Options, "invoke")
-	if len(regs) != 0 {
-		// Get invocation policy of existing registration.  All regs must have
-		// the same policy, so use the first one.
-		proc, ok := d.procedures[regs[0]]
-		if !ok {
-			panic("registration exists without any procedure")
+	// If no existing registration found for the procedure, then create a new
+	// registration.
+	if reg == nil {
+		regID = d.idGen.Next()
+		created = wamp.NowISO8601()
+		reg = &registration{
+			id:        regID,
+			procedure: msg.Procedure,
+			created:   created,
+			match:     match,
+			policy:    invokePolicy,
+			disclose:  discloseCaller,
+			callees:   []*Session{callee},
 		}
-		foundPolicy := proc.policy
+		d.registrations[regID] = reg
+		switch match {
+		default:
+			d.procRegMap[msg.Procedure] = reg
+		case "prefix":
+			d.pfxProcRegMap[msg.Procedure] = reg
+		case "wildcard":
+			d.wcProcRegMap[msg.Procedure] = reg
+		}
+
+		// wamp.registration.on_create is fired when a registration is created
+		// through a registration request for an URI which was previously
+		// without a registration.
+		details := map[string]interface{}{
+			"id":      regID,
+			"created": created,
+			"uri":     msg.Procedure,
+			"match":   match,
+			"invoke":  invokePolicy,
+		}
+		d.metaClient.Send(&wamp.Publish{
+			Request:   wamp.GlobalID(),
+			Topic:     wamp.MetaEventRegOnCreate,
+			Arguments: []interface{}{callee.ID, details},
+		})
+	} else {
+		// There is an existing registration(s) for this procedure.  See if
+		// invocation policy allows another.
 
 		// Found an existing registration that has an invocation strategy that
 		// only allows a single callee on a the given registration.
-		if foundPolicy == "" || foundPolicy == "single" {
+		if reg.policy == "" || reg.policy == "single" {
 			log.Println("REGISTER for already registered procedure",
 				msg.Procedure, "from callee", callee)
 			callee.Send(&wamp.Error{
@@ -293,10 +371,10 @@ func (d *dealer) register(callee *Session, msg *wamp.Register) {
 
 		// Found an existing registration that has an invocation strategy
 		// different from the one requested by the new callee
-		if foundPolicy != invokePolicy {
+		if reg.policy != invokePolicy {
 			log.Println("REGISTER for already registered procedure",
 				msg.Procedure, "with conflicting invocation policy (has",
-				foundPolicy, "and", invokePolicy, "was requested")
+				reg.policy, "and", invokePolicy, "was requested")
 			callee.Send(&wamp.Error{
 				Type:    msg.MessageType(),
 				Request: msg.Request,
@@ -305,35 +383,18 @@ func (d *dealer) register(callee *Session, msg *wamp.Register) {
 			})
 			return
 		}
-		regID = d.idGen.Next()
-	} else {
-		regID = d.idGen.Next()
-		// wamp.registration.on_create is fired when a registration is created
-		// through a registration request for an URI which was previously
-		// without a registration.
-		details := map[string]interface{}{
-			"id":      regID,
-			"created": wamp.NowISO8601(),
-			"uri":     msg.Procedure,
-			"match":   match,
-			"invoke":  invokePolicy,
-		}
-		d.metaClient.Send(&wamp.Publish{
-			Request:   wamp.GlobalID(),
-			Topic:     wamp.MetaEventRegOnCreate,
-			Arguments: []interface{}{callee.ID, details},
-		})
+
+		regID = reg.id
+
+		// Add callee for the registration.
+		reg.callees = append(reg.callees, callee)
 	}
 
-	d.procedures[regID] = remoteProcedure{
-		callee:    callee,
-		procedure: msg.Procedure,
-		match:     match,
-		policy:    invokePolicy,
-		disclose:  discloseCaller,
+	// Add the registration ID to the callees set of registrations.
+	if _, ok := d.calleeRegIDSet[callee]; !ok {
+		d.calleeRegIDSet[callee] = map[wamp.ID]struct{}{}
 	}
-	d.registrations[msg.Procedure] = append(d.registrations[msg.Procedure], regID)
-	d.addCalleeRegistration(callee, regID)
+	d.calleeRegIDSet[callee][regID] = struct{}{}
 
 	log.Printf("Dealer registered procedure %v (regID=%v) to callee %v",
 		msg.Procedure, regID, callee)
@@ -356,10 +417,17 @@ func (d *dealer) register(callee *Session, msg *wamp.Register) {
 
 // Unregister removes a remote procedure previously registered by the callee.
 func (d *dealer) unregister(callee *Session, msg *wamp.Unregister) {
-	proc, ok := d.procedures[msg.Registration]
-	if !ok {
-		// the registration doesn't exist
-		log.Println("No such registration:", msg.Registration)
+	// Delete the registration ID from the callee's set of registrations.
+	if _, ok := d.calleeRegIDSet[callee]; ok {
+		delete(d.calleeRegIDSet[callee], msg.Registration)
+		if len(d.calleeRegIDSet[callee]) == 0 {
+			delete(d.calleeRegIDSet, callee)
+		}
+	}
+
+	delReg, err := d.delCalleeReg(callee, msg.Registration)
+	if err != nil {
+		log.Print("Cannot unregister: ", err)
 		callee.Send(&wamp.Error{
 			Type:    msg.MessageType(),
 			Request: msg.Request,
@@ -369,17 +437,7 @@ func (d *dealer) unregister(callee *Session, msg *wamp.Unregister) {
 		return
 	}
 
-	delete(d.procedures, msg.Registration)
-
-	// Delete the registration according to what match type it is.
-	onDel := d.delRegistration(msg.Registration, proc.procedure, proc.match)
-	// Delete the registration for the callee's set of registrations.
-	d.removeCalleeRegistration(callee, msg.Registration)
-	log.Printf("Dealer unregistered procedure %v (reg=%v)", proc.procedure,
-		msg.Registration)
-	callee.Send(&wamp.Unregistered{
-		Request: msg.Request,
-	})
+	callee.Send(&wamp.Unregistered{Request: msg.Request})
 
 	// Publish wamp.registration.on_unregister meta event.  Fired when a
 	// session is removed from a subscription.
@@ -389,7 +447,7 @@ func (d *dealer) unregister(callee *Session, msg *wamp.Unregister) {
 		Arguments: []interface{}{callee.ID, msg.Registration},
 	})
 
-	if onDel {
+	if delReg {
 		// Publish wamp.registration.on_delete meta event.  Fired when a
 		// registration is deleted after the last session attached to it has
 		// been removed.  The wamp.registration.on_delete event MUST be
@@ -402,35 +460,45 @@ func (d *dealer) unregister(callee *Session, msg *wamp.Unregister) {
 	}
 }
 
-// Call invokes a registered remote procedure.
-func (d *dealer) call(caller *Session, msg *wamp.Call) {
+// matchProcedure finds the best matching registration given a procedure URI.
+//
+// If there are both matching prefix and wildcard registrations, then find the
+// one with the more specific match (longest matched pattern).
+func (d *dealer) matchProcedure(procedure wamp.URI) (*registration, bool) {
 	// Find registered procedures with exact match.
-	regs, ok := d.registrations[msg.Procedure]
+	reg, ok := d.procRegMap[procedure]
 	if !ok {
 		// No exact match was found.  So, search for a prefix or wildcard
 		// match, and prefer the most specific math (longest matched pattern).
 		// If there is a tie, then prefer the first longest prefix.
 		var matchCount int
-		for pfxProc, pfxRegs := range d.pfxRegistrations {
-			if msg.Procedure.PrefixMatch(pfxProc) {
+		for pfxProc, pfxReg := range d.pfxProcRegMap {
+			if procedure.PrefixMatch(pfxProc) {
 				if len(pfxProc) > matchCount {
-					regs = pfxRegs
+					reg = pfxReg
 					matchCount = len(pfxProc)
+					ok = true
 				}
 			}
 		}
-		for wcProc, wcRegs := range d.wcRegistrations {
-			if msg.Procedure.WildcardMatch(wcProc) {
+		for wcProc, wcReg := range d.wcProcRegMap {
+			if procedure.WildcardMatch(wcProc) {
 				if len(wcProc) > matchCount {
-					regs = wcRegs
+					reg = wcReg
 					matchCount = len(wcProc)
+					ok = true
 				}
 			}
 		}
 	}
+	return reg, ok
+}
 
-	// If no registered procedure, send error.
-	if len(regs) == 0 {
+// Call invokes a registered remote procedure.
+func (d *dealer) call(caller *Session, msg *wamp.Call) {
+	reg, ok := d.matchProcedure(msg.Procedure)
+	if !ok || len(reg.callees) == 0 {
+		// If no registered procedure, send error.
 		caller.Send(&wamp.Error{
 			Type:    msg.MessageType(),
 			Request: msg.Request,
@@ -440,48 +508,32 @@ func (d *dealer) call(caller *Session, msg *wamp.Call) {
 		return
 	}
 
-	reg := regs[0]
+	var callee *Session
 
-	// Get the procedure for the found registration.
-	proc, ok := d.procedures[reg]
-
-	// If there are multiple callees registered for the procedure, then select
-	// a registration based on procedure's invocation policy.
-	if len(regs) > 1 && ok {
-		// Note: It is OK to use the policy of the first registration because,
-		// all other registrations must have the same policy.
-		switch proc.policy {
+	// If there are multiple callees, then select a callee based invocation
+	// policy.
+	if len(reg.callees) > 1 {
+		switch reg.policy {
 		case "first":
+			callee = reg.callees[0]
 		case "roundrobin":
-			// Rotate (in-place) the slice of registrations.
-			// Note: This is inefficient for large number of registrations.
-			for i := 0; i < len(regs)-1; i++ {
-				regs[0] = regs[i+1]
+			if reg.nextCallee >= len(reg.callees) {
+				reg.nextCallee = 0
 			}
-			regs[len(regs)-1] = reg
+			callee = reg.callees[reg.nextCallee]
+			reg.nextCallee++
 		case "random":
-			i := d.prng.Int63n(int64(len(regs)))
-			reg = regs[i]
+			callee = reg.callees[d.prng.Int63n(int64(len(reg.callees)))]
 		case "last":
-			reg = regs[len(regs)-1]
+			callee = reg.callees[len(reg.callees)-1]
 		default:
 			errMsg := fmt.Sprint("multiple procedures registered for",
 				msg.Procedure, "with 'single' policy")
+			// It is a programming error that this was ever allowed, so panic.
 			panic(errMsg)
 		}
-		// Get the procedure for the selected registration.
-		proc, ok = d.procedures[reg]
-	}
-
-	if !ok {
-		log.Println("!!! Found registration id that has no remote procedure")
-		caller.Send(&wamp.Error{
-			Type:    msg.MessageType(),
-			Request: msg.Request,
-			Details: map[string]interface{}{},
-			Error:   wamp.ErrNoSuchProcedure,
-		})
-		return
+	} else {
+		callee = reg.callees[0]
 	}
 
 	details := map[string]interface{}{}
@@ -494,7 +546,7 @@ func (d *dealer) call(caller *Session, msg *wamp.Call) {
 	timeout := wamp.OptionInt64(msg.Options, "timeout")
 	if timeout > 0 {
 		// Check that callee supports call_timeout.
-		if proc.callee.HasFeature("callee", "call_timeout") {
+		if callee.HasFeature("callee", "call_timeout") {
 			details["timeout"] = timeout
 		}
 
@@ -505,8 +557,9 @@ func (d *dealer) call(caller *Session, msg *wamp.Call) {
 
 	// TODO: handle trust levels
 
-	// If the callee has requested disclosure of caller identity.
-	if proc.disclose {
+	// If the callee has requested disclosure of caller identity when the
+	// registration was created, and this was allowed by the dealer.
+	if reg.disclose {
 		details["caller"] = caller.ID
 	} else {
 		// A Caller MAY request the disclosure of its identity (its WAMP
@@ -525,7 +578,7 @@ func (d *dealer) call(caller *Session, msg *wamp.Call) {
 			// TODO: Is it really necessary to check that callee supports this
 			// feature?  If the callee did not support this, then the info
 			// in the message should be ignored, right?
-			if proc.callee.HasFeature("callee", "caller_identification") {
+			if callee.HasFeature("callee", "caller_identification") {
 				details["caller"] = caller.ID
 			}
 		}
@@ -539,7 +592,7 @@ func (d *dealer) call(caller *Session, msg *wamp.Call) {
 		// results by setting.
 		//
 		// TODO: Check for feature support, or let callee ignore?
-		if proc.callee.HasFeature("callee", "progressive_call_results") {
+		if callee.HasFeature("callee", "progressive_call_results") {
 			details["receive_progress"] = true
 		}
 	}
@@ -548,15 +601,15 @@ func (d *dealer) call(caller *Session, msg *wamp.Call) {
 	invocationID := d.idGen.Next()
 	d.invocations[invocationID] = &invocation{
 		callID: msg.Request,
-		callee: proc.callee,
+		callee: callee,
 	}
 	d.invocationByCall[msg.Request] = invocationID
 
 	// Send INVOCATION to the endpoint that has registered the requested
 	// procedure.
-	proc.callee.Send(&wamp.Invocation{
+	callee.Send(&wamp.Invocation{
 		Request:      invocationID,
-		Registration: reg,
+		Registration: reg.id,
 		Details:      details,
 		Arguments:    msg.Arguments,
 		ArgumentsKw:  msg.ArgumentsKw,
@@ -739,100 +792,243 @@ func (d *dealer) error(peer *Session, msg *wamp.Error) {
 }
 
 func (d *dealer) removeSession(callee *Session) {
-	var onDel bool
-	for reg := range d.calleeRegIDSet[callee] {
-		onDel = false
-		if proc, ok := d.procedures[reg]; ok {
-			delete(d.procedures, reg)
-			onDel = d.delRegistration(reg, proc.procedure, proc.match)
+	for regID := range d.calleeRegIDSet[callee] {
+		delReg, err := d.delCalleeReg(callee, regID)
+		if err != nil {
+			// Should probably panic here.
+			log.Print("!!! Callee had ID of nonexistent registration")
+			continue
 		}
-		d.removeCalleeRegistration(callee, reg)
 
 		// Publish wamp.registration.on_unregister meta event.  Fired when a
 		// callee session is removed from a subscription.
 		d.metaClient.Send(&wamp.Publish{
 			Request:   wamp.GlobalID(),
 			Topic:     wamp.MetaEventRegOnUnregister,
-			Arguments: []interface{}{callee.ID, reg},
+			Arguments: []interface{}{callee.ID, regID},
 		})
 
-		if onDel {
-			// Publish wamp.registration.on_delete meta event.  Fired when a
-			// registration is deleted after the last session attached to it
-			// has been removed.  The wamp.registration.on_delete event MUST be
-			// preceded by a wamp.registration.on_unregister event.
-			d.metaClient.Send(&wamp.Publish{
-				Request:   wamp.GlobalID(),
-				Topic:     wamp.MetaEventRegOnDelete,
-				Arguments: []interface{}{callee.ID, reg},
-			})
+		if !delReg {
+			continue
 		}
+		// Publish wamp.registration.on_delete meta event.  Fired when a
+		// registration is deleted after the last session attached to it
+		// has been removed.  The wamp.registration.on_delete event MUST be
+		// preceded by a wamp.registration.on_unregister event.
+		d.metaClient.Send(&wamp.Publish{
+			Request:   wamp.GlobalID(),
+			Topic:     wamp.MetaEventRegOnDelete,
+			Arguments: []interface{}{callee.ID, regID},
+		})
 	}
+	delete(d.calleeRegIDSet, callee)
 }
 
-func (d *dealer) delRegistration(reg wamp.ID, proc wamp.URI, match string) bool {
-	// Delete the registration according to what type it is.
-	var sendOnDelete bool
-	switch match {
-	default:
-		regs := d.registrations[proc]
-		if len(regs) <= 1 {
-			delete(d.registrations, proc)
-			sendOnDelete = true
-		} else {
-			// If there multiple registrations for the procedure, only remove
-			// the one that is being unregistered.
-			for i := range regs {
-				if regs[i] == reg {
-					// Delete; preserve order in case expected for invocation.
-					d.registrations[proc] = append(regs[:i], regs[i+1:]...)
-					break
-				}
+// delCalleeReg deletes the the callee from the specified registration and
+// deletes the registration from the set of registrations for the callee.
+//
+// If there are no more callees for the registration, then the registration is
+// removed and true is returned to indicate that the last registration was
+// deleted.
+func (d *dealer) delCalleeReg(callee *Session, regID wamp.ID) (bool, error) {
+	reg, ok := d.registrations[regID]
+	if !ok {
+		// The registration doesn't exist
+		return false, fmt.Errorf("no such registration: %v", regID)
+	}
+
+	// Remove the callee from the registration.
+	for i := range reg.callees {
+		if reg.callees[i] == callee {
+			log.Printf("Unregistered procedure %v (regID=%v) (callee=%v)",
+				reg.procedure, regID, callee.ID)
+			if len(reg.callees) == 1 {
+				reg.callees = nil
+			} else {
+				// Delete preserving order.
+				reg.callees = append(reg.callees[:i], reg.callees[i+1:]...)
 			}
-		}
-	case "prefix":
-		regs := d.pfxRegistrations[proc]
-		if len(regs) <= 1 {
-			delete(d.pfxRegistrations, proc)
-			sendOnDelete = true
-		} else {
-			for i := range regs {
-				if regs[i] == reg {
-					d.pfxRegistrations[proc] = append(regs[:i], regs[i+1:]...)
-					break
-				}
-			}
-		}
-	case "wildcard":
-		regs := d.wcRegistrations[proc]
-		if len(regs) <= 1 {
-			delete(d.wcRegistrations, proc)
-			sendOnDelete = true
-		} else {
-			for i := range regs {
-				if regs[i] == reg {
-					d.wcRegistrations[proc] = append(regs[:i], regs[i+1:]...)
-					break
-				}
-			}
+			break
 		}
 	}
-	return sendOnDelete
+
+	// If no more callees for this registration, then delete the
+	// registration according to what match type it is.
+	if len(reg.callees) == 0 {
+		delete(d.registrations, regID)
+		switch reg.match {
+		default:
+			delete(d.procRegMap, reg.procedure)
+		case "prefix":
+			delete(d.pfxProcRegMap, reg.procedure)
+		case "wildcard":
+			delete(d.wcProcRegMap, reg.procedure)
+		}
+		log.Printf("Deleted registration %v for procedure %v", regID,
+			reg.procedure)
+		return true, nil
+	}
+	return false, nil
 }
 
 func (d *dealer) addCalleeRegistration(callee *Session, reg wamp.ID) {
-	if _, ok := d.calleeRegIDSet[callee]; !ok {
-		d.calleeRegIDSet[callee] = map[wamp.ID]struct{}{}
-	}
-	d.calleeRegIDSet[callee][reg] = struct{}{}
 }
 
-func (d *dealer) removeCalleeRegistration(callee *Session, reg wamp.ID) {
-	if _, ok := d.calleeRegIDSet[callee]; !ok {
-		return
+// ----- Meta Procedure Handlers -----
+
+// regList retrieves registration IDs listed according to match policies.
+func (d *dealer) regList(msg *wamp.Invocation) wamp.Message {
+	var exactRegs, pfxRegs, wcRegs []wamp.ID
+	for _, reg := range d.procRegMap {
+		exactRegs = append(exactRegs, reg.id)
 	}
-	delete(d.calleeRegIDSet[callee], reg)
-	if len(d.calleeRegIDSet[callee]) == 0 {
-		delete(d.calleeRegIDSet, callee)
+	for _, reg := range d.pfxProcRegMap {
+		pfxRegs = append(pfxRegs, reg.id)
+	}
+	for _, reg := range d.wcProcRegMap {
+		wcRegs = append(wcRegs, reg.id)
+	}
+	dict := map[string]interface{}{
+		"exact":    exactRegs,
+		"prefix":   pfxRegs,
+		"wildcard": wcRegs,
+	}
+	return &wamp.Yield{
+		Request:   msg.Request,
+		Arguments: []interface{}{dict},
+	}
+}
+
+// regLookup retrieves registration IDs listed according to match policies.
+func (d *dealer) regLookup(msg *wamp.Invocation) wamp.Message {
+	var regID wamp.ID
+	if len(msg.Arguments) != 0 {
+		procedure := wamp.URI(msg.Arguments[0].(string))
+		var match string
+		if len(msg.Arguments) > 1 {
+			opts := msg.Arguments[1].(map[string]interface{})
+			match = wamp.OptionString(opts, "match")
+		}
+		var reg *registration
+		var ok bool
+		switch match {
+		default:
+			reg, ok = d.procRegMap[procedure]
+		case "prefix":
+			reg, ok = d.pfxProcRegMap[procedure]
+		case "wildcard":
+			reg, ok = d.wcProcRegMap[procedure]
+		}
+		if ok {
+			regID = reg.id
+		}
+	}
+	return &wamp.Yield{
+		Request:   msg.Request,
+		Arguments: []interface{}{regID},
+	}
+}
+
+// regMatch obtains the registration best matching a given procedure URI.
+func (d *dealer) regMatch(msg *wamp.Invocation) wamp.Message {
+	var regID wamp.ID
+	if len(msg.Arguments) != 0 {
+		procedure := wamp.URI(msg.Arguments[0].(string))
+		if reg, ok := d.matchProcedure(procedure); ok {
+			regID = reg.id
+		}
+	}
+	return &wamp.Yield{
+		Request:   msg.Request,
+		Arguments: []interface{}{regID},
+	}
+}
+
+// regGet retrieves information on a particular registration.
+func (d *dealer) regGet(msg *wamp.Invocation) wamp.Message {
+	var regID wamp.ID
+	if len(msg.Arguments) != 0 {
+		if i64, ok := wamp.AsInt64(msg.Arguments[0]); ok {
+			regID = wamp.ID(i64)
+		}
+	}
+
+	reg, ok := d.registrations[regID]
+	if !ok {
+		return &wamp.Error{
+			Type:    msg.MessageType(),
+			Request: msg.Request,
+			Details: map[string]interface{}{},
+			Error:   wamp.ErrNoSuchRegistration,
+		}
+	}
+
+	dict := map[string]interface{}{
+		"id":      regID,
+		"created": reg.created,
+		"uri":     reg.procedure,
+		"match":   reg.match,
+		"invoke":  reg.policy,
+	}
+	return &wamp.Yield{
+		Request:   msg.Request,
+		Arguments: []interface{}{dict},
+	}
+}
+
+// regListCallees retrieves a list of session IDs for sessions currently
+// attached to the registration.
+func (d *dealer) regListCallees(msg *wamp.Invocation) wamp.Message {
+	var regID wamp.ID
+	if len(msg.Arguments) != 0 {
+		if i64, ok := wamp.AsInt64(msg.Arguments[0]); ok {
+			regID = wamp.ID(i64)
+		}
+	}
+
+	reg, ok := d.registrations[regID]
+	if !ok {
+		return &wamp.Error{
+			Type:    msg.MessageType(),
+			Request: msg.Request,
+			Details: map[string]interface{}{},
+			Error:   wamp.ErrNoSuchRegistration,
+		}
+	}
+
+	calleeIDs := make([]wamp.ID, len(reg.callees))
+	for i := range reg.callees {
+		calleeIDs[i] = reg.callees[i].ID
+	}
+
+	return &wamp.Yield{
+		Request:   msg.Request,
+		Arguments: []interface{}{calleeIDs},
+	}
+}
+
+// regCountCallees obtains the number of sessions currently attached to the
+// registration.
+func (d *dealer) regCountCallees(msg *wamp.Invocation) wamp.Message {
+	var regID wamp.ID
+	if len(msg.Arguments) != 0 {
+		if i64, ok := wamp.AsInt64(msg.Arguments[0]); ok {
+			regID = wamp.ID(i64)
+		}
+	}
+
+	reg, ok := d.registrations[regID]
+	if !ok {
+		return &wamp.Error{
+			Type:    msg.MessageType(),
+			Request: msg.Request,
+			Details: map[string]interface{}{},
+			Error:   wamp.ErrNoSuchRegistration,
+		}
+	}
+
+	return &wamp.Yield{
+		Request:   msg.Request,
+		Arguments: []interface{}{len(reg.callees)},
 	}
 }

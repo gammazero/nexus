@@ -42,8 +42,8 @@ func TestBasicRegister(t *testing.T) {
 
 	rsp := <-callee.Recv()
 	// Test that callee receives a registered message.
-	reg := rsp.(*wamp.Registered).Registration
-	if reg == 0 {
+	regID := rsp.(*wamp.Registered).Registration
+	if regID == 0 {
 		t.Fatal("invalid registration ID")
 	}
 
@@ -55,20 +55,23 @@ func TestBasicRegister(t *testing.T) {
 	}
 
 	// Check that dealer has the correct endpoint registered.
-	regs := dealer.registrations[testProcedure]
-	if len(regs) != 1 {
-		t.Fatal("dealer has wrong number of registrations")
+	reg, ok := dealer.procRegMap[testProcedure]
+	if !ok {
+		t.Fatal("registration not found")
 	}
-	if reg != regs[0] {
+	if len(reg.callees) != 1 {
+		t.Fatal("registration has wrong number of callees")
+	}
+	if reg.id != regID {
 		t.Fatal("dealer reg ID different that what was returned to callee")
 	}
 
-	// Check that dealer has correct procedure registered.
-	proc, ok := dealer.procedures[reg]
+	// Check that dealer has correct registration reverse mapping.
+	reg, ok = dealer.registrations[regID]
 	if !ok {
-		t.Fatal("dealer has no registered procedures")
+		t.Fatal("dealer missing regID -> registration")
 	}
-	if proc.procedure != testProcedure {
+	if reg.procedure != testProcedure {
 		t.Fatal("dealer has different test procedure than registered")
 	}
 
@@ -94,7 +97,7 @@ func TestUnregister(t *testing.T) {
 	sess := &Session{Peer: callee}
 	dealer.Submit(sess, &wamp.Register{Request: 123, Procedure: testProcedure})
 	rsp := <-callee.Recv()
-	reg := rsp.(*wamp.Registered).Registration
+	regID := rsp.(*wamp.Registered).Registration
 
 	if err := checkMetaReg(metaClient, sess.ID); err != nil {
 		t.Fatal("Registration meta event fail: ", err)
@@ -104,7 +107,7 @@ func TestUnregister(t *testing.T) {
 	}
 
 	// Unregister the procedure.
-	dealer.Submit(sess, &wamp.Unregister{Request: 124, Registration: reg})
+	dealer.Submit(sess, &wamp.Unregister{Request: 124, Registration: regID})
 
 	// Check that callee received UNREGISTERED message.
 	rsp = <-callee.Recv()
@@ -124,15 +127,15 @@ func TestUnregister(t *testing.T) {
 	}
 
 	// Check that dealer does not have registered endpoint
-	_, ok = dealer.registrations[testProcedure]
+	_, ok = dealer.procRegMap[testProcedure]
 	if ok {
-		t.Fatal("dealer still has registered endpoint")
+		t.Fatal("dealer still has registeration")
 	}
 
-	// Check that dealer does not have registered procedure
-	_, ok = dealer.procedures[reg]
+	// Check that dealer does not have registration reverse mapping
+	_, ok = dealer.registrations[regID]
 	if ok {
-		t.Fatal("dealer still has registered procedure")
+		t.Fatal("dealer still has regID -> registration")
 	}
 }
 
@@ -232,12 +235,12 @@ func TestRemovePeer(t *testing.T) {
 	msg := &wamp.Register{Request: 123, Procedure: testProcedure}
 	dealer.Submit(sess, msg)
 	rsp := <-callee.Recv()
-	reg := rsp.(*wamp.Registered).Registration
+	regID := rsp.(*wamp.Registered).Registration
 
-	if _, ok := dealer.registrations[testProcedure]; !ok {
+	if _, ok := dealer.procRegMap[testProcedure]; !ok {
 		t.Fatal("dealer does not have registered procedure")
 	}
-	if _, ok := dealer.procedures[reg]; !ok {
+	if _, ok := dealer.registrations[regID]; !ok {
 		t.Fatal("dealer does not have registration")
 	}
 
@@ -257,10 +260,10 @@ func TestRemovePeer(t *testing.T) {
 		&wamp.Register{Request: 789, Procedure: wamp.URI("nexus.test.p2")})
 	rsp = <-callee.Recv()
 
-	if _, ok := dealer.registrations[testProcedure]; ok {
+	if _, ok := dealer.procRegMap[testProcedure]; ok {
 		t.Fatal("dealer still has registered procedure")
 	}
-	if _, ok := dealer.procedures[reg]; ok {
+	if _, ok := dealer.registrations[regID]; ok {
 		t.Fatal("dealer still has registration")
 	}
 

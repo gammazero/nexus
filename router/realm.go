@@ -36,12 +36,9 @@ type Realm struct {
 	// Used by Close() to wait for sessions to exit.
 	waitHandlers sync.WaitGroup
 
-	// Session meta-procedure registration IDs.
-	metaSessionCount wamp.ID
-	metaSessionList  wamp.ID
-	metaSessionGet   wamp.ID
-
-	metaDone chan struct{}
+	// Session meta-procedure registration ID -> handler map.
+	metaProcMap map[wamp.ID]func(*wamp.Invocation) wamp.Message
+	metaDone    chan struct{}
 }
 
 // NewRealm creates a new Realm with default broker, dealer, and authorizer
@@ -73,10 +70,38 @@ func NewRealm(uri wamp.URI, strictURI, anonymousAuth, allowDisclose bool) *Realm
 
 	r.dealer = NewDealer(strictURI, allowDisclose, p)
 
+	// Create map of registration ID to meta procedure handler.
+	r.metaProcMap = make(map[wamp.ID]func(*wamp.Invocation) wamp.Message, 9)
+
 	// Register to handle session meta procedures.
-	r.metaSessionCount = r.registerMetaProcedure(wamp.MetaProcSessionCount, p)
-	r.metaSessionList = r.registerMetaProcedure(wamp.MetaProcSessionList, p)
-	r.metaSessionGet = r.registerMetaProcedure(wamp.MetaProcSessionGet, p)
+	regID := r.registerMetaProcedure(wamp.MetaProcSessionCount, p)
+	r.metaProcMap[regID] = r.sessionCount
+
+	regID = r.registerMetaProcedure(wamp.MetaProcSessionList, p)
+	r.metaProcMap[regID] = r.sessionList
+
+	regID = r.registerMetaProcedure(wamp.MetaProcSessionGet, p)
+	r.metaProcMap[regID] = r.sessionGet
+
+	// Register to handle registraton meta procedures.
+
+	regID = r.registerMetaProcedure(wamp.MetaProcRegList, p)
+	r.metaProcMap[regID] = r.regList
+
+	regID = r.registerMetaProcedure(wamp.MetaProcRegLookup, p)
+	r.metaProcMap[regID] = r.regLookup
+
+	regID = r.registerMetaProcedure(wamp.MetaProcRegMatch, p)
+	r.metaProcMap[regID] = r.regMatch
+
+	regID = r.registerMetaProcedure(wamp.MetaProcRegGet, p)
+	r.metaProcMap[regID] = r.regGet
+
+	regID = r.registerMetaProcedure(wamp.MetaProcRegListCallees, p)
+	r.metaProcMap[regID] = r.regListCallees
+
+	regID = r.registerMetaProcedure(wamp.MetaProcRegCountCallees, p)
+	r.metaProcMap[regID] = r.regCountCallees
 
 	go r.metaProcedureHandler()
 	go r.run()
@@ -493,7 +518,21 @@ func (r *Realm) metaProcedureHandler() {
 	for msg := range r.metaClient.Recv() {
 		switch msg := msg.(type) {
 		case *wamp.Invocation:
-			rsp = r.handleInvocation(msg)
+			metaProcHandler, ok := r.metaProcMap[msg.Registration]
+			if !ok {
+				r.metaClient.Send(&wamp.Error{
+					Type:    msg.MessageType(),
+					Request: msg.Request,
+					Details: map[string]interface{}{},
+					Error:   wamp.ErrNoSuchProcedure,
+				})
+				continue
+			}
+			rsp = metaProcHandler(msg)
+			if rsp == nil {
+				// Response is nil if it was meta procedure handled by dealer.
+				continue
+			}
 		case *wamp.Goodbye:
 			log.Println("Session meta procedure handler exiting GOODBYE")
 			return
@@ -501,24 +540,6 @@ func (r *Realm) metaProcedureHandler() {
 			log.Print("Meta procedure received unexpected ", msg.MessageType())
 		}
 		r.metaClient.Send(rsp)
-	}
-}
-
-func (r *Realm) handleInvocation(msg *wamp.Invocation) wamp.Message {
-	if msg.Registration == r.metaSessionCount {
-		return r.sessionCount(msg)
-	}
-	if msg.Registration == r.metaSessionList {
-		return r.sessionList(msg)
-	}
-	if msg.Registration == r.metaSessionGet {
-		return r.sessionGet(msg)
-	}
-	return &wamp.Error{
-		Type:    msg.MessageType(),
-		Request: msg.Request,
-		Details: map[string]interface{}{},
-		Error:   wamp.ErrNoSuchProcedure,
 	}
 }
 
@@ -630,4 +651,53 @@ func (r *Realm) sessionGet(msg *wamp.Invocation) wamp.Message {
 		Request:   msg.Request,
 		Arguments: []interface{}{dict},
 	}
+}
+
+// regList retrieves registration IDs listed according to match policies.
+func (r *Realm) regList(msg *wamp.Invocation) wamp.Message {
+	// Submit INVOCATION message to run the registration meta procedure in the
+	// dealer's request handler.  Replace the registration ID with the index of
+	// the meta procedure to run.  The registration ID is not needed in this
+	// case since the dealer will always respond to the meta client, and does
+	// not need to lookup the registered caller to respond to.
+	msg.Registration = RegList
+	r.dealer.Submit(nil, msg)
+	return nil
+}
+
+// regLookup retrieves registration IDs listed according to match policies.
+func (r *Realm) regLookup(msg *wamp.Invocation) wamp.Message {
+	msg.Registration = RegLookup
+	r.dealer.Submit(nil, msg)
+	return nil
+}
+
+// regMatch obtains the registration best matching a given procedure URI.
+func (r *Realm) regMatch(msg *wamp.Invocation) wamp.Message {
+	msg.Registration = RegMatch
+	r.dealer.Submit(nil, msg)
+	return nil
+}
+
+// regGet retrieves information on a particular registration.
+func (r *Realm) regGet(msg *wamp.Invocation) wamp.Message {
+	msg.Registration = RegGet
+	r.dealer.Submit(nil, msg)
+	return nil
+}
+
+// regregListCallees retrieves a list of session IDs for sessions currently
+// attached to the registration.
+func (r *Realm) regListCallees(msg *wamp.Invocation) wamp.Message {
+	msg.Registration = RegListCallees
+	r.dealer.Submit(nil, msg)
+	return nil
+}
+
+// regCountCallees obtains the number of sessions currently attached to the
+// registration.
+func (r *Realm) regCountCallees(msg *wamp.Invocation) wamp.Message {
+	msg.Registration = RegCountCallees
+	r.dealer.Submit(nil, msg)
+	return nil
 }
