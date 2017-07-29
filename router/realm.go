@@ -26,7 +26,7 @@ type Realm struct {
 	// session ID -> Session
 	clients map[wamp.ID]*Session
 
-	metaClient wamp.Peer
+	metaClient *Session
 	metaSess   *Session
 	metaIDGen  *wamp.IDGen
 
@@ -35,12 +35,9 @@ type Realm struct {
 	// Used by Close() to wait for sessions to exit.
 	waitHandlers sync.WaitGroup
 
-	// Session meta-procedure registration IDs.
-	metaSessionCount wamp.ID
-	metaSessionList  wamp.ID
-	metaSessionGet   wamp.ID
-
-	metaDone chan struct{}
+	// Session meta-procedure registration ID -> handler map.
+	metaProcMap map[wamp.ID]func(*wamp.Invocation) wamp.Message
+	metaDone    chan struct{}
 }
 
 // NewRealm creates a new Realm with default broker, dealer, and authorizer
@@ -49,7 +46,6 @@ func NewRealm(uri wamp.URI, strictURI, anonymousAuth, allowDisclose bool) *Realm
 	r := &Realm{
 		uri:            uri,
 		broker:         NewBroker(strictURI, allowDisclose),
-		dealer:         NewDealer(strictURI, allowDisclose),
 		authorizer:     NewAuthorizer(),
 		authenticators: map[string]auth.Authenticator{},
 		clients:        map[wamp.ID]*Session{},
@@ -68,13 +64,43 @@ func NewRealm(uri wamp.URI, strictURI, anonymousAuth, allowDisclose bool) *Realm
 	// the peer returned, which is the remote side of the router uplink.
 	// Sending a PUBLISH message to p will result in the router publishing the
 	// event to any subscribers.
-	p, _ := r.bridgeSession(nil, true)
-	r.metaClient = p
+	p := r.bridgeSession(nil, true)
+	r.metaClient = &Session{Peer: p}
+
+	r.dealer = NewDealer(strictURI, allowDisclose, p)
+
+	// Create map of registration ID to meta procedure handler.
+	r.metaProcMap = make(map[wamp.ID]func(*wamp.Invocation) wamp.Message, 9)
 
 	// Register to handle session meta procedures.
-	r.metaSessionCount = r.registerMetaProcedure(wamp.MetaProcSessionCount, p)
-	r.metaSessionList = r.registerMetaProcedure(wamp.MetaProcSessionList, p)
-	r.metaSessionGet = r.registerMetaProcedure(wamp.MetaProcSessionGet, p)
+	regID := r.registerMetaProcedure(wamp.MetaProcSessionCount)
+	r.metaProcMap[regID] = r.sessionCount
+
+	regID = r.registerMetaProcedure(wamp.MetaProcSessionList)
+	r.metaProcMap[regID] = r.sessionList
+
+	regID = r.registerMetaProcedure(wamp.MetaProcSessionGet)
+	r.metaProcMap[regID] = r.sessionGet
+
+	// Register to handle registraton meta procedures.
+
+	regID = r.registerMetaProcedure(wamp.MetaProcRegList)
+	r.metaProcMap[regID] = r.regList
+
+	regID = r.registerMetaProcedure(wamp.MetaProcRegLookup)
+	r.metaProcMap[regID] = r.regLookup
+
+	regID = r.registerMetaProcedure(wamp.MetaProcRegMatch)
+	r.metaProcMap[regID] = r.regMatch
+
+	regID = r.registerMetaProcedure(wamp.MetaProcRegGet)
+	r.metaProcMap[regID] = r.regGet
+
+	regID = r.registerMetaProcedure(wamp.MetaProcRegListCallees)
+	r.metaProcMap[regID] = r.regListCallees
+
+	regID = r.registerMetaProcedure(wamp.MetaProcRegCountCallees)
+	r.metaProcMap[regID] = r.regCountCallees
 
 	go r.metaProcedureHandler()
 	go r.run()
@@ -150,7 +176,7 @@ func (r *Realm) run() {
 // This is used for creating a local client for publishing meta events, and for
 // the router to create local sessions used by an application that the router
 // is embedded in.
-func (r *Realm) bridgeSession(details map[string]interface{}, meta bool) (wamp.Peer, error) {
+func (r *Realm) bridgeSession(details map[string]interface{}, meta bool) wamp.Peer {
 	cli, rtr := LinkedPeers()
 	if details == nil {
 		details = map[string]interface{}{}
@@ -160,18 +186,24 @@ func (r *Realm) bridgeSession(details map[string]interface{}, meta bool) (wamp.P
 	details = wamp.SetOption(details, "authrole", "trusted")
 
 	// This session is the local leg of the router uplink.
-	sess := Session{
+	sess := &Session{
 		Peer:    rtr,
 		ID:      wamp.GlobalID(),
 		Details: details,
 		stop:    make(chan wamp.URI, 1),
 	}
+	if meta {
+		if r.metaSess != nil {
+			panic("starting meta session multiple times")
+		}
+		r.metaSess = sess
+	}
 	// Run the session handler for the
-	go r.handleSession(&sess, meta)
+	go r.handleSession(sess, meta)
 	log.Print("Created internal session: ", sess)
 
 	// Return the session that is the remote leg of the router uplink.
-	return cli, nil
+	return cli
 }
 
 // onJoin is called when a session joins this realm.  The session is stored in
@@ -180,12 +212,10 @@ func (r *Realm) bridgeSession(details map[string]interface{}, meta bool) (wamp.P
 // Note: onJoin() must be called from outside handleSession() so that it is not
 // called for the meta client.
 func (r *Realm) onJoin(sess *Session) {
-	var metaID wamp.ID
 	r.waitHandlers.Add(1)
 	sync := make(chan struct{})
 	r.actionChan <- func() {
 		r.clients[sess.ID] = sess
-		metaID = r.metaIDGen.Next()
 		sync <- struct{}{}
 	}
 	<-sync
@@ -202,7 +232,7 @@ func (r *Realm) onJoin(sess *Session) {
 	// Session Meta Events MUST be dispatched by the Router to the same realm
 	// as the WAMP session which triggered the event.
 	r.metaClient.Send(&wamp.Publish{
-		Request:   metaID,
+		Request:   wamp.GlobalID(),
 		Topic:     wamp.MetaEventSessionOnJoin,
 		Arguments: []interface{}{details},
 	})
@@ -214,19 +244,17 @@ func (r *Realm) onJoin(sess *Session) {
 // Note: onLeave() must be called from outside handleSession() so that it is
 // not called for the meta client.
 func (r *Realm) onLeave(sess *Session) {
-	var metaID wamp.ID
 	sync := make(chan struct{})
 	r.actionChan <- func() {
 		delete(r.clients, sess.ID)
 		r.dealer.RemoveSession(sess)
 		r.broker.RemoveSession(sess)
-		metaID = r.metaIDGen.Next()
 		sync <- struct{}{}
 	}
 	<-sync
 
 	r.metaClient.Send(&wamp.Publish{
-		Request:   metaID,
+		Request:   wamp.GlobalID(),
 		Topic:     wamp.MetaEventSessionOnLeave,
 		Arguments: []interface{}{sess.ID},
 	})
@@ -247,7 +275,6 @@ func (r *Realm) handleSession(sess *Session, meta bool) {
 		defer r.onLeave(sess)
 	} else {
 		sname = "meta-session"
-		r.metaSess = sess
 	}
 	log.Println("Started", sname, sess)
 	defer log.Println("Ended", sname, sess)
@@ -400,12 +427,12 @@ func (r *Realm) getAuthenticator(methods []string) (auth auth.Authenticator, aut
 	return
 }
 
-func (r *Realm) registerMetaProcedure(procedure wamp.URI, peer wamp.Peer) wamp.ID {
-	peer.Send(&wamp.Register{
+func (r *Realm) registerMetaProcedure(procedure wamp.URI) wamp.ID {
+	r.metaClient.Send(&wamp.Register{
 		Request:   r.metaIDGen.Next(),
 		Procedure: procedure,
 	})
-	msg := <-peer.Recv()
+	msg := <-r.metaClient.Recv()
 	reg, ok := msg.(*wamp.Registered)
 	if !ok {
 		err, ok := msg.(*wamp.Error)
@@ -430,7 +457,21 @@ func (r *Realm) metaProcedureHandler() {
 	for msg := range r.metaClient.Recv() {
 		switch msg := msg.(type) {
 		case *wamp.Invocation:
-			rsp = r.handleInvocation(msg)
+			metaProcHandler, ok := r.metaProcMap[msg.Registration]
+			if !ok {
+				r.metaClient.Send(&wamp.Error{
+					Type:    msg.MessageType(),
+					Request: msg.Request,
+					Details: map[string]interface{}{},
+					Error:   wamp.ErrNoSuchProcedure,
+				})
+				continue
+			}
+			rsp = metaProcHandler(msg)
+			if rsp == nil {
+				// Response is nil if it was meta procedure handled by dealer.
+				continue
+			}
 		case *wamp.Goodbye:
 			log.Println("Session meta procedure handler exiting GOODBYE")
 			return
@@ -438,24 +479,6 @@ func (r *Realm) metaProcedureHandler() {
 			log.Print("Meta procedure received unexpected ", msg.MessageType())
 		}
 		r.metaClient.Send(rsp)
-	}
-}
-
-func (r *Realm) handleInvocation(msg *wamp.Invocation) wamp.Message {
-	if msg.Registration == r.metaSessionCount {
-		return r.sessionCount(msg)
-	}
-	if msg.Registration == r.metaSessionList {
-		return r.sessionList(msg)
-	}
-	if msg.Registration == r.metaSessionGet {
-		return r.sessionGet(msg)
-	}
-	return &wamp.Error{
-		Type:    msg.MessageType(),
-		Request: msg.Request,
-		Details: map[string]interface{}{},
-		Error:   wamp.ErrNoSuchProcedure,
 	}
 }
 
@@ -567,4 +590,53 @@ func (r *Realm) sessionGet(msg *wamp.Invocation) wamp.Message {
 		Request:   msg.Request,
 		Arguments: []interface{}{dict},
 	}
+}
+
+// regList retrieves registration IDs listed according to match policies.
+func (r *Realm) regList(msg *wamp.Invocation) wamp.Message {
+	// Submit INVOCATION message to run the registration meta procedure in the
+	// dealer's request handler.  Replace the registration ID with the index of
+	// the meta procedure to run.  The registration ID is not needed in this
+	// case since the dealer will always respond to the meta client, and does
+	// not need to lookup the registered caller to respond to.
+	msg.Registration = RegList
+	r.dealer.Submit(r.metaClient, msg)
+	return nil
+}
+
+// regLookup retrieves registration IDs listed according to match policies.
+func (r *Realm) regLookup(msg *wamp.Invocation) wamp.Message {
+	msg.Registration = RegLookup
+	r.dealer.Submit(r.metaClient, msg)
+	return nil
+}
+
+// regMatch obtains the registration best matching a given procedure URI.
+func (r *Realm) regMatch(msg *wamp.Invocation) wamp.Message {
+	msg.Registration = RegMatch
+	r.dealer.Submit(r.metaClient, msg)
+	return nil
+}
+
+// regGet retrieves information on a particular registration.
+func (r *Realm) regGet(msg *wamp.Invocation) wamp.Message {
+	msg.Registration = RegGet
+	r.dealer.Submit(r.metaClient, msg)
+	return nil
+}
+
+// regregListCallees retrieves a list of session IDs for sessions currently
+// attached to the registration.
+func (r *Realm) regListCallees(msg *wamp.Invocation) wamp.Message {
+	msg.Registration = RegListCallees
+	r.dealer.Submit(r.metaClient, msg)
+	return nil
+}
+
+// regCountCallees obtains the number of sessions currently attached to the
+// registration.
+func (r *Realm) regCountCallees(msg *wamp.Invocation) wamp.Message {
+	msg.Registration = RegCountCallees
+	r.dealer.Submit(r.metaClient, msg)
+	return nil
 }

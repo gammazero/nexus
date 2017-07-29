@@ -115,6 +115,45 @@ func OptionString(opts map[string]interface{}, optionName string) string {
 	return opt
 }
 
+// OptionURI returns the URI value of the option with the specified name.
+// If the option is not present, an empty URI is returned.
+func OptionURI(opts map[string]interface{}, optionName string) URI {
+	var opt URI
+	if _opt, ok := opts[optionName]; ok && _opt != nil {
+		opt, _ = AsURI(_opt)
+	}
+	return opt
+}
+
+// OptionID returns the ID value of the option with the specified name.
+// If the option is not present, an ID 0 is returned.
+func OptionID(opts map[string]interface{}, optionName string) ID {
+	var opt ID
+	if _opt, ok := opts[optionName]; ok && _opt != nil {
+		opt, _ = AsID(_opt)
+	}
+	return opt
+}
+
+func AsID(v interface{}) (ID, bool) {
+	if i64, ok := AsInt64(v); ok {
+		return ID(i64), true
+	}
+	return ID(0), false
+}
+
+func AsURI(v interface{}) (URI, bool) {
+	switch v := v.(type) {
+	case URI:
+		return v, true
+	case string:
+		return URI(v), true
+	case []byte:
+		return URI(string(v)), true
+	}
+	return URI(""), false
+}
+
 func AsInt64(v interface{}) (int64, bool) {
 	switch v := v.(type) {
 	case int64:

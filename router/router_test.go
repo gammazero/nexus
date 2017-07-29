@@ -9,7 +9,11 @@ import (
 	"github.com/gammazero/nexus/wamp"
 )
 
-const testRealm = wamp.URI("nexus.test.realm")
+const (
+	testRealm       = wamp.URI("nexus.test.realm")
+	testProcedure   = wamp.URI("nexus.test.endpoint")
+	testProcedureWC = wamp.URI("nexus..endpoint")
+)
 
 func init() {
 	DebugEnabled = true
@@ -234,7 +238,6 @@ func TestPublishNoAcknowledge(t *testing.T) {
 }
 
 func TestRouterCall(t *testing.T) {
-	const testProcedure = wamp.URI("nexus.test.endpoint")
 	callee, calleeServer := LinkedPeers()
 	r := newTestRouter()
 	defer r.Close()
@@ -422,5 +425,293 @@ func TestSessionMetaProcedures(t *testing.T) {
 	sid := wamp.ID(wamp.OptionInt64(dict, "session"))
 	if sid != sessID {
 		t.Fatal("wrong session ID")
+	}
+}
+
+func TestRegistrationMetaProcedures(t *testing.T) {
+	r := newTestRouter()
+	defer r.Close()
+
+	caller, callerServer := LinkedPeers()
+	sessID, err := handShake(r, caller, callerServer)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var result *wamp.Result
+	var ok bool
+
+	// ----- Test wamp.registration.list meta procedure -----
+	callID := wamp.GlobalID()
+	caller.Send(&wamp.Call{Request: callID, Procedure: wamp.MetaProcRegList})
+	select {
+	case <-time.After(10 * time.Millisecond):
+		t.Fatal("Timed out waiting for RESULT")
+	case msg := <-caller.Recv():
+		result, ok = msg.(*wamp.Result)
+		if !ok {
+			t.Fatal("expected RESULT, got ", msg.MessageType())
+		}
+		if result.Request != callID {
+			t.Fatal("wrong result ID")
+		}
+	}
+	if len(result.Arguments) == 0 {
+		t.Fatal("missing expected arguemnt")
+	}
+	dict, ok := result.Arguments[0].(map[string]interface{})
+	if !ok {
+		t.Fatal("expected map[string]interface{}")
+	}
+	exactPrev, ok := dict["exact"].([]wamp.ID)
+	if !ok {
+		t.Fatal("expected []wamp.ID")
+	}
+	prefixPrev, ok := dict["prefix"].([]wamp.ID)
+	if !ok {
+		t.Fatal("expected []wamp.ID")
+	}
+	wildcardPrev, ok := dict["wildcard"].([]wamp.ID)
+	if !ok {
+		t.Fatal("expected []wamp.ID")
+	}
+
+	callee, calleeServer := LinkedPeers()
+	sessID, err = handShake(r, callee, calleeServer)
+	if err != nil {
+		t.Fatal(err)
+	}
+	// Register remote procedure
+	registerID := wamp.GlobalID()
+	callee.Send(&wamp.Register{Request: registerID, Procedure: testProcedure})
+
+	var registrationID wamp.ID
+	select {
+	case <-time.After(10 * time.Millisecond):
+		t.Fatal("Timed out waiting for REGISTERED")
+	case msg := <-callee.Recv():
+		registered, ok := msg.(*wamp.Registered)
+		if !ok {
+			t.Fatal("expected REGISTERED, got: ", msg.MessageType())
+		}
+		if registered.Request != registerID {
+			t.Fatal("wrong request ID")
+		}
+		registrationID = registered.Registration
+	}
+
+	// Register remote procedure
+	callee.Send(&wamp.Register{
+		Request:   wamp.GlobalID(),
+		Procedure: testProcedureWC,
+		Options:   map[string]interface{}{"match": "wildcard"},
+	})
+	msg := <-callee.Recv()
+	if _, ok := msg.(*wamp.Registered); !ok {
+		t.Fatal("expected REGISTERED, got: ", msg.MessageType())
+	}
+
+	// Call session meta-procedure to get session count.
+	callID = wamp.GlobalID()
+	caller.Send(&wamp.Call{Request: callID, Procedure: wamp.MetaProcRegList})
+	select {
+	case <-time.After(10 * time.Millisecond):
+		t.Fatal("Timed out waiting for RESULT")
+	case msg := <-caller.Recv():
+		result, ok = msg.(*wamp.Result)
+		if !ok {
+			t.Fatal("expected RESULT, got ", msg.MessageType())
+		}
+		if result.Request != callID {
+			t.Fatal("wrong result ID")
+		}
+	}
+	if len(result.Arguments) == 0 {
+		t.Fatal("missing expected arguemnt")
+	}
+	dict, ok = result.Arguments[0].(map[string]interface{})
+	if !ok {
+		t.Fatal("expected map[string]interface{}")
+	}
+	exact := dict["exact"].([]wamp.ID)
+	prefix := dict["prefix"].([]wamp.ID)
+	wildcard := dict["wildcard"].([]wamp.ID)
+
+	if len(exact) != len(exactPrev)+1 {
+		t.Fatal("expected additional exact match")
+	}
+	if len(prefix) != len(prefixPrev) {
+		t.Fatal("prefix matches should not have changed")
+	}
+	if len(wildcard) != len(wildcardPrev)+1 {
+		t.Fatal("wildcard matches should not have changed")
+	}
+
+	var found bool
+	for i := range exact {
+		if exact[i] == registrationID {
+			found = true
+			break
+		}
+	}
+	if !found {
+		t.Fatal("missing expected registration ID")
+	}
+
+	// ----- Test wamp.registration.lookup meta procedure -----
+	callID = wamp.GlobalID()
+	caller.Send(&wamp.Call{
+		Request:   callID,
+		Procedure: wamp.MetaProcRegLookup,
+		Arguments: []interface{}{testProcedure},
+	})
+	select {
+	case <-time.After(10 * time.Millisecond):
+		t.Fatal("Timed out waiting for RESULT")
+	case msg := <-caller.Recv():
+		result, ok = msg.(*wamp.Result)
+		if !ok {
+			t.Fatal("expected RESULT, got ", msg.MessageType())
+		}
+		if result.Request != callID {
+			t.Fatal("wrong result ID")
+		}
+	}
+	if len(result.Arguments) == 0 {
+		t.Fatal("missing expected arguemnt")
+	}
+	regID, ok := result.Arguments[0].(wamp.ID)
+	if !ok {
+		t.Fatal("expected wamp.ID")
+	}
+	if regID != registrationID {
+		t.Fatal("received wrong registration ID")
+	}
+
+	// ----- Test wamp.registration.match meta procedure -----
+	callID = wamp.GlobalID()
+	caller.Send(&wamp.Call{
+		Request:   callID,
+		Procedure: wamp.MetaProcRegMatch,
+		Arguments: []interface{}{testProcedure},
+	})
+	select {
+	case <-time.After(10 * time.Millisecond):
+		t.Fatal("Timed out waiting for RESULT")
+	case msg := <-caller.Recv():
+		result, ok = msg.(*wamp.Result)
+		if !ok {
+			t.Fatal("expected RESULT, got ", msg.MessageType())
+		}
+		if result.Request != callID {
+			t.Fatal("wrong result ID")
+		}
+	}
+	if len(result.Arguments) == 0 {
+		t.Fatal("missing expected arguemnt")
+	}
+	regID, ok = wamp.AsID(result.Arguments[0])
+	if !ok {
+		t.Fatal("expected wamp.ID")
+	}
+	if regID != registrationID {
+		t.Fatal("received wrong registration ID")
+	}
+
+	// ----- Test wamp.registration.get meta procedure -----
+	callID = wamp.GlobalID()
+	caller.Send(&wamp.Call{
+		Request:   callID,
+		Procedure: wamp.MetaProcRegGet,
+		Arguments: []interface{}{registrationID},
+	})
+	select {
+	case <-time.After(10 * time.Millisecond):
+		t.Fatal("Timed out waiting for RESULT")
+	case msg := <-caller.Recv():
+		result, ok = msg.(*wamp.Result)
+		if !ok {
+			t.Fatal("expected RESULT, got ", msg.MessageType())
+		}
+		if result.Request != callID {
+			t.Fatal("wrong result ID")
+		}
+	}
+	if len(result.Arguments) == 0 {
+		t.Fatal("missing expected arguemnt")
+	}
+	dict, ok = result.Arguments[0].(map[string]interface{})
+	if !ok {
+		t.Fatal("expected map[string]interface{}")
+	}
+	regID = wamp.OptionID(dict, "id")
+	if regID != registrationID {
+		t.Fatal("received wrong registration")
+	}
+	uri := wamp.OptionURI(dict, "uri")
+	if uri != testProcedure {
+		t.Fatal("registration has wrong uri: ", uri)
+	}
+
+	// ----- Test wamp.registration.list_callees meta procedure -----
+	callID = wamp.GlobalID()
+	caller.Send(&wamp.Call{
+		Request:   callID,
+		Procedure: wamp.MetaProcRegListCallees,
+		Arguments: []interface{}{registrationID},
+	})
+	select {
+	case <-time.After(10 * time.Millisecond):
+		t.Fatal("Timed out waiting for RESULT")
+	case msg := <-caller.Recv():
+		result, ok = msg.(*wamp.Result)
+		if !ok {
+			t.Fatal("expected RESULT, got ", msg.MessageType())
+		}
+		if result.Request != callID {
+			t.Fatal("wrong result ID")
+		}
+	}
+	if len(result.Arguments) == 0 {
+		t.Fatal("missing expected arguemnt")
+	}
+	idList, ok := result.Arguments[0].([]wamp.ID)
+	if !ok {
+		t.Fatal("Expected []wamp.ID")
+	}
+	if len(idList) != 1 {
+		t.Fatal("Expected 1 callee in list")
+	}
+	if idList[0] != sessID {
+		t.Fatal("Wrong callee session ID")
+	}
+
+	// ----- Test wamp.registration.list_callees meta procedure -----
+	callID = wamp.GlobalID()
+	caller.Send(&wamp.Call{
+		Request:   callID,
+		Procedure: wamp.MetaProcRegCountCallees,
+		Arguments: []interface{}{registrationID},
+	})
+	select {
+	case <-time.After(10 * time.Millisecond):
+		t.Fatal("Timed out waiting for RESULT")
+	case msg := <-caller.Recv():
+		result, ok = msg.(*wamp.Result)
+		if !ok {
+			t.Fatal("expected RESULT, got ", msg.MessageType())
+		}
+		if result.Request != callID {
+			t.Fatal("wrong result ID")
+		}
+	}
+	if len(result.Arguments) == 0 {
+		t.Fatal("missing expected arguemnt")
+	}
+	count, ok := wamp.AsInt64(result.Arguments[0])
+	if !ok {
+		t.Fatal("Argument is not an int")
+	}
+	if count != 1 {
+		t.Fatal("Wring number of callees")
 	}
 }

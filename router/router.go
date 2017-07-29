@@ -312,7 +312,7 @@ func (r *router) LocalClient(realmURI wamp.URI, details map[string]interface{}) 
 	}
 
 	// Start internal session and return remote leg of router uplink.
-	return realm.bridgeSession(details, false)
+	return realm.bridgeSession(details, false), nil
 }
 
 // Close stops the router and waits message processing to stop.

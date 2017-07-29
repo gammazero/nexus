@@ -32,22 +32,20 @@ Transport security, such as TLS over websockets will be included.  Router librar
 ## Project Status
 Currently in active development - contributions welcome.
 
+#### Features to complete - priority order:
+- active call timeout (need handling by router)
+- testament_meta_api
+- event history
+- call trust levels
+- publisher trust levels
+
 #### Items to complete:
 - documentation (in progress)
 - examples (in progress)
 - RawSocket transport (planned)
 - cool logo (maybe)
 
-#### Features to complete - priority order:
-- active call timeout (need handling by router)
-- registration_meta_api
-- testament_meta_api
-- event history
-- call trust levels
-- publisher trust levels
-
 #### Enhancements
-- Improve logging
 - Metrics (prometheus? meta procedure?)
 
 ## Advanced Profile Feature Support
