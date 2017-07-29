@@ -64,7 +64,7 @@ type registration struct {
 	created    string   // when registration was created
 	match      string   // how procedure uri is matched to registration
 	policy     string   // how callee is selected if shared registration
-	disclose   bool     //
+	disclose   bool     // callee requests disclosure of caller identity
 	nextCallee int      // choose callee for round-robin invocation.
 
 	// Multiple sessions can register as callees depending on invocation policy
@@ -160,20 +160,21 @@ func NewDealer(strictURI, allowDisclose bool, metaClient wamp.Peer) Dealer {
 // Submit dispatches a Resister, Unregister, Call, Cancel, Yield, or Error
 // message to the dealer.
 func (d *dealer) Submit(sess *Session, msg wamp.Message) {
-	if msg == nil {
-		panic("dealer.Submit with nil message")
-	}
-	if sess == nil {
-		panic("dealer.Submit with nil session")
+	// All calls dispatched by Submit require both a session and a message.  It
+	// is a programming error to call Submit without a session or without a
+	// message.
+	if sess == nil || msg == nil {
+		panic("dealer.Submit with nil session or message")
 	}
 	d.reqChan <- routerReq{session: sess, msg: msg}
 }
 
-func (d *dealer) RemoveSession(peer *Session) {
-	if peer == nil {
-		panic("nil session")
+func (d *dealer) RemoveSession(sess *Session) {
+	if sess == nil {
+		// No session specified, no session removed.
+		return
 	}
-	d.reqChan <- routerReq{session: peer}
+	d.reqChan <- routerReq{session: sess}
 }
 
 // Close stops the dealer and waits message processing to stop.
@@ -224,13 +225,19 @@ func (d *dealer) reqHandler() {
 				rsp = d.regCountCallees(msg)
 			default:
 				// This is a programming error because, a client cannot submit
-				// an INVACATION to the dealer, only the realm's meta procedure
-				// handler can do this.
+				// an INVACATION to the dealer.  If a client sent an invocation
+				// this would result in an ERROR in the session handler.
+				// Therefore, this must be a programming in the realm's meta
+				// procedure handler.
 				panic("illegal registration meta procedure index")
 			}
 			d.metaClient.Send(rsp)
 
 		default:
+			// Any invalid message type is caught in the realm's session
+			// handler.  Therefore, if an invalid message makes it here, then
+			// this is a programming error where the session handler is passing
+			// in the wrong type of message to the dealer.
 			panic(fmt.Sprint("dealer received message type: ",
 				req.msg.MessageType()))
 		}
@@ -518,9 +525,10 @@ func (d *dealer) call(caller *Session, msg *wamp.Call) {
 		case "last":
 			callee = reg.callees[len(reg.callees)-1]
 		default:
-			errMsg := fmt.Sprint("multiple procedures registered for",
+			errMsg := fmt.Sprint("multiple callees registered for",
 				msg.Procedure, "with 'single' policy")
-			// It is a programming error that this was ever allowed, so panic.
+			// This is disallowed by the dealer, and is a programming error if
+			// it ever happened, so panic.
 			panic(errMsg)
 		}
 	} else {
@@ -605,8 +613,6 @@ func (d *dealer) call(caller *Session, msg *wamp.Call) {
 		Arguments:    msg.Arguments,
 		ArgumentsKw:  msg.ArgumentsKw,
 	})
-	//log.Printf("Dispatched CALL: %v [%v] to callee as INVOCATION %v",
-	//	msg.Request, msg.Procedure, invocationID)
 }
 
 // cancel actively cancels a call that is in progress.
@@ -735,14 +741,13 @@ func (d *dealer) yield(callee *Session, msg *wamp.Yield) {
 		details["progress"] = true
 	}
 
-	// Send result to the caller.
+	// Send RESULT to the caller.  This forwards the YIELD from the callee.
 	caller.Send(&wamp.Result{
 		Request:     callID,
 		Details:     details,
 		Arguments:   msg.Arguments,
 		ArgumentsKw: msg.ArgumentsKw,
 	})
-	//log.Printf("Sent RESULT %v to caller from YIELD %v", callID, msg.Request)
 }
 
 func (d *dealer) error(peer *Session, msg *wamp.Error) {
@@ -779,7 +784,6 @@ func (d *dealer) error(peer *Session, msg *wamp.Error) {
 		Arguments:   msg.Arguments,
 		ArgumentsKw: msg.ArgumentsKw,
 	})
-	//log.Printf("Sent ERROR %v to caller as ERROR %v", msg.Request, callID)
 }
 
 func (d *dealer) removeSession(callee *Session) {

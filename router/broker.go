@@ -100,17 +100,21 @@ func (b *broker) Features() map[string]interface{} {
 }
 
 func (b *broker) Submit(sess *Session, msg wamp.Message) {
+	// All calls dispatched by Submit require both a session and a message.  It
+	// is a programming error to call Submit without a session or without a
+	// message.
 	if msg == nil || sess == nil {
-		panic("nil session or message")
+		panic("broker.Submit with nil session or message")
 	}
 	b.reqChan <- routerReq{session: sess, msg: msg}
 }
 
-func (b *broker) RemoveSession(sub *Session) {
-	if sub == nil {
-		panic("nil subscriber")
+func (b *broker) RemoveSession(sess *Session) {
+	if sess == nil {
+		// No session specified, no session removed.
+		return
 	}
-	b.reqChan <- routerReq{session: sub}
+	b.reqChan <- routerReq{session: sess}
 }
 
 // Close stops the broker and waits message processing to stop.
@@ -136,6 +140,10 @@ func (b *broker) reqHandler() {
 		case *wamp.Unsubscribe:
 			b.unsubscribe(sess, msg)
 		default:
+			// Any invalid message type is caught in the realm's session
+			// handler.  Therefore, if an invalid message makes it here, then
+			// this is a programming error where the session handler is passing
+			// in the wrong type of message to the broker.
 			panic(fmt.Sprint("broker received message type: ",
 				req.msg.MessageType()))
 		}
