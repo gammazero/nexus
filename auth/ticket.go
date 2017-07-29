@@ -9,6 +9,7 @@ import (
 
 // ticketAuthenticator implements CRAuthenticator
 type ticketAuthenticator struct {
+	CRAuthenticator
 	userDB UserDB
 }
 
@@ -20,27 +21,9 @@ type ticketAuthenticator struct {
 // wire. If the transport WAMP is running over is not encrypted, a
 // man-in-the-middle can sniff and possibly hijack the ticket. If the ticket
 // value is reused, that might enable replay attacks.
-func NewTicketAuthenticator(userDB UserDB) CRAuthenticator {
+func NewTicketAuthenticator(userDB UserDB) Authenticator {
 	return &ticketAuthenticator{
 		userDB: userDB,
-	}
-}
-
-// pendingTicketAuth implements the PendingCRAuth interface.
-type pendingTicketAuth struct {
-	authID   string
-	secret   string
-	role     string
-	provider string
-}
-
-// Return the ticket challenge message.
-func (p *pendingTicketAuth) Msg() *wamp.Challenge {
-	// Challenge Extra map is empty since the ticket challenge only asks for a
-	// ticket (using authmethod) and provides no additional challenge info.
-	return &wamp.Challenge{
-		AuthMethod: "ticket",
-		Extra:      map[string]interface{}{},
 	}
 }
 
@@ -75,6 +58,24 @@ func (t *ticketAuthenticator) Challenge(details map[string]interface{}) (Pending
 		secret:   userInfo["secret"],
 		provider: t.userDB.Name(),
 	}, nil
+}
+
+// pendingTicketAuth implements the PendingCRAuth interface.
+type pendingTicketAuth struct {
+	authID   string
+	secret   string
+	role     string
+	provider string
+}
+
+// Return the ticket challenge message.
+func (p *pendingTicketAuth) Msg() *wamp.Challenge {
+	// Challenge Extra map is empty since the ticket challenge only asks for a
+	// ticket (using authmethod) and provides no additional challenge info.
+	return &wamp.Challenge{
+		AuthMethod: "ticket",
+		Extra:      map[string]interface{}{},
+	}
 }
 
 // Timeout returns the amount of time to wait for a client to respond to a

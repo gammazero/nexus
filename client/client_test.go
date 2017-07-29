@@ -85,8 +85,11 @@ func TestJoinRealmWithCRAuth(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	crAuth := &testCRAuthenticator{}
-	realm.AddCRAuthenticator("testauth", crAuth)
+	crAuth, err := auth.NewCRAuthenticator(&testCRAuthenticator{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	realm.AddAuthenticator("testauth", crAuth)
 
 	peer := getTestPeer(r)
 	client := NewClient(peer, 0, log)

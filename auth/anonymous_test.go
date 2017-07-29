@@ -12,7 +12,7 @@ func TestAnonAuth(t *testing.T) {
 	details := map[string]interface{}{
 		"authid":      "someone",
 		"authmethods": []string{"anonymous"}}
-	welcome, err := anonAuth.Authenticate(details)
+	welcome, err := anonAuth.Authenticate(details, nil)
 	if err != nil {
 		t.Fatal("authenticate failed: ", err.Error())
 	}
