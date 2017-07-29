@@ -26,6 +26,8 @@ var dealerFeatures = map[string]interface{}{
 	},
 }
 
+// Used inside INVOCATION messages, submitted by the realms meta procedure
+// handler, to identify the registration meta proceure to call.
 const (
 	RegList = wamp.ID(iota)
 	RegLookup
@@ -218,6 +220,9 @@ func (d *dealer) reqHandler() {
 			case RegCountCallees:
 				rsp = d.regCountCallees(msg)
 			default:
+				// This is a programming error because, a client cannot submit
+				// an INVACATION to the dealer, only the realm's meta procedure
+				// handler can do this.
 				panic("illegal registration meta procedure index")
 			}
 			d.metaClient.Send(rsp)
@@ -597,7 +602,7 @@ func (d *dealer) call(caller *Session, msg *wamp.Call) {
 		Arguments:    msg.Arguments,
 		ArgumentsKw:  msg.ArgumentsKw,
 	})
-	//log.Printf("dispatched CALL: %v [%v] to callee as INVOCATION %v",
+	//log.Printf("Dispatched CALL: %v [%v] to callee as INVOCATION %v",
 	//	msg.Request, msg.Procedure, invocationID)
 }
 
@@ -835,8 +840,8 @@ func (d *dealer) delCalleeReg(callee *Session, regID wamp.ID) (bool, error) {
 		}
 	}
 
-	// If no more callees for this registration, then delete the
-	// registration according to what match type it is.
+	// If no more callees for this registration, then delete the registration
+	// according to what match type it is.
 	if len(reg.callees) == 0 {
 		delete(d.registrations, regID)
 		switch reg.match {
