@@ -43,6 +43,11 @@ type Broker interface {
 	Features() map[string]interface{}
 }
 
+type brokerReq struct {
+	session *Session
+	msg     wamp.Message
+}
+
 type broker struct {
 	// topic URI -> {subscription ID -> subscribed Session}
 	topicSubscribers    map[wamp.URI]map[wamp.ID]*Session
@@ -57,7 +62,7 @@ type broker struct {
 	// Session -> subscription ID set
 	sessionSubIDSet map[*Session]map[wamp.ID]struct{}
 
-	reqChan chan routerReq
+	reqChan chan brokerReq
 
 	// Generate subscription IDs.
 	idGen *wamp.IDGen
@@ -83,7 +88,7 @@ func NewBroker(strictURI, allowDisclose bool) Broker {
 		// since the incoming messages will be processed at the same rate
 		// whether the messages sit in the recv channel of peers, or they sit
 		// in the reqChan.
-		reqChan: make(chan routerReq, 1),
+		reqChan: make(chan brokerReq, 1),
 
 		idGen: wamp.NewIDGen(),
 
@@ -106,7 +111,7 @@ func (b *broker) Submit(sess *Session, msg wamp.Message) {
 	if msg == nil || sess == nil {
 		panic("broker.Submit with nil session or message")
 	}
-	b.reqChan <- routerReq{session: sess, msg: msg}
+	b.reqChan <- brokerReq{session: sess, msg: msg}
 }
 
 func (b *broker) RemoveSession(sess *Session) {
@@ -114,7 +119,7 @@ func (b *broker) RemoveSession(sess *Session) {
 		// No session specified, no session removed.
 		return
 	}
-	b.reqChan <- routerReq{session: sess}
+	b.reqChan <- brokerReq{session: sess}
 }
 
 // Close stops the broker and waits message processing to stop.

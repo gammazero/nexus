@@ -38,6 +38,9 @@ type Realm struct {
 	// Session meta-procedure registration ID -> handler map.
 	metaProcMap map[wamp.ID]func(*wamp.Invocation) wamp.Message
 	metaDone    chan struct{}
+
+	closed    bool
+	closeLock sync.Mutex
 }
 
 // NewRealm creates a new Realm with default broker, dealer, and authorizer
@@ -137,6 +140,10 @@ func (r *Realm) closeRealm() {
 	// Stop broker and dealer so they can be GC'd, and then so can this realm.
 	defer r.broker.Close()
 	defer r.dealer.Close()
+
+	r.closeLock.Lock()
+	defer r.closeLock.Unlock()
+	r.closed = true
 
 	r.actionChan <- func() {
 		for _, client := range r.clients {

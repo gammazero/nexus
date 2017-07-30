@@ -55,11 +55,6 @@ type Router interface {
 	Close()
 }
 
-type routerReq struct {
-	session *Session
-	msg     wamp.Message
-}
-
 // DefaultRouter is the default WAMP router implementation.
 type router struct {
 	realms map[wamp.URI]*Realm
@@ -267,8 +262,6 @@ func (r *router) Attach(client wamp.Peer) error {
 	roles["broker"] = realm.broker.Features()
 	roles["dealer"] = realm.dealer.Features()
 
-	client.Send(welcome)
-
 	// Populate session details.
 	details := map[string]interface{}{}
 	details["realm"] = hello.Realm
@@ -278,6 +271,17 @@ func (r *router) Attach(client wamp.Peer) error {
 	details["authmethod"] = welcome.Details["authmethod"]
 	details["authprovider"] = welcome.Details["authprovider"]
 
+	realm.closeLock.Lock()
+	if realm.closed {
+		err := errors.New("realm closed")
+		sendAbort(wamp.ErrSystemShutdown, nil)
+		realm.closeLock.Unlock()
+		return err
+	}
+
+	r.waitRealms.Add(1)
+	realm.closeLock.Unlock()
+
 	// Create new session.
 	sess := &Session{
 		Peer:    client,
@@ -286,14 +290,14 @@ func (r *router) Attach(client wamp.Peer) error {
 		stop:    make(chan wamp.URI, 1),
 	}
 
-	log.Print("Created session: ", welcome.ID)
-
-	r.waitRealms.Add(1)
 	go func() {
 		realm.handleSession(sess, false)
 		sess.Close()
 		r.waitRealms.Done()
 	}()
+
+	client.Send(welcome)
+	log.Print("Created session: ", welcome.ID)
 	return nil
 }
 
