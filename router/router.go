@@ -65,7 +65,7 @@ type router struct {
 	realms map[wamp.URI]*Realm
 
 	actionChan chan func()
-	waitReamls sync.WaitGroup
+	waitRealms sync.WaitGroup
 
 	autoRealm bool
 	strictURI bool
@@ -286,11 +286,11 @@ func (r *router) Attach(client wamp.Peer) error {
 
 	log.Print("Created session: ", welcome.ID)
 
-	r.waitReamls.Add(1)
+	r.waitRealms.Add(1)
 	go func() {
 		realm.handleSession(sess, false)
 		sess.Close()
-		r.waitReamls.Done()
+		r.waitRealms.Done()
 	}()
 	return nil
 }
@@ -331,5 +331,5 @@ func (r *router) Close() {
 	}
 	<-sync
 	// Wait for all existing realms to close.
-	r.waitReamls.Wait()
+	r.waitRealms.Wait()
 }
