@@ -875,7 +875,7 @@ func (c *Client) waitForReplyWithCancel(ctx context.Context, id wamp.ID, mode st
 	select {
 	case msg = <-wait:
 	case <-ctx.Done():
-		log.Print("Call %v canceled (mode=%s)", id, mode)
+		c.log.Print("Call %v canceled (mode=%s)", id, mode)
 		c.Send(&wamp.Cancel{
 			Request: id,
 			Options: wamp.SetOption(nil, "mode", mode),
