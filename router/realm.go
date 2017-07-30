@@ -85,7 +85,7 @@ func NewRealm(uri wamp.URI, strictURI, anonymousAuth, allowDisclose bool) *Realm
 	regID = r.registerMetaProcedure(wamp.MetaProcSessionGet)
 	r.metaProcMap[regID] = r.sessionGet
 
-	// Register to handle registraton meta procedures.
+	// Register to handle registration meta procedures.
 
 	regID = r.registerMetaProcedure(wamp.MetaProcRegList)
 	r.metaProcMap[regID] = r.regList
@@ -136,6 +136,27 @@ func (r *Realm) SetAuthorizer(authorizer Authorizer) {
 // closeRealm kills all clients, causing them to send a goodbye message.  This
 // is only called from the router's single action goroutine, so will never be
 // called by multiple goroutines.
+//
+// Safety guaranteed by the following logic:
+//
+// - Realm guarantees there are never multiple calls to broker.Close() or
+// dealer.Close()
+//
+// - handleSession() and metaProcedureHandler() are the only things than can
+// call broker/dealer.Submit() or broker/dealer.RemoveSession()
+//
+// - Closing realm prevents router from starting any new sessions on realm.
+//
+// - Closing Realm waits until all realm.handleSession() and
+// realm.metaProcedureHandler() have exited, thereby guaranteeing that there
+// will be no more broker/dealer.Submit() or broker/dealer.RemoveSession(),
+// therefore no chance of submitting to closed channel.
+//
+// - Finally realm closes broker and dealer reqChan, which is safe. Even if
+// broker or dealer are in the process of publishing meta events or calling
+// meta procedures, there is no metaProcedureHandler() to call Submit(). Any
+// client sessions that are still active likewise have no handleSession() to
+// call Submit() or RemoveSession().
 func (r *Realm) closeRealm() {
 	// Stop broker and dealer so they can be GC'd, and then so can this realm.
 	defer r.broker.Close()
@@ -173,7 +194,7 @@ func (r *Realm) closeRealm() {
 	log.Println("Realm", r.uri, "completed shutdown")
 }
 
-// Single goroutine used to read and modify Reaml data.
+// Single goroutine used to read and modify Realm data.
 func (r *Realm) run() {
 	for action := range r.actionChan {
 		action()
@@ -610,7 +631,7 @@ func (r *Realm) regList(msg *wamp.Invocation) wamp.Message {
 	// dealer's request handler.  Replace the registration ID with the index of
 	// the meta procedure to run.  The registration ID is not needed in this
 	// case since the dealer will always respond to the meta client, and does
-	// not need to lookup the registered caller to respond to.
+	// not need to look up the registered caller to respond to.
 	msg.Registration = RegList
 	r.dealer.Submit(r.metaClient, msg)
 	return nil
