@@ -146,7 +146,9 @@ func (r *router) Attach(client wamp.Peer) error {
 	if err != nil {
 		return errors.New("did not receive HELLO: " + err.Error())
 	}
-	log.Printf("New client sent: %s: %+v", msg.MessageType(), msg)
+	if DebugEnabled {
+		log.Printf("New client sent: %s: %+v", msg.MessageType(), msg)
+	}
 
 	// A WAMP session is initiated by the Client sending a HELLO message to the
 	// Router.  The HELLO message MUST be the very first message sent by the

@@ -354,7 +354,8 @@ func (r *Realm) handleSession(sess *Session, meta bool) {
 			if msg.Type == wamp.INVOCATION {
 				r.dealer.Submit(sess, msg)
 			} else {
-				log.Println(sname, sess, "invalid ERROR message received:", msg)
+				log.Printf("Invalid ERROR received from %s %v: %v", sname,
+					sess, msg)
 			}
 
 		case *wamp.Goodbye:
@@ -364,12 +365,12 @@ func (r *Realm) handleSession(sess *Session, meta bool) {
 				Details: map[string]interface{}{},
 			})
 			msg := msg.(*wamp.Goodbye)
-			log.Println(sname, sess, "goodbye:", msg.Reason)
+			log.Println("GOODBYE from", sname, sess, "reason:", msg.Reason)
 			return
 
 		default:
 			// Received unrecognized message type.
-			log.Println(sname, sess, "unhandled message:", msg.MessageType())
+			log.Println("Unhandled", msg.MessageType(), "from", sname, sess)
 		}
 	}
 }
