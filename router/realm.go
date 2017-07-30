@@ -158,17 +158,20 @@ func (r *Realm) SetAuthorizer(authorizer Authorizer) {
 // client sessions that are still active likewise have no handleSession() to
 // call Submit() or RemoveSession().
 func (r *Realm) closeRealm() {
+	// The lock is held in mutual exclusion with the router starting any new
+	// session handlers for this realm.  This prevents the router from starting
+	// any new session handlers, allowing the realm can safely close after
+	// waiting for all existing session handlers to exit.
+	r.closeLock.Lock()
+	defer r.closeLock.Unlock()
+	if r.closed {
+		// This realm is already closed.
+		return
+	}
+	r.closed = true
 	// Stop broker and dealer so they can be GC'd, and then so can this realm.
 	defer r.broker.Close()
 	defer r.dealer.Close()
-
-	// The lock is held in mutual exclusion with the router starting any new
-	// session handlers for this realm.  This prevents the router from starting
-	// any new session handlers and the realm can safely close after waiting
-	// for all existing session handlers to exit.
-	r.closeLock.Lock()
-	defer r.closeLock.Unlock()
-	r.closed = true
 
 	r.actionChan <- func() {
 		for _, client := range r.clients {
