@@ -2,6 +2,7 @@ package router
 
 import (
 	"fmt"
+	"sync"
 
 	"github.com/gammazero/nexus/wamp"
 )
@@ -43,6 +44,11 @@ type Broker interface {
 	Features() map[string]interface{}
 }
 
+type brokerReq struct {
+	session *Session
+	msg     wamp.Message
+}
+
 type broker struct {
 	// topic URI -> {subscription ID -> subscribed Session}
 	topicSubscribers    map[wamp.URI]map[wamp.ID]*Session
@@ -57,13 +63,17 @@ type broker struct {
 	// Session -> subscription ID set
 	sessionSubIDSet map[*Session]map[wamp.ID]struct{}
 
-	reqChan chan routerReq
+	reqChan chan brokerReq
 
 	// Generate subscription IDs.
 	idGen *wamp.IDGen
 
 	strictURI     bool
 	allowDisclose bool
+
+	// Used to close the dealer
+	done     chan struct{}
+	doneLock sync.Mutex
 }
 
 // NewBroker returns a new default broker implementation instance.
@@ -83,12 +93,14 @@ func NewBroker(strictURI, allowDisclose bool) Broker {
 		// since the incoming messages will be processed at the same rate
 		// whether the messages sit in the recv channel of peers, or they sit
 		// in the reqChan.
-		reqChan: make(chan routerReq, 1),
+		reqChan: make(chan brokerReq, 1),
 
 		idGen: wamp.NewIDGen(),
 
 		strictURI:     strictURI,
 		allowDisclose: allowDisclose,
+
+		done: make(chan struct{}),
 	}
 	go b.reqHandler()
 	return b
@@ -106,7 +118,14 @@ func (b *broker) Submit(sess *Session, msg wamp.Message) {
 	if msg == nil || sess == nil {
 		panic("broker.Submit with nil session or message")
 	}
-	b.reqChan <- routerReq{session: sess, msg: msg}
+
+	b.doneLock.Lock()
+	defer b.doneLock.Unlock()
+	select {
+	case <-b.done:
+	default:
+		b.reqChan <- brokerReq{session: sess, msg: msg}
+	}
 }
 
 func (b *broker) RemoveSession(sess *Session) {
@@ -114,38 +133,50 @@ func (b *broker) RemoveSession(sess *Session) {
 		// No session specified, no session removed.
 		return
 	}
-	b.reqChan <- routerReq{session: sess}
+
+	b.doneLock.Lock()
+	defer b.doneLock.Unlock()
+	select {
+	case <-b.done:
+	default:
+		b.reqChan <- brokerReq{session: sess}
+	}
 }
 
 // Close stops the broker and waits message processing to stop.
 func (b *broker) Close() {
-	close(b.reqChan)
+	b.doneLock.Lock()
+	close(b.done)
+	b.doneLock.Unlock()
 }
 
 // reqHandler is broker's main processing function that is run by a single
 // goroutine.  All functions that access broker data structures run on this
 // routine.
 func (b *broker) reqHandler() {
-	for req := range b.reqChan {
-		if req.msg == nil {
-			b.removeSession(req.session)
-			continue
-		}
-		sess := req.session
-		switch msg := req.msg.(type) {
-		case *wamp.Publish:
-			b.publish(sess, msg)
-		case *wamp.Subscribe:
-			b.subscribe(sess, msg)
-		case *wamp.Unsubscribe:
-			b.unsubscribe(sess, msg)
-		default:
-			// Any invalid message type is caught in the realm's session
-			// handler.  Therefore, if an invalid message makes it here, then
-			// this is a programming error where the session handler is passing
-			// in the wrong type of message to the broker.
-			panic(fmt.Sprint("broker received message type: ",
-				req.msg.MessageType()))
+	for {
+		select {
+		case <-b.done:
+			return
+		case req := <-b.reqChan:
+			sess := req.session
+			switch msg := req.msg.(type) {
+			case nil:
+				b.removeSession(req.session)
+			case *wamp.Publish:
+				b.publish(sess, msg)
+			case *wamp.Subscribe:
+				b.subscribe(sess, msg)
+			case *wamp.Unsubscribe:
+				b.unsubscribe(sess, msg)
+			default:
+				// Any invalid message type is caught in the realm's session
+				// handler.  Therefore, if an invalid message makes it here, then
+				// this is a programming error where the session handler is passing
+				// in the wrong type of message to the broker.
+				panic(fmt.Sprint("broker received message type: ",
+					req.msg.MessageType()))
+			}
 		}
 	}
 }
