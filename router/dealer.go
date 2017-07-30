@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"math/rand"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/gammazero/nexus/wamp"
@@ -84,6 +85,11 @@ func (d *dealer) Features() map[string]interface{} {
 	return dealerFeatures
 }
 
+type dealerReq struct {
+	session *Session
+	msg     wamp.Message
+}
+
 type dealer struct {
 	// procedure URI -> registration ID
 	procRegMap    map[wamp.URI]*registration
@@ -107,7 +113,7 @@ type dealer struct {
 	// Used to lookup registrations when removing a callee session.
 	calleeRegIDSet map[*Session]map[wamp.ID]struct{}
 
-	reqChan chan routerReq
+	reqChan chan dealerReq
 
 	// Generate registration IDs.
 	idGen *wamp.IDGen
@@ -123,6 +129,10 @@ type dealer struct {
 
 	// Meta-procedure registration ID -> handler func.
 	metaProcMap map[wamp.ID]func(*wamp.Invocation) wamp.Message
+
+	// Used to close the dealer
+	done     chan struct{}
+	doneLock sync.Mutex
 }
 
 // NewDealer creates a the default Dealer implementation.
@@ -143,7 +153,7 @@ func NewDealer(strictURI, allowDisclose bool, metaClient wamp.Peer) Dealer {
 		// since the incoming messages will be processed at the same rate
 		// whether the messages sit in the recv channel of peers, or they sit
 		// in the reqChan.
-		reqChan: make(chan routerReq, 1),
+		reqChan: make(chan dealerReq, 1),
 
 		idGen: wamp.NewIDGen(),
 		prng:  rand.New(rand.NewSource(time.Now().Unix())),
@@ -152,6 +162,8 @@ func NewDealer(strictURI, allowDisclose bool, metaClient wamp.Peer) Dealer {
 		allowDisclose: allowDisclose,
 
 		metaClient: metaClient,
+
+		done: make(chan struct{}),
 	}
 	go d.reqHandler()
 	return d
@@ -166,7 +178,14 @@ func (d *dealer) Submit(sess *Session, msg wamp.Message) {
 	if sess == nil || msg == nil {
 		panic("dealer.Submit with nil session or message")
 	}
-	d.reqChan <- routerReq{session: sess, msg: msg}
+
+	d.doneLock.Lock()
+	defer d.doneLock.Unlock()
+	select {
+	case <-d.done:
+	default:
+		d.reqChan <- dealerReq{session: sess, msg: msg}
+	}
 }
 
 func (d *dealer) RemoveSession(sess *Session) {
@@ -174,72 +193,84 @@ func (d *dealer) RemoveSession(sess *Session) {
 		// No session specified, no session removed.
 		return
 	}
-	d.reqChan <- routerReq{session: sess}
+
+	d.doneLock.Lock()
+	defer d.doneLock.Unlock()
+	select {
+	case <-d.done:
+	default:
+		d.reqChan <- dealerReq{session: sess}
+	}
 }
 
 // Close stops the dealer and waits message processing to stop.
 func (d *dealer) Close() {
-	close(d.reqChan)
+	d.doneLock.Lock()
+	close(d.done)
+	d.doneLock.Unlock()
 }
 
 // reqHandler is dealer's main processing function that is run by a single
 // goroutine.  All functions that access dealer data structures run on this
 // routine.
 func (d *dealer) reqHandler() {
-	for req := range d.reqChan {
-		if req.msg == nil {
-			d.removeSession(req.session)
-			continue
-		}
-		switch msg := req.msg.(type) {
-		case *wamp.Register:
-			d.register(req.session, msg)
-		case *wamp.Unregister:
-			d.unregister(req.session, msg)
-		case *wamp.Call:
-			d.call(req.session, msg)
-		case *wamp.Cancel:
-			d.cancel(req.session, msg)
-		case *wamp.Yield:
-			d.yield(req.session, msg)
-		case *wamp.Error:
-			d.error(req.session, msg)
+	for {
+		select {
+		case <-d.done:
+			return
+		case req := <-d.reqChan:
+			switch msg := req.msg.(type) {
+			case nil:
+				d.removeSession(req.session)
+			case *wamp.Register:
+				d.register(req.session, msg)
+			case *wamp.Unregister:
+				d.unregister(req.session, msg)
+			case *wamp.Call:
+				d.call(req.session, msg)
+			case *wamp.Cancel:
+				d.cancel(req.session, msg)
+			case *wamp.Yield:
+				d.yield(req.session, msg)
+			case *wamp.Error:
+				d.error(req.session, msg)
 
-		case *wamp.Invocation:
-			// Invoke only happens as a result of calling registration meta.
-			// Look at Invocation.Registration to determine which registration
-			// meta procedure to call.
-			var rsp wamp.Message
-			switch msg.Registration {
-			case RegList:
-				rsp = d.regList(msg)
-			case RegLookup:
-				rsp = d.regLookup(msg)
-			case RegMatch:
-				rsp = d.regMatch(msg)
-			case RegGet:
-				rsp = d.regGet(msg)
-			case RegListCallees:
-				rsp = d.regListCallees(msg)
-			case RegCountCallees:
-				rsp = d.regCountCallees(msg)
+			case *wamp.Invocation:
+				// Invoke only happens as a result of calling registration meta.
+				// Look at Invocation.Registration to determine which registration
+				// meta procedure to call.
+				var rsp wamp.Message
+				switch msg.Registration {
+				case RegList:
+					rsp = d.regList(msg)
+				case RegLookup:
+					rsp = d.regLookup(msg)
+				case RegMatch:
+					rsp = d.regMatch(msg)
+				case RegGet:
+					rsp = d.regGet(msg)
+				case RegListCallees:
+					rsp = d.regListCallees(msg)
+				case RegCountCallees:
+					rsp = d.regCountCallees(msg)
+				default:
+					// This is a programming error because, a client cannot submit
+					// an INVACATION to the dealer.  If a client sent an invocation
+					// this would result in an ERROR in the session handler.
+					// Therefore, this must be a programming in the realm's meta
+					// procedure handler.
+					panic("illegal registration meta procedure index")
+				}
+				d.metaClient.Send(rsp)
+
 			default:
-				// This is a programming error because, a client cannot submit
-				// an INVACATION to the dealer.  If a client sent an invocation
-				// this would result in an ERROR in the session handler.
-				// Therefore, this must be a programming in the realm's meta
-				// procedure handler.
-				panic("illegal registration meta procedure index")
+				// Any invalid message type is caught in the realm's session
+				// handler.  Therefore, if an invalid message makes it here, then
+				// this is a programming error where the session handler is passing
+				// in the wrong type of message to the dealer.
+				panic(fmt.Sprint("dealer received message type: ",
+					req.msg.MessageType()))
 			}
-			d.metaClient.Send(rsp)
-
-		default:
-			// Any invalid message type is caught in the realm's session
-			// handler.  Therefore, if an invalid message makes it here, then
-			// this is a programming error where the session handler is passing
-			// in the wrong type of message to the dealer.
-			panic(fmt.Sprint("dealer received message type: ",
-				req.msg.MessageType()))
 		}
 	}
 }
