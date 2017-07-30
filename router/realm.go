@@ -141,6 +141,10 @@ func (r *Realm) closeRealm() {
 	defer r.broker.Close()
 	defer r.dealer.Close()
 
+	// The lock is held in mutual exclusion with the router starting any new
+	// session handlers for this realm.  Therefore, this closing realm prevent
+	// the router from starting any new session handlers and can safely close
+	// after waiting for all existing session handlers to exit.
 	r.closeLock.Lock()
 	defer r.closeLock.Unlock()
 	r.closed = true
