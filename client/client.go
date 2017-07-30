@@ -65,7 +65,7 @@ type InvokeResult struct {
 
 // A Client routes messages to/from a WAMP router.
 type Client struct {
-	wamp.Peer
+	peer wamp.Peer
 
 	responseTimeout time.Duration
 	awaitingReply   map[wamp.ID]chan wamp.Message
@@ -82,6 +82,7 @@ type Client struct {
 	actionChan chan func()
 	idGen      *wamp.IDGen
 
+	id           wamp.ID
 	realm        string
 	realmDetails map[string]interface{}
 
@@ -100,7 +101,7 @@ func NewClient(p wamp.Peer, responseTimeout time.Duration, logger logger.Logger)
 		responseTimeout = defaultResponseTimeout
 	}
 	c := &Client{
-		Peer: p,
+		peer: p,
 
 		responseTimeout: responseTimeout,
 		awaitingReply:   map[wamp.ID]chan wamp.Message{},
@@ -172,10 +173,10 @@ func (c *Client) JoinRealm(realm string, details map[string]interface{}, authHan
 		details["authmethods"] = authmethods
 	}
 
-	c.Send(&wamp.Hello{Realm: wamp.URI(realm), Details: details})
-	msg, err := wamp.RecvTimeout(c.Peer, c.responseTimeout)
+	c.peer.Send(&wamp.Hello{Realm: wamp.URI(realm), Details: details})
+	msg, err := wamp.RecvTimeout(c.peer, c.responseTimeout)
 	if err != nil {
-		c.Peer.Close()
+		c.peer.Close()
 		close(c.actionChan)
 		return nil, err
 	}
@@ -186,7 +187,7 @@ func (c *Client) JoinRealm(realm string, details map[string]interface{}, authHan
 		if challenge, ok := msg.(*wamp.Challenge); ok {
 			msg, err = c.handleCRAuth(challenge, details, authHandlers)
 			if err != nil {
-				c.Peer.Close()
+				c.peer.Close()
 				close(c.actionChan)
 				return nil, err
 			}
@@ -197,11 +198,11 @@ func (c *Client) JoinRealm(realm string, details map[string]interface{}, authHan
 
 	welcome, ok := msg.(*wamp.Welcome)
 	if !ok {
-		c.Send(&wamp.Abort{
+		c.peer.Send(&wamp.Abort{
 			Details: map[string]interface{}{},
 			Reason:  errUnexpectedMessageType,
 		})
-		c.Peer.Close()
+		c.peer.Close()
 		close(c.actionChan)
 		return nil, unexpectedMsgError(msg, wamp.WELCOME)
 	}
@@ -209,6 +210,7 @@ func (c *Client) JoinRealm(realm string, details map[string]interface{}, authHan
 	c.actionChan <- func() {
 		c.realm = realm
 		c.realmDetails = welcome.Details
+		c.id = welcome.ID
 		joinChan <- true
 	}
 	<-joinChan
@@ -239,7 +241,7 @@ func (c *Client) Subscribe(topic string, fn EventHandler, options map[string]int
 		Options: options,
 		Topic:   wamp.URI(topic),
 	}
-	c.Send(sub)
+	c.peer.Send(sub)
 
 	// Wait to receive SUBSCRIBED message.
 	msg, err := c.waitForReply(id)
@@ -296,7 +298,7 @@ func (c *Client) Unsubscribe(topic string) error {
 		Request:      id,
 		Subscription: subID,
 	}
-	c.Send(sub)
+	c.peer.Send(sub)
 
 	// Wait to receive UNSUBSCRIBED message.
 	msg, err := c.waitForReply(id)
@@ -343,7 +345,7 @@ func (c *Client) Publish(topic string, options map[string]interface{}, args []in
 	if pubAck {
 		c.expectReply(id)
 	}
-	c.Send(&wamp.Publish{
+	c.peer.Send(&wamp.Publish{
 		Request:     id,
 		Options:     options,
 		Topic:       wamp.URI(topic),
@@ -395,7 +397,7 @@ func (c *Client) Register(procedure string, fn InvocationHandler, options map[st
 		Options:   options,
 		Procedure: wamp.URI(procedure),
 	}
-	c.Send(register)
+	c.peer.Send(register)
 
 	// Wait to receive REGISTERED message.
 	msg, err := c.waitForReply(id)
@@ -452,7 +454,7 @@ func (c *Client) Unregister(procedure string) error {
 		Request:      id,
 		Registration: procID,
 	}
-	c.Send(unregister)
+	c.peer.Send(unregister)
 
 	// Wait to receive UNREGISTERED message.
 	msg, err := c.waitForReply(id)
@@ -544,7 +546,7 @@ func (c *Client) Call(ctx context.Context, procedure string, options map[string]
 		Arguments:   args,
 		ArgumentsKw: kwargs,
 	}
-	c.Send(call)
+	c.peer.Send(call)
 
 	// Wait to receive RESULT message.
 	var msg wamp.Message
@@ -581,7 +583,7 @@ func (c *Client) LeaveRealm() error {
 		return errors.New("client has not joined a realm")
 	}
 
-	c.Send(&wamp.Goodbye{
+	c.peer.Send(&wamp.Goodbye{
 		Details: map[string]interface{}{},
 		Reason:  wamp.ErrCloseRealm,
 	})
@@ -593,7 +595,7 @@ func (c *Client) Close() error {
 	if err := c.LeaveRealm(); err != nil {
 		return err
 	}
-	c.Peer.Close()
+	c.peer.Close()
 	return nil
 }
 
@@ -601,7 +603,7 @@ func (c *Client) handleCRAuth(challenge *wamp.Challenge, details map[string]inte
 	// Look up the authentication function for the specified authmethod.
 	authFunc, ok := authHandlers[challenge.AuthMethod]
 	if !ok {
-		c.Send(&wamp.Abort{
+		c.peer.Send(&wamp.Abort{
 			Details: map[string]interface{}{},
 			Reason:  errNoAuthHandler,
 		})
@@ -612,14 +614,14 @@ func (c *Client) handleCRAuth(challenge *wamp.Challenge, details map[string]inte
 	// Create signature and send AUTHENTICATE.
 	signature, authDetails, err := authFunc(details, challenge.Extra)
 	if err != nil {
-		c.Send(&wamp.Abort{
+		c.peer.Send(&wamp.Abort{
 			Details: map[string]interface{}{},
 			Reason:  errAuthFailure,
 		})
 		return nil, err
 	}
-	c.Send(&wamp.Authenticate{Signature: signature, Extra: authDetails})
-	msg, err := wamp.RecvTimeout(c.Peer, c.responseTimeout)
+	c.peer.Send(&wamp.Authenticate{Signature: signature, Extra: authDetails})
+	msg, err := wamp.RecvTimeout(c.peer, c.responseTimeout)
 	if err != nil {
 		return nil, err
 	}
@@ -668,7 +670,7 @@ func unexpectedMsgError(msg wamp.Message, expected wamp.MessageType) error {
 
 // receiveFromRouter handles messages from the router until client closes.
 func (c *Client) receiveFromRouter() {
-	for msg := range c.Peer.Recv() {
+	for msg := range c.peer.Recv() {
 		switch msg := msg.(type) {
 		case *wamp.Event:
 			c.handleEvent(msg)
@@ -692,7 +694,7 @@ func (c *Client) receiveFromRouter() {
 			c.signalReply(msg, msg.Request)
 
 		case *wamp.Goodbye:
-			c.log.Println("client received GOODBYE")
+			c.log.Println("Client", c.id, "received GOODBYE")
 			break
 
 		default:
@@ -701,7 +703,7 @@ func (c *Client) receiveFromRouter() {
 	}
 
 	close(c.actionChan)
-	c.log.Println("client closed")
+	c.log.Println("Client", c.id, "closed")
 }
 
 func (c *Client) handleEvent(msg *wamp.Event) {
@@ -722,8 +724,8 @@ func (c *Client) handleInvocation(msg *wamp.Invocation) {
 		if !ok {
 			errMsg := fmt.Sprintf("no handler for registration: %v",
 				msg.Registration)
-			c.log.Println(errMsg)
-			c.Send(&wamp.Error{
+			c.log.Print(errMsg)
+			c.peer.Send(&wamp.Error{
 				Type:      wamp.INVOCATION,
 				Request:   msg.Request,
 				Details:   map[string]interface{}{},
@@ -767,7 +769,7 @@ func (c *Client) handleInvocation(msg *wamp.Invocation) {
 			}
 
 			if result.Err != "" {
-				c.Send(&wamp.Error{
+				c.peer.Send(&wamp.Error{
 					Type:        wamp.INVOCATION,
 					Request:     msg.Request,
 					Details:     map[string]interface{}{},
@@ -777,7 +779,7 @@ func (c *Client) handleInvocation(msg *wamp.Invocation) {
 				})
 				return
 			}
-			c.Send(&wamp.Yield{
+			c.peer.Send(&wamp.Yield{
 				Request:     msg.Request,
 				Options:     map[string]interface{}{},
 				Arguments:   result.Args,
@@ -793,7 +795,7 @@ func (c *Client) handleInterrupt(msg *wamp.Interrupt) {
 	c.actionChan <- func() {
 		cancel, ok := c.invHandlerKill[msg.Request]
 		if !ok {
-			c.log.Println("received INTERRUPT for message that no longer exists")
+			c.log.Print("received INTERRUPT for message that no longer exists")
 			return
 		}
 		cancel()
@@ -875,8 +877,8 @@ func (c *Client) waitForReplyWithCancel(ctx context.Context, id wamp.ID, mode st
 	select {
 	case msg = <-wait:
 	case <-ctx.Done():
-		c.log.Print("Call %v canceled (mode=%s)", id, mode)
-		c.Send(&wamp.Cancel{
+		c.log.Printf("Call %v canceled (mode=%s)", id, mode)
+		c.peer.Send(&wamp.Cancel{
 			Request: id,
 			Options: wamp.SetOption(nil, "mode", mode),
 		})
