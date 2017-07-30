@@ -273,7 +273,8 @@ func (r *router) Attach(client wamp.Peer) error {
 
 	// The lock is held in mutual exclusion with the closing of the realm.
 	// This ensures that no new session handler can start once the realm is
-	// closing and waiting for all existing session handlers to exit.
+	// closing, during which the realm waits for all existing session handlers
+	// to exit.
 	realm.closeLock.Lock()
 	if realm.closed {
 		err := errors.New("realm closed")
