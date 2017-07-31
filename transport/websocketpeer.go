@@ -39,7 +39,7 @@ const (
 	jsonWebsocketProtocol    = "wamp.2.json"
 	msgpackWebsocketProtocol = "wamp.2.msgpack"
 
-	defaultOutQueueSize = 160
+	defaultOutQueueSize = 16
 	ctrlTimeout         = 5 * time.Second
 )
 
@@ -136,34 +136,36 @@ func (w *websocketPeer) Close() {
 	err := w.conn.WriteControl(websocket.CloseMessage, closeMsg,
 		time.Now().Add(ctrlTimeout))
 	if err != nil {
-		w.log.Println("error sending close message:", err)
+		w.log.Println("Error sending close message:", err)
 	}
 	close(w.closed)
 	if err = w.conn.Close(); err != nil {
-		w.log.Println("error closing connection:", err)
+		w.log.Println("Error closing connection:", err)
 	}
 }
 
 // sendHandler pulls messages from the write channel, and pushes them to the
 // websocket.
 func (w *websocketPeer) sendHandler() {
-	select {
-	case msg, open := <-w.wr:
-		if !open {
+	for {
+		select {
+		case msg, open := <-w.wr:
+			if !open {
+				return
+			}
+
+			b, err := w.serializer.Serialize(msg.(wamp.Message))
+			if err != nil {
+				w.log.Print(err)
+			}
+
+			if err = w.conn.WriteMessage(w.payloadType, b); err != nil {
+				w.log.Print(err)
+			}
+		case <-w.stopSend:
 			return
 		}
-		b, err := w.serializer.Serialize(msg.(wamp.Message))
-		if err != nil {
-			w.log.Println(err)
-		}
-
-		if err = w.conn.WriteMessage(w.payloadType, b); err != nil {
-			w.log.Println(err)
-		}
-	case <-w.stopSend:
-		return
 	}
-
 }
 
 // recvHandler pulls messages from the websocket and pushes them to the read
@@ -174,9 +176,9 @@ func (w *websocketPeer) recvHandler() {
 		if err != nil {
 			select {
 			case <-w.closed:
-				w.log.Println("peer connection closed")
+				w.log.Print("Peer connection closed")
 			default:
-				w.log.Println("error reading from peer:", err)
+				w.log.Println("Cannot read from peer:", err)
 				w.conn.Close()
 			}
 			break
@@ -190,7 +192,7 @@ func (w *websocketPeer) recvHandler() {
 		msg, err := w.serializer.Deserialize(b)
 		if err != nil {
 			// TODO: something more than merely logging?
-			w.log.Println("error deserializing peer message:", err)
+			w.log.Println("Cannot deserialize peer message:", err)
 			continue
 		}
 		// It is OK for the router to block a client since routing should be
