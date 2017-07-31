@@ -292,6 +292,7 @@ func (r *router) Attach(client wamp.Peer) error {
 	}
 
 	r.waitRealms.Add(1)
+	// Ensure sesson is capable of receiving exit signal before releasing lock.
 	realm.onJoin(sess)
 	realm.closeLock.Unlock()
 

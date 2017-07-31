@@ -145,6 +145,9 @@ func (r *Realm) SetAuthorizer(authorizer Authorizer) {
 //
 // - Closing realm prevents router from starting any new sessions on realm.
 //
+// - When new session is starting, lock is held in mutual exclusion with
+// closing realm until session is capable of receiving its exit signal.
+//
 // - Closing Realm waits until all realm.handleSession() and
 // realm.metaProcedureHandler() have exited, thereby guaranteeing that there
 // will be no more broker/dealer.Submit() or broker/dealer.RemoveSession(),
@@ -155,10 +158,6 @@ func (r *Realm) SetAuthorizer(authorizer Authorizer) {
 // meta procedures, there is no metaProcedureHandler() to call Submit(). Any
 // client sessions that are still active likewise have no handleSession() to
 // call Submit() or RemoveSession().
-//
-// TODO: Investigate is it is possible for a new session, starting while realm
-// is closing, to miss its shutdown signal, and make realm wait forever for a
-// session that does not shutdown.
 func (r *Realm) closeRealm() {
 	// The lock is held in mutual exclusion with the router starting any new
 	// session handlers for this realm.  This prevents the router from starting
@@ -243,6 +242,7 @@ func (r *Realm) bridgeSession(details map[string]interface{}, meta bool) wamp.Pe
 	}
 
 	r.closeLock.Lock()
+	// Ensure sesson is capable of receiving exit signal before releasing lock.
 	r.onJoin(sess)
 	r.closeLock.Unlock()
 
@@ -256,8 +256,8 @@ func (r *Realm) bridgeSession(details map[string]interface{}, meta bool) wamp.Pe
 	return cli
 }
 
-// onJoin is called when a session joins this realm.  The session is stored in
-// the realm's clients and a meta event is published.
+// onJoin is called when a non-meta session joins this realm.  The session is
+// stored in the realm's clients and a meta event is published.
 //
 // Note: onJoin() must be called from outside handleSession() so that it is not
 // called for the meta client.
@@ -288,8 +288,8 @@ func (r *Realm) onJoin(sess *Session) {
 	})
 }
 
-// onLeave is called when a session leaves this realm.  The session is removed
-// from the realm's clients and a meta event is published.
+// onLeave is called when a non-meta session leaves this realm.  The session is
+// removed from the realm's clients and a meta event is published.
 //
 // Note: onLeave() must be called from outside handleSession() so that it is
 // not called for the meta client.
