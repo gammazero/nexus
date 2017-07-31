@@ -57,6 +57,11 @@ type Dealer interface {
 	Features() map[string]interface{}
 }
 
+type dealerReq struct {
+	session *Session
+	msg     wamp.Message
+}
+
 // remoteProcedure tracks in-progress remote procedure call
 type registration struct {
 	id         wamp.ID  // registration ID
@@ -107,7 +112,7 @@ type dealer struct {
 	// Used to lookup registrations when removing a callee session.
 	calleeRegIDSet map[*Session]map[wamp.ID]struct{}
 
-	reqChan chan routerReq
+	reqChan chan dealerReq
 
 	// Generate registration IDs.
 	idGen *wamp.IDGen
@@ -143,7 +148,7 @@ func NewDealer(strictURI, allowDisclose bool, metaClient wamp.Peer) Dealer {
 		// since the incoming messages will be processed at the same rate
 		// whether the messages sit in the recv channel of peers, or they sit
 		// in the reqChan.
-		reqChan: make(chan routerReq, 1),
+		reqChan: make(chan dealerReq, 1),
 
 		idGen: wamp.NewIDGen(),
 		prng:  rand.New(rand.NewSource(time.Now().Unix())),
@@ -166,7 +171,7 @@ func (d *dealer) Submit(sess *Session, msg wamp.Message) {
 	if sess == nil || msg == nil {
 		panic("dealer.Submit with nil session or message")
 	}
-	d.reqChan <- routerReq{session: sess, msg: msg}
+	d.reqChan <- dealerReq{session: sess, msg: msg}
 }
 
 func (d *dealer) RemoveSession(sess *Session) {
@@ -174,7 +179,7 @@ func (d *dealer) RemoveSession(sess *Session) {
 		// No session specified, no session removed.
 		return
 	}
-	d.reqChan <- routerReq{session: sess}
+	d.reqChan <- dealerReq{session: sess}
 }
 
 // Close stops the dealer and waits message processing to stop.
