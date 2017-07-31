@@ -137,8 +137,6 @@ func (r *Realm) SetAuthorizer(authorizer Authorizer) {
 // is only called from the router's single action goroutine, so will never be
 // called by multiple goroutines.
 //
-// Safety guaranteed by the following logic:
-//
 // - Realm guarantees there are never multiple calls to broker.Close() or
 // dealer.Close()
 //
@@ -157,6 +155,10 @@ func (r *Realm) SetAuthorizer(authorizer Authorizer) {
 // meta procedures, there is no metaProcedureHandler() to call Submit(). Any
 // client sessions that are still active likewise have no handleSession() to
 // call Submit() or RemoveSession().
+//
+// TODO: Investigate is it is possible for a new session, starting while realm
+// is closing, to miss its shutdown signal, and make realm wait forever for a
+// session that does not shutdown.
 func (r *Realm) closeRealm() {
 	// The lock is held in mutual exclusion with the router starting any new
 	// session handlers for this realm.  This prevents the router from starting
