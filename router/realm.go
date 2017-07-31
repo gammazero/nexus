@@ -236,8 +236,21 @@ func (r *Realm) bridgeSession(details map[string]interface{}, meta bool) wamp.Pe
 		r.metaSess = sess
 	}
 	// Run the session handler for the
-	go r.handleSession(sess, meta)
-	log.Print("Created internal session: ", sess)
+	if meta {
+		log.Print("Started meta-session ", sess)
+		go r.handleSession(sess)
+		return cli
+	}
+
+	r.closeLock.Lock()
+	r.onJoin(sess)
+	r.closeLock.Unlock()
+
+	log.Print("Started internal session ", sess)
+	go func() {
+		r.handleSession(sess)
+		r.onLeave(sess)
+	}()
 
 	// Return the session that is the remote leg of the router uplink.
 	return cli
@@ -302,19 +315,9 @@ func (r *Realm) onLeave(sess *Session) {
 // handleSession starts a session attached to this realm.
 //
 // Routing occurs only between WAMP Sessions that have joined the same Realm.
-func (r *Realm) handleSession(sess *Session, meta bool) {
+func (r *Realm) handleSession(sess *Session) {
 	var sname string
-	if !meta {
-		sname = "session"
-		// Add the client session the realm and send meta event.
-		r.onJoin(sess)
-		// Remove client session from realm, and send meta event.
-		defer r.onLeave(sess)
-	} else {
-		sname = "meta-session"
-	}
-	log.Println("Started", sname, sess)
-	defer log.Println("Ended", sname, sess)
+	defer log.Println("Ended sesion", sname, sess)
 
 	recvChan := sess.Recv()
 	for {

@@ -271,6 +271,14 @@ func (r *router) Attach(client wamp.Peer) error {
 	details["authmethod"] = welcome.Details["authmethod"]
 	details["authprovider"] = welcome.Details["authprovider"]
 
+	// Create new session.
+	sess := &Session{
+		Peer:    client,
+		ID:      welcome.ID,
+		Details: details,
+		stop:    make(chan wamp.URI, 1),
+	}
+
 	// The lock is held in mutual exclusion with the closing of the realm.
 	// This ensures that no new session handler can start once the realm is
 	// closing, during which the realm waits for all existing session handlers
@@ -284,18 +292,13 @@ func (r *router) Attach(client wamp.Peer) error {
 	}
 
 	r.waitRealms.Add(1)
+	realm.onJoin(sess)
 	realm.closeLock.Unlock()
 
-	// Create new session.
-	sess := &Session{
-		Peer:    client,
-		ID:      welcome.ID,
-		Details: details,
-		stop:    make(chan wamp.URI, 1),
-	}
-
+	log.Print("Started session ", sess)
 	go func() {
-		realm.handleSession(sess, false)
+		realm.handleSession(sess)
+		realm.onLeave(sess)
 		sess.Close()
 		r.waitRealms.Done()
 	}()
