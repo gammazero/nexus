@@ -316,8 +316,7 @@ func (r *Realm) onLeave(sess *Session) {
 //
 // Routing occurs only between WAMP Sessions that have joined the same Realm.
 func (r *Realm) handleSession(sess *Session) {
-	var sname string
-	defer log.Println("Ended sesion", sname, sess)
+	defer log.Println("Ended sesion", sess)
 
 	recvChan := sess.Recv()
 	for {
@@ -326,11 +325,11 @@ func (r *Realm) handleSession(sess *Session) {
 		select {
 		case msg, open = <-recvChan:
 			if !open {
-				log.Println("Lost", sname, sess)
+				log.Println("Lost", sess)
 				return
 			}
 		case reason := <-sess.stop:
-			log.Printf("Stop %s %s: %v", sname, sess, reason)
+			log.Printf("Stop session %s: %v", sess, reason)
 			sess.Send(&wamp.Goodbye{
 				Reason:  reason,
 				Details: map[string]interface{}{},
@@ -340,7 +339,7 @@ func (r *Realm) handleSession(sess *Session) {
 
 		// Debug
 		if DebugEnabled {
-			log.Printf("%s %s submitting %s: %+v", sname, sess,
+			log.Printf("Session %s submitting %s: %+v", sess,
 				msg.MessageType(), msg)
 		}
 
@@ -394,7 +393,7 @@ func (r *Realm) handleSession(sess *Session) {
 			if msg.Type == wamp.INVOCATION {
 				r.dealer.Submit(sess, msg)
 			} else {
-				log.Printf("Invalid ERROR received from %s %v: %v", sname,
+				log.Printf("Invalid ERROR received from session %v: %v",
 					sess, msg)
 			}
 
@@ -405,12 +404,12 @@ func (r *Realm) handleSession(sess *Session) {
 				Details: map[string]interface{}{},
 			})
 			msg := msg.(*wamp.Goodbye)
-			log.Println("GOODBYE from", sname, sess, "reason:", msg.Reason)
+			log.Println("GOODBYE from session", sess, "reason:", msg.Reason)
 			return
 
 		default:
 			// Received unrecognized message type.
-			log.Println("Unhandled", msg.MessageType(), "from", sname, sess)
+			log.Println("Unhandled", msg.MessageType(), "from session", sess)
 		}
 	}
 }
