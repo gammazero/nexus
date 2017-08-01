@@ -27,7 +27,7 @@ var dealerFeatures = map[string]interface{}{
 }
 
 // Used inside INVOCATION messages, submitted by the realms meta procedure
-// handler, to identify the registration meta proceure to call.
+// handler, to identify the registration meta procedure to call.
 const (
 	RegList = wamp.ID(iota)
 	RegLookup
@@ -162,8 +162,11 @@ func NewDealer(strictURI, allowDisclose bool, metaClient wamp.Peer) Dealer {
 	return d
 }
 
-// Submit dispatches a Resister, Unregister, Call, Cancel, Yield, or Error
-// message to the dealer.
+// Submit dispatches messages for the dealer to route.  Messages are routed
+// serially by the dealer's message handling goroutine.  This serialization is
+// limited to the work of determine the message's destination, and then the
+// message is handed off to the next goroutine, typically the receiving
+// client's send handler.
 func (d *dealer) Submit(sess *Session, msg wamp.Message) {
 	// All calls dispatched by Submit require both a session and a message.  It
 	// is a programming error to call Submit without a session or without a
@@ -230,7 +233,7 @@ func (d *dealer) reqHandler() {
 				rsp = d.regCountCallees(msg)
 			default:
 				// This is a programming error because, a client cannot submit
-				// an INVACATION to the dealer.  If a client sent an invocation
+				// an INVOCATION to the dealer.  If a client sent an invocation
 				// this would result in an ERROR in the session handler.
 				// Therefore, this must be a programming in the realm's meta
 				// procedure handler.

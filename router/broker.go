@@ -10,7 +10,6 @@ import (
 // - publisher trust levels
 // - event history
 // - testament_meta_api
-// - session_meta_api
 
 // Features supported by this broker.
 var brokerFeatures = map[string]interface{}{
@@ -104,6 +103,11 @@ func (b *broker) Features() map[string]interface{} {
 	return brokerFeatures
 }
 
+// Submit dispatches messages for the broker to route.  Messages are routed
+// serially by the broker's message handling goroutine.  This serialization is
+// limited to the work of determine the message's destination, and then the
+// message is handed off to the next goroutine, typically the receiving
+// client's send handler.
 func (b *broker) Submit(sess *Session, msg wamp.Message) {
 	// All calls dispatched by Submit require both a session and a message.  It
 	// is a programming error to call Submit without a session or without a
