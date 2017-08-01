@@ -118,23 +118,8 @@ func TestSubscribe(t *testing.T) {
 			errChan <- errors.New("event missing or bad args")
 			return
 		}
-		origTopic, ok := details["topic"]
-		if !ok {
-			errChan <- errors.New("missing original topic")
-			return
-		}
-
-		var otopic string
-		switch origTopic := origTopic.(type) {
-		case wamp.URI:
-			otopic = string(origTopic)
-		case string:
-			otopic = origTopic
-		default:
-			errChan <- errors.New("topic detail not a URI or string")
-			return
-		}
-		if otopic != testTopic {
+		origTopic := wamp.OptionURI(details, "topic")
+		if origTopic != wamp.URI(testTopic) {
 			errChan <- errors.New("wrong original topic")
 			return
 		}
