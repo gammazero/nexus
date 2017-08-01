@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"net"
 	"net/http"
+	"strings"
 	"time"
 
 	"github.com/gammazero/nexus/logger"
@@ -20,15 +21,14 @@ type websocketPeer struct {
 	serializer  serialize.Serializer
 	payloadType int
 
-	// Used to signal the websocket is closed.
+	// Used to signal the websocket is closed explicitly.
 	closed chan struct{}
 
 	// Channels communicate with router.
 	rd chan wamp.Message
 	wr chan wamp.Message
 
-	// Stop send handler without closing wr channel.
-	stopSend chan struct{}
+	wsWriterDone chan struct{}
 
 	log logger.Logger
 }
@@ -93,11 +93,11 @@ func NewWebsocketPeer(conn *websocket.Conn, serializer serialize.Serializer, pay
 		outQueueSize = defaultOutQueueSize
 	}
 	w := &websocketPeer{
-		conn:        conn,
-		serializer:  serializer,
-		payloadType: payloadType,
-		closed:      make(chan struct{}),
-		stopSend:    make(chan struct{}),
+		conn:         conn,
+		serializer:   serializer,
+		payloadType:  payloadType,
+		closed:       make(chan struct{}),
+		wsWriterDone: make(chan struct{}),
 
 		// Messages read from the websocket can be handled immediately, since
 		// they have traveled over the websocket and the read channel does not
@@ -130,40 +130,46 @@ func (w *websocketPeer) Send(msg wamp.Message) {
 	}
 }
 
+// Close closes the websocker peer.  This closes the local send channel, and
+// sends a close control message to the websocket to tell the other side to
+// close.
+//
+// *** Do not call Send after calling Close. ***
 func (w *websocketPeer) Close() {
+	// Tell sendHandler to exit, allowing it to finish sending any queued
+	// messages.  Do not close wr channel in case there are incoming messages
+	// during close.
+	w.wr <- nil
+	<-w.wsWriterDone
+
 	closeMsg := websocket.FormatCloseMessage(websocket.CloseNormalClosure,
 		"goodbye")
-	err := w.conn.WriteControl(websocket.CloseMessage, closeMsg,
-		time.Now().Add(ctrlTimeout))
-	if err != nil {
-		w.log.Println("Error sending close message:", err)
-	}
+
+	// Tell recvHandler to close.
 	close(w.closed)
-	if err = w.conn.Close(); err != nil {
-		w.log.Println("Error closing connection:", err)
-	}
+
+	// Ignore errors since websocket may have been closed by other side first
+	// in response to a goodbye message.
+	w.conn.WriteControl(websocket.CloseMessage, closeMsg,
+		time.Now().Add(ctrlTimeout))
+	w.conn.Close()
 }
 
 // sendHandler pulls messages from the write channel, and pushes them to the
 // websocket.
 func (w *websocketPeer) sendHandler() {
-	for {
-		select {
-		case msg, open := <-w.wr:
-			if !open {
-				return
-			}
-
-			b, err := w.serializer.Serialize(msg.(wamp.Message))
-			if err != nil {
-				w.log.Print(err)
-			}
-
-			if err = w.conn.WriteMessage(w.payloadType, b); err != nil {
-				w.log.Print(err)
-			}
-		case <-w.stopSend:
+	defer close(w.wsWriterDone)
+	for msg := range w.wr {
+		if msg == nil {
 			return
+		}
+		b, err := w.serializer.Serialize(msg.(wamp.Message))
+		if err != nil {
+			w.log.Print(err)
+		}
+
+		if err = w.conn.WriteMessage(w.payloadType, b); err != nil {
+			w.log.Print(err)
 		}
 	}
 }
@@ -176,10 +182,21 @@ func (w *websocketPeer) recvHandler() {
 		if err != nil {
 			select {
 			case <-w.closed:
-				w.log.Print("Peer connection closed")
+				// Peer was closed explicitly. sendHandler should have already
+				// been told to exit.
 			default:
-				w.log.Println("Cannot read from peer:", err)
+				// Peer received control message to close.  Cause sendHandler
+				// to exit without closing the write channel (in case writes
+				// still happening) and allow it to finish sending any queued
+				// messages.
+				w.wr <- nil
+				<-w.wsWriterDone
+
+				// Close websocket connection.
 				w.conn.Close()
+			}
+			if !strings.HasPrefix(err.Error(), "websocket: close 1000") {
+				w.log.Print(err)
 			}
 			break
 		}
@@ -202,6 +219,4 @@ func (w *websocketPeer) recvHandler() {
 	}
 	// Close read channel, cause router to remove session if not already.
 	close(w.rd)
-	// Stop sendHandler, without closing write channel.
-	close(w.stopSend)
 }
