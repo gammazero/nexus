@@ -25,7 +25,7 @@ func TestUserDB(t *testing.T) {
 
 	info, err := userDB.ReadUserInfo("jbond")
 	if err != nil {
-		t.Fatal("err reading user info: ", error.Error)
+		t.Fatal("err reading user info:", err)
 	}
 	if info["role"] != "admin" {
 		t.Fatal("got wrong user info from DB")
@@ -36,7 +36,7 @@ func TestUserDB(t *testing.T) {
 	}
 
 	if err = userDB.UpdateUserInfo("jbond", "role", "root"); err != nil {
-		t.Fatal("err updating user info: ", error.Error)
+		t.Fatal("err updating user info:", err)
 	}
 
 	info, err = userDB.ReadUserInfo("jbond")
@@ -45,7 +45,7 @@ func TestUserDB(t *testing.T) {
 	}
 
 	if err = userDB.UpdateUserInfo("jbond", "role", ""); err != nil {
-		t.Fatal("err updating user info: ", error.Error)
+		t.Fatal("err updating user info:", err)
 	}
 	info, err = userDB.ReadUserInfo("jbond")
 	if _, ok := info["role"]; ok {

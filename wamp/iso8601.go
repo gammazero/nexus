@@ -16,7 +16,7 @@ func ISO8601(t time.Time) string {
 		return fmt.Sprintf("%s-%02d%02d", tstr, -zoneOffset/3600,
 			(-zoneOffset%3600)/60)
 	}
-	return fmt.Sprint("%s+%02d%02d", tstr, zoneOffset/3600,
+	return fmt.Sprintf("%s+%02d%02d", tstr, zoneOffset/3600,
 		(zoneOffset%3600)/60)
 }
 

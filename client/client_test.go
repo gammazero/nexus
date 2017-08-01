@@ -223,7 +223,8 @@ func TestTimeoutCancelRemoteProcedureCall(t *testing.T) {
 	}
 
 	errChan := make(chan error)
-	ctx, _ := context.WithTimeout(context.Background(), time.Second)
+	ctx, cancel := context.WithTimeout(context.Background(), time.Second)
+	defer cancel()
 	// Calling the procedure, should block.
 	go func() {
 		callArgs := []interface{}{73}

@@ -330,7 +330,7 @@ func TestWildcardPatternBasedSubscription(t *testing.T) {
 	rsp = <-sess.Recv()
 	evt, ok := rsp.(*wamp.Event)
 	if !ok {
-		t.Fatal("expected", wamp.EVENT, "got:", rsp.MessageType)
+		t.Fatal("expected", wamp.EVENT, "got:", rsp.MessageType())
 	}
 	_topic, ok := evt.Details["topic"]
 	if !ok {

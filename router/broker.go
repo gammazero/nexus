@@ -256,7 +256,8 @@ func (b *broker) subscribe(sub *Session, msg *wamp.Subscribe) {
 	// non-empty for all but the last component for prefix subscriptions.
 	match := wamp.OptionString(msg.Options, "match")
 	if !msg.Topic.ValidURI(b.strictURI, match) {
-		errMsg := fmt.Sprintf("subscribe for invalid topic URI %v",
+		errMsg := fmt.Sprintf(
+			"subscribe for invalid topic URI %v (URI strict checking %v)",
 			msg.Topic, b.strictURI)
 		sub.Send(&wamp.Error{
 			Type:      msg.MessageType(),

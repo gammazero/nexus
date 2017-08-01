@@ -7,7 +7,9 @@ import (
 )
 
 func TestTicketAuth(t *testing.T) {
-	ticketAuth := NewTicketAuthenticator(newUserDB())
+	tAuth := NewTicketAuthenticator(newUserDB()).(*ticketAuthenticator)
+	var ticketAuth Challenger
+	ticketAuth = tAuth
 
 	// Test with missing authid
 	details := map[string]interface{}{"authmethod": "ticket"}
@@ -45,14 +47,14 @@ func TestTicketAuth(t *testing.T) {
 	}
 
 	// Compose AUTHENTICATE message with bad secret.
-	authRsp := &wamp.Authenticate{"allwrong", nil}
+	authRsp := &wamp.Authenticate{Signature: "allwrong", Extra: nil}
 	welcome, err := pendingAuth.Authenticate(authRsp)
 	if err == nil {
 		t.Fatal("unexpected error with incorrect secret")
 	}
 
 	// Compose a good AUTHENTICATE message.
-	authRsp = &wamp.Authenticate{"password1", nil}
+	authRsp = &wamp.Authenticate{Signature: "password1", Extra: nil}
 	welcome, err = pendingAuth.Authenticate(authRsp)
 	if err != nil {
 		t.Fatal("unexpected auth error: ", err.Error())

@@ -38,7 +38,7 @@ func detailRolesFeatures() map[string]interface{} {
 
 func TestJSONSerialize(t *testing.T) {
 	details := detailRolesFeatures()
-	hello := &wamp.Hello{"nexus.realm", details}
+	hello := &wamp.Hello{Realm: "nexus.realm", Details: details}
 
 	s := &JSONSerializer{}
 	b, err := s.Serialize(hello)
@@ -65,7 +65,7 @@ func TestJSONDeserialize(t *testing.T) {
 	s := &JSONSerializer{}
 
 	data := `[1,"nexus.realm",{}]`
-	expect := &wamp.Hello{"nexus.realm", map[string]interface{}{}}
+	expect := &wamp.Hello{Realm: "nexus.realm", Details: map[string]interface{}{}}
 	msg, err := s.Deserialize([]byte(data))
 	if err != nil {
 		t.Fatalf("Error decoding good data: %s, %s", err, data)
@@ -80,7 +80,7 @@ func TestJSONDeserialize(t *testing.T) {
 }
 
 func TestMessagePackSerialize(t *testing.T) {
-	hello := &wamp.Hello{"nexus.realm", detailRolesFeatures()}
+	hello := &wamp.Hello{Realm: "nexus.realm", Details: detailRolesFeatures()}
 
 	s := &MessagePackSerializer{}
 	b, err := s.Serialize(hello)
@@ -106,7 +106,7 @@ func TestMessagePackDeserialize(t *testing.T) {
 	s := &MessagePackSerializer{}
 
 	data := []byte{0x93, 0x01, 0xab, 0x6e, 0x65, 0x78, 0x75, 0x73, 0x2e, 0x72, 0x65, 0x61, 0x6c, 0x6d, 0x80}
-	expect := &wamp.Hello{"nexus.realm", map[string]interface{}{}}
+	expect := &wamp.Hello{Realm: "nexus.realm", Details: map[string]interface{}{}}
 	msg, err := s.Deserialize(data)
 	if err != nil {
 		t.Fatalf("Error decoding good data: %s, %x", err, data)
@@ -176,7 +176,7 @@ func TestAssignSlice(t *testing.T) {
 
 func TestMsgToList(t *testing.T) {
 	testMsgToList := func(args []interface{}, kwArgs map[string]interface{}, omit int, message string) error {
-		msg := &wamp.Event{0, 0, nil, args, kwArgs}
+		msg := &wamp.Event{Subscription: 0, Publication: 0, Details: nil, Arguments: args, ArgumentsKw: kwArgs}
 		numField := reflect.ValueOf(msg).Elem().NumField() + 1 // +1 for type
 		expect := numField - omit
 		list := msgToList(msg)
