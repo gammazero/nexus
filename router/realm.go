@@ -55,6 +55,7 @@ func NewRealm(uri wamp.URI, strictURI, anonymousAuth, allowDisclose bool) *Realm
 		actionChan:     make(chan func()),
 		metaIDGen:      wamp.NewIDGen(),
 		metaDone:       make(chan struct{}),
+		metaProcMap:    make(map[wamp.ID]func(*wamp.Invocation) wamp.Message, 9),
 	}
 	// If allowing anonymous authentication, then install the anonymous
 	// authenticator.  Install this first so that it is replaced in case a
@@ -72,38 +73,18 @@ func NewRealm(uri wamp.URI, strictURI, anonymousAuth, allowDisclose bool) *Realm
 
 	r.dealer = NewDealer(strictURI, allowDisclose, p)
 
-	// Create map of registration ID to meta procedure handler.
-	r.metaProcMap = make(map[wamp.ID]func(*wamp.Invocation) wamp.Message, 9)
-
 	// Register to handle session meta procedures.
-	regID := r.registerMetaProcedure(wamp.MetaProcSessionCount)
-	r.metaProcMap[regID] = r.sessionCount
-
-	regID = r.registerMetaProcedure(wamp.MetaProcSessionList)
-	r.metaProcMap[regID] = r.sessionList
-
-	regID = r.registerMetaProcedure(wamp.MetaProcSessionGet)
-	r.metaProcMap[regID] = r.sessionGet
+	r.registerMetaProcedure(wamp.MetaProcSessionCount, r.sessionCount)
+	r.registerMetaProcedure(wamp.MetaProcSessionList, r.sessionList)
+	r.registerMetaProcedure(wamp.MetaProcSessionGet, r.sessionGet)
 
 	// Register to handle registration meta procedures.
-
-	regID = r.registerMetaProcedure(wamp.MetaProcRegList)
-	r.metaProcMap[regID] = r.regList
-
-	regID = r.registerMetaProcedure(wamp.MetaProcRegLookup)
-	r.metaProcMap[regID] = r.regLookup
-
-	regID = r.registerMetaProcedure(wamp.MetaProcRegMatch)
-	r.metaProcMap[regID] = r.regMatch
-
-	regID = r.registerMetaProcedure(wamp.MetaProcRegGet)
-	r.metaProcMap[regID] = r.regGet
-
-	regID = r.registerMetaProcedure(wamp.MetaProcRegListCallees)
-	r.metaProcMap[regID] = r.regListCallees
-
-	regID = r.registerMetaProcedure(wamp.MetaProcRegCountCallees)
-	r.metaProcMap[regID] = r.regCountCallees
+	r.registerMetaProcedure(wamp.MetaProcRegList, r.regList)
+	r.registerMetaProcedure(wamp.MetaProcRegLookup, r.regLookup)
+	r.registerMetaProcedure(wamp.MetaProcRegMatch, r.regMatch)
+	r.registerMetaProcedure(wamp.MetaProcRegGet, r.regGet)
+	r.registerMetaProcedure(wamp.MetaProcRegListCallees, r.regListCallees)
+	r.registerMetaProcedure(wamp.MetaProcRegCountCallees, r.regCountCallees)
 
 	go r.metaProcedureHandler()
 	go r.run()
@@ -467,7 +448,7 @@ func (r *Realm) getAuthenticator(methods []string) (auth auth.Authenticator, aut
 	return
 }
 
-func (r *Realm) registerMetaProcedure(procedure wamp.URI) wamp.ID {
+func (r *Realm) registerMetaProcedure(procedure wamp.URI, f func(*wamp.Invocation) wamp.Message) {
 	r.metaClient.Send(&wamp.Register{
 		Request:   r.metaIDGen.Next(),
 		Procedure: procedure,
@@ -488,7 +469,7 @@ func (r *Realm) registerMetaProcedure(procedure wamp.URI) wamp.ID {
 		log.Print(errMsg)
 		panic(errMsg)
 	}
-	return reg.Registration
+	r.metaProcMap[reg.Registration] = f
 }
 
 func (r *Realm) metaProcedureHandler() {
