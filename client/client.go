@@ -157,7 +157,7 @@ func (c *Client) JoinRealm(realm string, details map[string]interface{}, authHan
 	}
 	ok := <-joinChan
 	if !ok {
-		return nil, errors.New("client is already member of realm " + realm)
+		return nil, errors.New("client is already member of realm " + c.realm)
 	}
 	if details == nil {
 		details = map[string]interface{}{}
@@ -663,7 +663,7 @@ func unexpectedMsgError(msg wamp.Message, expected wamp.MessageType) error {
 		extra = append(extra, strings.Join(ds, " "))
 	}
 	if len(extra) != 0 {
-		s += fmt.Sprint(s, ": ", strings.Join(extra, " "))
+		s = fmt.Sprint(s, ": ", strings.Join(extra, " "))
 	}
 	return errors.New(s)
 }
@@ -698,7 +698,7 @@ func (c *Client) receiveFromRouter() {
 			break
 
 		default:
-			c.log.Println("unhandled message from router:", msg.MessageType(), msg)
+			c.log.Println("Unhandled message from router:", msg.MessageType(), msg)
 		}
 	}
 
@@ -710,7 +710,7 @@ func (c *Client) handleEvent(msg *wamp.Event) {
 	c.actionChan <- func() {
 		handler, ok := c.eventHandlers[msg.Subscription]
 		if !ok {
-			c.log.Println("no handler registered for subscription:",
+			c.log.Println("No handler registered for subscription:",
 				msg.Subscription)
 			return
 		}
@@ -722,7 +722,7 @@ func (c *Client) handleInvocation(msg *wamp.Invocation) {
 	c.actionChan <- func() {
 		handler, ok := c.invHandlers[msg.Registration]
 		if !ok {
-			errMsg := fmt.Sprintf("no handler for registration: %v",
+			errMsg := fmt.Sprintf("No handler for registration: %v",
 				msg.Registration)
 			c.log.Print(errMsg)
 			c.peer.Send(&wamp.Error{
@@ -795,7 +795,7 @@ func (c *Client) handleInterrupt(msg *wamp.Interrupt) {
 	c.actionChan <- func() {
 		cancel, ok := c.invHandlerKill[msg.Request]
 		if !ok {
-			c.log.Print("received INTERRUPT for message that no longer exists")
+			c.log.Print("Received INTERRUPT for message that no longer exists")
 			return
 		}
 		cancel()
@@ -807,7 +807,7 @@ func (c *Client) signalReply(msg wamp.Message, requestID wamp.ID) {
 	c.actionChan <- func() {
 		w, ok := c.awaitingReply[requestID]
 		if !ok {
-			c.log.Println("received", msg.MessageType(), requestID,
+			c.log.Println("Received", msg.MessageType(), requestID,
 				"that client is no longer waiting for")
 			return
 		}
