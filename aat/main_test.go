@@ -55,26 +55,33 @@ func TestMain(m *testing.M) {
 	nxr = router.NewRouter(autoRealm, strictURI)
 	nxr.AddRealm(wamp.URI(testRealm), anonAuth, allowDisclose)
 
-	s := server.NewWebsocketServer(nxr)
-	server := &http.Server{
-		Handler: s,
-	}
+	var listener *net.TCPListener
+	var err error
+	if websocketClient {
+		s := server.NewWebsocketServer(nxr)
+		server := &http.Server{
+			Handler: s,
+		}
 
-	addr := net.TCPAddr{IP: net.ParseIP("127.0.0.1")}
-	listener, err := net.ListenTCP("tcp", &addr)
-	if err != nil {
-		cliLogger.Println("Server cannot listen:", err)
+		addr := net.TCPAddr{IP: net.ParseIP("127.0.0.1")}
+		listener, err = net.ListenTCP("tcp", &addr)
+		if err != nil {
+			cliLogger.Println("Server cannot listen:", err)
+		}
+		go server.Serve(listener)
+		port = listener.Addr().(*net.TCPAddr).Port
+		serverURL = fmt.Sprintf("ws://127.0.0.1:%d/", port)
+
+		rtrLogger.Println("Server listening on", serverURL)
 	}
-	go server.Serve(listener)
-	port = listener.Addr().(*net.TCPAddr).Port
-	serverURL = fmt.Sprintf("ws://127.0.0.1:%d/", port)
-	rtrLogger.Println("Server listening on", serverURL)
 
 	// Run tests.
 	rc := m.Run()
 
 	// Shutdown router and clienup environment.
-	listener.Close()
+	if websocketClient {
+		listener.Close()
+	}
 	nxr.Close()
 	os.Exit(rc)
 }
