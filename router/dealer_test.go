@@ -16,7 +16,7 @@ func newTestDealer() (*dealer, wamp.Peer) {
 
 func checkMetaReg(metaClient wamp.Peer, sessID wamp.ID) error {
 	select {
-	case <-time.After(time.Millisecond):
+	case <-time.After(time.Second):
 		return errors.New("timed out waiting for event")
 	case msg := <-metaClient.Recv():
 		event, ok := msg.(*wamp.Publish)
@@ -484,7 +484,7 @@ func TestCancelCallModeSkip(t *testing.T) {
 
 	// callee should NOT receive an INTERRUPT request
 	select {
-	case <-time.After(time.Millisecond):
+	case <-time.After(200 * time.Millisecond):
 	case msg := <-callee.Recv():
 		t.Fatal("callee received unexpected message: ", msg.MessageType())
 	}
@@ -573,7 +573,7 @@ func TestSharedRegistrationRoundRobin(t *testing.T) {
 		}
 	case rsp = <-callee2.Recv():
 		t.Fatal("should not have received from callee2")
-	case <-time.After(time.Millisecond):
+	case <-time.After(time.Second):
 		t.Fatal("Timed out waiting for INVOCATION")
 	}
 
@@ -602,7 +602,7 @@ func TestSharedRegistrationRoundRobin(t *testing.T) {
 		}
 	case rsp = <-callee1.Recv():
 		t.Fatal("should not have received from callee1")
-	case <-time.After(time.Millisecond):
+	case <-time.After(time.Second):
 		t.Fatal("Timed out waiting for INVOCATION")
 	}
 
@@ -703,7 +703,7 @@ func TestSharedRegistrationFirst(t *testing.T) {
 		}
 	case rsp = <-callee2.Recv():
 		t.Fatal("should not have received from callee2")
-	case <-time.After(time.Millisecond):
+	case <-time.After(time.Second):
 		t.Fatal("Timed out waiting for INVOCATION")
 	}
 
@@ -732,7 +732,7 @@ func TestSharedRegistrationFirst(t *testing.T) {
 		}
 	case rsp = <-callee2.Recv():
 		t.Fatal("should not have received from callee2")
-	case <-time.After(time.Millisecond):
+	case <-time.After(time.Second):
 		t.Fatal("Timed out waiting for INVOCATION")
 	}
 
@@ -770,7 +770,7 @@ func TestSharedRegistrationFirst(t *testing.T) {
 		}
 	case rsp = <-callee1.Recv():
 		t.Fatal("should not have received from callee1")
-	case <-time.After(time.Millisecond):
+	case <-time.After(time.Second):
 		t.Fatal("Timed out waiting for INVOCATION")
 	}
 
@@ -853,7 +853,7 @@ func TestSharedRegistrationLast(t *testing.T) {
 		}
 	case rsp = <-callee1.Recv():
 		t.Fatal("should not have received from callee1")
-	case <-time.After(time.Millisecond):
+	case <-time.After(time.Second):
 		t.Fatal("Timed out waiting for INVOCATION")
 	}
 
@@ -882,7 +882,7 @@ func TestSharedRegistrationLast(t *testing.T) {
 		}
 	case rsp = <-callee1.Recv():
 		t.Fatal("should not have received from callee1")
-	case <-time.After(time.Millisecond):
+	case <-time.After(time.Second):
 		t.Fatal("Timed out waiting for INVOCATION")
 	}
 
@@ -920,7 +920,7 @@ func TestSharedRegistrationLast(t *testing.T) {
 		}
 	case rsp = <-callee2.Recv():
 		t.Fatal("should not have received from callee2")
-	case <-time.After(time.Millisecond):
+	case <-time.After(time.Second):
 		t.Fatal("Timed out waiting for INVOCATION")
 	}
 

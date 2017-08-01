@@ -53,7 +53,7 @@ func connectedTestClients() (*Client, *Client, error) {
 }
 
 func newTestClient(p wamp.Peer) (*Client, error) {
-	client := NewClient(p, 200*time.Millisecond, log)
+	client := NewClient(p, 500*time.Millisecond, log)
 	_, err := client.JoinRealm(testRealm, nil, nil)
 	if err != nil {
 		return nil, err
@@ -145,7 +145,7 @@ func TestSubscribe(t *testing.T) {
 	// Make sure the event was received.
 	select {
 	case err = <-errChan:
-	case <-time.After(200 * time.Millisecond):
+	case <-time.After(time.Second):
 		t.Fatal("did not get published event")
 	}
 	if err != nil {
@@ -296,7 +296,7 @@ func TestCancelRemoteProcedureCall(t *testing.T) {
 	// Make sure the call is canceled.
 	select {
 	case err = <-errChan:
-	case <-time.After(2 * time.Second):
+	case <-time.After(time.Second):
 		t.Fatal("call should have been canceled")
 	}
 

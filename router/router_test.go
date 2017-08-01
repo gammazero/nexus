@@ -58,7 +58,7 @@ func handShake(r Router, client, server wamp.Peer) (wamp.ID, error) {
 
 	var sid wamp.ID
 	select {
-	case <-time.After(time.Millisecond):
+	case <-time.After(time.Second):
 		return 0, errors.New("timed out waiting for welcome")
 	case msg := <-client.Recv():
 		if msg.MessageType() != wamp.WELCOME {
@@ -81,7 +81,7 @@ func TestHandshake(t *testing.T) {
 
 	client.Send(&wamp.Goodbye{})
 	select {
-	case <-time.After(time.Millisecond):
+	case <-time.After(time.Second):
 		t.Fatal("no goodbye message after sending goodbye")
 	case msg := <-client.Recv():
 		if _, ok := msg.(*wamp.Goodbye); !ok {
@@ -129,7 +129,7 @@ func TestRouterSubscribe(t *testing.T) {
 
 	var subscriptionID wamp.ID
 	select {
-	case <-time.After(time.Millisecond):
+	case <-time.After(time.Second):
 		t.Fatal("Timed out waiting for SUBSCRIBED")
 	case msg := <-sub.Recv():
 		subMsg, ok := msg.(*wamp.Subscribed)
@@ -148,7 +148,7 @@ func TestRouterSubscribe(t *testing.T) {
 	pub.Send(&wamp.Publish{Request: pubID, Topic: testTopic})
 
 	select {
-	case <-time.After(time.Millisecond):
+	case <-time.After(time.Second):
 		t.Fatal("Timed out waiting for EVENT")
 	case msg := <-sub.Recv():
 		event, ok := msg.(*wamp.Event)
@@ -177,7 +177,7 @@ func TestPublishAcknowledge(t *testing.T) {
 		Topic:   "some.uri"})
 
 	select {
-	case <-time.After(time.Millisecond):
+	case <-time.After(time.Second):
 		t.Fatal("sent acknowledge=true, timed out waiting for PUBLISHED")
 	case msg := <-client.Recv():
 		pub, ok := msg.(*wamp.Published)
@@ -207,7 +207,7 @@ func TestPublishFalseAcknowledge(t *testing.T) {
 		Topic:   "some.uri"})
 
 	select {
-	case <-time.After(time.Millisecond):
+	case <-time.After(200 * time.Millisecond):
 	case msg := <-client.Recv():
 		if _, ok := msg.(*wamp.Published); ok {
 			t.Fatal("Sent acknowledge=false, but received PUBLISHED: ",
@@ -228,7 +228,7 @@ func TestPublishNoAcknowledge(t *testing.T) {
 	id := wamp.GlobalID()
 	client.Send(&wamp.Publish{Request: id, Topic: "some.uri"})
 	select {
-	case <-time.After(time.Millisecond):
+	case <-time.After(200 * time.Millisecond):
 	case msg := <-client.Recv():
 		if _, ok := msg.(*wamp.Published); ok {
 			t.Fatal("Sent acknowledge=false, but received PUBLISHED: ",
@@ -252,7 +252,7 @@ func TestRouterCall(t *testing.T) {
 
 	var registrationID wamp.ID
 	select {
-	case <-time.After(10 * time.Millisecond):
+	case <-time.After(time.Second):
 		t.Fatal("Timed out waiting for REGISTERED")
 	case msg := <-callee.Recv():
 		registered, ok := msg.(*wamp.Registered)
@@ -279,7 +279,7 @@ func TestRouterCall(t *testing.T) {
 
 	var invocationID wamp.ID
 	select {
-	case <-time.After(10 * time.Millisecond):
+	case <-time.After(time.Second):
 		t.Fatal("Timed out waiting for INVOCATION")
 	case msg := <-callee.Recv():
 		invocation, ok := msg.(*wamp.Invocation)
@@ -296,7 +296,7 @@ func TestRouterCall(t *testing.T) {
 	callee.Send(&wamp.Yield{Request: invocationID})
 
 	select {
-	case <-time.After(time.Millisecond):
+	case <-time.After(time.Second):
 		t.Fatal("Timed out waiting for RESULT")
 	case msg := <-caller.Recv():
 		result, ok := msg.(*wamp.Result)
@@ -325,7 +325,7 @@ func TestSessionMetaProcedures(t *testing.T) {
 	callID := wamp.GlobalID()
 	caller.Send(&wamp.Call{Request: callID, Procedure: wamp.MetaProcSessionCount})
 	select {
-	case <-time.After(10 * time.Millisecond):
+	case <-time.After(time.Second):
 		t.Fatal("Timed out waiting for RESULT")
 	case msg := <-caller.Recv():
 		result, ok = msg.(*wamp.Result)
@@ -351,7 +351,7 @@ func TestSessionMetaProcedures(t *testing.T) {
 	callID = wamp.GlobalID()
 	caller.Send(&wamp.Call{Request: callID, Procedure: wamp.MetaProcSessionList})
 	select {
-	case <-time.After(10 * time.Millisecond):
+	case <-time.After(time.Second):
 		t.Fatal("Timed out waiting for RESULT")
 	case msg := <-caller.Recv():
 		result, ok = msg.(*wamp.Result)
@@ -384,7 +384,7 @@ func TestSessionMetaProcedures(t *testing.T) {
 		Arguments: []interface{}{wamp.ID(123456789)},
 	})
 	select {
-	case <-time.After(10 * time.Millisecond):
+	case <-time.After(time.Second):
 		t.Fatal("Timed out waiting for RESULT")
 	case msg := <-caller.Recv():
 		errRsp, ok := msg.(*wamp.Error)
@@ -404,7 +404,7 @@ func TestSessionMetaProcedures(t *testing.T) {
 		Arguments: []interface{}{sessID},
 	})
 	select {
-	case <-time.After(10 * time.Millisecond):
+	case <-time.After(time.Second):
 		t.Fatal("Timed out waiting for RESULT")
 	case msg := <-caller.Recv():
 		result, ok = msg.(*wamp.Result)
@@ -444,7 +444,7 @@ func TestRegistrationMetaProcedures(t *testing.T) {
 	callID := wamp.GlobalID()
 	caller.Send(&wamp.Call{Request: callID, Procedure: wamp.MetaProcRegList})
 	select {
-	case <-time.After(10 * time.Millisecond):
+	case <-time.After(time.Second):
 		t.Fatal("Timed out waiting for RESULT")
 	case msg := <-caller.Recv():
 		result, ok = msg.(*wamp.Result)
@@ -486,7 +486,7 @@ func TestRegistrationMetaProcedures(t *testing.T) {
 
 	var registrationID wamp.ID
 	select {
-	case <-time.After(10 * time.Millisecond):
+	case <-time.After(time.Second):
 		t.Fatal("Timed out waiting for REGISTERED")
 	case msg := <-callee.Recv():
 		registered, ok := msg.(*wamp.Registered)
@@ -514,7 +514,7 @@ func TestRegistrationMetaProcedures(t *testing.T) {
 	callID = wamp.GlobalID()
 	caller.Send(&wamp.Call{Request: callID, Procedure: wamp.MetaProcRegList})
 	select {
-	case <-time.After(10 * time.Millisecond):
+	case <-time.After(time.Second):
 		t.Fatal("Timed out waiting for RESULT")
 	case msg := <-caller.Recv():
 		result, ok = msg.(*wamp.Result)
@@ -565,7 +565,7 @@ func TestRegistrationMetaProcedures(t *testing.T) {
 		Arguments: []interface{}{testProcedure},
 	})
 	select {
-	case <-time.After(10 * time.Millisecond):
+	case <-time.After(time.Second):
 		t.Fatal("Timed out waiting for RESULT")
 	case msg := <-caller.Recv():
 		result, ok = msg.(*wamp.Result)
@@ -595,7 +595,7 @@ func TestRegistrationMetaProcedures(t *testing.T) {
 		Arguments: []interface{}{testProcedure},
 	})
 	select {
-	case <-time.After(10 * time.Millisecond):
+	case <-time.After(time.Second):
 		t.Fatal("Timed out waiting for RESULT")
 	case msg := <-caller.Recv():
 		result, ok = msg.(*wamp.Result)
@@ -625,7 +625,7 @@ func TestRegistrationMetaProcedures(t *testing.T) {
 		Arguments: []interface{}{registrationID},
 	})
 	select {
-	case <-time.After(10 * time.Millisecond):
+	case <-time.After(time.Second):
 		t.Fatal("Timed out waiting for RESULT")
 	case msg := <-caller.Recv():
 		result, ok = msg.(*wamp.Result)
@@ -660,7 +660,7 @@ func TestRegistrationMetaProcedures(t *testing.T) {
 		Arguments: []interface{}{registrationID},
 	})
 	select {
-	case <-time.After(10 * time.Millisecond):
+	case <-time.After(time.Second):
 		t.Fatal("Timed out waiting for RESULT")
 	case msg := <-caller.Recv():
 		result, ok = msg.(*wamp.Result)
@@ -693,7 +693,7 @@ func TestRegistrationMetaProcedures(t *testing.T) {
 		Arguments: []interface{}{registrationID},
 	})
 	select {
-	case <-time.After(10 * time.Millisecond):
+	case <-time.After(time.Second):
 		t.Fatal("Timed out waiting for RESULT")
 	case msg := <-caller.Recv():
 		result, ok = msg.(*wamp.Result)

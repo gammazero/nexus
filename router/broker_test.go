@@ -384,7 +384,7 @@ func TestSubscriberBlackwhiteListing(t *testing.T) {
 		Topic:   testTopic,
 		Options: map[string]interface{}{"eligible": []string{string(sess.ID)}},
 	})
-	rsp, err := wamp.RecvTimeout(sess, time.Millisecond)
+	rsp, err := wamp.RecvTimeout(sess, time.Second)
 	if err != nil {
 		t.Fatal("not allowed by whitelist")
 	}
@@ -394,7 +394,7 @@ func TestSubscriberBlackwhiteListing(t *testing.T) {
 		Topic:   testTopic,
 		Options: map[string]interface{}{"eligible_authrole": []string{"admin"}},
 	})
-	rsp, err = wamp.RecvTimeout(sess, time.Millisecond)
+	rsp, err = wamp.RecvTimeout(sess, time.Second)
 	if err != nil {
 		t.Fatal("not allowed by authrole whitelist")
 	}
@@ -404,7 +404,7 @@ func TestSubscriberBlackwhiteListing(t *testing.T) {
 		Topic:   testTopic,
 		Options: map[string]interface{}{"eligible_authid": []string{"jdoe"}},
 	})
-	rsp, err = wamp.RecvTimeout(sess, time.Millisecond)
+	rsp, err = wamp.RecvTimeout(sess, time.Second)
 	if err != nil {
 		t.Fatal("not allowed by authid whitelist")
 	}
@@ -415,7 +415,7 @@ func TestSubscriberBlackwhiteListing(t *testing.T) {
 		Topic:   testTopic,
 		Options: map[string]interface{}{"exclude": []string{string(sess.ID)}},
 	})
-	rsp, err = wamp.RecvTimeout(sess, time.Millisecond)
+	rsp, err = wamp.RecvTimeout(sess, time.Second)
 	if err == nil {
 		t.Fatal("not excluded by blacklist")
 	}
@@ -425,7 +425,7 @@ func TestSubscriberBlackwhiteListing(t *testing.T) {
 		Topic:   testTopic,
 		Options: map[string]interface{}{"exclude_authrole": []string{"admin"}},
 	})
-	rsp, err = wamp.RecvTimeout(sess, time.Millisecond)
+	rsp, err = wamp.RecvTimeout(sess, time.Second)
 	if err == nil {
 		t.Fatal("not excluded by authrole blacklist")
 	}
@@ -435,7 +435,7 @@ func TestSubscriberBlackwhiteListing(t *testing.T) {
 		Topic:   testTopic,
 		Options: map[string]interface{}{"exclude_authid": []string{"jdoe"}},
 	})
-	rsp, err = wamp.RecvTimeout(sess, time.Millisecond)
+	rsp, err = wamp.RecvTimeout(sess, time.Second)
 	if err == nil {
 		t.Fatal("not excluded by authid blacklist")
 	}
@@ -447,7 +447,7 @@ func TestSubscriberBlackwhiteListing(t *testing.T) {
 		Options: map[string]interface{}{"eligible_authid": []string{"jdoe"},
 			"exclude_authid": []string{"jdoe"}},
 	})
-	rsp, err = wamp.RecvTimeout(sess, time.Millisecond)
+	rsp, err = wamp.RecvTimeout(sess, time.Second)
 	if err == nil {
 		t.Fatal("should have been excluded by blacklist")
 	}
@@ -462,7 +462,7 @@ func TestPublisherExclusion(t *testing.T) {
 	broker.Submit(sess, &wamp.Subscribe{Request: 123, Topic: testTopic})
 
 	// Test that subscriber received SUBSCRIBED message
-	rsp, err := wamp.RecvTimeout(sess, time.Millisecond)
+	rsp, err := wamp.RecvTimeout(sess, time.Second)
 	if err != nil {
 		t.Fatal("subscribe session did not get response to SUBSCRIBE")
 	}
@@ -487,7 +487,7 @@ func TestPublisherExclusion(t *testing.T) {
 	// Subscribe the publish session also.
 	broker.Submit(pubSess, &wamp.Subscribe{Request: 123, Topic: testTopic})
 	// Test that pub session received SUBSCRIBED message
-	rsp, err = wamp.RecvTimeout(pubSess, time.Millisecond)
+	rsp, err = wamp.RecvTimeout(pubSess, time.Second)
 	if err != nil {
 		t.Fatal("publish session did not get response to SUBSCRIBE")
 	}
@@ -502,11 +502,11 @@ func TestPublisherExclusion(t *testing.T) {
 		Topic:   testTopic,
 		Options: map[string]interface{}{"exclude_me": false},
 	})
-	rsp, err = wamp.RecvTimeout(sess, time.Millisecond)
+	rsp, err = wamp.RecvTimeout(sess, time.Second)
 	if err != nil {
 		t.Fatal("subscriber did not receive event")
 	}
-	rsp, err = wamp.RecvTimeout(pubSess, time.Millisecond)
+	rsp, err = wamp.RecvTimeout(pubSess, time.Second)
 	if err != nil {
 		t.Fatal("pub session should have received event")
 	}
@@ -517,11 +517,11 @@ func TestPublisherExclusion(t *testing.T) {
 		Topic:   testTopic,
 		Options: map[string]interface{}{"exclude_me": true},
 	})
-	rsp, err = wamp.RecvTimeout(sess, time.Millisecond)
+	rsp, err = wamp.RecvTimeout(sess, time.Second)
 	if err != nil {
 		t.Fatal("subscriber did not receive event")
 	}
-	rsp, err = wamp.RecvTimeout(pubSess, time.Millisecond)
+	rsp, err = wamp.RecvTimeout(pubSess, time.Second)
 	if err == nil {
 		t.Fatal("pub session should NOT have received event")
 	}
