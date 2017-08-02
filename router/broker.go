@@ -136,12 +136,10 @@ func (b *broker) Close() {
 // routine.
 func (b *broker) reqHandler() {
 	for req := range b.reqChan {
-		if req.msg == nil {
-			b.removeSession(req.session)
-			continue
-		}
 		sess := req.session
 		switch msg := req.msg.(type) {
+		case nil:
+			b.removeSession(req.session)
 		case *wamp.Publish:
 			b.publish(sess, msg)
 		case *wamp.Subscribe:

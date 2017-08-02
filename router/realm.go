@@ -9,10 +9,21 @@ import (
 	"github.com/gammazero/nexus/wamp"
 )
 
+type Realm interface {
+	AddAuthenticator(method string, athr auth.Authenticator)
+	DelAuthenticator(method string)
+	SetAuthorizer(authorizer Authorizer)
+	HandleSession(sess *Session) error
+	Close()
+	Run()
+	AuthClient(client wamp.Peer, details map[string]interface{}) (*wamp.Welcome, error)
+	BridgeSession(details map[string]interface{}, meta bool) wamp.Peer
+}
+
 // A Realm is a WAMP routing and administrative domain, optionally protected by
 // authentication and authorization.  WAMP messages are only routed within a
 // Realm.
-type Realm struct {
+type realm struct {
 	uri wamp.URI
 
 	broker Broker
@@ -45,8 +56,8 @@ type Realm struct {
 
 // NewRealm creates a new Realm with default broker, dealer, and authorizer
 // implementtions.  The Realm has no authorizers unless anonymousAuth is true.
-func NewRealm(uri wamp.URI, strictURI, anonymousAuth, allowDisclose bool) *Realm {
-	r := &Realm{
+func NewRealm(uri wamp.URI, strictURI, anonymousAuth, allowDisclose bool) Realm {
+	r := &realm{
 		uri:            uri,
 		broker:         NewBroker(strictURI, allowDisclose),
 		authorizer:     NewAuthorizer(),
@@ -55,6 +66,7 @@ func NewRealm(uri wamp.URI, strictURI, anonymousAuth, allowDisclose bool) *Realm
 		actionChan:     make(chan func()),
 		metaIDGen:      wamp.NewIDGen(),
 		metaDone:       make(chan struct{}),
+		metaProcMap:    make(map[wamp.ID]func(*wamp.Invocation) wamp.Message, 9),
 	}
 	// If allowing anonymous authentication, then install the anonymous
 	// authenticator.  Install this first so that it is replaced in case a
@@ -67,51 +79,30 @@ func NewRealm(uri wamp.URI, strictURI, anonymousAuth, allowDisclose bool) *Realm
 	// the peer returned, which is the remote side of the router uplink.
 	// Sending a PUBLISH message to p will result in the router publishing the
 	// event to any subscribers.
-	p := r.bridgeSession(nil, true)
+	p := r.BridgeSession(nil, true)
 	r.metaClient = &Session{Peer: p}
 
 	r.dealer = NewDealer(strictURI, allowDisclose, p)
 
-	// Create map of registration ID to meta procedure handler.
-	r.metaProcMap = make(map[wamp.ID]func(*wamp.Invocation) wamp.Message, 9)
-
 	// Register to handle session meta procedures.
-	regID := r.registerMetaProcedure(wamp.MetaProcSessionCount)
-	r.metaProcMap[regID] = r.sessionCount
-
-	regID = r.registerMetaProcedure(wamp.MetaProcSessionList)
-	r.metaProcMap[regID] = r.sessionList
-
-	regID = r.registerMetaProcedure(wamp.MetaProcSessionGet)
-	r.metaProcMap[regID] = r.sessionGet
+	r.registerMetaProcedure(wamp.MetaProcSessionCount, r.sessionCount)
+	r.registerMetaProcedure(wamp.MetaProcSessionList, r.sessionList)
+	r.registerMetaProcedure(wamp.MetaProcSessionGet, r.sessionGet)
 
 	// Register to handle registration meta procedures.
-
-	regID = r.registerMetaProcedure(wamp.MetaProcRegList)
-	r.metaProcMap[regID] = r.regList
-
-	regID = r.registerMetaProcedure(wamp.MetaProcRegLookup)
-	r.metaProcMap[regID] = r.regLookup
-
-	regID = r.registerMetaProcedure(wamp.MetaProcRegMatch)
-	r.metaProcMap[regID] = r.regMatch
-
-	regID = r.registerMetaProcedure(wamp.MetaProcRegGet)
-	r.metaProcMap[regID] = r.regGet
-
-	regID = r.registerMetaProcedure(wamp.MetaProcRegListCallees)
-	r.metaProcMap[regID] = r.regListCallees
-
-	regID = r.registerMetaProcedure(wamp.MetaProcRegCountCallees)
-	r.metaProcMap[regID] = r.regCountCallees
+	r.registerMetaProcedure(wamp.MetaProcRegList, r.regList)
+	r.registerMetaProcedure(wamp.MetaProcRegLookup, r.regLookup)
+	r.registerMetaProcedure(wamp.MetaProcRegMatch, r.regMatch)
+	r.registerMetaProcedure(wamp.MetaProcRegGet, r.regGet)
+	r.registerMetaProcedure(wamp.MetaProcRegListCallees, r.regListCallees)
+	r.registerMetaProcedure(wamp.MetaProcRegCountCallees, r.regCountCallees)
 
 	go r.metaProcedureHandler()
-	go r.run()
 	return r
 }
 
 // AddAuthenticator registers the Authenticator for the specified method.
-func (r *Realm) AddAuthenticator(method string, athr auth.Authenticator) {
+func (r *realm) AddAuthenticator(method string, athr auth.Authenticator) {
 	r.actionChan <- func() {
 		r.authenticators[method] = athr
 	}
@@ -119,21 +110,21 @@ func (r *Realm) AddAuthenticator(method string, athr auth.Authenticator) {
 }
 
 // DelAuthenticator deletes the Authenticator for the specified method.
-func (r *Realm) DelAuthenticator(method string) {
+func (r *realm) DelAuthenticator(method string) {
 	r.actionChan <- func() {
 		delete(r.authenticators, method)
 	}
 	log.Printf("Deleted authenticator for method %s (realm=%v)", method, r.uri)
 }
 
-func (r *Realm) SetAuthorizer(authorizer Authorizer) {
+func (r *realm) SetAuthorizer(authorizer Authorizer) {
 	r.actionChan <- func() {
 		r.authorizer = authorizer
 	}
 	log.Print("Set authorizer for realm ", r.uri)
 }
 
-// closeRealm kills all clients, causing them to send a goodbye message.  This
+// Close kills all clients, causing them to send a goodbye message.  This
 // is only called from the router's single action goroutine, so will never be
 // called by multiple goroutines.
 //
@@ -158,7 +149,7 @@ func (r *Realm) SetAuthorizer(authorizer Authorizer) {
 // meta procedures, there is no metaProcedureHandler() to call Submit(). Any
 // client sessions that are still active likewise have no handleSession() to
 // call Submit() or RemoveSession().
-func (r *Realm) closeRealm() {
+func (r *realm) Close() {
 	// The lock is held in mutual exclusion with the router starting any new
 	// session handlers for this realm.  This prevents the router from starting
 	// any new session handlers, allowing the realm can safely close after
@@ -198,21 +189,22 @@ func (r *Realm) closeRealm() {
 	log.Println("Realm", r.uri, "completed shutdown")
 }
 
-// Single goroutine used to read and modify Realm data.
-func (r *Realm) run() {
+// Run must be called to start the Realm.
+// It blocks so should be executed in a separate goroutine
+func (r *realm) Run() {
 	for action := range r.actionChan {
 		action()
 	}
 	log.Println("Realm", r.uri, "stopped")
 }
 
-// bridgeSession creates and starts a session that runs in this realm, and
+// BridgeSession creates and starts a session that runs in this realm, and
 // returns the session's Peer for communicating with the running session.
 //
 // This is used for creating a local client for publishing meta events, and for
 // the router to create local sessions used by an application that the router
 // is embedded in.
-func (r *Realm) bridgeSession(details map[string]interface{}, meta bool) wamp.Peer {
+func (r *realm) BridgeSession(details map[string]interface{}, meta bool) wamp.Peer {
 	cli, rtr := LinkedPeers()
 	if details == nil {
 		details = map[string]interface{}{}
@@ -261,7 +253,7 @@ func (r *Realm) bridgeSession(details map[string]interface{}, meta bool) wamp.Pe
 //
 // Note: onJoin() must be called from outside handleSession() so that it is not
 // called for the meta client.
-func (r *Realm) onJoin(sess *Session) {
+func (r *realm) onJoin(sess *Session) {
 	r.waitHandlers.Add(1)
 	sync := make(chan struct{})
 	r.actionChan <- func() {
@@ -293,7 +285,7 @@ func (r *Realm) onJoin(sess *Session) {
 //
 // Note: onLeave() must be called from outside handleSession() so that it is
 // not called for the meta client.
-func (r *Realm) onLeave(sess *Session) {
+func (r *realm) onLeave(sess *Session) {
 	sync := make(chan struct{})
 	r.actionChan <- func() {
 		delete(r.clients, sess.ID)
@@ -312,10 +304,38 @@ func (r *Realm) onLeave(sess *Session) {
 	r.waitHandlers.Done()
 }
 
-// handleSession starts a session attached to this realm.
+// HandleSession starts a session attached to this realm.
+//
+func (r *realm) HandleSession(sess *Session) error {
+	// The lock is held in mutual exclusion with the closing of the realm.
+	// This ensures that no new session handler can start once the realm is
+	// closing, during which the realm waits for all existing session handlers
+	// to exit.
+	r.closeLock.Lock()
+	if r.closed {
+		r.closeLock.Unlock()
+		err := errors.New("realm closed")
+		return err
+	}
+
+	// Ensure sesson is capable of receiving exit signal before releasing lock.
+	r.onJoin(sess)
+	r.closeLock.Unlock()
+
+	log.Print("Started session ", sess)
+	go func() {
+		r.handleSession(sess)
+		r.onLeave(sess)
+		sess.Close()
+	}()
+
+	return nil
+}
+
+// handleSession  a session attached to this realm.
 //
 // Routing occurs only between WAMP Sessions that have joined the same Realm.
-func (r *Realm) handleSession(sess *Session) {
+func (r *realm) handleSession(sess *Session) {
 	defer log.Println("Ended sesion", sess)
 
 	recvChan := sess.Recv()
@@ -414,9 +434,9 @@ func (r *Realm) handleSession(sess *Session) {
 	}
 }
 
-// authClient authenticates the client according to the authmethods in the
+// AuthClient authenticates the client according to the authmethods in the
 // HELLO message details and the authenticators available for this realm.
-func (r *Realm) authClient(client wamp.Peer, details map[string]interface{}) (*wamp.Welcome, error) {
+func (r *realm) AuthClient(client wamp.Peer, details map[string]interface{}) (*wamp.Welcome, error) {
 	var authmethods []string
 	if _authmethods, ok := details["authmethods"]; ok {
 		switch _authmethods := _authmethods.(type) {
@@ -443,11 +463,15 @@ func (r *Realm) authClient(client wamp.Peer, details map[string]interface{}) (*w
 		return nil, err
 	}
 	welcome.Details["authmethod"] = method
+	welcome.Details["roles"] = map[string]interface{}{
+		"broker": r.broker.Features(),
+		"dealer": r.dealer.Features(),
+	}
 	return welcome, nil
 }
 
 // getAuthenticator finds the first authenticator registered for the methods.
-func (r *Realm) getAuthenticator(methods []string) (auth auth.Authenticator, authMethod string) {
+func (r *realm) getAuthenticator(methods []string) (auth auth.Authenticator, authMethod string) {
 	sync := make(chan struct{})
 	r.actionChan <- func() {
 		// Iterate through the methods and see if there is an Authenticator or
@@ -467,7 +491,7 @@ func (r *Realm) getAuthenticator(methods []string) (auth auth.Authenticator, aut
 	return
 }
 
-func (r *Realm) registerMetaProcedure(procedure wamp.URI) wamp.ID {
+func (r *realm) registerMetaProcedure(procedure wamp.URI, f func(*wamp.Invocation) wamp.Message) {
 	r.metaClient.Send(&wamp.Register{
 		Request:   r.metaIDGen.Next(),
 		Procedure: procedure,
@@ -488,10 +512,10 @@ func (r *Realm) registerMetaProcedure(procedure wamp.URI) wamp.ID {
 		log.Print(errMsg)
 		panic(errMsg)
 	}
-	return reg.Registration
+	r.metaProcMap[reg.Registration] = f
 }
 
-func (r *Realm) metaProcedureHandler() {
+func (r *realm) metaProcedureHandler() {
 	defer close(r.metaDone)
 	var rsp wamp.Message
 	for msg := range r.metaClient.Recv() {
@@ -522,7 +546,7 @@ func (r *Realm) metaProcedureHandler() {
 	}
 }
 
-func (r *Realm) sessionCount(msg *wamp.Invocation) wamp.Message {
+func (r *realm) sessionCount(msg *wamp.Invocation) wamp.Message {
 	var filter []string
 	if len(msg.Arguments) != 0 {
 		filter = msg.Arguments[0].([]string)
@@ -555,7 +579,7 @@ func (r *Realm) sessionCount(msg *wamp.Invocation) wamp.Message {
 	}
 }
 
-func (r *Realm) sessionList(msg *wamp.Invocation) wamp.Message {
+func (r *realm) sessionList(msg *wamp.Invocation) wamp.Message {
 	var filter []string
 	if len(msg.Arguments) != 0 {
 		filter = msg.Arguments[0].([]string)
@@ -591,7 +615,7 @@ func (r *Realm) sessionList(msg *wamp.Invocation) wamp.Message {
 	return &wamp.Yield{Request: msg.Request, Arguments: []interface{}{list}}
 }
 
-func (r *Realm) sessionGet(msg *wamp.Invocation) wamp.Message {
+func (r *realm) sessionGet(msg *wamp.Invocation) wamp.Message {
 	makeErr := func() *wamp.Error {
 		return &wamp.Error{
 			Type:    wamp.INVOCATION,
@@ -633,7 +657,7 @@ func (r *Realm) sessionGet(msg *wamp.Invocation) wamp.Message {
 }
 
 // regList retrieves registration IDs listed according to match policies.
-func (r *Realm) regList(msg *wamp.Invocation) wamp.Message {
+func (r *realm) regList(msg *wamp.Invocation) wamp.Message {
 	// Submit INVOCATION message to run the registration meta procedure in the
 	// dealer's request handler.  Replace the registration ID with the index of
 	// the meta procedure to run.  The registration ID is not needed in this
@@ -645,21 +669,21 @@ func (r *Realm) regList(msg *wamp.Invocation) wamp.Message {
 }
 
 // regLookup retrieves registration IDs listed according to match policies.
-func (r *Realm) regLookup(msg *wamp.Invocation) wamp.Message {
+func (r *realm) regLookup(msg *wamp.Invocation) wamp.Message {
 	msg.Registration = RegLookup
 	r.dealer.Submit(r.metaClient, msg)
 	return nil
 }
 
 // regMatch obtains the registration best matching a given procedure URI.
-func (r *Realm) regMatch(msg *wamp.Invocation) wamp.Message {
+func (r *realm) regMatch(msg *wamp.Invocation) wamp.Message {
 	msg.Registration = RegMatch
 	r.dealer.Submit(r.metaClient, msg)
 	return nil
 }
 
 // regGet retrieves information on a particular registration.
-func (r *Realm) regGet(msg *wamp.Invocation) wamp.Message {
+func (r *realm) regGet(msg *wamp.Invocation) wamp.Message {
 	msg.Registration = RegGet
 	r.dealer.Submit(r.metaClient, msg)
 	return nil
@@ -667,7 +691,7 @@ func (r *Realm) regGet(msg *wamp.Invocation) wamp.Message {
 
 // regregListCallees retrieves a list of session IDs for sessions currently
 // attached to the registration.
-func (r *Realm) regListCallees(msg *wamp.Invocation) wamp.Message {
+func (r *realm) regListCallees(msg *wamp.Invocation) wamp.Message {
 	msg.Registration = RegListCallees
 	r.dealer.Submit(r.metaClient, msg)
 	return nil
@@ -675,7 +699,7 @@ func (r *Realm) regListCallees(msg *wamp.Invocation) wamp.Message {
 
 // regCountCallees obtains the number of sessions currently attached to the
 // registration.
-func (r *Realm) regCountCallees(msg *wamp.Invocation) wamp.Message {
+func (r *realm) regCountCallees(msg *wamp.Invocation) wamp.Message {
 	msg.Registration = RegCountCallees
 	r.dealer.Submit(r.metaClient, msg)
 	return nil

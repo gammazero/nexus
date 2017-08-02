@@ -195,11 +195,9 @@ func (d *dealer) Close() {
 // routine.
 func (d *dealer) reqHandler() {
 	for req := range d.reqChan {
-		if req.msg == nil {
-			d.removeSession(req.session)
-			continue
-		}
 		switch msg := req.msg.(type) {
+		case nil:
+			d.removeSession(req.session)
 		case *wamp.Register:
 			d.register(req.session, msg)
 		case *wamp.Unregister:
