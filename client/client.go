@@ -96,6 +96,8 @@ type Client struct {
 //
 // Each client can be give a separate Logger instance, which my be desirable
 // when clients are used for different purposes.
+//
+// JoinRealm must be called before other client functions.
 func NewClient(p wamp.Peer, responseTimeout time.Duration, logger logger.Logger) *Client {
 	if responseTimeout == 0 {
 		responseTimeout = defaultResponseTimeout
@@ -124,6 +126,8 @@ func NewClient(p wamp.Peer, responseTimeout time.Duration, logger logger.Logger)
 
 // NewWebsocketClient creates a new websocket client connected to the specified
 // URL and using the specified serialization.
+//
+// JoinRealm must be called before other client functions.
 func NewWebsocketClient(url string, serialization serialize.Serialization, tlscfg *tls.Config, dial transport.DialFunc, responseTimeout time.Duration, logger logger.Logger) (*Client, error) {
 	p, err := transport.ConnectWebsocketPeer(
 		url, serialization, tlscfg, dial, 0, logger)
@@ -142,7 +146,7 @@ func (c *Client) run() {
 // AuthFunc takes the HELLO details and CHALLENGE details and returns the
 // signature string and a details map, or error.
 //
-// This is used to create the authHandler map passed to JoinRealm()
+// This is used to create the authHandler map passed to JoinRealm.
 type AuthFunc func(map[string]interface{}, map[string]interface{}) (string, map[string]interface{}, error)
 
 // JoinRealm joins a WAMP realm, handling challenge/response authentication if
@@ -583,6 +587,8 @@ func (c *Client) LeaveRealm() error {
 		return errors.New("client has not joined a realm")
 	}
 
+	// Send GOODBYE to router.  The reouter will respond with a GOODBYE message
+	// which is handled by receiveFromRouter, and causes it to exit.
 	c.peer.Send(&wamp.Goodbye{
 		Details: map[string]interface{}{},
 		Reason:  wamp.ErrCloseRealm,
