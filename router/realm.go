@@ -204,9 +204,7 @@ func (r *realm) Run() {
 func (r *realm) createMetaSession() (*Session, *Session) {
 	cli, rtr := transport.LinkedPeers(0, log)
 
-	details := map[string]interface{}{
-		"authrole": "trusted",
-	}
+	details := wamp.SetOption(nil, "authrole", "trusted")
 
 	// This session is the local leg of the router uplink.
 	sess := &Session{
