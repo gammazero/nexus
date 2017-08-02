@@ -6,11 +6,12 @@ import (
 	"testing"
 	"time"
 
+	"github.com/gammazero/nexus/transport"
 	"github.com/gammazero/nexus/wamp"
 )
 
 func newTestDealer() (*dealer, wamp.Peer) {
-	metaClient, rtr := LinkedPeers()
+	metaClient, rtr := transport.LinkedPeers(0, log)
 	return NewDealer(false, true, rtr).(*dealer), metaClient
 }
 

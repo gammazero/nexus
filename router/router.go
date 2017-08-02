@@ -38,10 +38,6 @@ type Router interface {
 	// Attach connects a client to the router and to the requested realm.
 	Attach(wamp.Peer) error
 
-	// LocalClient starts a local session and returns a Peer to communicate
-	// with that session.
-	LocalClient(wamp.URI, map[string]interface{}) (wamp.Peer, error)
-
 	// Close stops the router and waits message processing to stop.
 	Close()
 }
@@ -277,26 +273,6 @@ func (r *router) Attach(client wamp.Peer) error {
 	return nil
 }
 
-// LocalClient returns a Peer connected to a local session running within the
-// specified realm.
-//
-// This allows creation and attachment of a client session without having to
-// go through the process of HELLO... auth... WELCOME.
-func (r *router) LocalClient(realmURI wamp.URI, details map[string]interface{}) (wamp.Peer, error) {
-	sync := make(chan Realm)
-	r.actionChan <- func() {
-		realm := r.realms[realmURI]
-		sync <- realm
-	}
-	realm := <-sync
-	if realm == nil {
-		return nil, errors.New("no such realm: " + string(realmURI))
-	}
-
-	// Start internal session and return remote leg of router uplink.
-	return realm.BridgeSession(details, false), nil
-}
-
 // Close stops the router and waits message processing to stop.
 func (r *router) Close() {
 	sync := make(chan struct{})
@@ -306,7 +282,7 @@ func (r *router) Close() {
 		// Close all existing realms.
 		for uri, realm := range r.realms {
 			realm.Close()
-			// Delete the realm, in case of pending call to LocalClient.
+			// Delete the realm
 			delete(r.realms, uri)
 		}
 		sync <- struct{}{}

@@ -6,6 +6,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/gammazero/nexus/transport"
 	"github.com/gammazero/nexus/wamp"
 )
 
@@ -71,7 +72,7 @@ func handShake(r Router, client, server wamp.Peer) (wamp.ID, error) {
 }
 
 func TestHandshake(t *testing.T) {
-	client, server := LinkedPeers()
+	client, server := transport.LinkedPeers(0, log)
 	r := newTestRouter()
 	defer r.Close()
 	_, err := handShake(r, client, server)
@@ -94,7 +95,7 @@ func TestHandshakeBadRealm(t *testing.T) {
 	r := NewRouter(false, false)
 	defer r.Close()
 
-	client, server := LinkedPeers()
+	client, server := transport.LinkedPeers(0, log)
 
 	client.Send(&wamp.Hello{Realm: "does.not.exist"})
 	err := r.Attach(server)
@@ -116,7 +117,7 @@ func TestHandshakeBadRealm(t *testing.T) {
 func TestRouterSubscribe(t *testing.T) {
 	const testTopic = wamp.URI("some.uri")
 
-	sub, subServer := LinkedPeers()
+	sub, subServer := transport.LinkedPeers(0, log)
 	r := newTestRouter()
 	defer r.Close()
 	_, err := handShake(r, sub, subServer)
@@ -142,7 +143,7 @@ func TestRouterSubscribe(t *testing.T) {
 		subscriptionID = subMsg.Subscription
 	}
 
-	pub, pubServer := LinkedPeers()
+	pub, pubServer := transport.LinkedPeers(0, log)
 	handShake(r, pub, pubServer)
 	pubID := wamp.GlobalID()
 	pub.Send(&wamp.Publish{Request: pubID, Topic: testTopic})
@@ -162,7 +163,7 @@ func TestRouterSubscribe(t *testing.T) {
 }
 
 func TestPublishAcknowledge(t *testing.T) {
-	client, server := LinkedPeers()
+	client, server := transport.LinkedPeers(0, log)
 	r := newTestRouter()
 	defer r.Close()
 	_, err := handShake(r, client, server)
@@ -192,7 +193,7 @@ func TestPublishAcknowledge(t *testing.T) {
 }
 
 func TestPublishFalseAcknowledge(t *testing.T) {
-	client, server := LinkedPeers()
+	client, server := transport.LinkedPeers(0, log)
 	r := newTestRouter()
 	defer r.Close()
 	_, err := handShake(r, client, server)
@@ -217,7 +218,7 @@ func TestPublishFalseAcknowledge(t *testing.T) {
 }
 
 func TestPublishNoAcknowledge(t *testing.T) {
-	client, server := LinkedPeers()
+	client, server := transport.LinkedPeers(0, log)
 	r := newTestRouter()
 	defer r.Close()
 	_, err := handShake(r, client, server)
@@ -238,7 +239,7 @@ func TestPublishNoAcknowledge(t *testing.T) {
 }
 
 func TestRouterCall(t *testing.T) {
-	callee, calleeServer := LinkedPeers()
+	callee, calleeServer := transport.LinkedPeers(0, log)
 	r := newTestRouter()
 	defer r.Close()
 	_, err := handShake(r, callee, calleeServer)
@@ -265,7 +266,7 @@ func TestRouterCall(t *testing.T) {
 		registrationID = registered.Registration
 	}
 
-	caller, callerServer := LinkedPeers()
+	caller, callerServer := transport.LinkedPeers(0, log)
 	caller.Send(&wamp.Hello{Realm: testRealm, Details: clientRoles})
 	if err := r.Attach(callerServer); err != nil {
 		t.Fatal("Error connecting caller:", err)
@@ -313,7 +314,7 @@ func TestSessionMetaProcedures(t *testing.T) {
 	r := newTestRouter()
 	defer r.Close()
 
-	caller, callerServer := LinkedPeers()
+	caller, callerServer := transport.LinkedPeers(0, log)
 	sessID, err := handShake(r, caller, callerServer)
 	if err != nil {
 		t.Fatal(err)
@@ -432,7 +433,7 @@ func TestRegistrationMetaProcedures(t *testing.T) {
 	r := newTestRouter()
 	defer r.Close()
 
-	caller, callerServer := LinkedPeers()
+	caller, callerServer := transport.LinkedPeers(0, log)
 	sessID, err := handShake(r, caller, callerServer)
 	if err != nil {
 		t.Fatal(err)
@@ -475,7 +476,7 @@ func TestRegistrationMetaProcedures(t *testing.T) {
 		t.Fatal("expected []wamp.ID")
 	}
 
-	callee, calleeServer := LinkedPeers()
+	callee, calleeServer := transport.LinkedPeers(0, log)
 	sessID, err = handShake(r, callee, calleeServer)
 	if err != nil {
 		t.Fatal(err)

@@ -6,6 +6,7 @@ import (
 	"sync"
 
 	"github.com/gammazero/nexus/auth"
+	"github.com/gammazero/nexus/transport"
 	"github.com/gammazero/nexus/wamp"
 )
 
@@ -17,7 +18,6 @@ type Realm interface {
 	Close()
 	Run()
 	AuthClient(client wamp.Peer, details map[string]interface{}) (*wamp.Welcome, error)
-	BridgeSession(details map[string]interface{}, meta bool) wamp.Peer
 }
 
 // A Realm is a WAMP routing and administrative domain, optionally protected by
@@ -76,13 +76,12 @@ func NewRealm(uri wamp.URI, strictURI, anonymousAuth, allowDisclose bool) Realm 
 	}
 
 	// Create a session that bridges two peers.  Meta events are published by
-	// the peer returned, which is the remote side of the router uplink.
-	// Sending a PUBLISH message to p will result in the router publishing the
+	// the metaClient returned, which is the remote side of the router uplink.
+	// Sending a PUBLISH message to it will result in the router publishing the
 	// event to any subscribers.
-	p := r.BridgeSession(nil, true)
-	r.metaClient = &Session{Peer: p}
+	r.metaClient, r.metaSess = r.createMetaSession()
 
-	r.dealer = NewDealer(strictURI, allowDisclose, p)
+	r.dealer = NewDealer(strictURI, allowDisclose, r.metaClient)
 
 	// Register to handle session meta procedures.
 	r.registerMetaProcedure(wamp.MetaProcSessionCount, r.sessionCount)
@@ -198,20 +197,16 @@ func (r *realm) Run() {
 	log.Println("Realm", r.uri, "stopped")
 }
 
-// BridgeSession creates and starts a session that runs in this realm, and
-// returns the session's Peer for communicating with the running session.
+// createMetaSession creates and starts a session that runs in this realm, and
+// returns both sides of the session.
 //
-// This is used for creating a local client for publishing meta events, and for
-// the router to create local sessions used by an application that the router
-// is embedded in.
-func (r *realm) BridgeSession(details map[string]interface{}, meta bool) wamp.Peer {
-	cli, rtr := LinkedPeers()
-	if details == nil {
-		details = map[string]interface{}{}
-	} else {
-		wamp.NormalizeDict(details)
+// This is used for creating a local client for publishing meta events.
+func (r *realm) createMetaSession() (*Session, *Session) {
+	cli, rtr := transport.LinkedPeers(0, log)
+
+	details := map[string]interface{}{
+		"authrole": "trusted",
 	}
-	details = wamp.SetOption(details, "authrole", "trusted")
 
 	// This session is the local leg of the router uplink.
 	sess := &Session{
@@ -220,32 +215,16 @@ func (r *realm) BridgeSession(details map[string]interface{}, meta bool) wamp.Pe
 		Details: details,
 		stop:    make(chan wamp.URI, 1),
 	}
-	if meta {
-		if r.metaSess != nil {
-			panic("starting meta session multiple times")
-		}
-		r.metaSess = sess
-	}
-	// Run the session handler for the
-	if meta {
-		log.Print("Started meta-session ", sess)
-		go r.handleSession(sess)
-		return cli
+
+	// Run the session handler for the meta session
+	log.Print("Started meta-session ", sess)
+	go r.handleSession(sess)
+
+	client := &Session{
+		Peer: cli,
 	}
 
-	r.closeLock.Lock()
-	// Ensure sesson is capable of receiving exit signal before releasing lock.
-	r.onJoin(sess)
-	r.closeLock.Unlock()
-
-	log.Print("Started internal session ", sess)
-	go func() {
-		r.handleSession(sess)
-		r.onLeave(sess)
-	}()
-
-	// Return the session that is the remote leg of the router uplink.
-	return cli
+	return client, sess
 }
 
 // onJoin is called when a non-meta session joins this realm.  The session is
