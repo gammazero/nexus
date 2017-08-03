@@ -130,7 +130,7 @@ type dealer struct {
 	metaProcMap map[wamp.ID]func(*wamp.Invocation) wamp.Message
 }
 
-// NewDealer creates a the default Dealer implementation.
+// NewDealer creates the default Dealer implementation.
 func NewDealer(strictURI, allowDisclose bool, metaClient wamp.Peer) Dealer {
 	d := &dealer{
 		procRegMap:    map[wamp.URI]*registration{},

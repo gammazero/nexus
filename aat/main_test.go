@@ -92,20 +92,15 @@ func connectClientNoJoin() (*client.Client, error) {
 	if websocketClient {
 		cli, err = client.NewWebsocketClient(
 			serverURL, serialize.JSON, nil, nil, time.Second, cliLogger)
-		if err != nil {
-			cliLogger.Println("Failed to create websocket client:", err)
-			return nil, err
-		}
 	} else {
-		cPeer, sPeer := router.LinkedPeers()
-		go func() {
-			if err := nxr.Attach(sPeer); err != nil {
-				cliLogger.Print("Failed to attach client: ", err)
-			}
-		}()
-
-		cli = client.NewClient(cPeer, 200*time.Millisecond, cliLogger)
+		cli, err = client.NewLocalClient(nxr, 200*time.Millisecond, cliLogger)
 	}
+
+	if err != nil {
+		cliLogger.Println("Failed to create client:", err)
+		return nil, err
+	}
+
 	return cli, nil
 }
 

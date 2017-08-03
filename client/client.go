@@ -2,26 +2,13 @@ package client
 
 import (
 	"context"
-	"crypto/tls"
 	"errors"
 	"fmt"
 	"strings"
 	"time"
 
 	"github.com/gammazero/nexus/logger"
-	"github.com/gammazero/nexus/transport"
-	"github.com/gammazero/nexus/transport/serialize"
 	"github.com/gammazero/nexus/wamp"
-)
-
-const (
-	// Error URIs returned by this client.
-	errUnexpectedMessageType = "nexus.error.unexpected_message_type"
-	errNoAuthHandler         = "nexus.error.no_handler_for_authmethod"
-	errAuthFailure           = "nexus.error.authentication_failure"
-
-	// Time client will wait for expected router response if not specified.
-	defaultResponseTimeout = 5 * time.Second
 )
 
 var clientRoleFeatures = map[string]interface{}{
@@ -122,19 +109,6 @@ func NewClient(p wamp.Peer, responseTimeout time.Duration, logger logger.Logger)
 	}
 	go c.run()
 	return c
-}
-
-// NewWebsocketClient creates a new websocket client connected to the specified
-// URL and using the specified serialization.
-//
-// JoinRealm must be called before other client functions.
-func NewWebsocketClient(url string, serialization serialize.Serialization, tlscfg *tls.Config, dial transport.DialFunc, responseTimeout time.Duration, logger logger.Logger) (*Client, error) {
-	p, err := transport.ConnectWebsocketPeer(
-		url, serialization, tlscfg, dial, 0, logger)
-	if err != nil {
-		return nil, err
-	}
-	return NewClient(p, responseTimeout, logger), nil
 }
 
 func (c *Client) run() {

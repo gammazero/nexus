@@ -11,6 +11,7 @@ import (
 	"github.com/gammazero/nexus/auth"
 	"github.com/gammazero/nexus/logger"
 	"github.com/gammazero/nexus/router"
+	"github.com/gammazero/nexus/transport"
 	"github.com/gammazero/nexus/wamp"
 )
 
@@ -31,7 +32,7 @@ func init() {
 }
 
 func getTestPeer(r router.Router) wamp.Peer {
-	cli, rtr := router.LinkedPeers()
+	cli, rtr := transport.LinkedPeers(0, log)
 	go r.Attach(rtr)
 	return cli
 }
