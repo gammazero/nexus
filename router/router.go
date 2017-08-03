@@ -183,13 +183,11 @@ func (r *router) Attach(client wamp.Peer) error {
 			}
 
 			// Create the new realm based on template
-			// TODO: fix copy
 			config := *r.realmTemplate
 			config.URI = hello.Realm
 			if realm, err = r.addRealm(&config); err != nil {
 				sendAbort(wamp.ErrNoSuchRealm, nil)
-				sync <- fmt.Errorf("no realm \"%s\" exists on this router",
-					string(hello.Realm))
+				sync <- fmt.Errorf("failed to create realm \"%s\"", string(hello.Realm))
 				return
 
 			}

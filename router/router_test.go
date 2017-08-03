@@ -39,21 +39,13 @@ var clientRoles = map[string]interface{}{
 }
 
 func newTestRouter() (Router, error) {
-	const (
-		autoRealm = false
-		strictURI = false
-
-		anonAuth      = true
-		allowDisclose = false
-	)
-
 	config := &RouterConfig{
 		RealmConfigs: []*RealmConfig{
 			&RealmConfig{
 				URI:           testRealm,
-				StrictURI:     strictURI,
-				AnonymousAuth: anonAuth,
-				AllowDisclose: allowDisclose,
+				StrictURI:     false,
+				AnonymousAuth: true,
+				AllowDisclose: false,
 				Broker:        true,
 				Dealer:        true,
 			},

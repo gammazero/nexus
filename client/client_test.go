@@ -16,11 +16,6 @@ import (
 )
 
 const (
-	autoRealm = false
-	strictURI = true
-	anonAuth  = true
-	disclose  = true
-
 	testRealm = "nexus.test"
 )
 
@@ -38,14 +33,6 @@ func getTestPeer(r router.Router) wamp.Peer {
 }
 
 func getTestRouter(realmConfig *router.RealmConfig) (router.Router, error) {
-	const (
-		autoRealm = false
-		strictURI = false
-
-		anonAuth      = true
-		allowDisclose = false
-	)
-
 	config := &router.RouterConfig{
 		RealmConfigs: []*router.RealmConfig{realmConfig},
 	}
@@ -55,9 +42,9 @@ func getTestRouter(realmConfig *router.RealmConfig) (router.Router, error) {
 func connectedTestClients() (*Client, *Client, error) {
 	realmConfig := &router.RealmConfig{
 		URI:           wamp.URI(testRealm),
-		StrictURI:     strictURI,
-		AnonymousAuth: anonAuth,
-		AllowDisclose: disclose,
+		StrictURI:     true,
+		AnonymousAuth: true,
+		AllowDisclose: true,
 		Broker:        true,
 		Dealer:        true,
 	}
@@ -91,9 +78,9 @@ func newTestClient(p wamp.Peer) (*Client, error) {
 func TestJoinRealm(t *testing.T) {
 	realmConfig := &router.RealmConfig{
 		URI:           wamp.URI(testRealm),
-		StrictURI:     strictURI,
-		AnonymousAuth: anonAuth,
-		AllowDisclose: disclose,
+		StrictURI:     true,
+		AnonymousAuth: true,
+		AllowDisclose: true,
 		Broker:        true,
 		Dealer:        true,
 	}
@@ -112,7 +99,7 @@ func TestJoinRealm(t *testing.T) {
 	// Test that client cannot join realm when anonymous auth is disabled.
 	realmConfig = &router.RealmConfig{
 		URI:           wamp.URI("nexus.testnoanon"),
-		StrictURI:     strictURI,
+		StrictURI:     true,
 		AnonymousAuth: false,
 		AllowDisclose: false,
 		Broker:        true,
@@ -132,7 +119,7 @@ func TestJoinRealmWithCRAuth(t *testing.T) {
 
 	realmConfig := &router.RealmConfig{
 		URI:           wamp.URI("nexus.test.auth"),
-		StrictURI:     strictURI,
+		StrictURI:     true,
 		AnonymousAuth: false,
 		AllowDisclose: false,
 		Authenticators: map[string]auth.Authenticator{

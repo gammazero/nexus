@@ -14,9 +14,7 @@ import (
 )
 
 const (
-	testRealm    = wamp.URI("test.realm")
-	strictURI    = false
-	outQueueSize = 16
+	testRealm = wamp.URI("test.realm")
 )
 
 var (
@@ -24,7 +22,7 @@ var (
 		RealmConfigs: []*router.RealmConfig{
 			&router.RealmConfig{
 				URI:           testRealm,
-				StrictURI:     strictURI,
+				StrictURI:     false,
 				AnonymousAuth: true,
 				AllowDisclose: true,
 				Broker:        true,

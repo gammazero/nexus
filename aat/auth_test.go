@@ -8,29 +8,10 @@ import (
 
 	"github.com/gammazero/nexus/auth"
 	"github.com/gammazero/nexus/client"
-	"github.com/gammazero/nexus/router"
 	"github.com/gammazero/nexus/wamp"
 )
 
 func TestJoinRealmWithCRAuth(t *testing.T) {
-	authRealm := "nexus.test.auth"
-	realmConfig := &router.RealmConfig{
-		URI:           wamp.URI(authRealm),
-		StrictURI:     false,
-		AnonymousAuth: true,
-		AllowDisclose: false,
-	}
-
-	realm, err := nxr.AddRealm(realmConfig)
-	if err != nil {
-		t.Fatal(err)
-	}
-	crAuth, err := auth.NewCRAuthenticator(&testCRAuthenticator{})
-	if err != nil {
-		t.Fatal(err)
-	}
-	realm.AddAuthenticator("testauth", crAuth)
-
 	// Connect callee session.
 	cli, err := connectClientNoJoin()
 	if err != nil {
