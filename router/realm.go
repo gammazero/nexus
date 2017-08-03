@@ -110,29 +110,6 @@ func NewRealm(config *RealmConfig) (*realm, error) {
 	return r, nil
 }
 
-// AddAuthenticator registers the Authenticator for the specified method.
-func (r *realm) AddAuthenticator(method string, athr auth.Authenticator) {
-	r.actionChan <- func() {
-		r.authenticators[method] = athr
-	}
-	log.Printf("Added authenticator for method %s (realm=%v)", method, r.uri)
-}
-
-// DelAuthenticator deletes the Authenticator for the specified method.
-func (r *realm) DelAuthenticator(method string) {
-	r.actionChan <- func() {
-		delete(r.authenticators, method)
-	}
-	log.Printf("Deleted authenticator for method %s (realm=%v)", method, r.uri)
-}
-
-func (r *realm) SetAuthorizer(authorizer Authorizer) {
-	r.actionChan <- func() {
-		r.authorizer = authorizer
-	}
-	log.Print("Set authorizer for realm ", r.uri)
-}
-
 // close kills all clients, causing them to send a goodbye message.  This
 // is only called from the router's single action goroutine, so will never be
 // called by multiple goroutines.
