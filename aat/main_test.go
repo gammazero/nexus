@@ -52,8 +52,14 @@ func TestMain(m *testing.M) {
 	router.SetLogger(rtrLogger)
 
 	// Create router instance.
-	nxr = router.NewRouter(autoRealm, strictURI)
-	nxr.AddRealm(wamp.URI(testRealm), anonAuth, allowDisclose)
+	nxr = router.NewRouter(nil, strictURI)
+	realmConfig := &router.RealmConfig{
+		URI:           wamp.URI(testRealm),
+		StrictURI:     strictURI,
+		AnonymousAuth: anonAuth,
+		AllowDisclose: allowDisclose,
+	}
+	nxr.AddRealm(realmConfig)
 
 	var listener *net.TCPListener
 	var err error

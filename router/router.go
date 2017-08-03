@@ -33,7 +33,7 @@ const helloTimeout = 5 * time.Second
 // A Router handles new Peers and routes requests to the requested Realm.
 type Router interface {
 	// AddRealm creates a new Realm and adds that to the router.
-	AddRealm(wamp.URI, bool, bool) (*realm, error)
+	AddRealm(*RealmConfig) (*realm, error)
 
 	// Attach connects a client to the router and to the requested realm.
 	Attach(wamp.Peer) error
@@ -49,9 +49,9 @@ type router struct {
 	actionChan chan func()
 	waitRealms sync.WaitGroup
 
-	autoRealm bool
-	strictURI bool
-	closed    bool
+	autoRealmTemplate *RealmConfig
+	strictURI         bool
+	closed            bool
 }
 
 // NewRouter creates a WAMP router.
@@ -61,20 +61,20 @@ type router struct {
 // create new realms.
 //
 // The strictURI parameter enabled strict URI validation.
-func NewRouter(autoRealm, strictURI bool) Router {
+func NewRouter(autoRealmTemplate *RealmConfig, strictURI bool) Router {
 	r := &router{
 		realms:     map[wamp.URI]*realm{},
 		actionChan: make(chan func()),
 
-		autoRealm: autoRealm,
-		strictURI: strictURI,
+		autoRealmTemplate: autoRealmTemplate,
+		strictURI:         strictURI,
 	}
-	go r.routerRun()
+	go r.run()
 	return r
 }
 
 // Single goroutine used to safely access router data.
-func (r *router) routerRun() {
+func (r *router) run() {
 	for action := range r.actionChan {
 		action()
 	}
@@ -83,10 +83,10 @@ func (r *router) routerRun() {
 // AddRealm creates a new Realm and adds that to the router.
 //
 // At least one realm is needed, unless automatic realm creation is enabled.
-func (r *router) AddRealm(uri wamp.URI, anonymousAuth, allowDisclose bool) (*realm, error) {
-	if !uri.ValidURI(r.strictURI, "") {
+func (r *router) AddRealm(config *RealmConfig) (*realm, error) {
+	if !config.URI.ValidURI(r.strictURI, "") {
 		return nil, fmt.Errorf(
-			"invalid realm URI %v (URI strict checking %v)", uri, r.strictURI)
+			"invalid realm URI %v (URI strict checking %v)", config.URI, r.strictURI)
 	}
 	var realm *realm
 	sync := make(chan error)
@@ -95,12 +95,12 @@ func (r *router) AddRealm(uri wamp.URI, anonymousAuth, allowDisclose bool) (*rea
 			sync <- errors.New("router closed")
 			return
 		}
-		if _, ok := r.realms[uri]; ok {
-			sync <- errors.New("realm already exists: " + string(uri))
+		if _, ok := r.realms[config.URI]; ok {
+			sync <- errors.New("realm already exists: " + string(config.URI))
 			return
 		}
-		realm = NewRealm(uri, r.strictURI, anonymousAuth, allowDisclose)
-		r.realms[uri] = realm
+		realm = NewRealm(config)
+		r.realms[config.URI] = realm
 		sync <- nil
 	}
 	err := <-sync
@@ -114,7 +114,7 @@ func (r *router) AddRealm(uri wamp.URI, anonymousAuth, allowDisclose bool) (*rea
 		r.waitRealms.Done()
 	}()
 
-	log.Print("Added realm: ", uri)
+	log.Print("Added realm: ", config.URI)
 	return realm, nil
 }
 
@@ -175,7 +175,7 @@ func (r *router) Attach(client wamp.Peer) error {
 		if !ok {
 			// If the router is not configured to automatically create the
 			// realm, then respond with an ABORT message.
-			if !r.autoRealm {
+			if r.autoRealmTemplate == nil {
 				sendAbort(wamp.ErrNoSuchRealm, nil)
 				sync <- fmt.Errorf("no realm \"%s\" exists on this router",
 					string(hello.Realm))
@@ -183,7 +183,10 @@ func (r *router) Attach(client wamp.Peer) error {
 			}
 			// Create the new realm that allows anonymous authentication and
 			// allows disclosing caller ID.
-			realm = NewRealm(hello.Realm, r.strictURI, true, true)
+			config := r.autoRealmTemplate
+			config.URI = hello.Realm
+			config.StrictURI = r.strictURI
+			realm = NewRealm(config)
 			r.realms[hello.Realm] = realm
 			log.Print("Auto-added realm: ", hello.Realm)
 		}

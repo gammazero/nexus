@@ -46,23 +46,30 @@ type realm struct {
 
 // NewRealm creates a new Realm with default broker, dealer, and authorizer
 // implementtions.  The Realm has no authorizers unless anonymousAuth is true.
-func NewRealm(uri wamp.URI, strictURI, anonymousAuth, allowDisclose bool) *realm {
+func NewRealm(config *RealmConfig) *realm {
 	r := &realm{
-		uri:            uri,
-		broker:         NewBroker(strictURI, allowDisclose),
+		uri:            config.URI,
+		broker:         NewBroker(config.StrictURI, config.AllowDisclose),
 		authorizer:     NewAuthorizer(),
-		authenticators: map[string]auth.Authenticator{},
+		authenticators: config.Authenticators,
 		clients:        map[wamp.ID]*Session{},
 		actionChan:     make(chan func()),
 		metaIDGen:      wamp.NewIDGen(),
 		metaDone:       make(chan struct{}),
 		metaProcMap:    make(map[wamp.ID]func(*wamp.Invocation) wamp.Message, 9),
 	}
+
+	if r.authenticators == nil {
+		r.authenticators = map[string]auth.Authenticator{}
+
+	}
 	// If allowing anonymous authentication, then install the anonymous
 	// authenticator.  Install this first so that it is replaced in case a
 	// custom anonymous authenticator is supplied.
-	if anonymousAuth {
-		r.authenticators["anonymous"] = auth.AnonymousAuth
+	if config.AnonymousAuth {
+		if _, ok := r.authenticators["anonymous"]; !ok {
+			r.authenticators["anonymous"] = auth.AnonymousAuth
+		}
 	}
 
 	// Create a session that bridges two peers.  Meta events are published by
@@ -71,7 +78,7 @@ func NewRealm(uri wamp.URI, strictURI, anonymousAuth, allowDisclose bool) *realm
 	// event to any subscribers.
 	r.metaClient, r.metaSess = r.createMetaSession()
 
-	r.dealer = NewDealer(strictURI, allowDisclose, r.metaClient)
+	r.dealer = NewDealer(config.StrictURI, config.AllowDisclose, r.metaClient)
 
 	// Register to handle session meta procedures.
 	r.registerMetaProcedure(wamp.MetaProcSessionCount, r.sessionCount)

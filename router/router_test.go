@@ -46,8 +46,14 @@ func newTestRouter() Router {
 		anonAuth      = true
 		allowDisclose = false
 	)
-	r := NewRouter(autoRealm, strictURI)
-	r.AddRealm(testRealm, anonAuth, allowDisclose)
+	r := NewRouter(nil, strictURI)
+	realmConfig := &RealmConfig{
+		URI:           testRealm,
+		StrictURI:     strictURI,
+		AnonymousAuth: anonAuth,
+		AllowDisclose: allowDisclose,
+	}
+	r.AddRealm(realmConfig)
 	return r
 }
 
@@ -92,7 +98,7 @@ func TestHandshake(t *testing.T) {
 }
 
 func TestHandshakeBadRealm(t *testing.T) {
-	r := NewRouter(false, false)
+	r := NewRouter(nil, false)
 	defer r.Close()
 
 	client, server := transport.LinkedPeers(0, log)
