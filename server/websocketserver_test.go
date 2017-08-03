@@ -20,11 +20,17 @@ const (
 )
 
 var (
-	realmConfig = &router.RealmConfig{
-		URI:           testRealm,
-		StrictURI:     strictURI,
-		AnonymousAuth: true,
-		AllowDisclose: true,
+	routerConfig = &router.RouterConfig{
+		RealmConfigs: []*router.RealmConfig{
+			&router.RealmConfig{
+				URI:           testRealm,
+				StrictURI:     strictURI,
+				AnonymousAuth: true,
+				AllowDisclose: true,
+				Broker:        true,
+				Dealer:        true,
+			},
+		},
 	}
 )
 
@@ -44,8 +50,10 @@ func clientRoles() map[string]interface{} {
 }
 
 func newTestWebsocketServer(t *testing.T) (int, router.Router, io.Closer) {
-	r := router.NewRouter(nil, strictURI)
-	r.AddRealm(realmConfig)
+	r, err := router.NewRouter(routerConfig)
+	if err != nil {
+		t.Fatal(err)
+	}
 
 	s := NewWebsocketServer(r)
 	server := &http.Server{

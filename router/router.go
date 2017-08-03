@@ -32,9 +32,6 @@ const helloTimeout = 5 * time.Second
 
 // A Router handles new Peers and routes requests to the requested Realm.
 type Router interface {
-	// AddRealm creates a new Realm and adds that to the router.
-	AddRealm(*RealmConfig) (*realm, error)
-
 	// Attach connects a client to the router and to the requested realm.
 	Attach(wamp.Peer) error
 
@@ -49,9 +46,8 @@ type router struct {
 	actionChan chan func()
 	waitRealms sync.WaitGroup
 
-	autoRealmTemplate *RealmConfig
-	strictURI         bool
-	closed            bool
+	realmTemplate *RealmConfig
+	closed        bool
 }
 
 // NewRouter creates a WAMP router.
@@ -61,16 +57,35 @@ type router struct {
 // create new realms.
 //
 // The strictURI parameter enabled strict URI validation.
-func NewRouter(autoRealmTemplate *RealmConfig, strictURI bool) Router {
+func NewRouter(config *RouterConfig) (Router, error) {
+	if len(config.RealmConfigs) == 0 && config.RealmTemplate == nil {
+		return nil, fmt.Errorf("invalid router config. Must define either realms or realmsTemplate, or both")
+
+	}
 	r := &router{
 		realms:     map[wamp.URI]*realm{},
 		actionChan: make(chan func()),
 
-		autoRealmTemplate: autoRealmTemplate,
-		strictURI:         strictURI,
+		realmTemplate: config.RealmTemplate,
 	}
+
+	for _, realmConfig := range config.RealmConfigs {
+		if _, err := r.addRealm(realmConfig); err != nil {
+			return nil, err
+		}
+	}
+
+	// Create a realm from the template to validate the template
+	if r.realmTemplate != nil {
+		realmTemplate := *r.realmTemplate
+		realmTemplate.URI = "some.valid.realm"
+		if _, err := NewRealm(&realmTemplate); err != nil {
+			return nil, fmt.Errorf("Invalid realmTemplate: %s", err)
+		}
+	}
+
 	go r.run()
-	return r
+	return r, nil
 }
 
 // Single goroutine used to safely access router data.
@@ -80,33 +95,18 @@ func (r *router) run() {
 	}
 }
 
-// AddRealm creates a new Realm and adds that to the router.
+// addRealm creates a new Realm and adds that to the router.
 //
 // At least one realm is needed, unless automatic realm creation is enabled.
-func (r *router) AddRealm(config *RealmConfig) (*realm, error) {
-	if !config.URI.ValidURI(r.strictURI, "") {
-		return nil, fmt.Errorf(
-			"invalid realm URI %v (URI strict checking %v)", config.URI, r.strictURI)
+func (r *router) addRealm(config *RealmConfig) (*realm, error) {
+	if _, ok := r.realms[config.URI]; ok {
+		return nil, errors.New("realm already exists: " + string(config.URI))
 	}
-	var realm *realm
-	sync := make(chan error)
-	r.actionChan <- func() {
-		if r.closed {
-			sync <- errors.New("router closed")
-			return
-		}
-		if _, ok := r.realms[config.URI]; ok {
-			sync <- errors.New("realm already exists: " + string(config.URI))
-			return
-		}
-		realm = NewRealm(config)
-		r.realms[config.URI] = realm
-		sync <- nil
-	}
-	err := <-sync
+	realm, err := NewRealm(config)
 	if err != nil {
-		return nil, fmt.Errorf("error adding realm: %v", err)
+		return nil, err
 	}
+	r.realms[config.URI] = realm
 
 	r.waitRealms.Add(1)
 	go func() {
@@ -175,19 +175,24 @@ func (r *router) Attach(client wamp.Peer) error {
 		if !ok {
 			// If the router is not configured to automatically create the
 			// realm, then respond with an ABORT message.
-			if r.autoRealmTemplate == nil {
+			if r.realmTemplate == nil {
 				sendAbort(wamp.ErrNoSuchRealm, nil)
 				sync <- fmt.Errorf("no realm \"%s\" exists on this router",
 					string(hello.Realm))
 				return
 			}
-			// Create the new realm that allows anonymous authentication and
-			// allows disclosing caller ID.
-			config := r.autoRealmTemplate
+
+			// Create the new realm based on template
+			// TODO: fix copy
+			config := *r.realmTemplate
 			config.URI = hello.Realm
-			config.StrictURI = r.strictURI
-			realm = NewRealm(config)
-			r.realms[hello.Realm] = realm
+			if realm, err = r.addRealm(&config); err != nil {
+				sendAbort(wamp.ErrNoSuchRealm, nil)
+				sync <- fmt.Errorf("no realm \"%s\" exists on this router",
+					string(hello.Realm))
+				return
+
+			}
 			log.Print("Auto-added realm: ", hello.Realm)
 		}
 		sync <- nil

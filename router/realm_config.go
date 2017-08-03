@@ -11,4 +11,6 @@ type RealmConfig struct {
 	AnonymousAuth  bool
 	AllowDisclose  bool
 	Authenticators map[string]auth.Authenticator
+	Broker         bool
+	Dealer         bool
 }

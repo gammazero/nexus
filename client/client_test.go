@@ -37,15 +37,35 @@ func getTestPeer(r router.Router) wamp.Peer {
 	return cli
 }
 
+func getTestRouter(realmConfig *router.RealmConfig) (router.Router, error) {
+	const (
+		autoRealm = false
+		strictURI = false
+
+		anonAuth      = true
+		allowDisclose = false
+	)
+
+	config := &router.RouterConfig{
+		RealmConfigs: []*router.RealmConfig{realmConfig},
+	}
+	return router.NewRouter(config)
+}
+
 func connectedTestClients() (*Client, *Client, error) {
-	r := router.NewRouter(nil, strictURI)
 	realmConfig := &router.RealmConfig{
 		URI:           wamp.URI(testRealm),
 		StrictURI:     strictURI,
 		AnonymousAuth: anonAuth,
 		AllowDisclose: disclose,
+		Broker:        true,
+		Dealer:        true,
 	}
-	r.AddRealm(realmConfig)
+	r, err := getTestRouter(realmConfig)
+	if err != nil {
+		return nil, nil, err
+	}
+
 	peer1 := getTestPeer(r)
 	peer2 := getTestPeer(r)
 	c1, err := newTestClient(peer1)
@@ -69,18 +89,22 @@ func newTestClient(p wamp.Peer) (*Client, error) {
 }
 
 func TestJoinRealm(t *testing.T) {
-	r := router.NewRouter(nil, strictURI)
 	realmConfig := &router.RealmConfig{
 		URI:           wamp.URI(testRealm),
 		StrictURI:     strictURI,
 		AnonymousAuth: anonAuth,
 		AllowDisclose: disclose,
+		Broker:        true,
+		Dealer:        true,
 	}
-	r.AddRealm(realmConfig)
+	r, err := getTestRouter(realmConfig)
+	if err != nil {
+		t.Fatal(err)
+	}
 
 	// Test that client can join realm.
 	client := NewClient(getTestPeer(r), 0, log)
-	_, err := client.JoinRealm("nexus.test", nil, nil)
+	_, err = client.JoinRealm("nexus.test", nil, nil)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -91,6 +115,8 @@ func TestJoinRealm(t *testing.T) {
 		StrictURI:     strictURI,
 		AnonymousAuth: false,
 		AllowDisclose: false,
+		Broker:        true,
+		Dealer:        true,
 	}
 	client = NewClient(getTestPeer(r), 0, log)
 	if _, err = client.JoinRealm("nexus.testnoanon", nil, nil); err == nil {
@@ -104,7 +130,6 @@ func TestJoinRealmWithCRAuth(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	r := router.NewRouter(nil, strictURI)
 	realmConfig := &router.RealmConfig{
 		URI:           wamp.URI("nexus.test.auth"),
 		StrictURI:     strictURI,
@@ -113,8 +138,13 @@ func TestJoinRealmWithCRAuth(t *testing.T) {
 		Authenticators: map[string]auth.Authenticator{
 			"testauth": crAuth,
 		},
+		Broker: true,
+		Dealer: true,
 	}
-	r.AddRealm(realmConfig)
+	r, err := getTestRouter(realmConfig)
+	if err != nil {
+		t.Fatal(err)
+	}
 
 	peer := getTestPeer(r)
 	client := NewClient(peer, 0, log)

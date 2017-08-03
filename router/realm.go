@@ -46,10 +46,18 @@ type realm struct {
 
 // NewRealm creates a new Realm with default broker, dealer, and authorizer
 // implementtions.  The Realm has no authorizers unless anonymousAuth is true.
-func NewRealm(config *RealmConfig) *realm {
+func NewRealm(config *RealmConfig) (*realm, error) {
+	if !config.URI.ValidURI(config.StrictURI, "") {
+		return nil, fmt.Errorf(
+			"invalid realm URI %v (URI strict checking %v)", config.URI, config.StrictURI)
+	}
+
+	if !config.Broker && !config.Dealer {
+		return nil, fmt.Errorf("invalid realm config. Must define either a dealer or a broker, or both")
+	}
+
 	r := &realm{
 		uri:            config.URI,
-		broker:         NewBroker(config.StrictURI, config.AllowDisclose),
 		authorizer:     NewAuthorizer(),
 		authenticators: config.Authenticators,
 		clients:        map[wamp.ID]*Session{},
@@ -78,7 +86,12 @@ func NewRealm(config *RealmConfig) *realm {
 	// event to any subscribers.
 	r.metaClient, r.metaSess = r.createMetaSession()
 
-	r.dealer = NewDealer(config.StrictURI, config.AllowDisclose, r.metaClient)
+	if config.Broker {
+		r.broker = NewBroker(config.StrictURI, config.AllowDisclose)
+	}
+	if config.Dealer {
+		r.dealer = NewDealer(config.StrictURI, config.AllowDisclose, r.metaClient)
+	}
 
 	// Register to handle session meta procedures.
 	r.registerMetaProcedure(wamp.MetaProcSessionCount, r.sessionCount)
@@ -94,7 +107,7 @@ func NewRealm(config *RealmConfig) *realm {
 	r.registerMetaProcedure(wamp.MetaProcRegCountCallees, r.regCountCallees)
 
 	go r.metaProcedureHandler()
-	return r
+	return r, nil
 }
 
 // AddAuthenticator registers the Authenticator for the specified method.
