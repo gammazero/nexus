@@ -33,7 +33,7 @@ const helloTimeout = 5 * time.Second
 // A Router handles new Peers and routes requests to the requested Realm.
 type Router interface {
 	// AddRealm creates a new Realm and adds that to the router.
-	AddRealm(wamp.URI, bool, bool) (Realm, error)
+	AddRealm(wamp.URI, bool, bool) (*realm, error)
 
 	// Attach connects a client to the router and to the requested realm.
 	Attach(wamp.Peer) error
@@ -44,7 +44,7 @@ type Router interface {
 
 // DefaultRouter is the default WAMP router implementation.
 type router struct {
-	realms map[wamp.URI]Realm
+	realms map[wamp.URI]*realm
 
 	actionChan chan func()
 	waitRealms sync.WaitGroup
@@ -63,7 +63,7 @@ type router struct {
 // The strictURI parameter enabled strict URI validation.
 func NewRouter(autoRealm, strictURI bool) Router {
 	r := &router{
-		realms:     map[wamp.URI]Realm{},
+		realms:     map[wamp.URI]*realm{},
 		actionChan: make(chan func()),
 
 		autoRealm: autoRealm,
@@ -83,12 +83,12 @@ func (r *router) routerRun() {
 // AddRealm creates a new Realm and adds that to the router.
 //
 // At least one realm is needed, unless automatic realm creation is enabled.
-func (r *router) AddRealm(uri wamp.URI, anonymousAuth, allowDisclose bool) (Realm, error) {
+func (r *router) AddRealm(uri wamp.URI, anonymousAuth, allowDisclose bool) (*realm, error) {
 	if !uri.ValidURI(r.strictURI, "") {
 		return nil, fmt.Errorf(
 			"invalid realm URI %v (URI strict checking %v)", uri, r.strictURI)
 	}
-	var realm Realm
+	var realm *realm
 	sync := make(chan error)
 	r.actionChan <- func() {
 		if r.closed {
@@ -110,7 +110,7 @@ func (r *router) AddRealm(uri wamp.URI, anonymousAuth, allowDisclose bool) (Real
 
 	r.waitRealms.Add(1)
 	go func() {
-		realm.Run()
+		realm.run()
 		r.waitRealms.Done()
 	}()
 
@@ -160,7 +160,7 @@ func (r *router) Attach(client wamp.Peer) error {
 		return err
 	}
 	// Lookup or create realm to attach to.
-	var realm Realm
+	var realm *realm
 	sync := make(chan error)
 	r.actionChan <- func() {
 		if r.closed {
@@ -236,7 +236,7 @@ func (r *router) Attach(client wamp.Peer) error {
 	// message or an error.
 	//
 	// Authentication may take some some.
-	welcome, err := realm.AuthClient(client, hello.Details)
+	welcome, err := realm.authClient(client, hello.Details)
 	if err != nil {
 		sendAbort(wamp.ErrAuthenticationFailed, err)
 		return errors.New("authentication error: " + err.Error())
@@ -262,7 +262,7 @@ func (r *router) Attach(client wamp.Peer) error {
 		stop:    make(chan wamp.URI, 1),
 	}
 
-	if err := realm.HandleSession(sess); err != nil {
+	if err := realm.handleSession(sess); err != nil {
 		// N.B. assume, for now, that any error is a shutdown error
 		sendAbort(wamp.ErrSystemShutdown, nil)
 		return err
@@ -281,7 +281,7 @@ func (r *router) Close() {
 		r.closed = true
 		// Close all existing realms.
 		for uri, realm := range r.realms {
-			realm.Close()
+			realm.close()
 			// Delete the realm
 			delete(r.realms, uri)
 		}
