@@ -16,6 +16,7 @@ type RealmConfig struct {
 	AnonymousAuth  bool `json:"anonymous_auth"`
 	AllowDisclose  bool `json:"auto_disclose"`
 	Authenticators map[string]auth.Authenticator
+	Authorizer     Authorizer
 }
 
 // A Realm is a WAMP routing and administrative domain, optionally protected by
@@ -62,13 +63,17 @@ func NewRealm(config *RealmConfig) (*realm, error) {
 
 	r := &realm{
 		uri:            config.URI,
-		authorizer:     NewAuthorizer(),
+		authorizer:     config.Authorizer,
 		authenticators: config.Authenticators,
 		clients:        map[wamp.ID]*Session{},
 		actionChan:     make(chan func()),
 		metaIDGen:      wamp.NewIDGen(),
 		metaDone:       make(chan struct{}),
 		metaProcMap:    make(map[wamp.ID]func(*wamp.Invocation) wamp.Message, 9),
+	}
+
+	if r.authorizer == nil {
+		r.authorizer = NewAuthorizer()
 	}
 
 	if r.authenticators == nil {
