@@ -127,7 +127,10 @@ func TestHandshakeBadRealm(t *testing.T) {
 
 func TestRouterSubscribe(t *testing.T) {
 	const testTopic = wamp.URI("some.uri")
-	r, _ := newTestRouter()
+	r, err := newTestRouter()
+	if err != nil {
+		t.Error(err)
+	}
 	defer r.Close()
 
 	sub, err := testClient(r)
@@ -175,7 +178,10 @@ func TestRouterSubscribe(t *testing.T) {
 }
 
 func TestPublishAcknowledge(t *testing.T) {
-	r, _ := newTestRouter()
+	r, err := newTestRouter()
+	if err != nil {
+		t.Error(err)
+	}
 	defer r.Close()
 	client, err := testClient(r)
 	if err != nil {
@@ -204,7 +210,10 @@ func TestPublishAcknowledge(t *testing.T) {
 }
 
 func TestPublishFalseAcknowledge(t *testing.T) {
-	r, _ := newTestRouter()
+	r, err := newTestRouter()
+	if err != nil {
+		t.Error(err)
+	}
 	defer r.Close()
 	client, err := testClient(r)
 	if err != nil {
@@ -228,7 +237,10 @@ func TestPublishFalseAcknowledge(t *testing.T) {
 }
 
 func TestPublishNoAcknowledge(t *testing.T) {
-	r, _ := newTestRouter()
+	r, err := newTestRouter()
+	if err != nil {
+		t.Error(err)
+	}
 	defer r.Close()
 	client, err := testClient(r)
 	if err != nil {
@@ -248,7 +260,10 @@ func TestPublishNoAcknowledge(t *testing.T) {
 }
 
 func TestRouterCall(t *testing.T) {
-	r, _ := newTestRouter()
+	r, err := newTestRouter()
+	if err != nil {
+		t.Error(err)
+	}
 	defer r.Close()
 	callee, err := testClient(r)
 	if err != nil {
@@ -315,7 +330,10 @@ func TestRouterCall(t *testing.T) {
 }
 
 func TestSessionMetaProcedures(t *testing.T) {
-	r, _ := newTestRouter()
+	r, err := newTestRouter()
+	if err != nil {
+		t.Error(err)
+	}
 	defer r.Close()
 
 	caller, err := testClient(r)
@@ -434,7 +452,10 @@ func TestSessionMetaProcedures(t *testing.T) {
 }
 
 func TestRegistrationMetaProcedures(t *testing.T) {
-	r, _ := newTestRouter()
+	r, err := newTestRouter()
+	if err != nil {
+		t.Error(err)
+	}
 	defer r.Close()
 
 	caller, err := testClient(r)
