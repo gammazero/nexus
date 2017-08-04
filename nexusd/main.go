@@ -11,7 +11,6 @@ import (
 
 	"github.com/gammazero/nexus/router"
 	"github.com/gammazero/nexus/server"
-	"github.com/gammazero/nexus/wamp"
 )
 
 func usage() {
@@ -31,16 +30,11 @@ func main() {
 	}
 	// Read config file.
 	conf := LoadConfig(cfgFile)
-	if len(conf.Realms) == 0 && !conf.AutoRealm {
-		PrintConfig(conf)
-		log.Fatalln("server requires at least one realm, or autocreate_realm must be enabled")
-	}
 
 	// Create router and realms from config.
-	r := router.NewRouter(conf.AutoRealm, conf.StrictURI)
-	for i := range conf.Realms {
-		r.AddRealm(wamp.URI(conf.Realms[i].URI), conf.Realms[i].AllowAnonymous,
-			conf.Realms[i].AllowDisclose)
+	r, err := router.NewRouter(&conf.Router)
+	if err != nil {
+		log.Fatalln(err)
 	}
 
 	// Create a new websocket server with the router.

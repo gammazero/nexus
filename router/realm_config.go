@@ -7,10 +7,10 @@ import (
 
 type RealmConfig struct {
 	URI            wamp.URI
-	StrictURI      bool
-	AnonymousAuth  bool
-	AllowDisclose  bool
+	StrictURI      bool `json:"strict_uri"`
+	AnonymousAuth  bool `json:"anonymous_auth"`
+	AllowDisclose  bool `json:"auto_disclose"`
 	Authenticators map[string]auth.Authenticator
-	Broker         bool
-	Dealer         bool
+	Broker         bool `json:"broker"`
+	Dealer         bool `json:"dealer"`
 }
