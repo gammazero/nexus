@@ -46,8 +46,6 @@ func newTestRouter() (Router, error) {
 				StrictURI:     false,
 				AnonymousAuth: true,
 				AllowDisclose: false,
-				Broker:        true,
-				Dealer:        true,
 			},
 		},
 	}

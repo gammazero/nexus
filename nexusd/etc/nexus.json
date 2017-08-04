@@ -9,8 +9,6 @@
                 "strict_uri": false,
                 "allow_disclose": true,
                 "allow_anonymous": true,
-                "broker": true,
-                "dealer": true
             }
         ]
     }

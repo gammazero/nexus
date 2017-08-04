@@ -60,10 +60,6 @@ func NewRealm(config *RealmConfig) (*realm, error) {
 			"invalid realm URI %v (URI strict checking %v)", config.URI, config.StrictURI)
 	}
 
-	if !config.Broker && !config.Dealer {
-		return nil, fmt.Errorf("invalid realm config. Must define either a dealer or a broker, or both")
-	}
-
 	r := &realm{
 		uri:            config.URI,
 		authorizer:     NewAuthorizer(),
@@ -94,12 +90,8 @@ func NewRealm(config *RealmConfig) (*realm, error) {
 	// event to any subscribers.
 	r.metaClient, r.metaSess = r.createMetaSession()
 
-	if config.Broker {
-		r.broker = NewBroker(config.StrictURI, config.AllowDisclose)
-	}
-	if config.Dealer {
-		r.dealer = NewDealer(config.StrictURI, config.AllowDisclose, r.metaClient)
-	}
+	r.broker = NewBroker(config.StrictURI, config.AllowDisclose)
+	r.dealer = NewDealer(config.StrictURI, config.AllowDisclose, r.metaClient)
 
 	// Register to handle session meta procedures.
 	r.registerMetaProcedure(wamp.MetaProcSessionCount, r.sessionCount)

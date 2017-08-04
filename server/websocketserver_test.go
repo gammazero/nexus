@@ -25,8 +25,6 @@ var (
 				StrictURI:     false,
 				AnonymousAuth: true,
 				AllowDisclose: true,
-				Broker:        true,
-				Dealer:        true,
 			},
 		},
 	}

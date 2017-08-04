@@ -45,8 +45,6 @@ func connectedTestClients() (*Client, *Client, error) {
 		StrictURI:     true,
 		AnonymousAuth: true,
 		AllowDisclose: true,
-		Broker:        true,
-		Dealer:        true,
 	}
 	r, err := getTestRouter(realmConfig)
 	if err != nil {
@@ -81,8 +79,6 @@ func TestJoinRealm(t *testing.T) {
 		StrictURI:     true,
 		AnonymousAuth: true,
 		AllowDisclose: true,
-		Broker:        true,
-		Dealer:        true,
 	}
 	r, err := getTestRouter(realmConfig)
 	if err != nil {
@@ -102,8 +98,6 @@ func TestJoinRealm(t *testing.T) {
 		StrictURI:     true,
 		AnonymousAuth: false,
 		AllowDisclose: false,
-		Broker:        true,
-		Dealer:        true,
 	}
 	client = NewClient(getTestPeer(r), 0, log)
 	if _, err = client.JoinRealm("nexus.testnoanon", nil, nil); err == nil {
@@ -125,8 +119,6 @@ func TestJoinRealmWithCRAuth(t *testing.T) {
 		Authenticators: map[string]auth.Authenticator{
 			"testauth": crAuth,
 		},
-		Broker: true,
-		Dealer: true,
 	}
 	r, err := getTestRouter(realmConfig)
 	if err != nil {
