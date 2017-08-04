@@ -52,44 +52,49 @@ func newTestRouter() (Router, error) {
 	return NewRouter(config)
 }
 
-func handShake(r Router, client, server wamp.Peer) (wamp.ID, error) {
-	client.Send(&wamp.Hello{Realm: testRealm, Details: clientRoles})
-	if err := r.Attach(server); err != nil {
-		return 0, err
+func testClient(r Router) (*Session, error) {
+	client, server := transport.LinkedPeers(log)
+	// Run as goroutine since Send will block until message read by router, if
+	// client uses unbuffered channel.
+	go client.Send(&wamp.Hello{Realm: testRealm, Details: clientRoles})
+	err := r.Attach(server)
+	if err != nil {
+		return nil, err
 	}
 
 	var sid wamp.ID
 	select {
 	case <-time.After(time.Second):
-		return 0, errors.New("timed out waiting for welcome")
+		return nil, errors.New("timed out waiting for welcome")
 	case msg := <-client.Recv():
 		if msg.MessageType() != wamp.WELCOME {
-			return 0, fmt.Errorf("expected %v, got %v", wamp.WELCOME,
+			return nil, fmt.Errorf("expected %v, got %v", wamp.WELCOME,
 				msg.MessageType())
 		}
 		sid = msg.(*wamp.Welcome).ID
 	}
-	return sid, nil
+	return &Session{
+		Peer: client,
+		ID:   sid,
+	}, nil
 }
 
 func TestHandshake(t *testing.T) {
-	client, server := transport.LinkedPeers(0, log)
 	r, err := newTestRouter()
 	if err != nil {
 		t.Fatal(err)
 	}
-
 	defer r.Close()
-	_, err = handShake(r, client, server)
+	cli, err := testClient(r)
 	if err != nil {
 		t.Fatal(err)
 	}
 
-	client.Send(&wamp.Goodbye{})
+	cli.Send(&wamp.Goodbye{})
 	select {
 	case <-time.After(time.Second):
 		t.Fatal("no goodbye message after sending goodbye")
-	case msg := <-client.Recv():
+	case msg := <-cli.Recv():
 		if _, ok := msg.(*wamp.Goodbye); !ok {
 			t.Fatal("expected GOODBYE, received: ", msg.MessageType())
 		}
@@ -103,32 +108,29 @@ func TestHandshakeBadRealm(t *testing.T) {
 	}
 	defer r.Close()
 
-	client, server := transport.LinkedPeers(0, log)
-
-	client.Send(&wamp.Hello{Realm: "does.not.exist"})
+	client, server := transport.LinkedPeers(log)
+	go client.Send(&wamp.Hello{Realm: "does.not.exist"})
 	err = r.Attach(server)
-	if err == nil {
-		t.Error(err)
+	if err != nil {
+		t.Fatal(err)
 	}
 
-	if len(client.Recv()) != 1 {
-		t.Fatal("Expected one message in the handshake, received ",
-			len(client.Recv()))
-	}
-
-	msg := <-client.Recv()
-	if msg.MessageType() != wamp.ABORT {
-		t.Error("Expected ABORT after handshake")
+	select {
+	case <-time.After(time.Second):
+		t.Fatal("timed out waiting for response to HELLO")
+	case msg := <-client.Recv():
+		if _, ok := msg.(*wamp.Abort); !ok {
+			t.Error("Expected ABORT after bad handshake")
+		}
 	}
 }
 
 func TestRouterSubscribe(t *testing.T) {
 	const testTopic = wamp.URI("some.uri")
-
-	sub, subServer := transport.LinkedPeers(0, log)
-	r, err := newTestRouter()
+	r, _ := newTestRouter()
 	defer r.Close()
-	_, err = handShake(r, sub, subServer)
+
+	sub, err := testClient(r)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -151,8 +153,10 @@ func TestRouterSubscribe(t *testing.T) {
 		subscriptionID = subMsg.Subscription
 	}
 
-	pub, pubServer := transport.LinkedPeers(0, log)
-	handShake(r, pub, pubServer)
+	pub, err := testClient(r)
+	if err != nil {
+		t.Fatal(err)
+	}
 	pubID := wamp.GlobalID()
 	pub.Send(&wamp.Publish{Request: pubID, Topic: testTopic})
 
@@ -171,10 +175,9 @@ func TestRouterSubscribe(t *testing.T) {
 }
 
 func TestPublishAcknowledge(t *testing.T) {
-	client, server := transport.LinkedPeers(0, log)
-	r, err := newTestRouter()
+	r, _ := newTestRouter()
 	defer r.Close()
-	_, err = handShake(r, client, server)
+	client, err := testClient(r)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -201,14 +204,9 @@ func TestPublishAcknowledge(t *testing.T) {
 }
 
 func TestPublishFalseAcknowledge(t *testing.T) {
-	client, server := transport.LinkedPeers(0, log)
-	r, err := newTestRouter()
-	if err != nil {
-		t.Fatal(err)
-	}
-
+	r, _ := newTestRouter()
 	defer r.Close()
-	_, err = handShake(r, client, server)
+	client, err := testClient(r)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -230,14 +228,9 @@ func TestPublishFalseAcknowledge(t *testing.T) {
 }
 
 func TestPublishNoAcknowledge(t *testing.T) {
-	client, server := transport.LinkedPeers(0, log)
-	r, err := newTestRouter()
+	r, _ := newTestRouter()
 	defer r.Close()
-	if err != nil {
-		t.Fatal(err)
-	}
-
-	_, err = handShake(r, client, server)
+	client, err := testClient(r)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -255,13 +248,9 @@ func TestPublishNoAcknowledge(t *testing.T) {
 }
 
 func TestRouterCall(t *testing.T) {
-	callee, calleeServer := transport.LinkedPeers(0, log)
-	r, err := newTestRouter()
-	if err != nil {
-		t.Fatal(err)
-	}
+	r, _ := newTestRouter()
 	defer r.Close()
-	_, err = handShake(r, callee, calleeServer)
+	callee, err := testClient(r)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -285,13 +274,9 @@ func TestRouterCall(t *testing.T) {
 		registrationID = registered.Registration
 	}
 
-	caller, callerServer := transport.LinkedPeers(0, log)
-	caller.Send(&wamp.Hello{Realm: testRealm, Details: clientRoles})
-	if err := r.Attach(callerServer); err != nil {
+	caller, err := testClient(r)
+	if err != nil {
 		t.Fatal("Error connecting caller:", err)
-	}
-	if msg := <-caller.Recv(); msg.MessageType() != wamp.WELCOME {
-		t.Fatal("expected first message to be ", wamp.WELCOME)
 	}
 	callID := wamp.GlobalID()
 	// Call remote procedure
@@ -330,17 +315,14 @@ func TestRouterCall(t *testing.T) {
 }
 
 func TestSessionMetaProcedures(t *testing.T) {
-	r, err := newTestRouter()
-	if err != nil {
-		t.Fatal(err)
-	}
+	r, _ := newTestRouter()
 	defer r.Close()
 
-	caller, callerServer := transport.LinkedPeers(0, log)
-	sessID, err := handShake(r, caller, callerServer)
+	caller, err := testClient(r)
 	if err != nil {
 		t.Fatal(err)
 	}
+	sessID := caller.ID
 	var result *wamp.Result
 	var ok bool
 
@@ -452,17 +434,14 @@ func TestSessionMetaProcedures(t *testing.T) {
 }
 
 func TestRegistrationMetaProcedures(t *testing.T) {
-	r, err := newTestRouter()
-	if err != nil {
-		t.Fatal(err)
-	}
+	r, _ := newTestRouter()
 	defer r.Close()
 
-	caller, callerServer := transport.LinkedPeers(0, log)
-	sessID, err := handShake(r, caller, callerServer)
+	caller, err := testClient(r)
 	if err != nil {
 		t.Fatal(err)
 	}
+	sessID := caller.ID
 	var result *wamp.Result
 	var ok bool
 
@@ -501,11 +480,11 @@ func TestRegistrationMetaProcedures(t *testing.T) {
 		t.Fatal("expected []wamp.ID")
 	}
 
-	callee, calleeServer := transport.LinkedPeers(0, log)
-	sessID, err = handShake(r, callee, calleeServer)
+	callee, err := testClient(r)
 	if err != nil {
-		t.Fatal(err)
+		t.Fatal("Error connecting client:", err)
 	}
+	sessID = callee.ID
 	// Register remote procedure
 	registerID := wamp.GlobalID()
 	callee.Send(&wamp.Register{Request: registerID, Procedure: testProcedure})

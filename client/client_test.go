@@ -27,7 +27,7 @@ func init() {
 }
 
 func getTestPeer(r router.Router) wamp.Peer {
-	cli, rtr := transport.LinkedPeers(0, log)
+	cli, rtr := transport.LinkedPeers(log)
 	go r.Attach(rtr)
 	return cli
 }

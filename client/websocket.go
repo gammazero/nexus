@@ -14,7 +14,7 @@ import (
 //
 // JoinRealm must be called before other client functions.
 func NewWebsocketClient(url string, serialization serialize.Serialization, tlscfg *tls.Config, dial transport.DialFunc, responseTimeout time.Duration, logger logger.Logger) (*Client, error) {
-	p, err := transport.ConnectWebsocketPeer(url, serialization, tlscfg, dial, 0, logger)
+	p, err := transport.ConnectWebsocketPeer(url, serialization, tlscfg, dial, logger)
 	if err != nil {
 		return nil, err
 	}

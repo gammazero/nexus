@@ -105,7 +105,7 @@ func (s *WebsocketServer) handleWebsocket(conn *websocket.Conn) {
 
 	// Create a websocket peer from the websocket connection and attach the
 	// peer to the router.
-	peer := transport.NewWebsocketPeer(conn, serializer, payloadType, 16, log)
+	peer := transport.NewWebsocketPeer(conn, serializer, payloadType, log)
 	if err := s.Router.Attach(peer); err != nil {
 		log.Println(err)
 	}

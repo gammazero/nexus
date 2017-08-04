@@ -12,7 +12,7 @@ import (
 //
 // JoinRealm must be called before other client functions.
 func NewLocalClient(router router.Router, responseTimeout time.Duration, logger logger.Logger) (*Client, error) {
-	localSide, routerSide := transport.LinkedPeers(0, logger)
+	localSide, routerSide := transport.LinkedPeers(logger)
 
 	go func() {
 		if err := router.Attach(routerSide); err != nil {

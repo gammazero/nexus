@@ -194,7 +194,7 @@ func (r *realm) run() {
 //
 // This is used for creating a local client for publishing meta events.
 func (r *realm) createMetaSession() (*Session, *Session) {
-	cli, rtr := transport.LinkedPeers(0, log)
+	cli, rtr := transport.LinkedPeers(log)
 
 	details := wamp.SetOption(nil, "authrole", "trusted")
 

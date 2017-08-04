@@ -144,11 +144,10 @@ func NewDealer(strictURI, allowDisclose bool, metaClient wamp.Peer) Dealer {
 		invocationByCall: map[wamp.ID]wamp.ID{},
 		calleeRegIDSet:   map[*Session]map[wamp.ID]struct{}{},
 
-		// The request handler channel does not need to be more than size one,
-		// since the incoming messages will be processed at the same rate
-		// whether the messages sit in the recv channel of peers, or they sit
-		// in the reqChan.
-		reqChan: make(chan dealerReq, 1),
+		// The request handler should be nearly always runable, since it is
+		// the critical section that does the only routing. So, and unbuffered
+		// channel is appropriate.
+		reqChan: make(chan dealerReq),
 
 		idGen: wamp.NewIDGen(),
 		prng:  rand.New(rand.NewSource(time.Now().Unix())),
