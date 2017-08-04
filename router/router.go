@@ -30,6 +30,11 @@ var DebugEnabled bool
 
 const helloTimeout = 5 * time.Second
 
+type RouterConfig struct {
+	RealmConfigs  []*RealmConfig `json:"realms"`
+	RealmTemplate *RealmConfig   `json:"realm_template"`
+}
+
 // A Router handles new Peers and routes requests to the requested Realm.
 type Router interface {
 	// Attach connects a client to the router and to the requested realm.

@@ -10,6 +10,14 @@ import (
 	"github.com/gammazero/nexus/wamp"
 )
 
+type RealmConfig struct {
+	URI            wamp.URI
+	StrictURI      bool `json:"strict_uri"`
+	AnonymousAuth  bool `json:"anonymous_auth"`
+	AllowDisclose  bool `json:"auto_disclose"`
+	Authenticators map[string]auth.Authenticator
+}
+
 // A Realm is a WAMP routing and administrative domain, optionally protected by
 // authentication and authorization.  WAMP messages are only routed within a
 // Realm.
