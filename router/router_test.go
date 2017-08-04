@@ -38,17 +38,18 @@ var clientRoles = map[string]interface{}{
 	"authmethods": []string{"anonymous", "ticket"},
 }
 
-func newTestRouter() Router {
-	const (
-		autoRealm = false
-		strictURI = false
-
-		anonAuth      = true
-		allowDisclose = false
-	)
-	r := NewRouter(autoRealm, strictURI)
-	r.AddRealm(testRealm, anonAuth, allowDisclose)
-	return r
+func newTestRouter() (Router, error) {
+	config := &RouterConfig{
+		RealmConfigs: []*RealmConfig{
+			&RealmConfig{
+				URI:           testRealm,
+				StrictURI:     false,
+				AnonymousAuth: true,
+				AllowDisclose: false,
+			},
+		},
+	}
+	return NewRouter(config)
 }
 
 func handShake(r Router, client, server wamp.Peer) (wamp.ID, error) {
@@ -73,9 +74,13 @@ func handShake(r Router, client, server wamp.Peer) (wamp.ID, error) {
 
 func TestHandshake(t *testing.T) {
 	client, server := transport.LinkedPeers(0, log)
-	r := newTestRouter()
+	r, err := newTestRouter()
+	if err != nil {
+		t.Fatal(err)
+	}
+
 	defer r.Close()
-	_, err := handShake(r, client, server)
+	_, err = handShake(r, client, server)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -92,13 +97,16 @@ func TestHandshake(t *testing.T) {
 }
 
 func TestHandshakeBadRealm(t *testing.T) {
-	r := NewRouter(false, false)
+	r, err := newTestRouter()
+	if err != nil {
+		t.Error(err)
+	}
 	defer r.Close()
 
 	client, server := transport.LinkedPeers(0, log)
 
 	client.Send(&wamp.Hello{Realm: "does.not.exist"})
-	err := r.Attach(server)
+	err = r.Attach(server)
 	if err == nil {
 		t.Error(err)
 	}
@@ -118,9 +126,9 @@ func TestRouterSubscribe(t *testing.T) {
 	const testTopic = wamp.URI("some.uri")
 
 	sub, subServer := transport.LinkedPeers(0, log)
-	r := newTestRouter()
+	r, err := newTestRouter()
 	defer r.Close()
-	_, err := handShake(r, sub, subServer)
+	_, err = handShake(r, sub, subServer)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -164,9 +172,9 @@ func TestRouterSubscribe(t *testing.T) {
 
 func TestPublishAcknowledge(t *testing.T) {
 	client, server := transport.LinkedPeers(0, log)
-	r := newTestRouter()
+	r, err := newTestRouter()
 	defer r.Close()
-	_, err := handShake(r, client, server)
+	_, err = handShake(r, client, server)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -194,9 +202,13 @@ func TestPublishAcknowledge(t *testing.T) {
 
 func TestPublishFalseAcknowledge(t *testing.T) {
 	client, server := transport.LinkedPeers(0, log)
-	r := newTestRouter()
+	r, err := newTestRouter()
+	if err != nil {
+		t.Fatal(err)
+	}
+
 	defer r.Close()
-	_, err := handShake(r, client, server)
+	_, err = handShake(r, client, server)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -219,9 +231,13 @@ func TestPublishFalseAcknowledge(t *testing.T) {
 
 func TestPublishNoAcknowledge(t *testing.T) {
 	client, server := transport.LinkedPeers(0, log)
-	r := newTestRouter()
+	r, err := newTestRouter()
 	defer r.Close()
-	_, err := handShake(r, client, server)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	_, err = handShake(r, client, server)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -240,9 +256,12 @@ func TestPublishNoAcknowledge(t *testing.T) {
 
 func TestRouterCall(t *testing.T) {
 	callee, calleeServer := transport.LinkedPeers(0, log)
-	r := newTestRouter()
+	r, err := newTestRouter()
+	if err != nil {
+		t.Fatal(err)
+	}
 	defer r.Close()
-	_, err := handShake(r, callee, calleeServer)
+	_, err = handShake(r, callee, calleeServer)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -311,7 +330,10 @@ func TestRouterCall(t *testing.T) {
 }
 
 func TestSessionMetaProcedures(t *testing.T) {
-	r := newTestRouter()
+	r, err := newTestRouter()
+	if err != nil {
+		t.Fatal(err)
+	}
 	defer r.Close()
 
 	caller, callerServer := transport.LinkedPeers(0, log)
@@ -430,7 +452,10 @@ func TestSessionMetaProcedures(t *testing.T) {
 }
 
 func TestRegistrationMetaProcedures(t *testing.T) {
-	r := newTestRouter()
+	r, err := newTestRouter()
+	if err != nil {
+		t.Fatal(err)
+	}
 	defer r.Close()
 
 	caller, callerServer := transport.LinkedPeers(0, log)

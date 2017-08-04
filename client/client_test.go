@@ -16,11 +16,6 @@ import (
 )
 
 const (
-	autoRealm = false
-	strictURI = true
-	anonAuth  = true
-	disclose  = true
-
 	testRealm = "nexus.test"
 )
 
@@ -37,9 +32,25 @@ func getTestPeer(r router.Router) wamp.Peer {
 	return cli
 }
 
+func getTestRouter(realmConfig *router.RealmConfig) (router.Router, error) {
+	config := &router.RouterConfig{
+		RealmConfigs: []*router.RealmConfig{realmConfig},
+	}
+	return router.NewRouter(config)
+}
+
 func connectedTestClients() (*Client, *Client, error) {
-	r := router.NewRouter(autoRealm, strictURI)
-	r.AddRealm(wamp.URI(testRealm), anonAuth, disclose)
+	realmConfig := &router.RealmConfig{
+		URI:           wamp.URI(testRealm),
+		StrictURI:     true,
+		AnonymousAuth: true,
+		AllowDisclose: true,
+	}
+	r, err := getTestRouter(realmConfig)
+	if err != nil {
+		return nil, nil, err
+	}
+
 	peer1 := getTestPeer(r)
 	peer2 := getTestPeer(r)
 	c1, err := newTestClient(peer1)
@@ -63,18 +74,31 @@ func newTestClient(p wamp.Peer) (*Client, error) {
 }
 
 func TestJoinRealm(t *testing.T) {
-	r := router.NewRouter(autoRealm, strictURI)
-	r.AddRealm(wamp.URI(testRealm), anonAuth, disclose)
+	realmConfig := &router.RealmConfig{
+		URI:           wamp.URI(testRealm),
+		StrictURI:     true,
+		AnonymousAuth: true,
+		AllowDisclose: true,
+	}
+	r, err := getTestRouter(realmConfig)
+	if err != nil {
+		t.Fatal(err)
+	}
 
 	// Test that client can join realm.
 	client := NewClient(getTestPeer(r), 0, log)
-	_, err := client.JoinRealm("nexus.test", nil, nil)
+	_, err = client.JoinRealm("nexus.test", nil, nil)
 	if err != nil {
 		t.Fatal(err)
 	}
 
 	// Test that client cannot join realm when anonymous auth is disabled.
-	r.AddRealm("nexus.testnoanon", false, false)
+	realmConfig = &router.RealmConfig{
+		URI:           wamp.URI("nexus.testnoanon"),
+		StrictURI:     true,
+		AnonymousAuth: false,
+		AllowDisclose: false,
+	}
 	client = NewClient(getTestPeer(r), 0, log)
 	if _, err = client.JoinRealm("nexus.testnoanon", nil, nil); err == nil {
 		t.Fatal("expected error due to no anonymous authentication")
@@ -82,16 +106,24 @@ func TestJoinRealm(t *testing.T) {
 }
 
 func TestJoinRealmWithCRAuth(t *testing.T) {
-	r := router.NewRouter(autoRealm, strictURI)
-	realm, err := r.AddRealm(wamp.URI("nexus.test.auth"), false, false)
-	if err != nil {
-		t.Fatal(err)
-	}
 	crAuth, err := auth.NewCRAuthenticator(&testCRAuthenticator{})
 	if err != nil {
 		t.Fatal(err)
 	}
-	realm.AddAuthenticator("testauth", crAuth)
+
+	realmConfig := &router.RealmConfig{
+		URI:           wamp.URI("nexus.test.auth"),
+		StrictURI:     true,
+		AnonymousAuth: false,
+		AllowDisclose: false,
+		Authenticators: map[string]auth.Authenticator{
+			"testauth": crAuth,
+		},
+	}
+	r, err := getTestRouter(realmConfig)
+	if err != nil {
+		t.Fatal(err)
+	}
 
 	peer := getTestPeer(r)
 	client := NewClient(peer, 0, log)

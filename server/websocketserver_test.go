@@ -14,12 +14,20 @@ import (
 )
 
 const (
-	testRealm       = wamp.URI("test.realm")
-	autoCreateRealm = false
-	strictURI       = false
-	allowAnonymous  = true
-	allowDisclose   = true
-	outQueueSize    = 16
+	testRealm = wamp.URI("test.realm")
+)
+
+var (
+	routerConfig = &router.RouterConfig{
+		RealmConfigs: []*router.RealmConfig{
+			&router.RealmConfig{
+				URI:           testRealm,
+				StrictURI:     false,
+				AnonymousAuth: true,
+				AllowDisclose: true,
+			},
+		},
+	}
 )
 
 func clientRoles() map[string]interface{} {
@@ -38,8 +46,10 @@ func clientRoles() map[string]interface{} {
 }
 
 func newTestWebsocketServer(t *testing.T) (int, router.Router, io.Closer) {
-	r := router.NewRouter(autoCreateRealm, strictURI)
-	r.AddRealm(testRealm, allowAnonymous, allowDisclose)
+	r, err := router.NewRouter(routerConfig)
+	if err != nil {
+		t.Fatal(err)
+	}
 
 	s := NewWebsocketServer(r)
 	server := &http.Server{

@@ -12,17 +12,6 @@ import (
 )
 
 func TestJoinRealmWithCRAuth(t *testing.T) {
-	authRealm := "nexus.test.auth"
-	realm, err := nxr.AddRealm(wamp.URI(authRealm), false, false)
-	if err != nil {
-		t.Fatal(err)
-	}
-	crAuth, err := auth.NewCRAuthenticator(&testCRAuthenticator{})
-	if err != nil {
-		t.Fatal(err)
-	}
-	realm.AddAuthenticator("testauth", crAuth)
-
 	// Connect callee session.
 	cli, err := connectClientNoJoin()
 	if err != nil {

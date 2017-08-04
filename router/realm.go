@@ -10,14 +10,13 @@ import (
 	"github.com/gammazero/nexus/wamp"
 )
 
-type Realm interface {
-	AddAuthenticator(method string, athr auth.Authenticator)
-	DelAuthenticator(method string)
-	SetAuthorizer(authorizer Authorizer)
-	HandleSession(sess *Session) error
-	Close()
-	Run()
-	AuthClient(client wamp.Peer, details map[string]interface{}) (*wamp.Welcome, error)
+type RealmConfig struct {
+	URI            wamp.URI
+	StrictURI      bool `json:"strict_uri"`
+	AnonymousAuth  bool `json:"anonymous_auth"`
+	AllowDisclose  bool `json:"auto_disclose"`
+	Authenticators map[string]auth.Authenticator
+	Authorizer     Authorizer
 }
 
 // A Realm is a WAMP routing and administrative domain, optionally protected by
@@ -43,7 +42,7 @@ type realm struct {
 
 	actionChan chan func()
 
-	// Used by Close() to wait for sessions to exit.
+	// Used by close() to wait for sessions to exit.
 	waitHandlers sync.WaitGroup
 
 	// Session meta-procedure registration ID -> handler map.
@@ -56,23 +55,38 @@ type realm struct {
 
 // NewRealm creates a new Realm with default broker, dealer, and authorizer
 // implementtions.  The Realm has no authorizers unless anonymousAuth is true.
-func NewRealm(uri wamp.URI, strictURI, anonymousAuth, allowDisclose bool) Realm {
+func NewRealm(config *RealmConfig) (*realm, error) {
+	if !config.URI.ValidURI(config.StrictURI, "") {
+		return nil, fmt.Errorf(
+			"invalid realm URI %v (URI strict checking %v)", config.URI, config.StrictURI)
+	}
+
 	r := &realm{
-		uri:            uri,
-		broker:         NewBroker(strictURI, allowDisclose),
-		authorizer:     NewAuthorizer(),
-		authenticators: map[string]auth.Authenticator{},
+		uri:            config.URI,
+		authorizer:     config.Authorizer,
+		authenticators: config.Authenticators,
 		clients:        map[wamp.ID]*Session{},
 		actionChan:     make(chan func()),
 		metaIDGen:      wamp.NewIDGen(),
 		metaDone:       make(chan struct{}),
 		metaProcMap:    make(map[wamp.ID]func(*wamp.Invocation) wamp.Message, 9),
 	}
+
+	if r.authorizer == nil {
+		r.authorizer = NewAuthorizer()
+	}
+
+	if r.authenticators == nil {
+		r.authenticators = map[string]auth.Authenticator{}
+
+	}
 	// If allowing anonymous authentication, then install the anonymous
 	// authenticator.  Install this first so that it is replaced in case a
 	// custom anonymous authenticator is supplied.
-	if anonymousAuth {
-		r.authenticators["anonymous"] = auth.AnonymousAuth
+	if config.AnonymousAuth {
+		if _, ok := r.authenticators["anonymous"]; !ok {
+			r.authenticators["anonymous"] = auth.AnonymousAuth
+		}
 	}
 
 	// Create a session that bridges two peers.  Meta events are published by
@@ -81,7 +95,8 @@ func NewRealm(uri wamp.URI, strictURI, anonymousAuth, allowDisclose bool) Realm 
 	// event to any subscribers.
 	r.metaClient, r.metaSess = r.createMetaSession()
 
-	r.dealer = NewDealer(strictURI, allowDisclose, r.metaClient)
+	r.broker = NewBroker(config.StrictURI, config.AllowDisclose)
+	r.dealer = NewDealer(config.StrictURI, config.AllowDisclose, r.metaClient)
 
 	// Register to handle session meta procedures.
 	r.registerMetaProcedure(wamp.MetaProcSessionCount, r.sessionCount)
@@ -97,33 +112,10 @@ func NewRealm(uri wamp.URI, strictURI, anonymousAuth, allowDisclose bool) Realm 
 	r.registerMetaProcedure(wamp.MetaProcRegCountCallees, r.regCountCallees)
 
 	go r.metaProcedureHandler()
-	return r
+	return r, nil
 }
 
-// AddAuthenticator registers the Authenticator for the specified method.
-func (r *realm) AddAuthenticator(method string, athr auth.Authenticator) {
-	r.actionChan <- func() {
-		r.authenticators[method] = athr
-	}
-	log.Printf("Added authenticator for method %s (realm=%v)", method, r.uri)
-}
-
-// DelAuthenticator deletes the Authenticator for the specified method.
-func (r *realm) DelAuthenticator(method string) {
-	r.actionChan <- func() {
-		delete(r.authenticators, method)
-	}
-	log.Printf("Deleted authenticator for method %s (realm=%v)", method, r.uri)
-}
-
-func (r *realm) SetAuthorizer(authorizer Authorizer) {
-	r.actionChan <- func() {
-		r.authorizer = authorizer
-	}
-	log.Print("Set authorizer for realm ", r.uri)
-}
-
-// Close kills all clients, causing them to send a goodbye message.  This
+// close kills all clients, causing them to send a goodbye message.  This
 // is only called from the router's single action goroutine, so will never be
 // called by multiple goroutines.
 //
@@ -148,7 +140,7 @@ func (r *realm) SetAuthorizer(authorizer Authorizer) {
 // meta procedures, there is no metaProcedureHandler() to call Submit(). Any
 // client sessions that are still active likewise have no handleSession() to
 // call Submit() or RemoveSession().
-func (r *realm) Close() {
+func (r *realm) close() {
 	// The lock is held in mutual exclusion with the router starting any new
 	// session handlers for this realm.  This prevents the router from starting
 	// any new session handlers, allowing the realm can safely close after
@@ -188,9 +180,9 @@ func (r *realm) Close() {
 	log.Println("Realm", r.uri, "completed shutdown")
 }
 
-// Run must be called to start the Realm.
+// run must be called to start the Realm.
 // It blocks so should be executed in a separate goroutine
-func (r *realm) Run() {
+func (r *realm) run() {
 	for action := range r.actionChan {
 		action()
 	}
@@ -216,7 +208,7 @@ func (r *realm) createMetaSession() (*Session, *Session) {
 
 	// Run the session handler for the meta session
 	log.Print("Started meta-session ", sess)
-	go r.handleSession(sess)
+	go r.handleInternalSession(sess)
 
 	client := &Session{
 		Peer: cli,
@@ -228,7 +220,7 @@ func (r *realm) createMetaSession() (*Session, *Session) {
 // onJoin is called when a non-meta session joins this realm.  The session is
 // stored in the realm's clients and a meta event is published.
 //
-// Note: onJoin() must be called from outside handleSession() so that it is not
+// Note: onJoin() is called from handleSession() so that it is not
 // called for the meta client.
 func (r *realm) onJoin(sess *Session) {
 	r.waitHandlers.Add(1)
@@ -283,7 +275,7 @@ func (r *realm) onLeave(sess *Session) {
 
 // HandleSession starts a session attached to this realm.
 //
-func (r *realm) HandleSession(sess *Session) error {
+func (r *realm) handleSession(sess *Session) error {
 	// The lock is held in mutual exclusion with the closing of the realm.
 	// This ensures that no new session handler can start once the realm is
 	// closing, during which the realm waits for all existing session handlers
@@ -301,7 +293,7 @@ func (r *realm) HandleSession(sess *Session) error {
 
 	log.Print("Started session ", sess)
 	go func() {
-		r.handleSession(sess)
+		r.handleInternalSession(sess)
 		r.onLeave(sess)
 		sess.Close()
 	}()
@@ -309,10 +301,10 @@ func (r *realm) HandleSession(sess *Session) error {
 	return nil
 }
 
-// handleSession  a session attached to this realm.
+// handleInternalSession a session attached to this realm.
 //
 // Routing occurs only between WAMP Sessions that have joined the same Realm.
-func (r *realm) handleSession(sess *Session) {
+func (r *realm) handleInternalSession(sess *Session) {
 	defer log.Println("Ended sesion", sess)
 
 	recvChan := sess.Recv()
@@ -411,9 +403,9 @@ func (r *realm) handleSession(sess *Session) {
 	}
 }
 
-// AuthClient authenticates the client according to the authmethods in the
+// authClient authenticates the client according to the authmethods in the
 // HELLO message details and the authenticators available for this realm.
-func (r *realm) AuthClient(client wamp.Peer, details map[string]interface{}) (*wamp.Welcome, error) {
+func (r *realm) authClient(client wamp.Peer, details map[string]interface{}) (*wamp.Welcome, error) {
 	var authmethods []string
 	if _authmethods, ok := details["authmethods"]; ok {
 		switch _authmethods := _authmethods.(type) {
