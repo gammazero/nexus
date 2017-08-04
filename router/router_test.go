@@ -111,8 +111,8 @@ func TestHandshakeBadRealm(t *testing.T) {
 	client, server := transport.LinkedPeers(log)
 	go client.Send(&wamp.Hello{Realm: "does.not.exist"})
 	err = r.Attach(server)
-	if err != nil {
-		t.Fatal(err)
+	if err == nil {
+		t.Fatal("expected error")
 	}
 
 	select {
