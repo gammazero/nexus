@@ -5,7 +5,7 @@ import (
 	"github.com/gammazero/nexus/wamp"
 )
 
-const defaultLinkedPeersOutQueueSize = 16
+const linkedPeersOutQueueSize = 16
 
 // LinkedPeers creates two connected peers.  Messages sent to one peer
 // appear in the Recv of the other.
@@ -13,24 +13,21 @@ const defaultLinkedPeersOutQueueSize = 16
 // This is used for connecting client sessions to the router.
 //
 // Exported since it is used in test code for creating in-process test clients.
-func LinkedPeers(outQueueSize int, logger logger.Logger) (wamp.Peer, wamp.Peer) {
-	if outQueueSize < 1 {
-		outQueueSize = defaultLinkedPeersOutQueueSize
-	}
-
+func LinkedPeers(logger logger.Logger) (wamp.Peer, wamp.Peer) {
 	// The channel used for the router to send messages to the client should be
 	// large enough to prevent blocking while waiting for a slow client, as a
 	// client may block on I/O.  If the client does block, then the message
 	// should be dropped.
-	rToC := make(chan wamp.Message, outQueueSize)
+	rToC := make(chan wamp.Message, linkedPeersOutQueueSize)
 
 	// Messages read from a client can usually be handled immediately, since
 	// routing is fast and does not block on I/O.  Therefore this channle does
-	// not need to be more than size 1.
+	// not need to be more than size 1.  The channel is not unbuffered (size 0)
+	// so that the router can hand off message without any delay.
 	cToR := make(chan wamp.Message, 1)
 
 	// router reads from and writes to client
-	r := &localPeer{rd: cToR, wr: rToC, wrRtoC: true}
+	r := &localPeer{rd: cToR, wr: rToC}
 	// client reads from and writes to router
 	c := &localPeer{rd: rToC, wr: cToR}
 
@@ -39,10 +36,9 @@ func LinkedPeers(outQueueSize int, logger logger.Logger) (wamp.Peer, wamp.Peer) 
 
 // localPeer implements Peer
 type localPeer struct {
-	wr     chan<- wamp.Message
-	rd     <-chan wamp.Message
-	wrRtoC bool
-	log    logger.Logger
+	wr  chan<- wamp.Message
+	rd  <-chan wamp.Message
+	log logger.Logger
 }
 
 // Recv returns the channel this peer reads incoming messages from.
@@ -50,7 +46,8 @@ func (p *localPeer) Recv() <-chan wamp.Message { return p.rd }
 
 // Send write a message to the channel the peer sends outgoing messages to.
 func (p *localPeer) Send(msg wamp.Message) {
-	if p.wrRtoC {
+	// If capacity is > 0, then wr is the rToC channel.
+	if cap(p.wr) > 1 {
 		select {
 		case p.wr <- msg:
 		default:

@@ -11,7 +11,7 @@ import (
 )
 
 func newTestDealer() (*dealer, wamp.Peer) {
-	metaClient, rtr := transport.LinkedPeers(0, log)
+	metaClient, rtr := transport.LinkedPeers(log)
 	return NewDealer(false, true, rtr).(*dealer), metaClient
 }
 
