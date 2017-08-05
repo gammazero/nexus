@@ -2,6 +2,7 @@ package aat
 
 import (
 	"errors"
+	"fmt"
 	"testing"
 	"time"
 
@@ -191,4 +192,36 @@ func TestUnsubscribeWrongTopic(t *testing.T) {
 	if err != nil {
 		t.Fatal("Failed to disconnect client: ", err)
 	}
+}
+
+func TestSubscribeBurst(t *testing.T) {
+	// Connect subscriber session.
+	sub, err := connectClient()
+	if err != nil {
+		t.Fatal("Failed to connect client: ", err)
+	}
+
+	evtHandler := func(args []interface{}, kwargs map[string]interface{}, details map[string]interface{}) {
+		return
+	}
+
+	for i := 0; i < 10; i++ {
+		// Subscribe to event.
+		topic := fmt.Sprintf("test.topic%d", i)
+		err = sub.Subscribe(topic, evtHandler, nil)
+		if err != nil {
+			t.Fatal("subscribe error: ", err)
+		}
+	}
+
+	for i := 0; i < 10; i++ {
+		// Subscribe to event.
+		topic := fmt.Sprintf("test.topic%d", i)
+		err = sub.Unsubscribe(topic)
+		if err != nil {
+			t.Fatal("subscribe error: ", err)
+		}
+	}
+
+	sub.Close()
 }
