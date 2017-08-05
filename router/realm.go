@@ -123,7 +123,7 @@ func NewRealm(config *RealmConfig) (*realm, error) {
 // dealer.Close()
 //
 // - handleSession() and metaProcedureHandler() are the only things than can
-// call broker/dealer.Submit() or broker/dealer.RemoveSession()
+// submit request to the broker and dealer.
 //
 // - Closing realm prevents router from starting any new sessions on realm.
 //
@@ -132,14 +132,14 @@ func NewRealm(config *RealmConfig) (*realm, error) {
 //
 // - Closing Realm waits until all realm.handleSession() and
 // realm.metaProcedureHandler() have exited, thereby guaranteeing that there
-// will be no more broker/dealer.Submit() or broker/dealer.RemoveSession(),
-// therefore no chance of submitting to closed channel.
+// will be no more requests for broker or dealer, therefore no chance of
+// submitting to closed channel.
 //
 // - Finally realm closes broker and dealer reqChan, which is safe. Even if
 // broker or dealer are in the process of publishing meta events or calling
-// meta procedures, there is no metaProcedureHandler() to call Submit(). Any
+// meta procedures, there is no metaProcedureHandler() to submit requests. Any
 // client sessions that are still active likewise have no handleSession() to
-// call Submit() or RemoveSession().
+// call submit requests.
 func (r *realm) close() {
 	// The lock is held in mutual exclusion with the router starting any new
 	// session handlers for this realm.  This prevents the router from starting
@@ -366,21 +366,30 @@ func (r *realm) handleInternalSession(sess *Session) {
 			continue
 		}
 
-		switch msg.(type) {
-		case *wamp.Publish, *wamp.Subscribe, *wamp.Unsubscribe:
-			// Dispatch pub/sub messages to broker.
-			r.broker.Submit(sess, msg)
+		switch msg := msg.(type) {
+		case *wamp.Publish:
+			r.broker.Publish(sess, msg)
+		case *wamp.Subscribe:
+			r.broker.Subscribe(sess, msg)
+		case *wamp.Unsubscribe:
+			r.broker.Unsubscribe(sess, msg)
 
-		case *wamp.Register, *wamp.Unregister, *wamp.Call, *wamp.Yield, *wamp.Cancel:
-			// Dispatch RPC messages and invocation errors to dealer.
-			r.dealer.Submit(sess, msg)
+		case *wamp.Register:
+			r.dealer.Register(sess, msg)
+		case *wamp.Unregister:
+			r.dealer.Unregister(sess, msg)
+		case *wamp.Call:
+			r.dealer.Call(sess, msg)
+		case *wamp.Yield:
+			r.dealer.Yield(sess, msg)
+		case *wamp.Cancel:
+			r.dealer.Cancel(sess, msg)
 
 		case *wamp.Error:
-			msg := msg.(*wamp.Error)
 			// An INVOCATION error is the only type of ERROR message the
 			// router should receive.
 			if msg.Type == wamp.INVOCATION {
-				r.dealer.Submit(sess, msg)
+				r.dealer.Error(sess, msg)
 			} else {
 				log.Printf("Invalid ERROR received from session %v: %v",
 					sess, msg)
@@ -392,7 +401,6 @@ func (r *realm) handleInternalSession(sess *Session) {
 				Reason:  wamp.ErrGoodbyeAndOut,
 				Details: map[string]interface{}{},
 			})
-			msg := msg.(*wamp.Goodbye)
 			log.Println("GOODBYE from session", sess, "reason:", msg.Reason)
 			return
 
@@ -501,10 +509,6 @@ func (r *realm) metaProcedureHandler() {
 				continue
 			}
 			rsp = metaProcHandler(msg)
-			if rsp == nil {
-				// Response is nil if it was meta procedure handled by dealer.
-				continue
-			}
 		case *wamp.Goodbye:
 			log.Println("Session meta procedure handler exiting GOODBYE")
 			return
@@ -627,49 +631,123 @@ func (r *realm) sessionGet(msg *wamp.Invocation) wamp.Message {
 
 // regList retrieves registration IDs listed according to match policies.
 func (r *realm) regList(msg *wamp.Invocation) wamp.Message {
-	// Submit INVOCATION message to run the registration meta procedure in the
-	// dealer's request handler.  Replace the registration ID with the index of
-	// the meta procedure to run.  The registration ID is not needed in this
-	// case since the dealer will always respond to the meta client, and does
-	// not need to look up the registered caller to respond to.
-	msg.Registration = RegList
-	r.dealer.Submit(r.metaClient, msg)
-	return nil
+	exactRegs, pfxRegs, wcRegs := r.dealer.RegList()
+	dict := map[string]interface{}{
+		"exact":    exactRegs,
+		"prefix":   pfxRegs,
+		"wildcard": wcRegs,
+	}
+	return &wamp.Yield{
+		Request:   msg.Request,
+		Arguments: []interface{}{dict},
+	}
 }
 
 // regLookup retrieves registration IDs listed according to match policies.
 func (r *realm) regLookup(msg *wamp.Invocation) wamp.Message {
-	msg.Registration = RegLookup
-	r.dealer.Submit(r.metaClient, msg)
-	return nil
+	var regID wamp.ID
+	if len(msg.Arguments) != 0 {
+		if procedure, ok := wamp.AsURI(msg.Arguments[0]); ok {
+			var match string
+			if len(msg.Arguments) > 1 {
+				opts := msg.Arguments[1].(map[string]interface{})
+				match = wamp.OptionString(opts, "match")
+			}
+			regID = r.dealer.RegLookup(procedure, match)
+		}
+	}
+	return &wamp.Yield{
+		Request:   msg.Request,
+		Arguments: []interface{}{regID},
+	}
 }
 
 // regMatch obtains the registration best matching a given procedure URI.
 func (r *realm) regMatch(msg *wamp.Invocation) wamp.Message {
-	msg.Registration = RegMatch
-	r.dealer.Submit(r.metaClient, msg)
-	return nil
+	var regID wamp.ID
+	var ok bool
+	if len(msg.Arguments) != 0 {
+		var procedure wamp.URI
+		if procedure, ok = wamp.AsURI(msg.Arguments[0]); ok {
+			regID = r.dealer.RegMatch(procedure)
+		}
+	}
+	return &wamp.Yield{
+		Request:   msg.Request,
+		Arguments: []interface{}{regID},
+	}
 }
 
 // regGet retrieves information on a particular registration.
 func (r *realm) regGet(msg *wamp.Invocation) wamp.Message {
-	msg.Registration = RegGet
-	r.dealer.Submit(r.metaClient, msg)
-	return nil
+	var dict map[string]interface{}
+	var ok bool
+	if len(msg.Arguments) != 0 {
+		var i64 int64
+		if i64, ok = wamp.AsInt64(msg.Arguments[0]); ok {
+			dict, ok = r.dealer.RegGet(wamp.ID(i64))
+		}
+	}
+	if !ok {
+		return &wamp.Error{
+			Type:    msg.MessageType(),
+			Request: msg.Request,
+			Details: map[string]interface{}{},
+			Error:   wamp.ErrNoSuchRegistration,
+		}
+	}
+	return &wamp.Yield{
+		Request:   msg.Request,
+		Arguments: []interface{}{dict},
+	}
 }
 
 // regregListCallees retrieves a list of session IDs for sessions currently
 // attached to the registration.
 func (r *realm) regListCallees(msg *wamp.Invocation) wamp.Message {
-	msg.Registration = RegListCallees
-	r.dealer.Submit(r.metaClient, msg)
-	return nil
+	var calleeIDs []wamp.ID
+	var ok bool
+	if len(msg.Arguments) != 0 {
+		var i64 int64
+		if i64, ok = wamp.AsInt64(msg.Arguments[0]); ok {
+			calleeIDs, ok = r.dealer.RegListCallees(wamp.ID(i64))
+		}
+	}
+	if !ok {
+		return &wamp.Error{
+			Type:    msg.MessageType(),
+			Request: msg.Request,
+			Details: map[string]interface{}{},
+			Error:   wamp.ErrNoSuchRegistration,
+		}
+	}
+	return &wamp.Yield{
+		Request:   msg.Request,
+		Arguments: []interface{}{calleeIDs},
+	}
 }
 
 // regCountCallees obtains the number of sessions currently attached to the
 // registration.
 func (r *realm) regCountCallees(msg *wamp.Invocation) wamp.Message {
-	msg.Registration = RegCountCallees
-	r.dealer.Submit(r.metaClient, msg)
-	return nil
+	var count int
+	var ok bool
+	if len(msg.Arguments) != 0 {
+		var i64 int64
+		if i64, ok = wamp.AsInt64(msg.Arguments[0]); ok {
+			count, ok = r.dealer.RegCountCallees(wamp.ID(i64))
+		}
+	}
+	if !ok {
+		return &wamp.Error{
+			Type:    msg.MessageType(),
+			Request: msg.Request,
+			Details: map[string]interface{}{},
+			Error:   wamp.ErrNoSuchRegistration,
+		}
+	}
+	return &wamp.Yield{
+		Request:   msg.Request,
+		Arguments: []interface{}{count},
+	}
 }
