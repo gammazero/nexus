@@ -118,10 +118,15 @@ func (c *Client) run() {
 }
 
 // AuthFunc takes the HELLO details and CHALLENGE details and returns the
-// signature string and a details map, or error.
+// signature string and a details map.
+//
+// In response to a CHALLENGE message, the Client MUST send an AUTHENTICATE
+// message.  Therefore, AuthFunc does not return an error.  If an error is
+// encountered within AuthFunc, then an empty signature shouuld be returned
+// since the client cannot give a valid signature response.
 //
 // This is used to create the authHandler map passed to JoinRealm.
-type AuthFunc func(map[string]interface{}, map[string]interface{}) (string, map[string]interface{}, error)
+type AuthFunc func(map[string]interface{}, map[string]interface{}) (string, map[string]interface{})
 
 // JoinRealm joins a WAMP realm, handling challenge/response authentication if
 // needed.
@@ -587,14 +592,7 @@ func (c *Client) handleCRAuth(challenge *wamp.Challenge, details map[string]inte
 		c.peer.Send(&wamp.Authenticate{})
 	} else {
 		// Create signature and send AUTHENTICATE.
-		signature, authDetails, err := authFunc(details, challenge.Extra)
-		if err != nil {
-			c.peer.Send(&wamp.Abort{
-				Details: map[string]interface{}{},
-				Reason:  errAuthFailure,
-			})
-			return nil, err
-		}
+		signature, authDetails := authFunc(details, challenge.Extra)
 		c.peer.Send(&wamp.Authenticate{
 			Signature: signature,
 			Extra:     authDetails,

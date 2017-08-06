@@ -346,9 +346,9 @@ func TestCancelRemoteProcedureCall(t *testing.T) {
 }
 
 // ---- authentication test stuff ------
-func testAuthFunc(d map[string]interface{}, c map[string]interface{}) (string, map[string]interface{}, error) {
+func testAuthFunc(d map[string]interface{}, c map[string]interface{}) (string, map[string]interface{}) {
 	ch := c["challenge"].(string)
-	return testCRSign(ch), map[string]interface{}{}, nil
+	return testCRSign(ch), map[string]interface{}{}
 }
 
 type testCRAuthenticator struct{}
