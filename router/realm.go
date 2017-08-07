@@ -631,123 +631,32 @@ func (r *realm) sessionGet(msg *wamp.Invocation) wamp.Message {
 
 // regList retrieves registration IDs listed according to match policies.
 func (r *realm) regList(msg *wamp.Invocation) wamp.Message {
-	exactRegs, pfxRegs, wcRegs := r.dealer.RegList()
-	dict := map[string]interface{}{
-		"exact":    exactRegs,
-		"prefix":   pfxRegs,
-		"wildcard": wcRegs,
-	}
-	return &wamp.Yield{
-		Request:   msg.Request,
-		Arguments: []interface{}{dict},
-	}
+	return r.dealer.RegList(msg)
 }
 
 // regLookup retrieves registration IDs listed according to match policies.
 func (r *realm) regLookup(msg *wamp.Invocation) wamp.Message {
-	var regID wamp.ID
-	if len(msg.Arguments) != 0 {
-		if procedure, ok := wamp.AsURI(msg.Arguments[0]); ok {
-			var match string
-			if len(msg.Arguments) > 1 {
-				opts := msg.Arguments[1].(map[string]interface{})
-				match = wamp.OptionString(opts, "match")
-			}
-			regID = r.dealer.RegLookup(procedure, match)
-		}
-	}
-	return &wamp.Yield{
-		Request:   msg.Request,
-		Arguments: []interface{}{regID},
-	}
+	return r.dealer.RegLookup(msg)
 }
 
 // regMatch obtains the registration best matching a given procedure URI.
 func (r *realm) regMatch(msg *wamp.Invocation) wamp.Message {
-	var regID wamp.ID
-	var ok bool
-	if len(msg.Arguments) != 0 {
-		var procedure wamp.URI
-		if procedure, ok = wamp.AsURI(msg.Arguments[0]); ok {
-			regID = r.dealer.RegMatch(procedure)
-		}
-	}
-	return &wamp.Yield{
-		Request:   msg.Request,
-		Arguments: []interface{}{regID},
-	}
+	return r.dealer.RegMatch(msg)
 }
 
 // regGet retrieves information on a particular registration.
 func (r *realm) regGet(msg *wamp.Invocation) wamp.Message {
-	var dict map[string]interface{}
-	var ok bool
-	if len(msg.Arguments) != 0 {
-		var i64 int64
-		if i64, ok = wamp.AsInt64(msg.Arguments[0]); ok {
-			dict, ok = r.dealer.RegGet(wamp.ID(i64))
-		}
-	}
-	if !ok {
-		return &wamp.Error{
-			Type:    msg.MessageType(),
-			Request: msg.Request,
-			Details: map[string]interface{}{},
-			Error:   wamp.ErrNoSuchRegistration,
-		}
-	}
-	return &wamp.Yield{
-		Request:   msg.Request,
-		Arguments: []interface{}{dict},
-	}
+	return r.dealer.RegGet(msg)
 }
 
-// regregListCallees retrieves a list of session IDs for sessions currently
+// regListCallees retrieves a list of session IDs for sessions currently
 // attached to the registration.
 func (r *realm) regListCallees(msg *wamp.Invocation) wamp.Message {
-	var calleeIDs []wamp.ID
-	var ok bool
-	if len(msg.Arguments) != 0 {
-		var i64 int64
-		if i64, ok = wamp.AsInt64(msg.Arguments[0]); ok {
-			calleeIDs, ok = r.dealer.RegListCallees(wamp.ID(i64))
-		}
-	}
-	if !ok {
-		return &wamp.Error{
-			Type:    msg.MessageType(),
-			Request: msg.Request,
-			Details: map[string]interface{}{},
-			Error:   wamp.ErrNoSuchRegistration,
-		}
-	}
-	return &wamp.Yield{
-		Request:   msg.Request,
-		Arguments: []interface{}{calleeIDs},
-	}
+	return r.dealer.RegListCallees(msg)
 }
 
 // regCountCallees obtains the number of sessions currently attached to the
 // registration.
 func (r *realm) regCountCallees(msg *wamp.Invocation) wamp.Message {
-	var count int
-	var ok bool
-	if len(msg.Arguments) != 0 {
-		var i64 int64
-		if i64, ok = wamp.AsInt64(msg.Arguments[0]); ok {
-			count, ok = r.dealer.RegCountCallees(wamp.ID(i64))
-		}
-	}
-	if !ok {
-		return &wamp.Error{
-			Type:    msg.MessageType(),
-			Request: msg.Request,
-			Details: map[string]interface{}{},
-			Error:   wamp.ErrNoSuchRegistration,
-		}
-	}
-	return &wamp.Yield{
-		Request:   msg.Request,
-		Arguments: []interface{}{count},
-	}
+	return r.dealer.RegCountCallees(msg)
 }

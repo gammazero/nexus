@@ -84,24 +84,24 @@ type Dealer interface {
 	Features() map[string]interface{}
 
 	// RegList retrieves registration IDs listed according to match policies.
-	RegList() ([]wamp.ID, []wamp.ID, []wamp.ID)
+	RegList(*wamp.Invocation) wamp.Message
 
 	// RegLookup retrieves registration IDs listed according to match policies.
-	RegLookup(procedure wamp.URI, match string) wamp.ID
+	RegLookup(*wamp.Invocation) wamp.Message
 
 	// RegMatch obtains the registration best matching a given procedure URI.
-	RegMatch(procedure wamp.URI) wamp.ID
+	RegMatch(*wamp.Invocation) wamp.Message
 
 	// RegGet retrieves information on a particular registration.
-	RegGet(regID wamp.ID) (map[string]interface{}, bool)
+	RegGet(*wamp.Invocation) wamp.Message
 
 	// RegListCallees retrieves a list of session IDs for sessions currently
 	// attached to the registration.
-	RegListCallees(regID wamp.ID) ([]wamp.ID, bool)
+	RegListCallees(*wamp.Invocation) wamp.Message
 
 	// RegCountCallees obtains the number of sessions currently attached to the
 	// registration.
-	RegCountCallees(regID wamp.ID) (int, bool)
+	RegCountCallees(*wamp.Invocation) wamp.Message
 }
 
 // remoteProcedure tracks in-progress remote procedure call
@@ -899,85 +899,195 @@ func (d *dealer) addCalleeRegistration(callee *Session, reg wamp.ID) {
 // ----- Meta Procedure Handlers -----
 
 // RegList retrieves registration IDs listed according to match policies.
-func (d *dealer) RegList() ([]wamp.ID, []wamp.ID, []wamp.ID) {
+func (d *dealer) RegList(msg *wamp.Invocation) wamp.Message {
 	var exactRegs, pfxRegs, wcRegs []wamp.ID
-	for _, reg := range d.procRegMap {
-		exactRegs = append(exactRegs, reg.id)
+	sync := make(chan struct{})
+	d.actionChan <- func() {
+		for _, reg := range d.procRegMap {
+			exactRegs = append(exactRegs, reg.id)
+		}
+		for _, reg := range d.pfxProcRegMap {
+			pfxRegs = append(pfxRegs, reg.id)
+		}
+		for _, reg := range d.wcProcRegMap {
+			wcRegs = append(wcRegs, reg.id)
+		}
+		sync <- struct{}{}
 	}
-	for _, reg := range d.pfxProcRegMap {
-		pfxRegs = append(pfxRegs, reg.id)
+	<-sync
+	dict := map[string]interface{}{
+		"exact":    exactRegs,
+		"prefix":   pfxRegs,
+		"wildcard": wcRegs,
 	}
-	for _, reg := range d.wcProcRegMap {
-		wcRegs = append(wcRegs, reg.id)
+	return &wamp.Yield{
+		Request:   msg.Request,
+		Arguments: []interface{}{dict},
 	}
-	return exactRegs, pfxRegs, wcRegs
 }
 
 // RegLookup retrieves registration IDs listed according to match policies.
-func (d *dealer) RegLookup(procedure wamp.URI, match string) wamp.ID {
+func (d *dealer) RegLookup(msg *wamp.Invocation) wamp.Message {
 	var regID wamp.ID
-	var reg *registration
-	var ok bool
-	switch match {
-	default:
-		reg, ok = d.procRegMap[procedure]
-	case "prefix":
-		reg, ok = d.pfxProcRegMap[procedure]
-	case "wildcard":
-		reg, ok = d.wcProcRegMap[procedure]
+	if len(msg.Arguments) != 0 {
+		if procedure, ok := wamp.AsURI(msg.Arguments[0]); ok {
+			var match string
+			if len(msg.Arguments) > 1 {
+				opts := msg.Arguments[1].(map[string]interface{})
+				match = wamp.OptionString(opts, "match")
+			}
+			sync := make(chan wamp.ID)
+			d.actionChan <- func() {
+				var r wamp.ID
+				var reg *registration
+				var ok bool
+				switch match {
+				default:
+					reg, ok = d.procRegMap[procedure]
+				case "prefix":
+					reg, ok = d.pfxProcRegMap[procedure]
+				case "wildcard":
+					reg, ok = d.wcProcRegMap[procedure]
+				}
+				if ok {
+					r = reg.id
+				}
+				sync <- r
+			}
+			regID = <-sync
+		}
 	}
-	if ok {
-		regID = reg.id
+	return &wamp.Yield{
+		Request:   msg.Request,
+		Arguments: []interface{}{regID},
 	}
-	return regID
 }
 
 // RegMatch obtains the registration best matching a given procedure URI.
-func (d *dealer) RegMatch(procedure wamp.URI) wamp.ID {
+func (d *dealer) RegMatch(msg *wamp.Invocation) wamp.Message {
 	var regID wamp.ID
-	if reg, ok := d.matchProcedure(procedure); ok {
-		regID = reg.id
+	if len(msg.Arguments) != 0 {
+		if procedure, ok := wamp.AsURI(msg.Arguments[0]); ok {
+			sync := make(chan wamp.ID)
+			d.actionChan <- func() {
+				var r wamp.ID
+				if reg, ok := d.matchProcedure(procedure); ok {
+					r = reg.id
+				}
+				sync <- r
+			}
+			regID = <-sync
+		}
 	}
-	return regID
+	return &wamp.Yield{
+		Request:   msg.Request,
+		Arguments: []interface{}{regID},
+	}
 }
 
 // RegGet retrieves information on a particular registration.
-func (d *dealer) RegGet(regID wamp.ID) (map[string]interface{}, bool) {
-	reg, ok := d.registrations[regID]
-	if !ok {
-		return nil, false
+func (d *dealer) RegGet(msg *wamp.Invocation) wamp.Message {
+	var dict map[string]interface{}
+	if len(msg.Arguments) != 0 {
+		if i64, ok := wamp.AsInt64(msg.Arguments[0]); ok {
+			sync := make(chan struct{})
+			regID := wamp.ID(i64)
+			d.actionChan <- func() {
+				if reg, ok := d.registrations[regID]; ok {
+					dict = map[string]interface{}{
+						"id":      regID,
+						"created": reg.created,
+						"uri":     reg.procedure,
+						"match":   reg.match,
+						"invoke":  reg.policy,
+					}
+				}
+				sync <- struct{}{}
+			}
+			<-sync
+		}
 	}
-
-	return map[string]interface{}{
-		"id":      regID,
-		"created": reg.created,
-		"uri":     reg.procedure,
-		"match":   reg.match,
-		"invoke":  reg.policy,
-	}, true
+	if dict == nil {
+		return &wamp.Error{
+			Type:    msg.MessageType(),
+			Request: msg.Request,
+			Details: map[string]interface{}{},
+			Error:   wamp.ErrNoSuchRegistration,
+		}
+	}
+	return &wamp.Yield{
+		Request:   msg.Request,
+		Arguments: []interface{}{dict},
+	}
 }
 
 // RegListCallees retrieves a list of session IDs for sessions currently
 // attached to the registration.
-func (d *dealer) RegListCallees(regID wamp.ID) ([]wamp.ID, bool) {
-	reg, ok := d.registrations[regID]
-	if !ok {
-		return nil, false
+func (d *dealer) RegListCallees(msg *wamp.Invocation) wamp.Message {
+	var calleeIDs []wamp.ID
+	if len(msg.Arguments) != 0 {
+		if i64, ok := wamp.AsInt64(msg.Arguments[0]); ok {
+			sync := make(chan struct{})
+			regID := wamp.ID(i64)
+			d.actionChan <- func() {
+				if reg, ok := d.registrations[regID]; ok {
+					calleeIDs = make([]wamp.ID, len(reg.callees))
+					for i := range reg.callees {
+						calleeIDs[i] = reg.callees[i].ID
+					}
+				}
+				sync <- struct{}{}
+			}
+			<-sync
+		}
 	}
-
-	calleeIDs := make([]wamp.ID, len(reg.callees))
-	for i := range reg.callees {
-		calleeIDs[i] = reg.callees[i].ID
+	if calleeIDs == nil {
+		return &wamp.Error{
+			Type:    msg.MessageType(),
+			Request: msg.Request,
+			Details: map[string]interface{}{},
+			Error:   wamp.ErrNoSuchRegistration,
+		}
 	}
-	return calleeIDs, true
+	return &wamp.Yield{
+		Request:   msg.Request,
+		Arguments: []interface{}{calleeIDs},
+	}
 }
 
-// RegCountCallees obtains the number of sessions currently attached to the
+// regCountCallees obtains the number of sessions currently attached to the
 // registration.
-func (d *dealer) RegCountCallees(regID wamp.ID) (int, bool) {
-	reg, ok := d.registrations[regID]
-	if !ok {
-		return 0, false
+func (d *dealer) RegCountCallees(msg *wamp.Invocation) wamp.Message {
+	var count int
+	var ok bool
+	if len(msg.Arguments) != 0 {
+		var i64 int64
+		if i64, ok = wamp.AsInt64(msg.Arguments[0]); ok {
+			sync := make(chan int)
+			regID := wamp.ID(i64)
+			d.actionChan <- func() {
+				if reg, ok := d.registrations[regID]; ok {
+					sync <- len(reg.callees)
+				} else {
+					sync <- -1
+				}
+			}
+			count = <-sync
+			if count == -1 {
+				ok = false
+			}
+		}
 	}
-	return len(reg.callees), true
+	if !ok {
+		return &wamp.Error{
+			Type:    msg.MessageType(),
+			Request: msg.Request,
+			Details: map[string]interface{}{},
+			Error:   wamp.ErrNoSuchRegistration,
+		}
+	}
+	return &wamp.Yield{
+		Request:   msg.Request,
+		Arguments: []interface{}{count},
+	}
 }
