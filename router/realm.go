@@ -104,12 +104,12 @@ func NewRealm(config *RealmConfig) (*realm, error) {
 	r.registerMetaProcedure(wamp.MetaProcSessionGet, r.sessionGet)
 
 	// Register to handle registration meta procedures.
-	r.registerMetaProcedure(wamp.MetaProcRegList, r.regList)
-	r.registerMetaProcedure(wamp.MetaProcRegLookup, r.regLookup)
-	r.registerMetaProcedure(wamp.MetaProcRegMatch, r.regMatch)
-	r.registerMetaProcedure(wamp.MetaProcRegGet, r.regGet)
-	r.registerMetaProcedure(wamp.MetaProcRegListCallees, r.regListCallees)
-	r.registerMetaProcedure(wamp.MetaProcRegCountCallees, r.regCountCallees)
+	r.registerMetaProcedure(wamp.MetaProcRegList, r.dealer.RegList)
+	r.registerMetaProcedure(wamp.MetaProcRegLookup, r.dealer.RegLookup)
+	r.registerMetaProcedure(wamp.MetaProcRegMatch, r.dealer.RegMatch)
+	r.registerMetaProcedure(wamp.MetaProcRegGet, r.dealer.RegGet)
+	r.registerMetaProcedure(wamp.MetaProcRegListCallees, r.dealer.RegListCallees)
+	r.registerMetaProcedure(wamp.MetaProcRegCountCallees, r.dealer.RegCountCallees)
 
 	go r.metaProcedureHandler()
 	return r, nil
@@ -627,36 +627,4 @@ func (r *realm) sessionGet(msg *wamp.Invocation) wamp.Message {
 		Request:   msg.Request,
 		Arguments: []interface{}{dict},
 	}
-}
-
-// regList retrieves registration IDs listed according to match policies.
-func (r *realm) regList(msg *wamp.Invocation) wamp.Message {
-	return r.dealer.RegList(msg)
-}
-
-// regLookup retrieves registration IDs listed according to match policies.
-func (r *realm) regLookup(msg *wamp.Invocation) wamp.Message {
-	return r.dealer.RegLookup(msg)
-}
-
-// regMatch obtains the registration best matching a given procedure URI.
-func (r *realm) regMatch(msg *wamp.Invocation) wamp.Message {
-	return r.dealer.RegMatch(msg)
-}
-
-// regGet retrieves information on a particular registration.
-func (r *realm) regGet(msg *wamp.Invocation) wamp.Message {
-	return r.dealer.RegGet(msg)
-}
-
-// regListCallees retrieves a list of session IDs for sessions currently
-// attached to the registration.
-func (r *realm) regListCallees(msg *wamp.Invocation) wamp.Message {
-	return r.dealer.RegListCallees(msg)
-}
-
-// regCountCallees obtains the number of sessions currently attached to the
-// registration.
-func (r *realm) regCountCallees(msg *wamp.Invocation) wamp.Message {
-	return r.dealer.RegCountCallees(msg)
 }
