@@ -708,16 +708,21 @@ func (c *Client) handleInvocation(msg *wamp.Invocation) {
 	c.actionChan <- func() {
 		handler, ok := c.invHandlers[msg.Registration]
 		if !ok {
-			errMsg := fmt.Sprintf("No handler for registration: %v",
+			errMsg := fmt.Sprintf("Client has no handler for registration %v",
 				msg.Registration)
-			c.log.Print(errMsg)
+			// The dealer has a procedure registered to this client, but this
+			// client does not recognize the registration ID.  This is not
+			// reported as ErrNoSuchProcedure, since the dealer has a procedure
+			// registered.  It is reported as ErrInvalidArgument to denote that
+			// the client has a problem with the registration ID argument.
 			c.peer.Send(&wamp.Error{
 				Type:      wamp.INVOCATION,
 				Request:   msg.Request,
-				Details:   map[string]interface{}{},
+				Details:   map[string]interface{}{"error": errMsg},
 				Error:     wamp.ErrInvalidArgument,
 				Arguments: []interface{}{errMsg},
 			})
+			c.log.Print(errMsg)
 			return
 		}
 
