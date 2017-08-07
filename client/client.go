@@ -118,10 +118,15 @@ func (c *Client) run() {
 }
 
 // AuthFunc takes the HELLO details and CHALLENGE details and returns the
-// signature string and a details map, or error.
+// signature string and a details map.
+//
+// In response to a CHALLENGE message, the Client MUST send an AUTHENTICATE
+// message.  Therefore, AuthFunc does not return an error.  If an error is
+// encountered within AuthFunc, then an empty signature shouuld be returned
+// since the client cannot give a valid signature response.
 //
 // This is used to create the authHandler map passed to JoinRealm.
-type AuthFunc func(map[string]interface{}, map[string]interface{}) (string, map[string]interface{}, error)
+type AuthFunc func(map[string]interface{}, map[string]interface{}) (string, map[string]interface{})
 
 // JoinRealm joins a WAMP realm, handling challenge/response authentication if
 // needed.
@@ -176,10 +181,7 @@ func (c *Client) JoinRealm(realm string, details map[string]interface{}, authHan
 
 	welcome, ok := msg.(*wamp.Welcome)
 	if !ok {
-		c.peer.Send(&wamp.Abort{
-			Details: map[string]interface{}{},
-			Reason:  errUnexpectedMessageType,
-		})
+		// Received unexpected message from router.
 		c.peer.Close()
 		close(c.actionChan)
 		return nil, unexpectedMsgError(msg, wamp.WELCOME)
@@ -583,30 +585,34 @@ func (c *Client) handleCRAuth(challenge *wamp.Challenge, details map[string]inte
 	// Look up the authentication function for the specified authmethod.
 	authFunc, ok := authHandlers[challenge.AuthMethod]
 	if !ok {
-		c.peer.Send(&wamp.Abort{
-			Details: map[string]interface{}{},
-			Reason:  errNoAuthHandler,
+		// The router send a challenge for an auth mehtod the client does not
+		// know how to deal with.  In response to a CHALLENGE message, the
+		// Client MUST send an AUTHENTICATE message.  So, send empty
+		// AUTHENTICATE since client does not know what to put in it.
+		c.peer.Send(&wamp.Authenticate{})
+	} else {
+		// Create signature and send AUTHENTICATE.
+		signature, authDetails := authFunc(details, challenge.Extra)
+		c.peer.Send(&wamp.Authenticate{
+			Signature: signature,
+			Extra:     authDetails,
 		})
-		return nil, fmt.Errorf("no auth handler for method: %s",
-			challenge.AuthMethod)
 	}
-
-	// Create signature and send AUTHENTICATE.
-	signature, authDetails, err := authFunc(details, challenge.Extra)
-	if err != nil {
-		c.peer.Send(&wamp.Abort{
-			Details: map[string]interface{}{},
-			Reason:  errAuthFailure,
-		})
-		return nil, err
-	}
-	c.peer.Send(&wamp.Authenticate{Signature: signature, Extra: authDetails})
 	msg, err := wamp.RecvTimeout(c.peer, c.responseTimeout)
 	if err != nil {
 		return nil, err
 	}
+	// If router sent back ABORT in response to client's authentication attempt
+	// return error.
+	if abort, ok := msg.(*wamp.Abort); ok {
+		authErr := wamp.OptionString(abort.Details, "error")
+		if authErr == "" {
+			authErr = "authentication failed"
+		}
+		return nil, errors.New(authErr)
+	}
 
-	// Return the router's response to AUTHENTICATE.
+	// Return the router's response to AUTHENTICATE, this should be WELCOME.
 	return msg, nil
 }
 

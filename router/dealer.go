@@ -26,23 +26,50 @@ var dealerFeatures = map[string]interface{}{
 	},
 }
 
-// Used inside INVOCATION messages, submitted by the realms meta procedure
-// handler, to identify the registration meta procedure to call.
-const (
-	RegList = wamp.ID(iota)
-	RegLookup
-	RegMatch
-	RegGet
-	RegListCallees
-	RegCountCallees
-)
-
 // Dealers route calls incoming from Callers to Callees implementing the
 // procedure called, and route call results back from Callees to Callers.
 type Dealer interface {
-	// Submit dispatches a Resister, Unregister, Call, Cancel, Yield, or Error
-	// message to the dealer.
-	Submit(sess *Session, msg wamp.Message)
+	// Register registers a callee to handle calls to a procedure.
+	//
+	// If the shared_registration feature is supported, and if allowed by the
+	// invocation policy, multiple callees may register to handle the same
+	// procedure.
+	Register(callee *Session, msg *wamp.Register)
+
+	// Unregister removes a remote procedure previously registered by the
+	// callee.
+	Unregister(callee *Session, msg *wamp.Unregister)
+
+	// Call invokes a registered remote procedure.
+	Call(caller *Session, msg *wamp.Call)
+
+	// Cancel actively cancels a call that is in progress.
+	//
+	// Cancellation behaves differently depending on the mode:
+	//
+	// - "skip": The pending call is canceled and ERROR is send immediately
+	// back to the caller.  No INTERRUPT is sent to the callee and the result
+	// is discarded when received.
+	//
+	// - "kill": INTERRUPT is sent to the client, but ERROR is not returned to
+	// the caller until after the callee has responded to the canceled call.
+	// In this case the caller may receive RESULT or ERROR depending whether
+	// the callee finishes processing the invocation or the interrupt first.
+	//
+	// - "killnowait": The pending call is canceled and ERROR is send
+	// immediately back to the caller.  INTERRUPT is sent to the callee and any
+	// response to the invocation or interrupt from the callee is discarded
+	// when received.
+	//
+	// If the callee does not support call canceling, then behavior is "skip".
+	Cancel(caller *Session, msg *wamp.Cancel)
+
+	// Yield handles the result of successfully processing and finishing the
+	// execution of a call, send from callee to dealer.
+	Yield(callee *Session, msg *wamp.Yield)
+
+	// Error handles an invocation error returned by the callee.
+	Error(sess *Session, msg *wamp.Error)
 
 	// Remove a callee's registrations.
 	RemoveSession(*Session)
@@ -55,11 +82,26 @@ type Dealer interface {
 	// The data returned is suitable for use as the "features" section of the
 	// dealer role in a WELCOME message.
 	Features() map[string]interface{}
-}
 
-type dealerReq struct {
-	session *Session
-	msg     wamp.Message
+	// RegList retrieves registration IDs listed according to match policies.
+	RegList(*wamp.Invocation) wamp.Message
+
+	// RegLookup retrieves registration IDs listed according to match policies.
+	RegLookup(*wamp.Invocation) wamp.Message
+
+	// RegMatch obtains the registration best matching a given procedure URI.
+	RegMatch(*wamp.Invocation) wamp.Message
+
+	// RegGet retrieves information on a particular registration.
+	RegGet(*wamp.Invocation) wamp.Message
+
+	// RegListCallees retrieves a list of session IDs for sessions currently
+	// attached to the registration.
+	RegListCallees(*wamp.Invocation) wamp.Message
+
+	// RegCountCallees obtains the number of sessions currently attached to the
+	// registration.
+	RegCountCallees(*wamp.Invocation) wamp.Message
 }
 
 // remoteProcedure tracks in-progress remote procedure call
@@ -112,7 +154,7 @@ type dealer struct {
 	// Used to lookup registrations when removing a callee session.
 	calleeRegIDSet map[*Session]map[wamp.ID]struct{}
 
-	reqChan chan dealerReq
+	actionChan chan func()
 
 	// Generate registration IDs.
 	idGen *wamp.IDGen
@@ -131,6 +173,11 @@ type dealer struct {
 }
 
 // NewDealer creates the default Dealer implementation.
+//
+// Messages are routed serially by the dealer's message handling goroutine.
+// This serialization is limited to the work of determining the message's
+// destination, and then the message is handed off to the next goroutine,
+// typically the receiving client's send handler.
 func NewDealer(strictURI, allowDisclose bool, metaClient wamp.Peer) Dealer {
 	d := &dealer{
 		procRegMap:    map[wamp.URI]*registration{},
@@ -144,10 +191,10 @@ func NewDealer(strictURI, allowDisclose bool, metaClient wamp.Peer) Dealer {
 		invocationByCall: map[wamp.ID]wamp.ID{},
 		calleeRegIDSet:   map[*Session]map[wamp.ID]struct{}{},
 
-		// The request handler should be nearly always runable, since it is
-		// the critical section that does the only routing. So, and unbuffered
+		// The action handler should be nearly always runable, since it is the
+		// critical section that does the only routing.  So, and unbuffered
 		// channel is appropriate.
-		reqChan: make(chan dealerReq),
+		actionChan: make(chan func()),
 
 		idGen: wamp.NewIDGen(),
 		prng:  rand.New(rand.NewSource(time.Now().Unix())),
@@ -157,104 +204,16 @@ func NewDealer(strictURI, allowDisclose bool, metaClient wamp.Peer) Dealer {
 
 		metaClient: metaClient,
 	}
-	go d.reqHandler()
+	go d.run()
 	return d
 }
 
-// Submit dispatches messages for the dealer to route.  Messages are routed
-// serially by the dealer's message handling goroutine.  This serialization is
-// limited to the work of determine the message's destination, and then the
-// message is handed off to the next goroutine, typically the receiving
-// client's send handler.
-func (d *dealer) Submit(sess *Session, msg wamp.Message) {
-	// All calls dispatched by Submit require both a session and a message.  It
-	// is a programming error to call Submit without a session or without a
-	// message.
-	if sess == nil || msg == nil {
-		panic("dealer.Submit with nil session or message")
+// Register registers a callee to handle calls to a procedure.
+func (d *dealer) Register(callee *Session, msg *wamp.Register) {
+	if callee == nil || msg == nil {
+		panic("dealer.Register with nil session or message")
 	}
-	d.reqChan <- dealerReq{session: sess, msg: msg}
-}
 
-func (d *dealer) RemoveSession(sess *Session) {
-	if sess == nil {
-		// No session specified, no session removed.
-		return
-	}
-	d.reqChan <- dealerReq{session: sess}
-}
-
-// Close stops the dealer and waits message processing to stop.
-func (d *dealer) Close() {
-	close(d.reqChan)
-}
-
-// reqHandler is dealer's main processing function that is run by a single
-// goroutine.  All functions that access dealer data structures run on this
-// routine.
-func (d *dealer) reqHandler() {
-	for req := range d.reqChan {
-		switch msg := req.msg.(type) {
-		case nil:
-			d.removeSession(req.session)
-		case *wamp.Register:
-			d.register(req.session, msg)
-		case *wamp.Unregister:
-			d.unregister(req.session, msg)
-		case *wamp.Call:
-			d.call(req.session, msg)
-		case *wamp.Cancel:
-			d.cancel(req.session, msg)
-		case *wamp.Yield:
-			d.yield(req.session, msg)
-		case *wamp.Error:
-			d.error(req.session, msg)
-
-		case *wamp.Invocation:
-			// Invoke only happens as a result of calling registration meta.
-			// Look at Invocation.Registration to determine which registration
-			// meta procedure to call.
-			var rsp wamp.Message
-			switch msg.Registration {
-			case RegList:
-				rsp = d.regList(msg)
-			case RegLookup:
-				rsp = d.regLookup(msg)
-			case RegMatch:
-				rsp = d.regMatch(msg)
-			case RegGet:
-				rsp = d.regGet(msg)
-			case RegListCallees:
-				rsp = d.regListCallees(msg)
-			case RegCountCallees:
-				rsp = d.regCountCallees(msg)
-			default:
-				// This is a programming error because, a client cannot submit
-				// an INVOCATION to the dealer.  If a client sent an invocation
-				// this would result in an ERROR in the session handler.
-				// Therefore, this must be a programming in the realm's meta
-				// procedure handler.
-				panic("illegal registration meta procedure index")
-			}
-			d.metaClient.Send(rsp)
-
-		default:
-			// Any invalid message type is caught in the realm's session
-			// handler.  Therefore, if an invalid message makes it here, then
-			// this is a programming error where the session handler is passing
-			// in the wrong type of message to the dealer.
-			panic(fmt.Sprint("dealer received message type: ",
-				req.msg.MessageType()))
-		}
-	}
-}
-
-// register registers a callee to handle calls to a procedure.
-//
-// If the shared_registration feature is supported, and if allowed by the
-// invocation policy, multiple callees may register to handle the same
-// procedure.
-func (d *dealer) register(callee *Session, msg *wamp.Register) {
 	// Validate procedure URI.  For REGISTER, must be valid URI (either strict
 	// or loose), and all URI components must be non-empty other than for
 	// wildcard or prefix matched procedures.
@@ -272,11 +231,13 @@ func (d *dealer) register(callee *Session, msg *wamp.Register) {
 		return
 	}
 
+	wampURI := strings.HasPrefix(string(msg.Procedure), "wamp.")
+
 	// Disallow registration of procedures starting with "wamp.", except for
 	// trusted sessions that are built into router.
 	authrole := wamp.OptionString(callee.Details, "authrole")
 	if authrole != "" && authrole != "trusted" {
-		if strings.HasPrefix(string(msg.Procedure), "wamp.") {
+		if wampURI {
 			errMsg := fmt.Sprintf("register for restricted procedure URI %v",
 				msg.Procedure)
 			callee.Send(&wamp.Error{
@@ -302,6 +263,85 @@ func (d *dealer) register(callee *Session, msg *wamp.Register) {
 		return
 	}
 
+	invoke := wamp.OptionString(msg.Options, "invoke")
+	d.actionChan <- func() {
+		d.register(callee, msg, match, invoke, discloseCaller, wampURI)
+	}
+}
+
+// Unregister removes a remote procedure previously registered by the callee.
+func (d *dealer) Unregister(callee *Session, msg *wamp.Unregister) {
+	if callee == nil || msg == nil {
+		panic("dealer.Unregister with nil session or message")
+	}
+	d.actionChan <- func() {
+		d.unregister(callee, msg)
+	}
+}
+
+// Call invokes a registered remote procedure.
+func (d *dealer) Call(caller *Session, msg *wamp.Call) {
+	if caller == nil || msg == nil {
+		panic("dealer.Call with nil session or message")
+	}
+	d.actionChan <- func() {
+		d.call(caller, msg)
+	}
+}
+
+// Cancel actively cancels a call that is in progress.
+func (d *dealer) Cancel(caller *Session, msg *wamp.Cancel) {
+	if caller == nil || msg == nil {
+		panic("dealer.Cancel with nil session or message")
+	}
+	d.actionChan <- func() {
+		d.cancel(caller, msg)
+	}
+}
+
+// Yield handles the result of successfully processing and finishing the
+// execution of a call, send from callee to dealer.
+func (d *dealer) Yield(callee *Session, msg *wamp.Yield) {
+	if callee == nil || msg == nil {
+		panic("dealer.Yield with nil session or message")
+	}
+	d.actionChan <- func() {
+		d.yield(callee, msg)
+	}
+}
+
+func (d *dealer) Error(sess *Session, msg *wamp.Error) {
+	if sess == nil || msg == nil {
+		panic("dealer.Error with nil session or message")
+	}
+	d.actionChan <- func() {
+		d.error(sess, msg)
+	}
+}
+
+func (d *dealer) RemoveSession(sess *Session) {
+	if sess == nil {
+		// No session specified, no session removed.
+		return
+	}
+	d.actionChan <- func() {
+		d.removeSession(sess)
+	}
+}
+
+// Close stops the dealer and waits message processing to stop.
+func (d *dealer) Close() {
+	close(d.actionChan)
+}
+
+func (d *dealer) run() {
+	for action := range d.actionChan {
+		action()
+	}
+	log.Print("Dealer stopped")
+}
+
+func (d *dealer) register(callee *Session, msg *wamp.Register, match, invokePolicy string, discloseCaller, wampURI bool) {
 	var reg *registration
 	switch match {
 	default:
@@ -314,7 +354,6 @@ func (d *dealer) register(callee *Session, msg *wamp.Register) {
 
 	var created string
 	var regID wamp.ID
-	invokePolicy := wamp.OptionString(msg.Options, "invoke")
 	// If no existing registration found for the procedure, then create a new
 	// registration.
 	if reg == nil {
@@ -339,21 +378,23 @@ func (d *dealer) register(callee *Session, msg *wamp.Register) {
 			d.wcProcRegMap[msg.Procedure] = reg
 		}
 
-		// wamp.registration.on_create is fired when a registration is created
-		// through a registration request for an URI which was previously
-		// without a registration.
-		details := map[string]interface{}{
-			"id":      regID,
-			"created": created,
-			"uri":     msg.Procedure,
-			"match":   match,
-			"invoke":  invokePolicy,
+		if !wampURI {
+			// wamp.registration.on_create is fired when a registration is
+			// created through a registration request for an URI which was
+			// previously without a registration.
+			details := map[string]interface{}{
+				"id":      regID,
+				"created": created,
+				"uri":     msg.Procedure,
+				"match":   match,
+				"invoke":  invokePolicy,
+			}
+			d.metaClient.Send(&wamp.Publish{
+				Request:   wamp.GlobalID(),
+				Topic:     wamp.MetaEventRegOnCreate,
+				Arguments: []interface{}{callee.ID, details},
+			})
 		}
-		d.metaClient.Send(&wamp.Publish{
-			Request:   wamp.GlobalID(),
-			Topic:     wamp.MetaEventRegOnCreate,
-			Arguments: []interface{}{callee.ID, details},
-		})
 	} else {
 		// There is an existing registration(s) for this procedure.  See if
 		// invocation policy allows another.
@@ -406,19 +447,20 @@ func (d *dealer) register(callee *Session, msg *wamp.Register) {
 		Registration: regID,
 	})
 
-	// Publish wamp.registration.on_register meta event.  Fired when a session
-	// is added to a registration.  A wamp.registration.on_register event MUST
-	// be fired subsequent to a wamp.registration.on_create event, since the
-	// first registration results in both the creation of the registration and
-	// the addition of a session.
-	d.metaClient.Send(&wamp.Publish{
-		Request:   wamp.GlobalID(),
-		Topic:     wamp.MetaEventRegOnRegister,
-		Arguments: []interface{}{callee.ID, regID},
-	})
+	if !wampURI {
+		// Publish wamp.registration.on_register meta event.  Fired when a
+		// session is added to a registration.  A wamp.registration.on_register
+		// event MUST be fired subsequent to a wamp.registration.on_create
+		// event, since the first registration results in both the creation of
+		// the registration and the addition of a session.
+		d.metaClient.Send(&wamp.Publish{
+			Request:   wamp.GlobalID(),
+			Topic:     wamp.MetaEventRegOnRegister,
+			Arguments: []interface{}{callee.ID, regID},
+		})
+	}
 }
 
-// Unregister removes a remote procedure previously registered by the callee.
 func (d *dealer) unregister(callee *Session, msg *wamp.Unregister) {
 	// Delete the registration ID from the callee's set of registrations.
 	if _, ok := d.calleeRegIDSet[callee]; ok {
@@ -497,7 +539,6 @@ func (d *dealer) matchProcedure(procedure wamp.URI) (*registration, bool) {
 	return reg, ok
 }
 
-// Call invokes a registered remote procedure.
 func (d *dealer) call(caller *Session, msg *wamp.Call) {
 	reg, ok := d.matchProcedure(msg.Procedure)
 	if !ok || len(reg.callees) == 0 {
@@ -620,24 +661,6 @@ func (d *dealer) call(caller *Session, msg *wamp.Call) {
 	})
 }
 
-// cancel actively cancels a call that is in progress.
-//
-// Cancellation behaves differently depending on the mode:
-//
-// - "skip": The pending call is canceled and ERROR is send immediately back to
-// the caller.  No INTERRUPT is sent to the callee and the result is discarded
-// when received.
-//
-// - "kill": INTERRUPT is sent to the client, but ERROR is not returned to the
-// caller until after the callee has responded to the canceled call.  In this
-// case the caller may receive RESULT or ERROR depending whether the callee
-// finishes processing the invocation or the interrupt first.
-//
-// - "killnowait": The pending call is canceled and ERROR is send immediately
-// back to the caller.  INTERRUPT is sent to the callee and any response to the
-// invocation or interrupt from the callee is discarded when received.
-//
-// If the callee does not support call canceling, then behavior is "skip".
 func (d *dealer) cancel(caller *Session, msg *wamp.Cancel) {
 	procCaller, ok := d.calls[msg.Request]
 	if !ok {
@@ -658,12 +681,12 @@ func (d *dealer) cancel(caller *Session, msg *wamp.Cancel) {
 	invocationID, ok := d.invocationByCall[msg.Request]
 	if !ok {
 		// If there is no pending invocation, ignore cancel.
-		log.Println("Found call with no pending invocation")
+		log.Print("Found call with no pending invocation")
 		return
 	}
 	invk, ok := d.invocations[invocationID]
 	if !ok {
-		log.Println("CRITICAL: missing caller for pending invocation")
+		log.Print("CRITICAL: missing caller for pending invocation")
 		return
 	}
 	// For those who repeatedly press elevator buttons.
@@ -713,7 +736,6 @@ func (d *dealer) cancel(caller *Session, msg *wamp.Cancel) {
 		invocationID, msg.Request)
 }
 
-// yield handles the result of successfully processing and finishing the execution of a call, send from callee to dealer.
 func (d *dealer) yield(callee *Session, msg *wamp.Yield) {
 	// Find and delete pending invocation.
 	invk, ok := d.invocations[msg.Request]
@@ -876,18 +898,23 @@ func (d *dealer) addCalleeRegistration(callee *Session, reg wamp.ID) {
 
 // ----- Meta Procedure Handlers -----
 
-// regList retrieves registration IDs listed according to match policies.
-func (d *dealer) regList(msg *wamp.Invocation) wamp.Message {
+// RegList retrieves registration IDs listed according to match policies.
+func (d *dealer) RegList(msg *wamp.Invocation) wamp.Message {
 	var exactRegs, pfxRegs, wcRegs []wamp.ID
-	for _, reg := range d.procRegMap {
-		exactRegs = append(exactRegs, reg.id)
+	sync := make(chan struct{})
+	d.actionChan <- func() {
+		for _, reg := range d.procRegMap {
+			exactRegs = append(exactRegs, reg.id)
+		}
+		for _, reg := range d.pfxProcRegMap {
+			pfxRegs = append(pfxRegs, reg.id)
+		}
+		for _, reg := range d.wcProcRegMap {
+			wcRegs = append(wcRegs, reg.id)
+		}
+		sync <- struct{}{}
 	}
-	for _, reg := range d.pfxProcRegMap {
-		pfxRegs = append(pfxRegs, reg.id)
-	}
-	for _, reg := range d.wcProcRegMap {
-		wcRegs = append(wcRegs, reg.id)
-	}
+	<-sync
 	dict := map[string]interface{}{
 		"exact":    exactRegs,
 		"prefix":   pfxRegs,
@@ -899,8 +926,8 @@ func (d *dealer) regList(msg *wamp.Invocation) wamp.Message {
 	}
 }
 
-// regLookup retrieves registration IDs listed according to match policies.
-func (d *dealer) regLookup(msg *wamp.Invocation) wamp.Message {
+// RegLookup retrieves registration IDs listed according to match policies.
+func (d *dealer) RegLookup(msg *wamp.Invocation) wamp.Message {
 	var regID wamp.ID
 	if len(msg.Arguments) != 0 {
 		if procedure, ok := wamp.AsURI(msg.Arguments[0]); ok {
@@ -909,19 +936,25 @@ func (d *dealer) regLookup(msg *wamp.Invocation) wamp.Message {
 				opts := msg.Arguments[1].(map[string]interface{})
 				match = wamp.OptionString(opts, "match")
 			}
-			var reg *registration
-			var ok bool
-			switch match {
-			default:
-				reg, ok = d.procRegMap[procedure]
-			case "prefix":
-				reg, ok = d.pfxProcRegMap[procedure]
-			case "wildcard":
-				reg, ok = d.wcProcRegMap[procedure]
+			sync := make(chan wamp.ID)
+			d.actionChan <- func() {
+				var r wamp.ID
+				var reg *registration
+				var ok bool
+				switch match {
+				default:
+					reg, ok = d.procRegMap[procedure]
+				case "prefix":
+					reg, ok = d.pfxProcRegMap[procedure]
+				case "wildcard":
+					reg, ok = d.wcProcRegMap[procedure]
+				}
+				if ok {
+					r = reg.id
+				}
+				sync <- r
 			}
-			if ok {
-				regID = reg.id
-			}
+			regID = <-sync
 		}
 	}
 	return &wamp.Yield{
@@ -930,14 +963,20 @@ func (d *dealer) regLookup(msg *wamp.Invocation) wamp.Message {
 	}
 }
 
-// regMatch obtains the registration best matching a given procedure URI.
-func (d *dealer) regMatch(msg *wamp.Invocation) wamp.Message {
+// RegMatch obtains the registration best matching a given procedure URI.
+func (d *dealer) RegMatch(msg *wamp.Invocation) wamp.Message {
 	var regID wamp.ID
 	if len(msg.Arguments) != 0 {
 		if procedure, ok := wamp.AsURI(msg.Arguments[0]); ok {
-			if reg, ok := d.matchProcedure(procedure); ok {
-				regID = reg.id
+			sync := make(chan wamp.ID)
+			d.actionChan <- func() {
+				var r wamp.ID
+				if reg, ok := d.matchProcedure(procedure); ok {
+					r = reg.id
+				}
+				sync <- r
 			}
+			regID = <-sync
 		}
 	}
 	return &wamp.Yield{
@@ -946,31 +985,35 @@ func (d *dealer) regMatch(msg *wamp.Invocation) wamp.Message {
 	}
 }
 
-// regGet retrieves information on a particular registration.
-func (d *dealer) regGet(msg *wamp.Invocation) wamp.Message {
-	var regID wamp.ID
+// RegGet retrieves information on a particular registration.
+func (d *dealer) RegGet(msg *wamp.Invocation) wamp.Message {
+	var dict map[string]interface{}
 	if len(msg.Arguments) != 0 {
 		if i64, ok := wamp.AsInt64(msg.Arguments[0]); ok {
-			regID = wamp.ID(i64)
+			sync := make(chan struct{})
+			regID := wamp.ID(i64)
+			d.actionChan <- func() {
+				if reg, ok := d.registrations[regID]; ok {
+					dict = map[string]interface{}{
+						"id":      regID,
+						"created": reg.created,
+						"uri":     reg.procedure,
+						"match":   reg.match,
+						"invoke":  reg.policy,
+					}
+				}
+				sync <- struct{}{}
+			}
+			<-sync
 		}
 	}
-
-	reg, ok := d.registrations[regID]
-	if !ok {
+	if dict == nil {
 		return &wamp.Error{
 			Type:    msg.MessageType(),
 			Request: msg.Request,
 			Details: map[string]interface{}{},
 			Error:   wamp.ErrNoSuchRegistration,
 		}
-	}
-
-	dict := map[string]interface{}{
-		"id":      regID,
-		"created": reg.created,
-		"uri":     reg.procedure,
-		"match":   reg.match,
-		"invoke":  reg.policy,
 	}
 	return &wamp.Yield{
 		Request:   msg.Request,
@@ -978,18 +1021,27 @@ func (d *dealer) regGet(msg *wamp.Invocation) wamp.Message {
 	}
 }
 
-// regListCallees retrieves a list of session IDs for sessions currently
+// RegListCallees retrieves a list of session IDs for sessions currently
 // attached to the registration.
-func (d *dealer) regListCallees(msg *wamp.Invocation) wamp.Message {
-	var regID wamp.ID
+func (d *dealer) RegListCallees(msg *wamp.Invocation) wamp.Message {
+	var calleeIDs []wamp.ID
 	if len(msg.Arguments) != 0 {
 		if i64, ok := wamp.AsInt64(msg.Arguments[0]); ok {
-			regID = wamp.ID(i64)
+			sync := make(chan struct{})
+			regID := wamp.ID(i64)
+			d.actionChan <- func() {
+				if reg, ok := d.registrations[regID]; ok {
+					calleeIDs = make([]wamp.ID, len(reg.callees))
+					for i := range reg.callees {
+						calleeIDs[i] = reg.callees[i].ID
+					}
+				}
+				sync <- struct{}{}
+			}
+			<-sync
 		}
 	}
-
-	reg, ok := d.registrations[regID]
-	if !ok {
+	if calleeIDs == nil {
 		return &wamp.Error{
 			Type:    msg.MessageType(),
 			Request: msg.Request,
@@ -997,12 +1049,6 @@ func (d *dealer) regListCallees(msg *wamp.Invocation) wamp.Message {
 			Error:   wamp.ErrNoSuchRegistration,
 		}
 	}
-
-	calleeIDs := make([]wamp.ID, len(reg.callees))
-	for i := range reg.callees {
-		calleeIDs[i] = reg.callees[i].ID
-	}
-
 	return &wamp.Yield{
 		Request:   msg.Request,
 		Arguments: []interface{}{calleeIDs},
@@ -1011,15 +1057,27 @@ func (d *dealer) regListCallees(msg *wamp.Invocation) wamp.Message {
 
 // regCountCallees obtains the number of sessions currently attached to the
 // registration.
-func (d *dealer) regCountCallees(msg *wamp.Invocation) wamp.Message {
-	var regID wamp.ID
+func (d *dealer) RegCountCallees(msg *wamp.Invocation) wamp.Message {
+	var count int
+	var ok bool
 	if len(msg.Arguments) != 0 {
-		if i64, ok := wamp.AsInt64(msg.Arguments[0]); ok {
-			regID = wamp.ID(i64)
+		var i64 int64
+		if i64, ok = wamp.AsInt64(msg.Arguments[0]); ok {
+			sync := make(chan int)
+			regID := wamp.ID(i64)
+			d.actionChan <- func() {
+				if reg, ok := d.registrations[regID]; ok {
+					sync <- len(reg.callees)
+				} else {
+					sync <- -1
+				}
+			}
+			count = <-sync
+			if count == -1 {
+				ok = false
+			}
 		}
 	}
-
-	reg, ok := d.registrations[regID]
 	if !ok {
 		return &wamp.Error{
 			Type:    msg.MessageType(),
@@ -1028,9 +1086,8 @@ func (d *dealer) regCountCallees(msg *wamp.Invocation) wamp.Message {
 			Error:   wamp.ErrNoSuchRegistration,
 		}
 	}
-
 	return &wamp.Yield{
 		Request:   msg.Request,
-		Arguments: []interface{}{len(reg.callees)},
+		Arguments: []interface{}{count},
 	}
 }

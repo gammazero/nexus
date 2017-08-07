@@ -27,7 +27,7 @@ func TestBasicSubscribe(t *testing.T) {
 	subscriber := newTestPeer()
 	sess := &Session{Peer: subscriber}
 	testTopic := wamp.URI("nexus.test.topic")
-	broker.Submit(sess, &wamp.Subscribe{Request: 123, Topic: testTopic})
+	broker.Subscribe(sess, &wamp.Subscribe{Request: 123, Topic: testTopic})
 
 	// Test that subscriber received SUBSCRIBED message
 	rsp := <-sess.Recv()
@@ -58,7 +58,7 @@ func TestBasicSubscribe(t *testing.T) {
 	}
 
 	// Test subscribing to same topic again.
-	broker.Submit(sess, &wamp.Subscribe{Request: 123, Topic: testTopic})
+	broker.Subscribe(sess, &wamp.Subscribe{Request: 123, Topic: testTopic})
 	// Test that subscriber received SUBSCRIBED message
 	rsp = <-sess.Recv()
 	sub, ok = rsp.(*wamp.Subscribed)
@@ -82,7 +82,7 @@ func TestBasicSubscribe(t *testing.T) {
 
 	// Test subscribing to different topic.
 	testTopic2 := wamp.URI("nexus.test.topic2")
-	broker.Submit(sess, &wamp.Subscribe{Request: 123, Topic: testTopic2})
+	broker.Subscribe(sess, &wamp.Subscribe{Request: 123, Topic: testTopic2})
 	// Test that subscriber received SUBSCRIBED message
 	rsp = <-sess.Recv()
 	sub, ok = rsp.(*wamp.Subscribed)
@@ -113,12 +113,12 @@ func TestUnsubscribe(t *testing.T) {
 	subscriber := newTestPeer()
 	sess := &Session{Peer: subscriber}
 	testTopic := wamp.URI("nexus.test.topic")
-	broker.Submit(sess, &wamp.Subscribe{Request: 123, Topic: testTopic})
+	broker.Subscribe(sess, &wamp.Subscribe{Request: 123, Topic: testTopic})
 	rsp := <-sess.Recv()
 	subID := rsp.(*wamp.Subscribed).Subscription
 
 	// Test unsubscribing from topic.
-	broker.Submit(sess, &wamp.Unsubscribe{Request: 124, Subscription: subID})
+	broker.Unsubscribe(sess, &wamp.Unsubscribe{Request: 124, Subscription: subID})
 	// Check that session received UNSUBSCRIBED message.
 	rsp = <-sess.Recv()
 	unsub, ok := rsp.(*wamp.Unsubscribed)
@@ -147,12 +147,12 @@ func TestRemove(t *testing.T) {
 	subscriber := newTestPeer()
 	sess := &Session{Peer: subscriber}
 	testTopic := wamp.URI("nexus.test.topic")
-	broker.Submit(sess, &wamp.Subscribe{Request: 123, Topic: testTopic})
+	broker.Subscribe(sess, &wamp.Subscribe{Request: 123, Topic: testTopic})
 	rsp := <-sess.Recv()
 	subID := rsp.(*wamp.Subscribed).Subscription
 
 	testTopic2 := wamp.URI("nexus.test.topic2")
-	broker.Submit(sess, &wamp.Subscribe{Request: 456, Topic: testTopic2})
+	broker.Subscribe(sess, &wamp.Subscribe{Request: 456, Topic: testTopic2})
 	rsp = <-sess.Recv()
 	subID2 := rsp.(*wamp.Subscribed).Subscription
 
@@ -162,7 +162,7 @@ func TestRemove(t *testing.T) {
 	// Wait for another subscriber as a way to wait for the RemoveSession to
 	// complete.
 	sess2 := &Session{Peer: subscriber}
-	broker.Submit(sess2,
+	broker.Subscribe(sess2,
 		&wamp.Subscribe{Request: 789, Topic: wamp.URI("nexus.test.sync")})
 	rsp = <-sess2.Recv()
 
@@ -194,7 +194,7 @@ func TestBasicPubSub(t *testing.T) {
 		Request: 123,
 		Topic:   testTopic,
 	}
-	broker.Submit(sess, msg)
+	broker.Subscribe(sess, msg)
 
 	// Test that subscriber received SUBSCRIBED message
 	rsp := <-sess.Recv()
@@ -205,7 +205,7 @@ func TestBasicPubSub(t *testing.T) {
 
 	publisher := newTestPeer()
 	pubSess := &Session{Peer: publisher}
-	broker.Submit(pubSess, &wamp.Publish{Request: 124, Topic: testTopic,
+	broker.Publish(pubSess, &wamp.Publish{Request: 124, Topic: testTopic,
 		Arguments: []interface{}{"hello world"}})
 	rsp = <-sess.Recv()
 	evt, ok := rsp.(*wamp.Event)
@@ -234,7 +234,7 @@ func TestPrefxPatternBasedSubscription(t *testing.T) {
 		Topic:   testTopicPfx,
 		Options: map[string]interface{}{"match": "prefix"},
 	}
-	broker.Submit(sess, msg)
+	broker.Subscribe(sess, msg)
 
 	// Test that subscriber received SUBSCRIBED message
 	rsp := <-sess.Recv()
@@ -266,7 +266,7 @@ func TestPrefxPatternBasedSubscription(t *testing.T) {
 
 	publisher := newTestPeer()
 	pubSess := &Session{Peer: publisher}
-	broker.Submit(pubSess, &wamp.Publish{Request: 124, Topic: testTopic})
+	broker.Publish(pubSess, &wamp.Publish{Request: 124, Topic: testTopic})
 	rsp = <-sess.Recv()
 	evt, ok := rsp.(*wamp.Event)
 	if !ok {
@@ -294,7 +294,7 @@ func TestWildcardPatternBasedSubscription(t *testing.T) {
 		Topic:   testTopicWc,
 		Options: map[string]interface{}{"match": "wildcard"},
 	}
-	broker.Submit(sess, msg)
+	broker.Subscribe(sess, msg)
 
 	// Test that subscriber received SUBSCRIBED message
 	rsp := <-sess.Recv()
@@ -326,7 +326,7 @@ func TestWildcardPatternBasedSubscription(t *testing.T) {
 
 	publisher := newTestPeer()
 	pubSess := &Session{Peer: publisher}
-	broker.Submit(pubSess, &wamp.Publish{Request: 124, Topic: testTopic})
+	broker.Publish(pubSess, &wamp.Publish{Request: 124, Topic: testTopic})
 	rsp = <-sess.Recv()
 	evt, ok := rsp.(*wamp.Event)
 	if !ok {
@@ -356,7 +356,7 @@ func TestSubscriberBlackwhiteListing(t *testing.T) {
 	}
 	testTopic := wamp.URI("nexus.test.topic")
 
-	broker.Submit(sess, &wamp.Subscribe{Request: 123, Topic: testTopic})
+	broker.Subscribe(sess, &wamp.Subscribe{Request: 123, Topic: testTopic})
 
 	// Test that subscriber received SUBSCRIBED message
 	rsp := <-sess.Recv()
@@ -379,7 +379,7 @@ func TestSubscriberBlackwhiteListing(t *testing.T) {
 	pubSess := &Session{Peer: publisher, Details: details}
 
 	// Test whilelist
-	broker.Submit(pubSess, &wamp.Publish{
+	broker.Publish(pubSess, &wamp.Publish{
 		Request: 124,
 		Topic:   testTopic,
 		Options: map[string]interface{}{"eligible": []string{string(sess.ID)}},
@@ -389,7 +389,7 @@ func TestSubscriberBlackwhiteListing(t *testing.T) {
 		t.Fatal("not allowed by whitelist")
 	}
 	// Test whitelist authrole
-	broker.Submit(pubSess, &wamp.Publish{
+	broker.Publish(pubSess, &wamp.Publish{
 		Request: 125,
 		Topic:   testTopic,
 		Options: map[string]interface{}{"eligible_authrole": []string{"admin"}},
@@ -399,7 +399,7 @@ func TestSubscriberBlackwhiteListing(t *testing.T) {
 		t.Fatal("not allowed by authrole whitelist")
 	}
 	// Test whitelist authid
-	broker.Submit(pubSess, &wamp.Publish{
+	broker.Publish(pubSess, &wamp.Publish{
 		Request: 126,
 		Topic:   testTopic,
 		Options: map[string]interface{}{"eligible_authid": []string{"jdoe"}},
@@ -410,7 +410,7 @@ func TestSubscriberBlackwhiteListing(t *testing.T) {
 	}
 
 	// Test blacklist.
-	broker.Submit(pubSess, &wamp.Publish{
+	broker.Publish(pubSess, &wamp.Publish{
 		Request: 127,
 		Topic:   testTopic,
 		Options: map[string]interface{}{"exclude": []string{string(sess.ID)}},
@@ -420,7 +420,7 @@ func TestSubscriberBlackwhiteListing(t *testing.T) {
 		t.Fatal("not excluded by blacklist")
 	}
 	// Test blacklist authrole
-	broker.Submit(pubSess, &wamp.Publish{
+	broker.Publish(pubSess, &wamp.Publish{
 		Request: 128,
 		Topic:   testTopic,
 		Options: map[string]interface{}{"exclude_authrole": []string{"admin"}},
@@ -430,7 +430,7 @@ func TestSubscriberBlackwhiteListing(t *testing.T) {
 		t.Fatal("not excluded by authrole blacklist")
 	}
 	// Test blacklist authid
-	broker.Submit(pubSess, &wamp.Publish{
+	broker.Publish(pubSess, &wamp.Publish{
 		Request: 129,
 		Topic:   testTopic,
 		Options: map[string]interface{}{"exclude_authid": []string{"jdoe"}},
@@ -441,7 +441,7 @@ func TestSubscriberBlackwhiteListing(t *testing.T) {
 	}
 
 	// Test that blacklist takes precedence over whitelist.
-	broker.Submit(pubSess, &wamp.Publish{
+	broker.Publish(pubSess, &wamp.Publish{
 		Request: 126,
 		Topic:   testTopic,
 		Options: map[string]interface{}{"eligible_authid": []string{"jdoe"},
@@ -459,7 +459,7 @@ func TestPublisherExclusion(t *testing.T) {
 	sess := &Session{Peer: subscriber}
 	testTopic := wamp.URI("nexus.test.topic")
 
-	broker.Submit(sess, &wamp.Subscribe{Request: 123, Topic: testTopic})
+	broker.Subscribe(sess, &wamp.Subscribe{Request: 123, Topic: testTopic})
 
 	// Test that subscriber received SUBSCRIBED message
 	rsp, err := wamp.RecvTimeout(sess, time.Second)
@@ -485,7 +485,7 @@ func TestPublisherExclusion(t *testing.T) {
 	pubSess := &Session{Peer: publisher, Details: details}
 
 	// Subscribe the publish session also.
-	broker.Submit(pubSess, &wamp.Subscribe{Request: 123, Topic: testTopic})
+	broker.Subscribe(pubSess, &wamp.Subscribe{Request: 123, Topic: testTopic})
 	// Test that pub session received SUBSCRIBED message
 	rsp, err = wamp.RecvTimeout(pubSess, time.Second)
 	if err != nil {
@@ -497,7 +497,7 @@ func TestPublisherExclusion(t *testing.T) {
 	}
 
 	// Publish message with exclud_me = false.
-	broker.Submit(pubSess, &wamp.Publish{
+	broker.Publish(pubSess, &wamp.Publish{
 		Request: 124,
 		Topic:   testTopic,
 		Options: map[string]interface{}{"exclude_me": false},
@@ -512,7 +512,7 @@ func TestPublisherExclusion(t *testing.T) {
 	}
 
 	// Publish message with exclud_me = true.
-	broker.Submit(pubSess, &wamp.Publish{
+	broker.Publish(pubSess, &wamp.Publish{
 		Request: 124,
 		Topic:   testTopic,
 		Options: map[string]interface{}{"exclude_me": true},
@@ -544,7 +544,7 @@ func TestPublisherIdentification(t *testing.T) {
 
 	testTopic := wamp.URI("nexus.test.topic")
 
-	broker.Submit(sess, &wamp.Subscribe{Request: 123, Topic: testTopic})
+	broker.Subscribe(sess, &wamp.Subscribe{Request: 123, Topic: testTopic})
 
 	// Test that subscriber received SUBSCRIBED message
 	rsp := <-sess.Recv()
@@ -555,7 +555,7 @@ func TestPublisherIdentification(t *testing.T) {
 
 	publisher := newTestPeer()
 	pubSess := &Session{Peer: publisher, ID: wamp.GlobalID()}
-	broker.Submit(pubSess, &wamp.Publish{
+	broker.Publish(pubSess, &wamp.Publish{
 		Request: 124,
 		Topic:   testTopic,
 		Options: map[string]interface{}{"disclose_me": true},

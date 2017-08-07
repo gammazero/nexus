@@ -96,10 +96,10 @@ func NewWebsocketPeer(conn *websocket.Conn, serializer serialize.Serializer, pay
 		closed:       make(chan struct{}),
 		wsWriterDone: make(chan struct{}),
 
-		// Messages read from the websocket can be handled immediately, since
-		// they have traveled over the websocket and the read channel does not
-		// need to be more than size 1.
-		rd: make(chan wamp.Message, 1),
+		// The router will read from this channen and immediately dispatch the
+		// message to the broker or dealer.  Therefore this channel can be
+		// unbuffered.
+		rd: make(chan wamp.Message),
 
 		// The channel for messages being written to the websocket sould be
 		// large enough to prevent blocking while waiting for a slow websocket

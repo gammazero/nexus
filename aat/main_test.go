@@ -1,6 +1,7 @@
 package aat
 
 import (
+	"flag"
 	"fmt"
 	"log"
 	"net"
@@ -20,10 +21,6 @@ import (
 
 const (
 	testRealm = "nexus.test.realm"
-
-	// Creates websocket client if true.  Otherwise, create embedded client
-	// that only uses channels to communicate with router.
-	websocketClient = true
 )
 
 var (
@@ -35,10 +32,22 @@ var (
 	port      int
 
 	err error
+
+	// Creates websocket client if true.  Otherwise, create embedded client
+	// that only uses channels to communicate with router.
+	websocketClient bool
 )
 
 func TestMain(m *testing.M) {
 	// ----- Setup environment -----
+	flag.BoolVar(&websocketClient, "websocket", false,
+		"use websocket to connect clients to router")
+	flag.Parse()
+	if websocketClient {
+		fmt.Println("===== USING WEBSOCKET CLIENT =====")
+	} else {
+		fmt.Println("===== USING LOCAL CLIENT =====")
+	}
 
 	// Create separate logger for client and router.
 	cliLogger = log.New(os.Stdout, "CLIENT> ", log.LstdFlags)

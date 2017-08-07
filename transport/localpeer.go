@@ -20,11 +20,10 @@ func LinkedPeers(logger logger.Logger) (wamp.Peer, wamp.Peer) {
 	// should be dropped.
 	rToC := make(chan wamp.Message, linkedPeersOutQueueSize)
 
-	// Messages read from a client can usually be handled immediately, since
-	// routing is fast and does not block on I/O.  Therefore this channle does
-	// not need to be more than size 1.  The channel is not unbuffered (size 0)
-	// so that the router can hand off message without any delay.
-	cToR := make(chan wamp.Message, 1)
+	// The router will read from this channen and immediately dispatch the
+	// message to the broker or dealer.  Therefore this channel can be
+	// unbuffered.
+	cToR := make(chan wamp.Message)
 
 	// router reads from and writes to client
 	r := &localPeer{rd: cToR, wr: rToC}

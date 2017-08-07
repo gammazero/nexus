@@ -25,9 +25,32 @@ var brokerFeatures = map[string]interface{}{
 // Broker is the interface implemented by an object that handles routing EVENTS
 // from Publishers to Subscribers.
 type Broker interface {
-	// Submit dispatches a Publish, Subscribe, or Unsubscribe message to the
-	// broker.
-	Submit(sess *Session, msg wamp.Message)
+	// Publish finds all subscriptions for the topic being published to,
+	// including those matching the topic by pattern, and sends an event to the
+	// subscribers of that topic.
+	//
+	// When a single event matches more than one of a Subscriber's
+	// subscriptions, the event will be delivered for each subscription.
+	//
+	// The Subscriber can detect the delivery of that same event on multiple
+	// subscriptions via EVENT.PUBLISHED.Publication, which will be identical.
+	Publish(*Session, *wamp.Publish)
+
+	// subscribe subscribes the client to the given topic.
+	//
+	// In case of receiving a SUBSCRIBE message from the same Subscriber and to
+	// already subscribed topic, Broker should answer with SUBSCRIBED message,
+	// containing the existing Subscription|id.
+	//
+	// By default, Subscribers subscribe to topics with exact matching
+	// policy. A Subscriber might want to subscribe to topics based on a
+	// pattern.  If the Broker and the Subscriber support pattern-based
+	// subscriptions, this matching can happen by prefix-matching policy or
+	// wildcard-matching policy.
+	Subscribe(*Session, *wamp.Subscribe)
+
+	// Unsubscribe removes the requested subscription.
+	Unsubscribe(*Session, *wamp.Unsubscribe)
 
 	// RemoveSession removes all subscriptions of the subscriber.
 	RemoveSession(*Session)
@@ -40,11 +63,6 @@ type Broker interface {
 	// The data returned is suitable for use as the "features" section of the
 	// broker role in a WELCOME message.
 	Features() map[string]interface{}
-}
-
-type brokerReq struct {
-	session *Session
-	msg     wamp.Message
 }
 
 type broker struct {
@@ -61,7 +79,7 @@ type broker struct {
 	// Session -> subscription ID set
 	sessionSubIDSet map[*Session]map[wamp.ID]struct{}
 
-	reqChan chan brokerReq
+	actionChan chan func()
 
 	// Generate subscription IDs.
 	idGen *wamp.IDGen
@@ -83,17 +101,17 @@ func NewBroker(strictURI, allowDisclose bool) Broker {
 
 		sessionSubIDSet: map[*Session]map[wamp.ID]struct{}{},
 
-		// The request handler should be nearly always runable, since it is
-		// the critical section that does the only routing. So, and unbuffered
+		// The action handler should be nearly always runable, since it is the
+		// critical section that does the only routing.  So, and unbuffered
 		// channel is appropriate.
-		reqChan: make(chan brokerReq),
+		actionChan: make(chan func()),
 
 		idGen: wamp.NewIDGen(),
 
 		strictURI:     strictURI,
 		allowDisclose: allowDisclose,
 	}
-	go b.reqHandler()
+	go b.run()
 	return b
 }
 
@@ -102,70 +120,11 @@ func (b *broker) Features() map[string]interface{} {
 	return brokerFeatures
 }
 
-// Submit dispatches messages for the broker to route.  Messages are routed
-// serially by the broker's message handling goroutine.  This serialization is
-// limited to the work of determine the message's destination, and then the
-// message is handed off to the next goroutine, typically the receiving
-// client's send handler.
-func (b *broker) Submit(sess *Session, msg wamp.Message) {
-	// All calls dispatched by Submit require both a session and a message.  It
-	// is a programming error to call Submit without a session or without a
-	// message.
-	if msg == nil || sess == nil {
-		panic("broker.Submit with nil session or message")
+// Publish publishes an event to subscribers.
+func (b *broker) Publish(pub *Session, msg *wamp.Publish) {
+	if pub == nil || msg == nil {
+		panic("broker.Publish with nil session or message")
 	}
-	b.reqChan <- brokerReq{session: sess, msg: msg}
-}
-
-func (b *broker) RemoveSession(sess *Session) {
-	if sess == nil {
-		// No session specified, no session removed.
-		return
-	}
-	b.reqChan <- brokerReq{session: sess}
-}
-
-// Close stops the broker and waits message processing to stop.
-func (b *broker) Close() {
-	close(b.reqChan)
-}
-
-// reqHandler is broker's main processing function that is run by a single
-// goroutine.  All functions that access broker data structures run on this
-// routine.
-func (b *broker) reqHandler() {
-	for req := range b.reqChan {
-		sess := req.session
-		switch msg := req.msg.(type) {
-		case nil:
-			b.removeSession(req.session)
-		case *wamp.Publish:
-			b.publish(sess, msg)
-		case *wamp.Subscribe:
-			b.subscribe(sess, msg)
-		case *wamp.Unsubscribe:
-			b.unsubscribe(sess, msg)
-		default:
-			// Any invalid message type is caught in the realm's session
-			// handler.  Therefore, if an invalid message makes it here, then
-			// this is a programming error where the session handler is passing
-			// in the wrong type of message to the broker.
-			panic(fmt.Sprint("broker received message type: ",
-				req.msg.MessageType()))
-		}
-	}
-}
-
-// publish finds all subscriptions for the topic being published to, including
-// those matching the topic by pattern, and sends an event to the subscribers
-// of that topic.
-//
-// When a single event matches more than one of a Subscriber's subscriptions,
-// the event will be delivered for each subscription.
-//
-// The Subscriber can detect the delivery of that same event on multiple
-// subscriptions via EVENT.PUBLISHED.Publication, which will be identical.
-func (b *broker) publish(pub *Session, msg *wamp.Publish) {
 	// Validate URI.  For PUBLISH, must be valid URI (either strict or loose),
 	// and all URI components must be non-empty.
 	if !msg.Topic.ValidURI(b.strictURI, "") {
@@ -187,11 +146,9 @@ func (b *broker) publish(pub *Session, msg *wamp.Publish) {
 		return
 	}
 
-	pubID := wamp.GlobalID()
-
-	excludePublisher := true
+	excludePub := true
 	if exclude, ok := msg.Options["exclude_me"].(bool); ok {
-		excludePublisher = exclude
+		excludePub = exclude
 	}
 
 	// A Broker may also (automatically) disclose the identity of a
@@ -211,23 +168,9 @@ func (b *broker) publish(pub *Session, msg *wamp.Publish) {
 		}
 		disclose = true
 	}
-
-	// Publish to subscribers with exact match.
-	subs := b.topicSubscribers[msg.Topic]
-	b.pubEvent(pub, msg, pubID, subs, excludePublisher, false, disclose)
-
-	// Publish to subscribers with prefix match.
-	for pfxTopic, subs := range b.pfxTopicSubscribers {
-		if msg.Topic.PrefixMatch(pfxTopic) {
-			b.pubEvent(pub, msg, pubID, subs, excludePublisher, true, disclose)
-		}
-	}
-
-	// Publish to subscribers with wildcard match.
-	for wcTopic, subs := range b.wcTopicSubscribers {
-		if msg.Topic.WildcardMatch(wcTopic) {
-			b.pubEvent(pub, msg, pubID, subs, excludePublisher, true, disclose)
-		}
+	pubID := wamp.GlobalID()
+	b.actionChan <- func() {
+		b.publish(pub, msg, pubID, excludePub, disclose)
 	}
 
 	// Send Published message if acknowledge is present and true.
@@ -236,17 +179,11 @@ func (b *broker) publish(pub *Session, msg *wamp.Publish) {
 	}
 }
 
-// subscribe subscribes the client to the given topic.
-//
-// In case of receiving a SUBSCRIBE message from the same Subscriber and to
-// already subscribed topic, Broker should answer with SUBSCRIBED message,
-// containing the existing Subscription|id.
-//
-// By default, Subscribers subscribe to topics with exact matching policy. A
-// Subscriber might want to subscribe to topics based on a pattern.  If the
-// Broker and the Subscriber support pattern-based subscriptions, this matching
-// can happen by prefix-matching policy or wildcard-matching policy.
-func (b *broker) subscribe(sub *Session, msg *wamp.Subscribe) {
+// Subscribe subscribes the client to the given topic.
+func (b *broker) Subscribe(sub *Session, msg *wamp.Subscribe) {
+	if sub == nil || msg == nil {
+		panic("broker.Subscribe with nil session or message")
+	}
 	// Validate topic URI.  For SUBSCRIBE, must be valid URI (either strict or
 	// loose), and all URI components must be non-empty for normal
 	// subscriptions, may be empty for wildcard subscriptions and must be
@@ -265,6 +202,63 @@ func (b *broker) subscribe(sub *Session, msg *wamp.Subscribe) {
 		return
 	}
 
+	b.actionChan <- func() {
+		b.subscribe(sub, msg, match)
+	}
+}
+
+// Unsubscribe removes the requested subscription.
+func (b *broker) Unsubscribe(sub *Session, msg *wamp.Unsubscribe) {
+	if sub == nil || msg == nil {
+		panic("broker.Unsubscribe with nil session or message")
+	}
+	b.actionChan <- func() {
+		b.unsubscribe(sub, msg)
+	}
+}
+
+func (b *broker) RemoveSession(sess *Session) {
+	if sess == nil {
+		return
+	}
+	b.actionChan <- func() {
+		b.removeSession(sess)
+	}
+}
+
+// Close stops the broker and waits message processing to stop.
+func (b *broker) Close() {
+	close(b.actionChan)
+}
+
+func (b *broker) run() {
+	for action := range b.actionChan {
+		action()
+	}
+	log.Print("Broker stopped")
+}
+
+func (b *broker) publish(pub *Session, msg *wamp.Publish, pubID wamp.ID, excludePub, disclose bool) {
+	// Publish to subscribers with exact match.
+	subs := b.topicSubscribers[msg.Topic]
+	b.pubEvent(pub, msg, pubID, subs, excludePub, false, disclose)
+
+	// Publish to subscribers with prefix match.
+	for pfxTopic, subs := range b.pfxTopicSubscribers {
+		if msg.Topic.PrefixMatch(pfxTopic) {
+			b.pubEvent(pub, msg, pubID, subs, excludePub, true, disclose)
+		}
+	}
+
+	// Publish to subscribers with wildcard match.
+	for wcTopic, subs := range b.wcTopicSubscribers {
+		if msg.Topic.WildcardMatch(wcTopic) {
+			b.pubEvent(pub, msg, pubID, subs, excludePub, true, disclose)
+		}
+	}
+}
+
+func (b *broker) subscribe(sub *Session, msg *wamp.Subscribe, match string) {
 	var idSub map[wamp.ID]*Session
 	var subscriptions map[wamp.ID]wamp.URI
 	var ok bool
@@ -335,7 +329,6 @@ func (b *broker) subscribe(sub *Session, msg *wamp.Subscribe) {
 	b.pubSubMeta(wamp.MetaEventSubOnSubscribe, sub.ID, id)
 }
 
-// unsubscribe removes the requested subscription.
 func (b *broker) unsubscribe(sub *Session, msg *wamp.Unsubscribe) {
 	var delLastSub bool
 	var topicSubscribers map[wamp.URI]map[wamp.ID]*Session

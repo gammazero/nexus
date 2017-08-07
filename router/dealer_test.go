@@ -44,7 +44,7 @@ func TestBasicRegister(t *testing.T) {
 	// Register callee
 	callee := newTestPeer()
 	sess := &Session{Peer: callee}
-	dealer.Submit(sess, &wamp.Register{Request: 123, Procedure: testProcedure})
+	dealer.Register(sess, &wamp.Register{Request: 123, Procedure: testProcedure})
 
 	rsp := <-callee.Recv()
 	// Test that callee receives a registered message.
@@ -82,7 +82,7 @@ func TestBasicRegister(t *testing.T) {
 	}
 
 	// Check the procedure cannot be registered more than once.
-	dealer.Submit(sess, &wamp.Register{Request: 456, Procedure: testProcedure})
+	dealer.Register(sess, &wamp.Register{Request: 456, Procedure: testProcedure})
 	rsp = <-callee.Recv()
 	errMsg := rsp.(*wamp.Error)
 	if errMsg.Error != wamp.ErrProcedureAlreadyExists {
@@ -99,7 +99,7 @@ func TestUnregister(t *testing.T) {
 	// Register a procedure.
 	callee := newTestPeer()
 	sess := &Session{Peer: callee}
-	dealer.Submit(sess, &wamp.Register{Request: 123, Procedure: testProcedure})
+	dealer.Register(sess, &wamp.Register{Request: 123, Procedure: testProcedure})
 	rsp := <-callee.Recv()
 	regID := rsp.(*wamp.Registered).Registration
 
@@ -111,7 +111,7 @@ func TestUnregister(t *testing.T) {
 	}
 
 	// Unregister the procedure.
-	dealer.Submit(sess, &wamp.Unregister{Request: 124, Registration: regID})
+	dealer.Unregister(sess, &wamp.Unregister{Request: 124, Registration: regID})
 
 	// Check that callee received UNREGISTERED message.
 	rsp = <-callee.Recv()
@@ -149,14 +149,13 @@ func TestBasicCall(t *testing.T) {
 	// Register a procedure.
 	callee := newTestPeer()
 	calleeSess := &Session{Peer: callee}
-	dealer.Submit(calleeSess,
+	dealer.Register(calleeSess,
 		&wamp.Register{Request: 123, Procedure: testProcedure})
 	rsp := <-callee.Recv()
 	_, ok := rsp.(*wamp.Registered)
 	if !ok {
 		t.Fatal("did not receive REGISTERED response")
 	}
-
 	if err := checkMetaReg(metaClient, calleeSess.ID); err != nil {
 		t.Fatal("Registration meta event fail: ", err)
 	}
@@ -168,9 +167,9 @@ func TestBasicCall(t *testing.T) {
 	callerSession := &Session{Peer: caller}
 
 	// Test calling invalid procedure
-	dealer.Submit(callerSession,
+	dealer.Call(callerSession,
 		&wamp.Call{Request: 124, Procedure: wamp.URI("nexus.test.bad")})
-	rsp = <-caller.Recv()
+	rsp = <-callerSession.Recv()
 	errMsg, ok := rsp.(*wamp.Error)
 	if !ok {
 		t.Fatal("expected ERROR response, got: ", rsp.MessageType())
@@ -183,7 +182,7 @@ func TestBasicCall(t *testing.T) {
 	}
 
 	// Test calling valid procedure
-	dealer.Submit(callerSession,
+	dealer.Call(callerSession,
 		&wamp.Call{Request: 125, Procedure: testProcedure})
 
 	// Test that callee received an INVOCATION message.
@@ -194,7 +193,7 @@ func TestBasicCall(t *testing.T) {
 	}
 
 	// Callee responds with a YIELD message
-	dealer.Submit(calleeSess, &wamp.Yield{Request: inv.Request})
+	dealer.Yield(calleeSess, &wamp.Yield{Request: inv.Request})
 	// Check that caller received a RESULT message.
 	rsp = <-caller.Recv()
 	rslt, ok := rsp.(*wamp.Result)
@@ -206,14 +205,14 @@ func TestBasicCall(t *testing.T) {
 	}
 
 	// Test calling valid procedure, with callee responding with error.
-	dealer.Submit(callerSession,
+	dealer.Call(callerSession,
 		&wamp.Call{Request: 126, Procedure: testProcedure})
 	// callee received an INVOCATION message.
 	rsp = <-callee.Recv()
 	inv = rsp.(*wamp.Invocation)
 
 	// Callee responds with a ERROR message
-	dealer.Submit(calleeSess, &wamp.Error{Request: inv.Request})
+	dealer.Error(calleeSess, &wamp.Error{Request: inv.Request})
 
 	// Check that caller received an ERROR message.
 	rsp = <-caller.Recv()
@@ -233,7 +232,7 @@ func TestRemovePeer(t *testing.T) {
 	callee := newTestPeer()
 	sess := &Session{Peer: callee}
 	msg := &wamp.Register{Request: 123, Procedure: testProcedure}
-	dealer.Submit(sess, msg)
+	dealer.Register(sess, msg)
 	rsp := <-callee.Recv()
 	regID := rsp.(*wamp.Registered).Registration
 
@@ -256,7 +255,7 @@ func TestRemovePeer(t *testing.T) {
 
 	// Register as a way to sync with dealer.
 	sess2 := &Session{Peer: callee}
-	dealer.Submit(sess2,
+	dealer.Register(sess2,
 		&wamp.Register{Request: 789, Procedure: wamp.URI("nexus.test.p2")})
 	rsp = <-callee.Recv()
 
@@ -269,7 +268,7 @@ func TestRemovePeer(t *testing.T) {
 
 	// Tests that registering the callee again succeeds.
 	msg.Request = 124
-	dealer.Submit(sess, msg)
+	dealer.Register(sess, msg)
 	rsp = <-callee.Recv()
 	if rsp.MessageType() != wamp.REGISTERED {
 		t.Fatal("expected ", wamp.REGISTERED, " got: ", rsp.MessageType())
@@ -294,7 +293,7 @@ func TestCancelCallModeKill(t *testing.T) {
 	// Register a procedure.
 	callee := newTestPeer()
 	calleeSess := &Session{Peer: callee, Details: calleeRoles}
-	dealer.Submit(calleeSess,
+	dealer.Register(calleeSess,
 		&wamp.Register{Request: 123, Procedure: testProcedure})
 	rsp := <-callee.Recv()
 	_, ok := rsp.(*wamp.Registered)
@@ -310,7 +309,7 @@ func TestCancelCallModeKill(t *testing.T) {
 	callerSession := &Session{Peer: caller}
 
 	// Test calling valid procedure
-	dealer.Submit(callerSession,
+	dealer.Call(callerSession,
 		&wamp.Call{Request: 125, Procedure: testProcedure})
 
 	// Test that callee received an INVOCATION message.
@@ -322,7 +321,7 @@ func TestCancelCallModeKill(t *testing.T) {
 
 	// Test caller cancelling call. mode=kill
 	opts := wamp.SetOption(nil, "mode", "kill")
-	dealer.Submit(callerSession, &wamp.Cancel{Request: 125, Options: opts})
+	dealer.Cancel(callerSession, &wamp.Cancel{Request: 125, Options: opts})
 
 	// callee should receive an INTERRUPT request
 	rsp = <-callee.Recv()
@@ -335,7 +334,7 @@ func TestCancelCallModeKill(t *testing.T) {
 	}
 
 	// callee responds with ERROR message
-	dealer.Submit(calleeSess, &wamp.Error{
+	dealer.Error(calleeSess, &wamp.Error{
 		Type:    wamp.INVOCATION,
 		Request: inv.Request,
 		Error:   wamp.ErrCanceled,
@@ -375,7 +374,7 @@ func TestCancelCallModeKillNoWait(t *testing.T) {
 	// Register a procedure.
 	callee := newTestPeer()
 	calleeSess := &Session{Peer: callee, Details: calleeRoles}
-	dealer.Submit(calleeSess,
+	dealer.Register(calleeSess,
 		&wamp.Register{Request: 123, Procedure: testProcedure})
 	rsp := <-callee.Recv()
 	_, ok := rsp.(*wamp.Registered)
@@ -391,7 +390,7 @@ func TestCancelCallModeKillNoWait(t *testing.T) {
 	callerSession := &Session{Peer: caller}
 
 	// Test calling valid procedure
-	dealer.Submit(callerSession,
+	dealer.Call(callerSession,
 		&wamp.Call{Request: 125, Procedure: testProcedure})
 
 	// Test that callee received an INVOCATION message.
@@ -403,7 +402,7 @@ func TestCancelCallModeKillNoWait(t *testing.T) {
 
 	// Test caller cancelling call. mode=kill
 	opts := wamp.SetOption(nil, "mode", "killnowait")
-	dealer.Submit(callerSession, &wamp.Cancel{Request: 125, Options: opts})
+	dealer.Cancel(callerSession, &wamp.Cancel{Request: 125, Options: opts})
 
 	// callee should receive an INTERRUPT request
 	rsp = <-callee.Recv()
@@ -416,7 +415,7 @@ func TestCancelCallModeKillNoWait(t *testing.T) {
 	}
 
 	// callee responds with ERROR message
-	dealer.Submit(calleeSess, &wamp.Error{
+	dealer.Error(calleeSess, &wamp.Error{
 		Type:    wamp.INVOCATION,
 		Request: inv.Request,
 		Error:   wamp.ErrCanceled,
@@ -453,7 +452,7 @@ func TestCancelCallModeSkip(t *testing.T) {
 	}
 
 	calleeSess := &Session{Peer: callee, Details: calleeRoles}
-	dealer.Submit(calleeSess,
+	dealer.Register(calleeSess,
 		&wamp.Register{Request: 123, Procedure: testProcedure})
 	rsp := <-callee.Recv()
 	_, ok := rsp.(*wamp.Registered)
@@ -469,7 +468,7 @@ func TestCancelCallModeSkip(t *testing.T) {
 	callerSession := &Session{Peer: caller}
 
 	// Test calling valid procedure
-	dealer.Submit(callerSession,
+	dealer.Call(callerSession,
 		&wamp.Call{Request: 125, Procedure: testProcedure})
 
 	// Test that callee received an INVOCATION message.
@@ -481,7 +480,7 @@ func TestCancelCallModeSkip(t *testing.T) {
 
 	// Test caller cancelling call. mode=kill
 	opts := wamp.SetOption(nil, "mode", "skip")
-	dealer.Submit(callerSession, &wamp.Cancel{Request: 125, Options: opts})
+	dealer.Cancel(callerSession, &wamp.Cancel{Request: 125, Options: opts})
 
 	// callee should NOT receive an INTERRUPT request
 	select {
@@ -517,7 +516,7 @@ func TestSharedRegistrationRoundRobin(t *testing.T) {
 	// Register callee1 with roundrobin shared registration
 	callee1 := newTestPeer()
 	calleeSess1 := &Session{Peer: callee1, Details: calleeRoles}
-	dealer.Submit(calleeSess1, &wamp.Register{
+	dealer.Register(calleeSess1, &wamp.Register{
 		Request:   123,
 		Procedure: testProcedure,
 		Options:   wamp.SetOption(nil, "invoke", "roundrobin"),
@@ -539,7 +538,7 @@ func TestSharedRegistrationRoundRobin(t *testing.T) {
 	// Register callee2 with roundrobin shared registration
 	callee2 := newTestPeer()
 	calleeSess2 := &Session{Peer: callee2, Details: calleeRoles}
-	dealer.Submit(calleeSess2, &wamp.Register{
+	dealer.Register(calleeSess2, &wamp.Register{
 		Request:   124,
 		Procedure: testProcedure,
 		Options:   wamp.SetOption(nil, "invoke", "roundrobin"),
@@ -561,7 +560,7 @@ func TestSharedRegistrationRoundRobin(t *testing.T) {
 	// Test calling valid procedure
 	caller := newTestPeer()
 	callerSession := &Session{Peer: caller}
-	dealer.Submit(callerSession,
+	dealer.Call(callerSession,
 		&wamp.Call{Request: 125, Procedure: testProcedure})
 
 	// Test that callee1 received an INVOCATION message.
@@ -579,7 +578,7 @@ func TestSharedRegistrationRoundRobin(t *testing.T) {
 	}
 
 	// Callee responds with a YIELD message
-	dealer.Submit(calleeSess1, &wamp.Yield{Request: inv.Request})
+	dealer.Yield(calleeSess1, &wamp.Yield{Request: inv.Request})
 	// Check that caller received a RESULT message.
 	rsp = <-caller.Recv()
 	rslt, ok := rsp.(*wamp.Result)
@@ -591,7 +590,7 @@ func TestSharedRegistrationRoundRobin(t *testing.T) {
 	}
 
 	// Test calling valid procedure
-	dealer.Submit(callerSession,
+	dealer.Call(callerSession,
 		&wamp.Call{Request: 126, Procedure: testProcedure})
 
 	// Test that callee2 received an INVOCATION message.
@@ -608,7 +607,7 @@ func TestSharedRegistrationRoundRobin(t *testing.T) {
 	}
 
 	// Callee responds with a YIELD message
-	dealer.Submit(calleeSess2, &wamp.Yield{Request: inv.Request})
+	dealer.Yield(calleeSess2, &wamp.Yield{Request: inv.Request})
 	// Check that caller received a RESULT message.
 	rsp = <-caller.Recv()
 	rslt, ok = rsp.(*wamp.Result)
@@ -636,7 +635,7 @@ func TestSharedRegistrationFirst(t *testing.T) {
 	// Register callee1 with first shared registration
 	callee1 := newTestPeer()
 	calleeSess1 := &Session{Peer: callee1, Details: calleeRoles}
-	dealer.Submit(calleeSess1, &wamp.Register{
+	dealer.Register(calleeSess1, &wamp.Register{
 		Request:   123,
 		Procedure: testProcedure,
 		Options:   wamp.SetOption(nil, "invoke", "first"),
@@ -658,7 +657,7 @@ func TestSharedRegistrationFirst(t *testing.T) {
 	// Register callee2 with roundrobin shared registration
 	callee2 := newTestPeer()
 	calleeSess2 := &Session{Peer: callee2, Details: calleeRoles}
-	dealer.Submit(calleeSess2, &wamp.Register{
+	dealer.Register(calleeSess2, &wamp.Register{
 		Request:   1233,
 		Procedure: testProcedure,
 		Options:   wamp.SetOption(nil, "invoke", "roundrobin"),
@@ -670,7 +669,7 @@ func TestSharedRegistrationFirst(t *testing.T) {
 	}
 
 	// Register callee2 with "first" shared registration
-	dealer.Submit(calleeSess2, &wamp.Register{
+	dealer.Register(calleeSess2, &wamp.Register{
 		Request:   124,
 		Procedure: testProcedure,
 		Options:   wamp.SetOption(nil, "invoke", "first"),
@@ -691,7 +690,7 @@ func TestSharedRegistrationFirst(t *testing.T) {
 	// Test calling valid procedure
 	caller := newTestPeer()
 	callerSession := &Session{Peer: caller}
-	dealer.Submit(callerSession,
+	dealer.Call(callerSession,
 		&wamp.Call{Request: 125, Procedure: testProcedure})
 
 	// Test that callee1 received an INVOCATION message.
@@ -709,7 +708,7 @@ func TestSharedRegistrationFirst(t *testing.T) {
 	}
 
 	// Callee responds with a YIELD message
-	dealer.Submit(calleeSess1, &wamp.Yield{Request: inv.Request})
+	dealer.Yield(calleeSess1, &wamp.Yield{Request: inv.Request})
 	// Check that caller received a RESULT message.
 	rsp = <-caller.Recv()
 	rslt, ok := rsp.(*wamp.Result)
@@ -721,7 +720,7 @@ func TestSharedRegistrationFirst(t *testing.T) {
 	}
 
 	// Test calling valid procedure
-	dealer.Submit(callerSession,
+	dealer.Call(callerSession,
 		&wamp.Call{Request: 126, Procedure: testProcedure})
 
 	// Test that callee1 received an INVOCATION message.
@@ -738,7 +737,7 @@ func TestSharedRegistrationFirst(t *testing.T) {
 	}
 
 	// Callee responds with a YIELD message
-	dealer.Submit(calleeSess2, &wamp.Yield{Request: inv.Request})
+	dealer.Yield(calleeSess2, &wamp.Yield{Request: inv.Request})
 	// Check that caller received a RESULT message.
 	rsp = <-caller.Recv()
 	rslt, ok = rsp.(*wamp.Result)
@@ -759,7 +758,7 @@ func TestSharedRegistrationFirst(t *testing.T) {
 	}
 
 	// Test calling valid procedure
-	dealer.Submit(callerSession,
+	dealer.Call(callerSession,
 		&wamp.Call{Request: 127, Procedure: testProcedure})
 
 	// Test that callee2 received an INVOCATION message.
@@ -776,7 +775,7 @@ func TestSharedRegistrationFirst(t *testing.T) {
 	}
 
 	// Callee responds with a YIELD message
-	dealer.Submit(calleeSess2, &wamp.Yield{Request: inv.Request})
+	dealer.Yield(calleeSess2, &wamp.Yield{Request: inv.Request})
 	// Check that caller received a RESULT message.
 	rsp = <-caller.Recv()
 	rslt, ok = rsp.(*wamp.Result)
@@ -804,7 +803,7 @@ func TestSharedRegistrationLast(t *testing.T) {
 	// Register callee1 with last shared registration
 	callee1 := newTestPeer()
 	calleeSess1 := &Session{Peer: callee1, Details: calleeRoles}
-	dealer.Submit(calleeSess1, &wamp.Register{
+	dealer.Register(calleeSess1, &wamp.Register{
 		Request:   123,
 		Procedure: testProcedure,
 		Options:   wamp.SetOption(nil, "invoke", "last"),
@@ -825,7 +824,7 @@ func TestSharedRegistrationLast(t *testing.T) {
 	// Register callee2 with last shared registration
 	callee2 := newTestPeer()
 	calleeSess2 := &Session{Peer: callee2, Details: calleeRoles}
-	dealer.Submit(calleeSess2, &wamp.Register{
+	dealer.Register(calleeSess2, &wamp.Register{
 		Request:   124,
 		Procedure: testProcedure,
 		Options:   wamp.SetOption(nil, "invoke", "last"),
@@ -841,7 +840,7 @@ func TestSharedRegistrationLast(t *testing.T) {
 	// Test calling valid procedure
 	caller := newTestPeer()
 	callerSession := &Session{Peer: caller}
-	dealer.Submit(callerSession,
+	dealer.Call(callerSession,
 		&wamp.Call{Request: 125, Procedure: testProcedure})
 
 	// Test that callee2 received an INVOCATION message.
@@ -859,7 +858,7 @@ func TestSharedRegistrationLast(t *testing.T) {
 	}
 
 	// Callee responds with a YIELD message
-	dealer.Submit(calleeSess2, &wamp.Yield{Request: inv.Request})
+	dealer.Yield(calleeSess2, &wamp.Yield{Request: inv.Request})
 	// Check that caller received a RESULT message.
 	rsp = <-caller.Recv()
 	rslt, ok := rsp.(*wamp.Result)
@@ -871,7 +870,7 @@ func TestSharedRegistrationLast(t *testing.T) {
 	}
 
 	// Test calling valid procedure
-	dealer.Submit(callerSession,
+	dealer.Call(callerSession,
 		&wamp.Call{Request: 126, Procedure: testProcedure})
 
 	// Test that callee2 received an INVOCATION message.
@@ -888,7 +887,7 @@ func TestSharedRegistrationLast(t *testing.T) {
 	}
 
 	// Callee responds with a YIELD message
-	dealer.Submit(calleeSess2, &wamp.Yield{Request: inv.Request})
+	dealer.Yield(calleeSess2, &wamp.Yield{Request: inv.Request})
 	// Check that caller received a RESULT message.
 	rsp = <-caller.Recv()
 	rslt, ok = rsp.(*wamp.Result)
@@ -909,7 +908,7 @@ func TestSharedRegistrationLast(t *testing.T) {
 	}
 
 	// Test calling valid procedure
-	dealer.Submit(callerSession,
+	dealer.Call(callerSession,
 		&wamp.Call{Request: 127, Procedure: testProcedure})
 
 	// Test that callee1 received an INVOCATION message.
@@ -926,7 +925,7 @@ func TestSharedRegistrationLast(t *testing.T) {
 	}
 
 	// Callee responds with a YIELD message
-	dealer.Submit(calleeSess1, &wamp.Yield{Request: inv.Request})
+	dealer.Yield(calleeSess1, &wamp.Yield{Request: inv.Request})
 	// Check that caller received a RESULT message.
 	rsp = <-caller.Recv()
 	rslt, ok = rsp.(*wamp.Result)
