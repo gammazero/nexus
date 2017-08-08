@@ -540,7 +540,6 @@ func (d *dealer) matchProcedure(procedure wamp.URI) (*registration, bool) {
 }
 
 func (d *dealer) call(caller *Session, msg *wamp.Call) {
-	log.Println("---> call", msg.Procedure)
 	reg, ok := d.matchProcedure(msg.Procedure)
 	if !ok || len(reg.callees) == 0 {
 		// If no registered procedure, send error.
