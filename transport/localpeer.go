@@ -1,6 +1,8 @@
 package transport
 
 import (
+	"fmt"
+
 	"github.com/gammazero/nexus/logger"
 	"github.com/gammazero/nexus/wamp"
 )
@@ -26,9 +28,9 @@ func LinkedPeers(logger logger.Logger) (wamp.Peer, wamp.Peer) {
 	cToR := make(chan wamp.Message)
 
 	// router reads from and writes to client
-	r := &localPeer{rd: cToR, wr: rToC}
+	r := &localPeer{rd: cToR, wr: rToC, log: logger}
 	// client reads from and writes to router
-	c := &localPeer{rd: rToC, wr: cToR}
+	c := &localPeer{rd: rToC, wr: cToR, log: logger}
 
 	return c, r
 }
@@ -44,20 +46,22 @@ type localPeer struct {
 func (p *localPeer) Recv() <-chan wamp.Message { return p.rd }
 
 // Send write a message to the channel the peer sends outgoing messages to.
-func (p *localPeer) Send(msg wamp.Message) {
+func (p *localPeer) Send(msg wamp.Message) error {
 	// If capacity is > 0, then wr is the rToC channel.
 	if cap(p.wr) > 1 {
 		select {
 		case p.wr <- msg:
 		default:
-			p.log.Println("WARNING: client blocked router.  Dropped:",
-				msg.MessageType())
+			err := fmt.Errorf("client blocked - dropped %s", msg.MessageType())
+			p.log.Println("!!!", err)
+			return err
 		}
-		return
+		return nil
 	}
 	// It is OK for the router to block a client since this will not block
 	// other clients.
 	p.wr <- msg
+	return nil
 }
 
 // Close closes the outgoing channel, waking any readers waiting on data from

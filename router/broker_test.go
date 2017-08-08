@@ -17,7 +17,10 @@ func newTestPeer() *testPeer {
 	}
 }
 
-func (p *testPeer) Send(msg wamp.Message)     { p.in <- msg }
+func (p *testPeer) Send(msg wamp.Message) error {
+	p.in <- msg
+	return nil
+}
 func (p *testPeer) Recv() <-chan wamp.Message { return p.in }
 func (p *testPeer) Close()                    { return }
 

@@ -389,7 +389,7 @@ func (r *realm) handleInternalSession(sess *Session) {
 			// An INVOCATION error is the only type of ERROR message the
 			// router should receive.
 			if msg.Type == wamp.INVOCATION {
-				r.dealer.Error(sess, msg)
+				r.dealer.Error(msg)
 			} else {
 				log.Printf("Invalid ERROR received from session %v: %v",
 					sess, msg)

@@ -69,7 +69,7 @@ type Dealer interface {
 	Yield(callee *Session, msg *wamp.Yield)
 
 	// Error handles an invocation error returned by the callee.
-	Error(sess *Session, msg *wamp.Error)
+	Error(msg *wamp.Error)
 
 	// Remove a callee's registrations.
 	RemoveSession(*Session)
@@ -310,12 +310,12 @@ func (d *dealer) Yield(callee *Session, msg *wamp.Yield) {
 	}
 }
 
-func (d *dealer) Error(sess *Session, msg *wamp.Error) {
-	if sess == nil || msg == nil {
-		panic("dealer.Error with nil session or message")
+func (d *dealer) Error(msg *wamp.Error) {
+	if msg == nil {
+		panic("dealer.Error with nil message")
 	}
 	d.actionChan <- func() {
-		d.error(sess, msg)
+		d.error(msg)
 	}
 }
 
@@ -540,6 +540,7 @@ func (d *dealer) matchProcedure(procedure wamp.URI) (*registration, bool) {
 }
 
 func (d *dealer) call(caller *Session, msg *wamp.Call) {
+	log.Println("---> call", msg.Procedure)
 	reg, ok := d.matchProcedure(msg.Procedure)
 	if !ok || len(reg.callees) == 0 {
 		// If no registered procedure, send error.
@@ -580,7 +581,6 @@ func (d *dealer) call(caller *Session, msg *wamp.Call) {
 	} else {
 		callee = reg.callees[0]
 	}
-
 	details := map[string]interface{}{}
 
 	// A Caller might want to issue a call providing a timeout for the call to
@@ -647,13 +647,22 @@ func (d *dealer) call(caller *Session, msg *wamp.Call) {
 
 	// Send INVOCATION to the endpoint that has registered the requested
 	// procedure.
-	callee.Send(&wamp.Invocation{
+	err := callee.Send(&wamp.Invocation{
 		Request:      invocationID,
 		Registration: reg.id,
 		Details:      details,
 		Arguments:    msg.Arguments,
 		ArgumentsKw:  msg.ArgumentsKw,
 	})
+	if err != nil {
+		d.error(&wamp.Error{
+			Type:      wamp.INVOCATION,
+			Request:   invocationID,
+			Details:   map[string]interface{}{},
+			Error:     wamp.ErrNetworkFailure,
+			Arguments: []interface{}{"client blocked - cannot call procedure"},
+		})
+	}
 }
 
 func (d *dealer) cancel(caller *Session, msg *wamp.Cancel) {
@@ -692,43 +701,47 @@ func (d *dealer) cancel(caller *Session, msg *wamp.Cancel) {
 
 	// Cancel mode should be one of: "skip", "kill", "killnowait"
 	mode := wamp.OptionString(msg.Options, "mode")
-	if mode == "killnowait" || mode == "skip" {
-		// Immediately delete the pending call and send ERROR back to the
-		// caller.  This will prevent the possibility of the client receiving
-		// either RESULT or ERROR following a cancel.
-		//
-		// This also stops repeated CANCEL messages.
-		delete(d.calls, msg.Request)
-		delete(d.invocationByCall, msg.Request)
+	if mode != "skip" {
+		// Check that callee supports call canceling to see if it is alright to
+		// send INTERRUPT to callee.
+		if !invk.callee.HasFeature("callee", "call_canceling") {
+			// Cancel in dealer without sending INTERRUPT to callee.
+			log.Println("Callee", invk.callee, "does not support call canceling")
+		} else {
+			// Send INTERRUPT message to callee.
+			err := invk.callee.Send(&wamp.Interrupt{
+				Request: invocationID,
+				Options: map[string]interface{}{},
+			})
+			if err == nil {
+				log.Println("Dealer sent INTERRUPT to to cancel invocation",
+					invocationID, "for call", msg.Request)
 
-		// Send error to the caller.
-		caller.Send(&wamp.Error{
-			Type:    wamp.CALL,
-			Request: msg.Request,
-			Error:   wamp.ErrCanceled,
-			Details: map[string]interface{}{},
-		})
-
-		// Only canceling the call on the caller side.  Let the invocation
-		// continue and drop the callee's response to it when received.
-		if mode == "skip" {
-			return
+				// If mode is "kill" then let error from callee trigger the
+				// response to the caller.  This is how the caller waits for
+				// the callee to cancel the call.
+				if mode == "kill" {
+					return
+				}
+			}
 		}
 	}
 
-	// Check that callee supports call canceling.
-	if !invk.callee.HasFeature("callee", "call_canceling") {
-		log.Println("Callee", invk.callee, "does not support call canceling")
-		return
-	}
+	// Immediately delete the pending call and send ERROR back to the
+	// caller.  This will cause any RESULT or ERROR arriving later from the
+	// callee to be dropped.
+	//
+	// This also stops repeated CANCEL messages.
+	delete(d.calls, msg.Request)
+	delete(d.invocationByCall, msg.Request)
 
-	// Send INTERRUPT message to callee.
-	invk.callee.Send(&wamp.Interrupt{
-		Request: invocationID,
-		Options: map[string]interface{}{},
+	// Send error to the caller.
+	caller.Send(&wamp.Error{
+		Type:    wamp.CALL,
+		Request: msg.Request,
+		Error:   wamp.ErrCanceled,
+		Details: map[string]interface{}{},
 	})
-	log.Printf("Dealer sent INTERRUPT to to cancel invocation %v for call %v",
-		invocationID, msg.Request)
 }
 
 func (d *dealer) yield(callee *Session, msg *wamp.Yield) {
@@ -772,7 +785,7 @@ func (d *dealer) yield(callee *Session, msg *wamp.Yield) {
 	})
 }
 
-func (d *dealer) error(peer *Session, msg *wamp.Error) {
+func (d *dealer) error(msg *wamp.Error) {
 	// Find and delete pending invocation.
 	invk, ok := d.invocations[msg.Request]
 	if !ok {
