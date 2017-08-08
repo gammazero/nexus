@@ -148,10 +148,10 @@ func connectClient() (*client.Client, error) {
 func TestHandshake(t *testing.T) {
 	cli, err := connectClient()
 	if err != nil {
-		t.Fatal("Failed to connect client: ", err)
+		t.Fatal("Failed to connect client:", err)
 	}
 	err = cli.Close()
 	if err != nil {
-		t.Fatal("Failed to disconnect client: ", err)
+		t.Fatal("Failed to disconnect client:", err)
 	}
 }

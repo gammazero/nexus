@@ -54,10 +54,10 @@ func TestBasicRegister(t *testing.T) {
 	}
 
 	if err := checkMetaReg(metaClient, sess.ID); err != nil {
-		t.Fatal("Registration meta event fail: ", err)
+		t.Fatal("Registration meta event fail:", err)
 	}
 	if err := checkMetaReg(metaClient, sess.ID); err != nil {
-		t.Fatal("Registration meta event fail: ", err)
+		t.Fatal("Registration meta event fail:", err)
 	}
 
 	// Check that dealer has the correct endpoint registered.
@@ -86,7 +86,7 @@ func TestBasicRegister(t *testing.T) {
 	rsp = <-callee.Recv()
 	errMsg := rsp.(*wamp.Error)
 	if errMsg.Error != wamp.ErrProcedureAlreadyExists {
-		t.Error("expected error: ", wamp.ErrProcedureAlreadyExists)
+		t.Error("expected error:", wamp.ErrProcedureAlreadyExists)
 	}
 	if errMsg.Details == nil {
 		t.Error("missing expected error details")
@@ -104,10 +104,10 @@ func TestUnregister(t *testing.T) {
 	regID := rsp.(*wamp.Registered).Registration
 
 	if err := checkMetaReg(metaClient, sess.ID); err != nil {
-		t.Fatal("Registration meta event fail: ", err)
+		t.Fatal("Registration meta event fail:", err)
 	}
 	if err := checkMetaReg(metaClient, sess.ID); err != nil {
-		t.Fatal("Registration meta event fail: ", err)
+		t.Fatal("Registration meta event fail:", err)
 	}
 
 	// Unregister the procedure.
@@ -117,17 +117,17 @@ func TestUnregister(t *testing.T) {
 	rsp = <-callee.Recv()
 	unreg, ok := rsp.(*wamp.Unregistered)
 	if !ok {
-		t.Fatal("received wrong response type: ", rsp.MessageType())
+		t.Fatal("received wrong response type:", rsp.MessageType())
 	}
 	if unreg.Request == 0 {
 		t.Fatal("invalid unreg ID")
 	}
 
 	if err := checkMetaReg(metaClient, sess.ID); err != nil {
-		t.Fatal("Registration meta event fail: ", err)
+		t.Fatal("Registration meta event fail:", err)
 	}
 	if err := checkMetaReg(metaClient, sess.ID); err != nil {
-		t.Fatal("Registration meta event fail: ", err)
+		t.Fatal("Registration meta event fail:", err)
 	}
 
 	// Check that dealer does not have registered endpoint
@@ -157,10 +157,10 @@ func TestBasicCall(t *testing.T) {
 		t.Fatal("did not receive REGISTERED response")
 	}
 	if err := checkMetaReg(metaClient, calleeSess.ID); err != nil {
-		t.Fatal("Registration meta event fail: ", err)
+		t.Fatal("Registration meta event fail:", err)
 	}
 	if err := checkMetaReg(metaClient, calleeSess.ID); err != nil {
-		t.Fatal("Registration meta event fail: ", err)
+		t.Fatal("Registration meta event fail:", err)
 	}
 
 	caller := newTestPeer()
@@ -172,10 +172,10 @@ func TestBasicCall(t *testing.T) {
 	rsp = <-callerSession.Recv()
 	errMsg, ok := rsp.(*wamp.Error)
 	if !ok {
-		t.Fatal("expected ERROR response, got: ", rsp.MessageType())
+		t.Fatal("expected ERROR response, got:", rsp.MessageType())
 	}
 	if errMsg.Error != wamp.ErrNoSuchProcedure {
-		t.Fatal("expected error ", wamp.ErrNoSuchProcedure)
+		t.Fatal("expected error", wamp.ErrNoSuchProcedure)
 	}
 	if errMsg.Details == nil {
 		t.Fatal("expected error details")
@@ -189,7 +189,7 @@ func TestBasicCall(t *testing.T) {
 	rsp = <-callee.Recv()
 	inv, ok := rsp.(*wamp.Invocation)
 	if !ok {
-		t.Fatal("expected INVOCATION, got: ", rsp.MessageType())
+		t.Fatal("expected INVOCATION, got:", rsp.MessageType())
 	}
 
 	// Callee responds with a YIELD message
@@ -198,7 +198,7 @@ func TestBasicCall(t *testing.T) {
 	rsp = <-caller.Recv()
 	rslt, ok := rsp.(*wamp.Result)
 	if !ok {
-		t.Fatal("expected RESULT, got: ", rsp.MessageType())
+		t.Fatal("expected RESULT, got:", rsp.MessageType())
 	}
 	if rslt.Request != 125 {
 		t.Fatal("wrong request ID in RESULT")
@@ -218,7 +218,7 @@ func TestBasicCall(t *testing.T) {
 	rsp = <-caller.Recv()
 	errMsg, ok = rsp.(*wamp.Error)
 	if !ok {
-		t.Fatal("expected ERROR response, got: ", rsp.MessageType())
+		t.Fatal("expected ERROR response, got:", rsp.MessageType())
 	}
 	if errMsg.Request != 126 {
 		t.Fatal("wrong request ID in ERROR, should match call ID")
@@ -244,10 +244,10 @@ func TestRemovePeer(t *testing.T) {
 	}
 
 	if err := checkMetaReg(metaClient, sess.ID); err != nil {
-		t.Fatal("Registration meta event fail: ", err)
+		t.Fatal("Registration meta event fail:", err)
 	}
 	if err := checkMetaReg(metaClient, sess.ID); err != nil {
-		t.Fatal("Registration meta event fail: ", err)
+		t.Fatal("Registration meta event fail:", err)
 	}
 
 	// Test that removing the callee session removes the registration.
@@ -271,7 +271,7 @@ func TestRemovePeer(t *testing.T) {
 	dealer.Register(sess, msg)
 	rsp = <-callee.Recv()
 	if rsp.MessageType() != wamp.REGISTERED {
-		t.Fatal("expected ", wamp.REGISTERED, " got: ", rsp.MessageType())
+		t.Fatal("expected", wamp.REGISTERED, "got:", rsp.MessageType())
 	}
 }
 
@@ -302,7 +302,7 @@ func TestCancelCallModeKill(t *testing.T) {
 	}
 
 	if err := checkMetaReg(metaClient, calleeSess.ID); err != nil {
-		t.Fatal("Registration meta event fail: ", err)
+		t.Fatal("Registration meta event fail:", err)
 	}
 
 	caller := newTestPeer()
@@ -316,7 +316,7 @@ func TestCancelCallModeKill(t *testing.T) {
 	rsp = <-callee.Recv()
 	inv, ok := rsp.(*wamp.Invocation)
 	if !ok {
-		t.Fatal("expected INVOCATION, got: ", rsp.MessageType())
+		t.Fatal("expected INVOCATION, got:", rsp.MessageType())
 	}
 
 	// Test caller cancelling call. mode=kill
@@ -327,7 +327,7 @@ func TestCancelCallModeKill(t *testing.T) {
 	rsp = <-callee.Recv()
 	interrupt, ok := rsp.(*wamp.Interrupt)
 	if !ok {
-		t.Fatal("callee expected INTERRUPT, got: ", rsp.MessageType())
+		t.Fatal("callee expected INTERRUPT, got:", rsp.MessageType())
 	}
 	if interrupt.Request != inv.Request {
 		t.Fatal("INTERRUPT request ID does not match INVOCATION request ID")
@@ -345,10 +345,10 @@ func TestCancelCallModeKill(t *testing.T) {
 	rsp = <-caller.Recv()
 	rslt, ok := rsp.(*wamp.Error)
 	if !ok {
-		t.Fatal("expected ERROR, got: ", rsp.MessageType())
+		t.Fatal("expected ERROR, got:", rsp.MessageType())
 	}
 	if rslt.Error != wamp.ErrCanceled {
-		t.Fatal("wrong error, want ", wamp.ErrCanceled, " got ", rslt.Error)
+		t.Fatal("wrong error, want", wamp.ErrCanceled, "got", rslt.Error)
 	}
 	if len(rslt.Details) == 0 {
 		t.Fatal("expected details in message")
@@ -383,7 +383,7 @@ func TestCancelCallModeKillNoWait(t *testing.T) {
 	}
 
 	if err := checkMetaReg(metaClient, calleeSess.ID); err != nil {
-		t.Fatal("Registration meta event fail: ", err)
+		t.Fatal("Registration meta event fail:", err)
 	}
 
 	caller := newTestPeer()
@@ -397,7 +397,7 @@ func TestCancelCallModeKillNoWait(t *testing.T) {
 	rsp = <-callee.Recv()
 	inv, ok := rsp.(*wamp.Invocation)
 	if !ok {
-		t.Fatal("expected INVOCATION, got: ", rsp.MessageType())
+		t.Fatal("expected INVOCATION, got:", rsp.MessageType())
 	}
 
 	// Test caller cancelling call. mode=kill
@@ -408,7 +408,7 @@ func TestCancelCallModeKillNoWait(t *testing.T) {
 	rsp = <-callee.Recv()
 	interrupt, ok := rsp.(*wamp.Interrupt)
 	if !ok {
-		t.Fatal("callee expected INTERRUPT, got: ", rsp.MessageType())
+		t.Fatal("callee expected INTERRUPT, got:", rsp.MessageType())
 	}
 	if interrupt.Request != inv.Request {
 		t.Fatal("INTERRUPT request ID does not match INVOCATION request ID")
@@ -426,10 +426,10 @@ func TestCancelCallModeKillNoWait(t *testing.T) {
 	rsp = <-caller.Recv()
 	rslt, ok := rsp.(*wamp.Error)
 	if !ok {
-		t.Fatal("expected ERROR, got: ", rsp.MessageType())
+		t.Fatal("expected ERROR, got:", rsp.MessageType())
 	}
 	if rslt.Error != wamp.ErrCanceled {
-		t.Fatal("wrong error, want ", wamp.ErrCanceled, " got ", rslt.Error)
+		t.Fatal("wrong error, want", wamp.ErrCanceled, "got", rslt.Error)
 	}
 	if len(rslt.Details) != 0 {
 		t.Fatal("should not have details; result should not be from callee")
@@ -461,7 +461,7 @@ func TestCancelCallModeSkip(t *testing.T) {
 	}
 
 	if err := checkMetaReg(metaClient, calleeSess.ID); err != nil {
-		t.Fatal("Registration meta event fail: ", err)
+		t.Fatal("Registration meta event fail:", err)
 	}
 
 	caller := newTestPeer()
@@ -475,7 +475,7 @@ func TestCancelCallModeSkip(t *testing.T) {
 	rsp = <-callee.Recv()
 	_, ok = rsp.(*wamp.Invocation)
 	if !ok {
-		t.Fatal("expected INVOCATION, got: ", rsp.MessageType())
+		t.Fatal("expected INVOCATION, got:", rsp.MessageType())
 	}
 
 	// Test caller cancelling call. mode=kill
@@ -486,17 +486,17 @@ func TestCancelCallModeSkip(t *testing.T) {
 	select {
 	case <-time.After(200 * time.Millisecond):
 	case msg := <-callee.Recv():
-		t.Fatal("callee received unexpected message: ", msg.MessageType())
+		t.Fatal("callee received unexpected message:", msg.MessageType())
 	}
 
 	// Check that caller receives the ERROR message.
 	rsp = <-caller.Recv()
 	rslt, ok := rsp.(*wamp.Error)
 	if !ok {
-		t.Fatal("expected ERROR, got: ", rsp.MessageType())
+		t.Fatal("expected ERROR, got:", rsp.MessageType())
 	}
 	if rslt.Error != wamp.ErrCanceled {
-		t.Fatal("wrong error, want ", wamp.ErrCanceled, " got ", rslt.Error)
+		t.Fatal("wrong error, want", wamp.ErrCanceled, "got", rslt.Error)
 	}
 }
 
@@ -529,10 +529,10 @@ func TestSharedRegistrationRoundRobin(t *testing.T) {
 	regID1 := regMsg.Registration
 	err := checkMetaReg(metaClient, calleeSess1.ID)
 	if err != nil {
-		t.Fatal("Registration meta event fail: ", err)
+		t.Fatal("Registration meta event fail:", err)
 	}
 	if err = checkMetaReg(metaClient, calleeSess1.ID); err != nil {
-		t.Fatal("Registration meta event fail: ", err)
+		t.Fatal("Registration meta event fail:", err)
 	}
 
 	// Register callee2 with roundrobin shared registration
@@ -549,7 +549,7 @@ func TestSharedRegistrationRoundRobin(t *testing.T) {
 		t.Fatal("did not receive REGISTERED response")
 	}
 	if err = checkMetaReg(metaClient, calleeSess2.ID); err != nil {
-		t.Fatal("Registration meta event fail: ", err)
+		t.Fatal("Registration meta event fail:", err)
 	}
 	regID2 := regMsg.Registration
 
@@ -569,7 +569,7 @@ func TestSharedRegistrationRoundRobin(t *testing.T) {
 	case rsp = <-callee1.Recv():
 		inv, ok = rsp.(*wamp.Invocation)
 		if !ok {
-			t.Fatal("expected INVOCATION, got: ", rsp.MessageType())
+			t.Fatal("expected INVOCATION, got:", rsp.MessageType())
 		}
 	case rsp = <-callee2.Recv():
 		t.Fatal("should not have received from callee2")
@@ -583,7 +583,7 @@ func TestSharedRegistrationRoundRobin(t *testing.T) {
 	rsp = <-caller.Recv()
 	rslt, ok := rsp.(*wamp.Result)
 	if !ok {
-		t.Fatal("expected RESULT, got: ", rsp.MessageType())
+		t.Fatal("expected RESULT, got:", rsp.MessageType())
 	}
 	if rslt.Request != 125 {
 		t.Fatal("wrong request ID in RESULT")
@@ -598,7 +598,7 @@ func TestSharedRegistrationRoundRobin(t *testing.T) {
 	case rsp = <-callee2.Recv():
 		inv, ok = rsp.(*wamp.Invocation)
 		if !ok {
-			t.Fatal("expected INVOCATION, got: ", rsp.MessageType())
+			t.Fatal("expected INVOCATION, got:", rsp.MessageType())
 		}
 	case rsp = <-callee1.Recv():
 		t.Fatal("should not have received from callee1")
@@ -612,7 +612,7 @@ func TestSharedRegistrationRoundRobin(t *testing.T) {
 	rsp = <-caller.Recv()
 	rslt, ok = rsp.(*wamp.Result)
 	if !ok {
-		t.Fatal("expected RESULT, got: ", rsp.MessageType())
+		t.Fatal("expected RESULT, got:", rsp.MessageType())
 	}
 	if rslt.Request != 126 {
 		t.Fatal("wrong request ID in RESULT")
@@ -648,10 +648,10 @@ func TestSharedRegistrationFirst(t *testing.T) {
 	regID1 := regMsg.Registration
 	err := checkMetaReg(metaClient, calleeSess1.ID)
 	if err != nil {
-		t.Fatal("Registration meta event fail: ", err)
+		t.Fatal("Registration meta event fail:", err)
 	}
 	if err = checkMetaReg(metaClient, calleeSess1.ID); err != nil {
-		t.Fatal("Registration meta event fail: ", err)
+		t.Fatal("Registration meta event fail:", err)
 	}
 
 	// Register callee2 with roundrobin shared registration
@@ -680,7 +680,7 @@ func TestSharedRegistrationFirst(t *testing.T) {
 	}
 	regID2 := regMsg.Registration
 	if err = checkMetaReg(metaClient, calleeSess1.ID); err != nil {
-		t.Fatal("Registration meta event fail: ", err)
+		t.Fatal("Registration meta event fail:", err)
 	}
 
 	if regID1 != regID2 {
@@ -699,7 +699,7 @@ func TestSharedRegistrationFirst(t *testing.T) {
 	case rsp = <-callee1.Recv():
 		inv, ok = rsp.(*wamp.Invocation)
 		if !ok {
-			t.Fatal("expected INVOCATION, got: ", rsp.MessageType())
+			t.Fatal("expected INVOCATION, got:", rsp.MessageType())
 		}
 	case rsp = <-callee2.Recv():
 		t.Fatal("should not have received from callee2")
@@ -713,7 +713,7 @@ func TestSharedRegistrationFirst(t *testing.T) {
 	rsp = <-caller.Recv()
 	rslt, ok := rsp.(*wamp.Result)
 	if !ok {
-		t.Fatal("expected RESULT, got: ", rsp.MessageType())
+		t.Fatal("expected RESULT, got:", rsp.MessageType())
 	}
 	if rslt.Request != 125 {
 		t.Fatal("wrong request ID in RESULT")
@@ -728,7 +728,7 @@ func TestSharedRegistrationFirst(t *testing.T) {
 	case rsp = <-callee1.Recv():
 		inv, ok = rsp.(*wamp.Invocation)
 		if !ok {
-			t.Fatal("expected INVOCATION, got: ", rsp.MessageType())
+			t.Fatal("expected INVOCATION, got:", rsp.MessageType())
 		}
 	case rsp = <-callee2.Recv():
 		t.Fatal("should not have received from callee2")
@@ -742,7 +742,7 @@ func TestSharedRegistrationFirst(t *testing.T) {
 	rsp = <-caller.Recv()
 	rslt, ok = rsp.(*wamp.Result)
 	if !ok {
-		t.Fatal("expected RESULT, got: ", rsp.MessageType())
+		t.Fatal("expected RESULT, got:", rsp.MessageType())
 	}
 	if rslt.Request != 126 {
 		t.Fatal("wrong request ID in RESULT")
@@ -751,7 +751,7 @@ func TestSharedRegistrationFirst(t *testing.T) {
 	// Remove callee1
 	dealer.RemoveSession(calleeSess1)
 	if err = checkMetaReg(metaClient, calleeSess1.ID); err != nil {
-		t.Fatal("Registration meta event fail: ", err)
+		t.Fatal("Registration meta event fail:", err)
 	}
 	if err = checkMetaReg(metaClient, calleeSess1.ID); err == nil {
 		t.Fatal("Expected error")
@@ -766,7 +766,7 @@ func TestSharedRegistrationFirst(t *testing.T) {
 	case rsp = <-callee2.Recv():
 		inv, ok = rsp.(*wamp.Invocation)
 		if !ok {
-			t.Fatal("expected INVOCATION, got: ", rsp.MessageType())
+			t.Fatal("expected INVOCATION, got:", rsp.MessageType())
 		}
 	case rsp = <-callee1.Recv():
 		t.Fatal("should not have received from callee1")
@@ -780,7 +780,7 @@ func TestSharedRegistrationFirst(t *testing.T) {
 	rsp = <-caller.Recv()
 	rslt, ok = rsp.(*wamp.Result)
 	if !ok {
-		t.Fatal("expected RESULT, got: ", rsp.MessageType())
+		t.Fatal("expected RESULT, got:", rsp.MessageType())
 	}
 	if rslt.Request != 127 {
 		t.Fatal("wrong request ID in RESULT")
@@ -815,10 +815,10 @@ func TestSharedRegistrationLast(t *testing.T) {
 	}
 	err := checkMetaReg(metaClient, calleeSess1.ID)
 	if err != nil {
-		t.Fatal("Registration meta event fail: ", err)
+		t.Fatal("Registration meta event fail:", err)
 	}
 	if err = checkMetaReg(metaClient, calleeSess1.ID); err != nil {
-		t.Fatal("Registration meta event fail: ", err)
+		t.Fatal("Registration meta event fail:", err)
 	}
 
 	// Register callee2 with last shared registration
@@ -834,7 +834,7 @@ func TestSharedRegistrationLast(t *testing.T) {
 		t.Fatal("did not receive REGISTERED response")
 	}
 	if err = checkMetaReg(metaClient, calleeSess1.ID); err != nil {
-		t.Fatal("Registration meta event fail: ", err)
+		t.Fatal("Registration meta event fail:", err)
 	}
 
 	// Test calling valid procedure
@@ -849,7 +849,7 @@ func TestSharedRegistrationLast(t *testing.T) {
 	case rsp = <-callee2.Recv():
 		inv, ok = rsp.(*wamp.Invocation)
 		if !ok {
-			t.Fatal("expected INVOCATION, got: ", rsp.MessageType())
+			t.Fatal("expected INVOCATION, got:", rsp.MessageType())
 		}
 	case rsp = <-callee1.Recv():
 		t.Fatal("should not have received from callee1")
@@ -863,7 +863,7 @@ func TestSharedRegistrationLast(t *testing.T) {
 	rsp = <-caller.Recv()
 	rslt, ok := rsp.(*wamp.Result)
 	if !ok {
-		t.Fatal("expected RESULT, got: ", rsp.MessageType())
+		t.Fatal("expected RESULT, got:", rsp.MessageType())
 	}
 	if rslt.Request != 125 {
 		t.Fatal("wrong request ID in RESULT")
@@ -878,7 +878,7 @@ func TestSharedRegistrationLast(t *testing.T) {
 	case rsp = <-callee2.Recv():
 		inv, ok = rsp.(*wamp.Invocation)
 		if !ok {
-			t.Fatal("expected INVOCATION, got: ", rsp.MessageType())
+			t.Fatal("expected INVOCATION, got:", rsp.MessageType())
 		}
 	case rsp = <-callee1.Recv():
 		t.Fatal("should not have received from callee1")
@@ -892,7 +892,7 @@ func TestSharedRegistrationLast(t *testing.T) {
 	rsp = <-caller.Recv()
 	rslt, ok = rsp.(*wamp.Result)
 	if !ok {
-		t.Fatal("expected RESULT, got: ", rsp.MessageType())
+		t.Fatal("expected RESULT, got:", rsp.MessageType())
 	}
 	if rslt.Request != 126 {
 		t.Fatal("wrong request ID in RESULT")
@@ -901,7 +901,7 @@ func TestSharedRegistrationLast(t *testing.T) {
 	// Remove callee2
 	dealer.RemoveSession(calleeSess2)
 	if err = checkMetaReg(metaClient, calleeSess2.ID); err != nil {
-		t.Fatal("Registration meta event fail: ", err)
+		t.Fatal("Registration meta event fail:", err)
 	}
 	if err = checkMetaReg(metaClient, calleeSess1.ID); err == nil {
 		t.Fatal("Expected error")
@@ -916,7 +916,7 @@ func TestSharedRegistrationLast(t *testing.T) {
 	case rsp = <-callee1.Recv():
 		inv, ok = rsp.(*wamp.Invocation)
 		if !ok {
-			t.Fatal("expected INVOCATION, got: ", rsp.MessageType())
+			t.Fatal("expected INVOCATION, got:", rsp.MessageType())
 		}
 	case rsp = <-callee2.Recv():
 		t.Fatal("should not have received from callee2")
@@ -930,7 +930,7 @@ func TestSharedRegistrationLast(t *testing.T) {
 	rsp = <-caller.Recv()
 	rslt, ok = rsp.(*wamp.Result)
 	if !ok {
-		t.Fatal("expected RESULT, got: ", rsp.MessageType())
+		t.Fatal("expected RESULT, got:", rsp.MessageType())
 	}
 	if rslt.Request != 127 {
 		t.Fatal("wrong request ID in RESULT")

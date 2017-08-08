@@ -15,7 +15,7 @@ func TestJoinRealmWithCRAuth(t *testing.T) {
 	// Connect callee session.
 	cli, err := connectClientNoJoin()
 	if err != nil {
-		t.Fatal("Failed to connect client: ", err)
+		t.Fatal("Failed to connect client:", err)
 	}
 
 	details := map[string]interface{}{
@@ -36,7 +36,7 @@ func TestJoinRealmWithCRAuthBad(t *testing.T) {
 	// Connect callee session.
 	cli, err := connectClientNoJoin()
 	if err != nil {
-		t.Fatal("Failed to connect client: ", err)
+		t.Fatal("Failed to connect client:", err)
 	}
 
 	details := map[string]interface{}{

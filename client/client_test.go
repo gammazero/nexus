@@ -141,7 +141,7 @@ func TestSubscribe(t *testing.T) {
 	// Connect to clients to the same server
 	sub, pub, err := connectedTestClients()
 	if err != nil {
-		t.Fatal("failed to connect test clients: ", err)
+		t.Fatal("failed to connect test clients:", err)
 	}
 
 	testTopic := "nexus.test.topic"
@@ -169,7 +169,7 @@ func TestSubscribe(t *testing.T) {
 	// Subscribe should work with match set. wildcard
 	err = sub.Subscribe(wcTopic, evtHandler, wamp.SetOption(nil, "match", "wildcard"))
 	if err != nil {
-		t.Fatal("subscribe error: ", err)
+		t.Fatal("subscribe error:", err)
 	}
 
 	// Publish an event to something that matches by wildcard.
@@ -186,7 +186,7 @@ func TestSubscribe(t *testing.T) {
 	}
 	err = sub.Unsubscribe(wcTopic)
 	if err != nil {
-		t.Fatal("unsubscribe error: ", err)
+		t.Fatal("unsubscribe error:", err)
 	}
 }
 
@@ -194,7 +194,7 @@ func TestRemoteProcedureCall(t *testing.T) {
 	// Connect to clients to the same server
 	callee, caller, err := connectedTestClients()
 	if err != nil {
-		t.Fatal("failed to connect test clients: ", err)
+		t.Fatal("failed to connect test clients:", err)
 	}
 
 	// Test unregister invalid procedure.
@@ -208,7 +208,7 @@ func TestRemoteProcedureCall(t *testing.T) {
 	}
 	procName := "myproc"
 	if err = callee.Register(procName, handler, nil); err != nil {
-		t.Fatal("failed to register procedure: ", err)
+		t.Fatal("failed to register procedure:", err)
 	}
 
 	// Test calling the procedure.
@@ -216,15 +216,15 @@ func TestRemoteProcedureCall(t *testing.T) {
 	ctx := context.Background()
 	result, err := caller.Call(ctx, procName, nil, callArgs, nil, "")
 	if err != nil {
-		t.Fatal("failed to call procedure: ", err)
+		t.Fatal("failed to call procedure:", err)
 	}
 	if result.Arguments[0] != 2701 {
-		t.Fatal("wrong result: ", result.Arguments)
+		t.Fatal("wrong result:", result.Arguments)
 	}
 
 	// Test unregister.
 	if err = callee.Unregister(procName); err != nil {
-		t.Fatal("failed to unregister procedure: ", err)
+		t.Fatal("failed to unregister procedure:", err)
 	}
 
 	// Test calling unregistered procedure.
@@ -242,7 +242,7 @@ func TestTimeoutCancelRemoteProcedureCall(t *testing.T) {
 	// Connect to clients to the same server
 	callee, caller, err := connectedTestClients()
 	if err != nil {
-		t.Fatal("failed to connect test clients: ", err)
+		t.Fatal("failed to connect test clients:", err)
 	}
 
 	// Test registering a valid procedure.
@@ -252,7 +252,7 @@ func TestTimeoutCancelRemoteProcedureCall(t *testing.T) {
 	}
 	procName := "myproc"
 	if err = callee.Register(procName, handler, nil); err != nil {
-		t.Fatal("failed to register procedure: ", err)
+		t.Fatal("failed to register procedure:", err)
 	}
 
 	errChan := make(chan error)
@@ -287,7 +287,7 @@ func TestTimeoutCancelRemoteProcedureCall(t *testing.T) {
 		t.Fatal("expected canceled error, got:", err)
 	}
 	if err = callee.Unregister(procName); err != nil {
-		t.Fatal("failed to unregister procedure: ", err)
+		t.Fatal("failed to unregister procedure:", err)
 	}
 }
 
@@ -295,7 +295,7 @@ func TestCancelRemoteProcedureCall(t *testing.T) {
 	// Connect to clients to the same server
 	callee, caller, err := connectedTestClients()
 	if err != nil {
-		t.Fatal("failed to connect test clients: ", err)
+		t.Fatal("failed to connect test clients:", err)
 	}
 
 	// Test registering a valid procedure.
@@ -305,7 +305,7 @@ func TestCancelRemoteProcedureCall(t *testing.T) {
 	}
 	procName := "myproc"
 	if err = callee.Register(procName, handler, nil); err != nil {
-		t.Fatal("failed to register procedure: ", err)
+		t.Fatal("failed to register procedure:", err)
 	}
 
 	errChan := make(chan error)
@@ -341,7 +341,7 @@ func TestCancelRemoteProcedureCall(t *testing.T) {
 		t.Fatal("expected canceled error, got:", err)
 	}
 	if err = callee.Unregister(procName); err != nil {
-		t.Fatal("failed to unregister procedure: ", err)
+		t.Fatal("failed to unregister procedure:", err)
 	}
 }
 

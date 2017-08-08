@@ -19,7 +19,7 @@ func TestPubSub(t *testing.T) {
 	// Connect subscriber session.
 	subscriber, err := connectClient()
 	if err != nil {
-		t.Fatal("Failed to connect client: ", err)
+		t.Fatal("Failed to connect client:", err)
 	}
 
 	errChan := make(chan error)
@@ -34,13 +34,13 @@ func TestPubSub(t *testing.T) {
 	// Subscribe to event.
 	err = subscriber.Subscribe(testTopic, evtHandler, nil)
 	if err != nil {
-		t.Fatal("subscribe error: ", err)
+		t.Fatal("subscribe error:", err)
 	}
 
 	// Connect publisher session.
 	publisher, err := connectClient()
 	if err != nil {
-		t.Fatal("Failed to connect client: ", err)
+		t.Fatal("Failed to connect client:", err)
 	}
 	// Publish an event to something that matches by wildcard.
 	publisher.Publish(testTopic, nil, []interface{}{"hello world"}, nil)
@@ -49,7 +49,7 @@ func TestPubSub(t *testing.T) {
 	select {
 	case err = <-errChan:
 		if err != nil {
-			t.Fatal("Event error: ", err)
+			t.Fatal("Event error:", err)
 		}
 	case <-time.After(200 * time.Millisecond):
 		t.Fatal("did not get published event")
@@ -57,17 +57,17 @@ func TestPubSub(t *testing.T) {
 
 	err = subscriber.Unsubscribe(testTopic)
 	if err != nil {
-		t.Fatal("unsubscribe error: ", err)
+		t.Fatal("unsubscribe error:", err)
 	}
 
 	err = publisher.Close()
 	if err != nil {
-		t.Fatal("Failed to disconnect client: ", err)
+		t.Fatal("Failed to disconnect client:", err)
 	}
 
 	err = subscriber.Close()
 	if err != nil {
-		t.Fatal("Failed to disconnect client: ", err)
+		t.Fatal("Failed to disconnect client:", err)
 	}
 }
 
@@ -75,7 +75,7 @@ func TestPubSubWildcard(t *testing.T) {
 	// Connect subscriber session.
 	subscriber, err := connectClient()
 	if err != nil {
-		t.Fatal("Failed to connect client: ", err)
+		t.Fatal("Failed to connect client:", err)
 	}
 
 	errChan := make(chan error)
@@ -95,13 +95,13 @@ func TestPubSubWildcard(t *testing.T) {
 	// Subscribe to event with wildcard match.
 	err = subscriber.Subscribe(testTopicWC, evtHandler, wamp.SetOption(nil, "match", "wildcard"))
 	if err != nil {
-		t.Fatal("subscribe error: ", err)
+		t.Fatal("subscribe error:", err)
 	}
 
 	// Connect publisher session.
 	publisher, err := connectClient()
 	if err != nil {
-		t.Fatal("Failed to connect client: ", err)
+		t.Fatal("Failed to connect client:", err)
 	}
 	// Publish an event to something that matches by wildcard.
 	publisher.Publish(testTopic, nil, []interface{}{"hello world"}, nil)
@@ -118,17 +118,17 @@ func TestPubSubWildcard(t *testing.T) {
 
 	err = subscriber.Unsubscribe(testTopicWC)
 	if err != nil {
-		t.Fatal("unsubscribe error: ", err)
+		t.Fatal("unsubscribe error:", err)
 	}
 
 	err = publisher.Close()
 	if err != nil {
-		t.Fatal("Failed to disconnect client: ", err)
+		t.Fatal("Failed to disconnect client:", err)
 	}
 
 	err = subscriber.Close()
 	if err != nil {
-		t.Fatal("Failed to disconnect client: ", err)
+		t.Fatal("Failed to disconnect client:", err)
 	}
 }
 
@@ -136,7 +136,7 @@ func TestUnsubscribeWrongTopic(t *testing.T) {
 	// Connect subscriber session.
 	subscriber, err := connectClient()
 	if err != nil {
-		t.Fatal("Failed to connect client: ", err)
+		t.Fatal("Failed to connect client:", err)
 	}
 
 	evtHandler := func(args []interface{}, kwargs map[string]interface{}, details map[string]interface{}) {
@@ -146,7 +146,7 @@ func TestUnsubscribeWrongTopic(t *testing.T) {
 	// Subscribe to event.
 	err = subscriber.Subscribe(testTopic, evtHandler, nil)
 	if err != nil {
-		t.Fatal("subscribe error: ", err)
+		t.Fatal("subscribe error:", err)
 	}
 
 	err = subscriber.Unsubscribe(testTopicWC)
@@ -157,14 +157,14 @@ func TestUnsubscribeWrongTopic(t *testing.T) {
 	// Connect subscriber session2.
 	subscriber2, err := connectClient()
 	if err != nil {
-		t.Fatal("Failed to connect client: ", err)
+		t.Fatal("Failed to connect client:", err)
 	}
 
 	// Subscribe to other event.
 	topic2 := "nexus.test.topic2"
 	err = subscriber2.Subscribe(topic2, evtHandler, nil)
 	if err != nil {
-		t.Fatal("subscribe error: ", err)
+		t.Fatal("subscribe error:", err)
 	}
 
 	// Unsubscribe from other subscriber's topic.
@@ -175,22 +175,22 @@ func TestUnsubscribeWrongTopic(t *testing.T) {
 
 	err = subscriber.Unsubscribe(testTopic)
 	if err != nil {
-		t.Fatal("unsubscribe error: ", err)
+		t.Fatal("unsubscribe error:", err)
 	}
 
 	err = subscriber2.Unsubscribe(topic2)
 	if err != nil {
-		t.Fatal("unsubscribe error: ", err)
+		t.Fatal("unsubscribe error:", err)
 	}
 
 	err = subscriber.Close()
 	if err != nil {
-		t.Fatal("Failed to disconnect client: ", err)
+		t.Fatal("Failed to disconnect client:", err)
 	}
 
 	err = subscriber2.Close()
 	if err != nil {
-		t.Fatal("Failed to disconnect client: ", err)
+		t.Fatal("Failed to disconnect client:", err)
 	}
 }
 
@@ -198,7 +198,7 @@ func TestSubscribeBurst(t *testing.T) {
 	// Connect subscriber session.
 	sub, err := connectClient()
 	if err != nil {
-		t.Fatal("Failed to connect client: ", err)
+		t.Fatal("Failed to connect client:", err)
 	}
 
 	evtHandler := func(args []interface{}, kwargs map[string]interface{}, details map[string]interface{}) {
@@ -210,7 +210,7 @@ func TestSubscribeBurst(t *testing.T) {
 		topic := fmt.Sprintf("test.topic%d", i)
 		err = sub.Subscribe(topic, evtHandler, nil)
 		if err != nil {
-			t.Fatal("subscribe error: ", err)
+			t.Fatal("subscribe error:", err)
 		}
 	}
 
@@ -219,7 +219,7 @@ func TestSubscribeBurst(t *testing.T) {
 		topic := fmt.Sprintf("test.topic%d", i)
 		err = sub.Unsubscribe(topic)
 		if err != nil {
-			t.Fatal("subscribe error: ", err)
+			t.Fatal("subscribe error:", err)
 		}
 	}
 

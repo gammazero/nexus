@@ -207,7 +207,7 @@ func (r *realm) createMetaSession() (*Session, *Session) {
 	}
 
 	// Run the session handler for the meta session
-	log.Print("Started meta-session ", sess)
+	log.Println("Started meta-session", sess)
 	go r.handleInternalSession(sess)
 
 	client := &Session{
@@ -291,7 +291,7 @@ func (r *realm) handleSession(sess *Session) error {
 	r.onJoin(sess)
 	r.closeLock.Unlock()
 
-	log.Print("Started session ", sess)
+	log.Println("Started session", sess)
 	go func() {
 		r.handleInternalSession(sess)
 		r.onLeave(sess)
@@ -478,7 +478,7 @@ func (r *realm) registerMetaProcedure(procedure wamp.URI, f func(*wamp.Invocatio
 	if !ok {
 		err, ok := msg.(*wamp.Error)
 		if !ok {
-			log.Println("PANIC! Received unexpected ", msg.MessageType())
+			log.Println("PANIC! Received unexpected", msg.MessageType())
 			panic("cannot register metapocedure")
 		}
 		errMsg := fmt.Sprintf(
@@ -510,10 +510,10 @@ func (r *realm) metaProcedureHandler() {
 			}
 			rsp = metaProcHandler(msg)
 		case *wamp.Goodbye:
-			log.Println("Session meta procedure handler exiting GOODBYE")
+			log.Print("Session meta procedure handler exiting GOODBYE")
 			return
 		default:
-			log.Print("Meta procedure received unexpected ", msg.MessageType())
+			log.Println("Meta procedure received unexpected", msg.MessageType())
 		}
 		r.metaClient.Send(rsp)
 	}

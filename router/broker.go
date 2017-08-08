@@ -374,7 +374,7 @@ func (b *broker) unsubscribe(sub *Session, msg *wamp.Unsubscribe) {
 
 	// clean up sender's subscription
 	if s, ok := b.sessionSubIDSet[sub]; !ok {
-		log.Println("Error unsubscribing: no subscriptions for sender")
+		log.Print("Error unsubscribing: no subscriptions for sender")
 	} else if _, ok := s[msg.Subscription]; !ok {
 		log.Println("Error unsubscribing: cannot find subscription",
 			msg.Subscription, "for sender")

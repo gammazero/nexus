@@ -472,7 +472,7 @@ func (d *dealer) unregister(callee *Session, msg *wamp.Unregister) {
 
 	delReg, err := d.delCalleeReg(callee, msg.Registration)
 	if err != nil {
-		log.Print("Cannot unregister: ", err)
+		log.Println("Cannot unregister:", err)
 		callee.Send(&wamp.Error{
 			Type:    msg.MessageType(),
 			Request: msg.Request,

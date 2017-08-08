@@ -96,7 +96,7 @@ func TestHandshake(t *testing.T) {
 		t.Fatal("no goodbye message after sending goodbye")
 	case msg := <-cli.Recv():
 		if _, ok := msg.(*wamp.Goodbye); !ok {
-			t.Fatal("expected GOODBYE, received: ", msg.MessageType())
+			t.Fatal("expected GOODBYE, received:", msg.MessageType())
 		}
 	}
 }
@@ -148,7 +148,7 @@ func TestRouterSubscribe(t *testing.T) {
 	case msg := <-sub.Recv():
 		subMsg, ok := msg.(*wamp.Subscribed)
 		if !ok {
-			t.Fatal("Expected SUBSCRIBED, got: ", msg.MessageType())
+			t.Fatal("Expected SUBSCRIBED, got:", msg.MessageType())
 		}
 		if subMsg.Request != subscribeID {
 			t.Fatal("wrong request ID")
@@ -169,7 +169,7 @@ func TestRouterSubscribe(t *testing.T) {
 	case msg := <-sub.Recv():
 		event, ok := msg.(*wamp.Event)
 		if !ok {
-			t.Fatal("Expected EVENT, got: ", msg.MessageType())
+			t.Fatal("Expected EVENT, got:", msg.MessageType())
 		}
 		if event.Subscription != subscriptionID {
 			t.Fatal("wrong subscription ID")
@@ -200,7 +200,7 @@ func TestPublishAcknowledge(t *testing.T) {
 	case msg := <-client.Recv():
 		pub, ok := msg.(*wamp.Published)
 		if !ok {
-			t.Fatal("sent acknowledge=true, expected PUBLISHED, got: ",
+			t.Fatal("sent acknowledge=true, expected PUBLISHED, got:",
 				msg.MessageType())
 		}
 		if pub.Request != id {
@@ -230,7 +230,7 @@ func TestPublishFalseAcknowledge(t *testing.T) {
 	case <-time.After(200 * time.Millisecond):
 	case msg := <-client.Recv():
 		if _, ok := msg.(*wamp.Published); ok {
-			t.Fatal("Sent acknowledge=false, but received PUBLISHED: ",
+			t.Fatal("Sent acknowledge=false, but received PUBLISHED:",
 				msg.MessageType())
 		}
 	}
@@ -253,7 +253,7 @@ func TestPublishNoAcknowledge(t *testing.T) {
 	case <-time.After(200 * time.Millisecond):
 	case msg := <-client.Recv():
 		if _, ok := msg.(*wamp.Published); ok {
-			t.Fatal("Sent acknowledge=false, but received PUBLISHED: ",
+			t.Fatal("Sent acknowledge=false, but received PUBLISHED:",
 				msg.MessageType())
 		}
 	}
@@ -281,7 +281,7 @@ func TestRouterCall(t *testing.T) {
 	case msg := <-callee.Recv():
 		registered, ok := msg.(*wamp.Registered)
 		if !ok {
-			t.Fatal("expected REGISTERED,got: ", msg.MessageType())
+			t.Fatal("expected REGISTERED,got:", msg.MessageType())
 		}
 		if registered.Request != registerID {
 			t.Fatal("wrong request ID")
@@ -304,7 +304,7 @@ func TestRouterCall(t *testing.T) {
 	case msg := <-callee.Recv():
 		invocation, ok := msg.(*wamp.Invocation)
 		if !ok {
-			t.Fatal("expected INVOCATION, got: ", msg.MessageType())
+			t.Fatal("expected INVOCATION, got:", msg.MessageType())
 		}
 		if invocation.Registration != registrationID {
 			t.Fatal("wrong registration id")
@@ -321,7 +321,7 @@ func TestRouterCall(t *testing.T) {
 	case msg := <-caller.Recv():
 		result, ok := msg.(*wamp.Result)
 		if !ok {
-			t.Fatal("expected RESULT, got ", msg.MessageType())
+			t.Fatal("expected RESULT, got", msg.MessageType())
 		}
 		if result.Request != callID {
 			t.Fatal("wrong result ID")
@@ -353,7 +353,7 @@ func TestSessionMetaProcedures(t *testing.T) {
 	case msg := <-caller.Recv():
 		result, ok = msg.(*wamp.Result)
 		if !ok {
-			t.Fatal("expected RESULT, got ", msg.MessageType())
+			t.Fatal("expected RESULT, got", msg.MessageType())
 		}
 		if result.Request != callID {
 			t.Fatal("wrong result ID")
@@ -379,7 +379,7 @@ func TestSessionMetaProcedures(t *testing.T) {
 	case msg := <-caller.Recv():
 		result, ok = msg.(*wamp.Result)
 		if !ok {
-			t.Fatal("expected RESULT, got ", msg.MessageType())
+			t.Fatal("expected RESULT, got", msg.MessageType())
 		}
 		if result.Request != callID {
 			t.Fatal("wrong result ID")
@@ -412,7 +412,7 @@ func TestSessionMetaProcedures(t *testing.T) {
 	case msg := <-caller.Recv():
 		errRsp, ok := msg.(*wamp.Error)
 		if !ok {
-			t.Fatal("expected ERROR, got ", msg.MessageType())
+			t.Fatal("expected ERROR, got", msg.MessageType())
 		}
 		if errRsp.Error != wamp.ErrNoSuchSession {
 			t.Fatal("wrong error value")
@@ -432,7 +432,7 @@ func TestSessionMetaProcedures(t *testing.T) {
 	case msg := <-caller.Recv():
 		result, ok = msg.(*wamp.Result)
 		if !ok {
-			t.Fatal("expected RESULT, got ", msg.MessageType())
+			t.Fatal("expected RESULT, got", msg.MessageType())
 		}
 		if result.Request != callID {
 			t.Fatal("wrong result ID")
@@ -475,7 +475,7 @@ func TestRegistrationMetaProcedures(t *testing.T) {
 	case msg := <-caller.Recv():
 		result, ok = msg.(*wamp.Result)
 		if !ok {
-			t.Fatal("expected RESULT, got ", msg.MessageType())
+			t.Fatal("expected RESULT, got", msg.MessageType())
 		}
 		if result.Request != callID {
 			t.Fatal("wrong result ID")
@@ -517,7 +517,7 @@ func TestRegistrationMetaProcedures(t *testing.T) {
 	case msg := <-callee.Recv():
 		registered, ok := msg.(*wamp.Registered)
 		if !ok {
-			t.Fatal("expected REGISTERED, got: ", msg.MessageType())
+			t.Fatal("expected REGISTERED, got:", msg.MessageType())
 		}
 		if registered.Request != registerID {
 			t.Fatal("wrong request ID")
@@ -533,7 +533,7 @@ func TestRegistrationMetaProcedures(t *testing.T) {
 	})
 	msg := <-callee.Recv()
 	if _, ok := msg.(*wamp.Registered); !ok {
-		t.Fatal("expected REGISTERED, got: ", msg.MessageType())
+		t.Fatal("expected REGISTERED, got:", msg.MessageType())
 	}
 
 	// Call session meta-procedure to get session count.
@@ -545,7 +545,7 @@ func TestRegistrationMetaProcedures(t *testing.T) {
 	case msg := <-caller.Recv():
 		result, ok = msg.(*wamp.Result)
 		if !ok {
-			t.Fatal("expected RESULT, got ", msg.MessageType())
+			t.Fatal("expected RESULT, got", msg.MessageType())
 		}
 		if result.Request != callID {
 			t.Fatal("wrong result ID")
@@ -596,7 +596,7 @@ func TestRegistrationMetaProcedures(t *testing.T) {
 	case msg := <-caller.Recv():
 		result, ok = msg.(*wamp.Result)
 		if !ok {
-			t.Fatal("expected RESULT, got ", msg.MessageType())
+			t.Fatal("expected RESULT, got", msg.MessageType())
 		}
 		if result.Request != callID {
 			t.Fatal("wrong result ID")
@@ -626,7 +626,7 @@ func TestRegistrationMetaProcedures(t *testing.T) {
 	case msg := <-caller.Recv():
 		result, ok = msg.(*wamp.Result)
 		if !ok {
-			t.Fatal("expected RESULT, got ", msg.MessageType())
+			t.Fatal("expected RESULT, got", msg.MessageType())
 		}
 		if result.Request != callID {
 			t.Fatal("wrong result ID")
@@ -656,7 +656,7 @@ func TestRegistrationMetaProcedures(t *testing.T) {
 	case msg := <-caller.Recv():
 		result, ok = msg.(*wamp.Result)
 		if !ok {
-			t.Fatal("expected RESULT, got ", msg.MessageType())
+			t.Fatalf("expected RESULT, got %s %+v", msg.MessageType(), msg)
 		}
 		if result.Request != callID {
 			t.Fatal("wrong result ID")
@@ -675,7 +675,7 @@ func TestRegistrationMetaProcedures(t *testing.T) {
 	}
 	uri := wamp.OptionURI(dict, "uri")
 	if uri != testProcedure {
-		t.Fatal("registration has wrong uri: ", uri)
+		t.Fatal("registration has wrong uri:", uri)
 	}
 
 	// ----- Test wamp.registration.list_callees meta procedure -----
@@ -691,7 +691,7 @@ func TestRegistrationMetaProcedures(t *testing.T) {
 	case msg := <-caller.Recv():
 		result, ok = msg.(*wamp.Result)
 		if !ok {
-			t.Fatal("expected RESULT, got ", msg.MessageType())
+			t.Fatal("expected RESULT, got", msg.MessageType())
 		}
 		if result.Request != callID {
 			t.Fatal("wrong result ID")
@@ -724,7 +724,7 @@ func TestRegistrationMetaProcedures(t *testing.T) {
 	case msg := <-caller.Recv():
 		result, ok = msg.(*wamp.Result)
 		if !ok {
-			t.Fatal("expected RESULT, got ", msg.MessageType())
+			t.Fatal("expected RESULT, got", msg.MessageType())
 		}
 		if result.Request != callID {
 			t.Fatal("wrong result ID")

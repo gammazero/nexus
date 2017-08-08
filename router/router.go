@@ -119,7 +119,7 @@ func (r *router) addRealm(config *RealmConfig) (*realm, error) {
 		r.waitRealms.Done()
 	}()
 
-	log.Print("Added realm: ", config.URI)
+	log.Println("Added realm:", config.URI)
 	return realm, nil
 }
 
@@ -129,7 +129,7 @@ func (r *router) Attach(client wamp.Peer) error {
 		abortMsg := wamp.Abort{Reason: reason}
 		if abortErr != nil {
 			abortMsg.Details = map[string]interface{}{"error": abortErr.Error()}
-			log.Print("Aborting client connection: ", abortErr)
+			log.Println("Aborting client connection:", abortErr)
 		}
 		client.Send(&abortMsg)
 		client.Close()
@@ -196,7 +196,7 @@ func (r *router) Attach(client wamp.Peer) error {
 				return
 
 			}
-			log.Print("Auto-added realm: ", hello.Realm)
+			log.Println("Auto-added realm:", hello.Realm)
 		}
 		sync <- nil
 	}
@@ -280,7 +280,7 @@ func (r *router) Attach(client wamp.Peer) error {
 	}
 
 	client.Send(welcome)
-	log.Print("Created session: ", welcome.ID)
+	log.Println("Created session:", welcome.ID)
 	return nil
 }
 

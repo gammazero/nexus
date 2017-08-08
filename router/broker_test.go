@@ -33,7 +33,7 @@ func TestBasicSubscribe(t *testing.T) {
 	rsp := <-sess.Recv()
 	sub, ok := rsp.(*wamp.Subscribed)
 	if !ok {
-		t.Fatal("expected ", wamp.SUBSCRIBED, " got: ", rsp.MessageType())
+		t.Fatal("expected", wamp.SUBSCRIBED, "got:", rsp.MessageType())
 	}
 	subID := sub.Subscription
 	if subID == 0 {
@@ -63,7 +63,7 @@ func TestBasicSubscribe(t *testing.T) {
 	rsp = <-sess.Recv()
 	sub, ok = rsp.(*wamp.Subscribed)
 	if !ok {
-		t.Fatal("expected ", wamp.SUBSCRIBED, " got: ", rsp.MessageType())
+		t.Fatal("expected", wamp.SUBSCRIBED, "got:", rsp.MessageType())
 	}
 	// Should get same subscription ID.
 	subID2 := sub.Subscription
@@ -74,7 +74,7 @@ func TestBasicSubscribe(t *testing.T) {
 		t.Fatal("broker has too many subscriptions")
 	}
 	if len(broker.topicSubscribers[testTopic]) != 1 {
-		t.Fatal("too many subscribers to ", testTopic)
+		t.Fatal("too many subscribers to", testTopic)
 	}
 	if len(broker.sessionSubIDSet[sess]) != 1 {
 		t.Fatal("too many subscriptions for session")
@@ -87,7 +87,7 @@ func TestBasicSubscribe(t *testing.T) {
 	rsp = <-sess.Recv()
 	sub, ok = rsp.(*wamp.Subscribed)
 	if !ok {
-		t.Fatal("expected ", wamp.SUBSCRIBED, " got: ", rsp.MessageType())
+		t.Fatal("expected", wamp.SUBSCRIBED, "got:", rsp.MessageType())
 	}
 	subID2 = sub.Subscription
 	if subID2 == subID {
@@ -97,10 +97,10 @@ func TestBasicSubscribe(t *testing.T) {
 		t.Fatal("wrong number of subscriptions")
 	}
 	if len(broker.topicSubscribers[testTopic]) != 1 {
-		t.Fatal("too many subscribers to ", testTopic)
+		t.Fatal("too many subscribers to", testTopic)
 	}
 	if len(broker.topicSubscribers[testTopic2]) != 1 {
-		t.Fatal("too many subscribers to ", testTopic2)
+		t.Fatal("too many subscribers to", testTopic2)
 	}
 	if len(broker.sessionSubIDSet[sess]) != 2 {
 		t.Fatal("wrong number of subscriptions for session")
@@ -123,7 +123,7 @@ func TestUnsubscribe(t *testing.T) {
 	rsp = <-sess.Recv()
 	unsub, ok := rsp.(*wamp.Unsubscribed)
 	if !ok {
-		t.Fatal("expected ", wamp.UNSUBSCRIBED, " got: ", rsp.MessageType())
+		t.Fatal("expected", wamp.UNSUBSCRIBED, "got:", rsp.MessageType())
 	}
 	unsubID := unsub.Request
 	if unsubID == 0 {
@@ -200,7 +200,7 @@ func TestBasicPubSub(t *testing.T) {
 	rsp := <-sess.Recv()
 	_, ok := rsp.(*wamp.Subscribed)
 	if !ok {
-		t.Fatal("expected ", wamp.SUBSCRIBED, " got: ", rsp.MessageType())
+		t.Fatal("expected", wamp.SUBSCRIBED, "got:", rsp.MessageType())
 	}
 
 	publisher := newTestPeer()
@@ -240,7 +240,7 @@ func TestPrefxPatternBasedSubscription(t *testing.T) {
 	rsp := <-sess.Recv()
 	sub, ok := rsp.(*wamp.Subscribed)
 	if !ok {
-		t.Fatal("expected ", wamp.SUBSCRIBED, " got: ", rsp.MessageType())
+		t.Fatal("expected", wamp.SUBSCRIBED, "got:", rsp.MessageType())
 	}
 	subID := sub.Subscription
 	if subID == 0 {
@@ -300,7 +300,7 @@ func TestWildcardPatternBasedSubscription(t *testing.T) {
 	rsp := <-sess.Recv()
 	sub, ok := rsp.(*wamp.Subscribed)
 	if !ok {
-		t.Fatal("expected ", wamp.SUBSCRIBED, " got: ", rsp.MessageType())
+		t.Fatal("expected", wamp.SUBSCRIBED, "got:", rsp.MessageType())
 	}
 	subID := sub.Subscription
 	if subID == 0 {
@@ -362,7 +362,7 @@ func TestSubscriberBlackwhiteListing(t *testing.T) {
 	rsp := <-sess.Recv()
 	_, ok := rsp.(*wamp.Subscribed)
 	if !ok {
-		t.Fatal("expected ", wamp.SUBSCRIBED, " got: ", rsp.MessageType())
+		t.Fatal("expected", wamp.SUBSCRIBED, "got:", rsp.MessageType())
 	}
 
 	publisher := newTestPeer()
@@ -468,7 +468,7 @@ func TestPublisherExclusion(t *testing.T) {
 	}
 	_, ok := rsp.(*wamp.Subscribed)
 	if !ok {
-		t.Fatal("expected ", wamp.SUBSCRIBED, " got: ", rsp.MessageType())
+		t.Fatal("expected", wamp.SUBSCRIBED, "got:", rsp.MessageType())
 	}
 
 	publisher := newTestPeer()
@@ -493,7 +493,7 @@ func TestPublisherExclusion(t *testing.T) {
 	}
 	_, ok = rsp.(*wamp.Subscribed)
 	if !ok {
-		t.Fatal("expected ", wamp.SUBSCRIBED, " got: ", rsp.MessageType())
+		t.Fatal("expected", wamp.SUBSCRIBED, "got:", rsp.MessageType())
 	}
 
 	// Publish message with exclud_me = false.
@@ -550,7 +550,7 @@ func TestPublisherIdentification(t *testing.T) {
 	rsp := <-sess.Recv()
 	_, ok := rsp.(*wamp.Subscribed)
 	if !ok {
-		t.Fatal("expected ", wamp.SUBSCRIBED, " got: ", rsp.MessageType())
+		t.Fatal("expected", wamp.SUBSCRIBED, "got:", rsp.MessageType())
 	}
 
 	publisher := newTestPeer()

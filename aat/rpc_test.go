@@ -13,7 +13,7 @@ func TestRPCRegisterAndCall(t *testing.T) {
 	// Connect callee session.
 	callee, err := connectClient()
 	if err != nil {
-		t.Fatal("Failed to connect client: ", err)
+		t.Fatal("Failed to connect client:", err)
 	}
 
 	// Test registering a valid procedure.
@@ -31,13 +31,13 @@ func TestRPCRegisterAndCall(t *testing.T) {
 	// Register procedure "sum"
 	procName := "sum"
 	if err = callee.Register(procName, handler, nil); err != nil {
-		t.Fatal("failed to register procedure: ", err)
+		t.Fatal("failed to register procedure:", err)
 	}
 
 	// Connect caller session.
 	caller, err := connectClient()
 	if err != nil {
-		t.Fatal("Failed to connect client: ", err)
+		t.Fatal("Failed to connect client:", err)
 	}
 
 	// Test calling the procedure.
@@ -45,7 +45,7 @@ func TestRPCRegisterAndCall(t *testing.T) {
 	ctx := context.Background()
 	result, err := caller.Call(ctx, procName, nil, callArgs, nil, "")
 	if err != nil {
-		t.Fatal("failed to call procedure: ", err)
+		t.Fatal("failed to call procedure:", err)
 	}
 	sum, ok := wamp.AsInt64(result.Arguments[0])
 	if !ok {
@@ -57,17 +57,17 @@ func TestRPCRegisterAndCall(t *testing.T) {
 
 	// Test unregister.
 	if err = callee.Unregister(procName); err != nil {
-		t.Fatal("failed to unregister procedure: ", err)
+		t.Fatal("failed to unregister procedure:", err)
 	}
 
 	err = caller.Close()
 	if err != nil {
-		t.Fatal("Failed to disconnect client: ", err)
+		t.Fatal("Failed to disconnect client:", err)
 	}
 
 	err = callee.Close()
 	if err != nil {
-		t.Fatal("Failed to disconnect client: ", err)
+		t.Fatal("Failed to disconnect client:", err)
 	}
 }
 
@@ -75,7 +75,7 @@ func TestRPCCallUnregistered(t *testing.T) {
 	// Connect caller session.
 	caller, err := connectClient()
 	if err != nil {
-		t.Fatal("Failed to connect client: ", err)
+		t.Fatal("Failed to connect client:", err)
 	}
 
 	// Test calling unregistered procedure.
@@ -91,7 +91,7 @@ func TestRPCCallUnregistered(t *testing.T) {
 
 	err = caller.Close()
 	if err != nil {
-		t.Fatal("Failed to disconnect client: ", err)
+		t.Fatal("Failed to disconnect client:", err)
 	}
 }
 
@@ -99,7 +99,7 @@ func TestRPCUnregisterUnregistered(t *testing.T) {
 	// Connect caller session.
 	callee, err := connectClient()
 	if err != nil {
-		t.Fatal("Failed to connect client: ", err)
+		t.Fatal("Failed to connect client:", err)
 	}
 
 	// Test unregister unregistered procedure.
@@ -109,7 +109,7 @@ func TestRPCUnregisterUnregistered(t *testing.T) {
 
 	err = callee.Close()
 	if err != nil {
-		t.Fatal("Failed to disconnect client: ", err)
+		t.Fatal("Failed to disconnect client:", err)
 	}
 }
 
@@ -117,7 +117,7 @@ func TestRPCCancelCall(t *testing.T) {
 	// Connect callee session.
 	callee, err := connectClient()
 	if err != nil {
-		t.Fatal("Failed to connect client: ", err)
+		t.Fatal("Failed to connect client:", err)
 	}
 
 	// Register procedure that waits.
@@ -127,13 +127,13 @@ func TestRPCCancelCall(t *testing.T) {
 	}
 	procName := "myproc"
 	if err = callee.Register(procName, handler, nil); err != nil {
-		t.Fatal("failed to register procedure: ", err)
+		t.Fatal("failed to register procedure:", err)
 	}
 
 	// Connect caller session.
 	caller, err := connectClient()
 	if err != nil {
-		t.Fatal("Failed to connect client: ", err)
+		t.Fatal("Failed to connect client:", err)
 	}
 
 	errChan := make(chan error)
@@ -169,14 +169,14 @@ func TestRPCCancelCall(t *testing.T) {
 		t.Fatal("expected canceled error, got:", err)
 	}
 	if err = callee.Unregister(procName); err != nil {
-		t.Fatal("failed to unregister procedure: ", err)
+		t.Fatal("failed to unregister procedure:", err)
 	}
 	err = callee.Close()
 	if err != nil {
-		t.Fatal("Failed to disconnect client: ", err)
+		t.Fatal("Failed to disconnect client:", err)
 	}
 	err = caller.Close()
 	if err != nil {
-		t.Fatal("Failed to disconnect client: ", err)
+		t.Fatal("Failed to disconnect client:", err)
 	}
 }
