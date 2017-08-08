@@ -718,7 +718,7 @@ func (c *Client) handleInvocation(msg *wamp.Invocation) {
 			c.peer.Send(&wamp.Error{
 				Type:      wamp.INVOCATION,
 				Request:   msg.Request,
-				Details:   map[string]interface{}{"error": errMsg},
+				Details:   map[string]interface{}{},
 				Error:     wamp.ErrInvalidArgument,
 				Arguments: []interface{}{errMsg},
 			})
