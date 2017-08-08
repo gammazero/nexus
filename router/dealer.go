@@ -620,9 +620,6 @@ func (d *dealer) call(caller *Session, msg *wamp.Call) {
 					Error:   wamp.ErrOptionDisallowedDiscloseMe,
 				})
 			}
-			// TODO: Is it really necessary to check that callee supports this
-			// feature?  If the callee did not support this, then the info
-			// in the message should be ignored, right?
 			if callee.HasFeature("callee", "caller_identification") {
 				details["caller"] = caller.ID
 			}
@@ -635,8 +632,6 @@ func (d *dealer) call(caller *Session, msg *wamp.Call) {
 		// If the Callee supports progressive calls, the Dealer will
 		// forward the Caller's willingness to receive progressive
 		// results by setting.
-		//
-		// TODO: Check for feature support, or let callee ignore?
 		if callee.HasFeature("callee", "progressive_call_results") {
 			details["receive_progress"] = true
 		}

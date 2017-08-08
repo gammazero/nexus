@@ -456,11 +456,8 @@ func (b *broker) pubEvent(pub *Session, msg *wamp.Publish, pubID wamp.ID, subs m
 			details["topic"] = msg.Topic
 		}
 
-		if disclose {
-			// TODO: Check for feature support, or let recipient ignore?
-			if sub.HasFeature("subscriber", "publisher_identification") {
-				details["publisher"] = pub.ID
-			}
+		if disclose && sub.HasFeature("subscriber", "publisher_identification") {
+			details["publisher"] = pub.ID
 		}
 
 		// TODO: Handle publication trust levels

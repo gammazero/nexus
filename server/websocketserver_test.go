@@ -84,7 +84,7 @@ func TestWSHandshakeJSON(t *testing.T) {
 	}
 
 	if _, ok = msg.(*wamp.Welcome); !ok {
-		t.Fatal("expected WELCOME, got ", msg.MessageType())
+		t.Fatal("expected WELCOME, got", msg.MessageType())
 	}
 }
 
