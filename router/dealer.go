@@ -700,7 +700,7 @@ func (d *dealer) cancel(caller *Session, msg *wamp.Cancel) {
 
 	// Cancel mode should be one of: "skip", "kill", "killnowait"
 	mode := wamp.OptionString(msg.Options, "mode")
-	if mode != "skip" {
+	if mode == "killnowait" || mode == "kill" {
 		// Check that callee supports call canceling to see if it is alright to
 		// send INTERRUPT to callee.
 		if !invk.callee.HasFeature("callee", "call_canceling") {
@@ -725,6 +725,7 @@ func (d *dealer) cancel(caller *Session, msg *wamp.Cancel) {
 			}
 		}
 	}
+	// Treat any unrecognized mode the same as "skip".
 
 	// Immediately delete the pending call and send ERROR back to the
 	// caller.  This will cause any RESULT or ERROR arriving later from the
