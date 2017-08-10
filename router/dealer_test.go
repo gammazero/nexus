@@ -212,7 +212,7 @@ func TestBasicCall(t *testing.T) {
 	inv = rsp.(*wamp.Invocation)
 
 	// Callee responds with a ERROR message
-	dealer.Error(calleeSess, &wamp.Error{Request: inv.Request})
+	dealer.Error(&wamp.Error{Request: inv.Request})
 
 	// Check that caller received an ERROR message.
 	rsp = <-caller.Recv()
@@ -334,7 +334,7 @@ func TestCancelCallModeKill(t *testing.T) {
 	}
 
 	// callee responds with ERROR message
-	dealer.Error(calleeSess, &wamp.Error{
+	dealer.Error(&wamp.Error{
 		Type:    wamp.INVOCATION,
 		Request: inv.Request,
 		Error:   wamp.ErrCanceled,
@@ -415,7 +415,7 @@ func TestCancelCallModeKillNoWait(t *testing.T) {
 	}
 
 	// callee responds with ERROR message
-	dealer.Error(calleeSess, &wamp.Error{
+	dealer.Error(&wamp.Error{
 		Type:    wamp.INVOCATION,
 		Request: inv.Request,
 		Error:   wamp.ErrCanceled,
@@ -951,4 +951,44 @@ func TestPatternBasedRegistration(t *testing.T) {
 }
 
 func TestProgressiveCallResults(t *testing.T) {
+}
+
+func TestRPCBlockedSlowClientCall(t *testing.T) {
+	dealer, metaClient := newTestDealer()
+
+	// Register a procedure.
+	callee, rtr := transport.LinkedPeers(log)
+	calleeSess := &Session{Peer: rtr}
+	dealer.Register(calleeSess,
+		&wamp.Register{Request: 223, Procedure: testProcedure})
+	rsp := <-callee.Recv()
+	_, ok := rsp.(*wamp.Registered)
+	if !ok {
+		t.Fatal("did not receive REGISTERED response")
+	}
+
+	if err := checkMetaReg(metaClient, calleeSess.ID); err != nil {
+		t.Fatal("Registration meta event fail:", err)
+	}
+
+	caller, rtr := transport.LinkedPeers(log)
+	callerSession := &Session{Peer: rtr}
+
+	for i := 0; i < 20; i++ {
+		fmt.Println("Calling", i)
+		// Test calling valid procedure
+		dealer.Call(callerSession,
+			&wamp.Call{Request: wamp.ID(i + 225), Procedure: testProcedure})
+	}
+
+	fmt.Println("Waiting for error")
+	// Test that caller received an ERROR message.
+	rsp = <-caller.Recv()
+	rslt, ok := rsp.(*wamp.Error)
+	if !ok {
+		t.Fatal("expected ERROR, got:", rsp.MessageType())
+	}
+	if rslt.Error != wamp.ErrNetworkFailure {
+		t.Fatal("wrong error, want", wamp.ErrNetworkFailure, "got", rslt.Error)
+	}
 }

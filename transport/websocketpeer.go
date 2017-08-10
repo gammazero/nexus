@@ -118,13 +118,15 @@ func NewWebsocketPeer(conn *websocket.Conn, serializer serialize.Serializer, pay
 
 func (w *websocketPeer) Recv() <-chan wamp.Message { return w.rd }
 
-func (w *websocketPeer) Send(msg wamp.Message) {
+func (w *websocketPeer) Send(msg wamp.Message) error {
 	select {
 	case w.wr <- msg:
 	default:
-		w.log.Println("WARNING: client blocked router.  Dropped:",
-			msg.MessageType())
+		err := fmt.Errorf("client blocked - dropped %s", msg.MessageType())
+		w.log.Println("!!!", err)
+		return err
 	}
+	return nil
 }
 
 // Close closes the websocker peer.  This closes the local send channel, and

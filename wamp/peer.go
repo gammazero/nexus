@@ -7,8 +7,8 @@ import (
 
 // Peer is the interface implemented by endpoints communicating via WAMP.
 type Peer interface {
-	// Sends the message to the peer.
-	Send(Message)
+	// Sends the message to the peer.  Returns error if message dropped.
+	Send(Message) error
 
 	// Closes the peer connection and and channel returned from Recv().
 	Close()
