@@ -724,6 +724,9 @@ func (d *dealer) cancel(caller *Session, msg *wamp.Cancel) {
 				}
 			}
 		}
+	} else if mode != "skip" {
+		log.Printf("!! Unrecognized cancel mode '%s', changing to 'skip'",
+			mode)
 	}
 	// Treat any unrecognized mode the same as "skip".
 
