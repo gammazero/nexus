@@ -209,7 +209,7 @@ func TestBasicPubSub(t *testing.T) {
 	publisher := newTestPeer()
 	pubSess := &Session{Peer: publisher}
 	broker.Publish(pubSess, &wamp.Publish{Request: 124, Topic: testTopic,
-		Arguments: []interface{}{"hello world"}})
+		Arguments: wamp.List{"hello world"}})
 	rsp = <-sess.Recv()
 	evt, ok := rsp.(*wamp.Event)
 	if !ok {
@@ -235,7 +235,7 @@ func TestPrefxPatternBasedSubscription(t *testing.T) {
 	msg := &wamp.Subscribe{
 		Request: 123,
 		Topic:   testTopicPfx,
-		Options: map[string]interface{}{"match": "prefix"},
+		Options: wamp.Dict{"match": "prefix"},
 	}
 	broker.Subscribe(sess, msg)
 
@@ -295,7 +295,7 @@ func TestWildcardPatternBasedSubscription(t *testing.T) {
 	msg := &wamp.Subscribe{
 		Request: 123,
 		Topic:   testTopicWc,
-		Options: map[string]interface{}{"match": "wildcard"},
+		Options: wamp.Dict{"match": "wildcard"},
 	}
 	broker.Subscribe(sess, msg)
 
@@ -348,7 +348,7 @@ func TestWildcardPatternBasedSubscription(t *testing.T) {
 func TestSubscriberBlackwhiteListing(t *testing.T) {
 	broker := NewBroker(false, true).(*broker)
 	subscriber := newTestPeer()
-	details := map[string]interface{}{
+	details := wamp.Dict{
 		"authid":   "jdoe",
 		"authrole": "admin",
 	}
@@ -370,10 +370,10 @@ func TestSubscriberBlackwhiteListing(t *testing.T) {
 
 	publisher := newTestPeer()
 
-	details = map[string]interface{}{
-		"roles": map[string]interface{}{
-			"publisher": map[string]interface{}{
-				"features": map[string]interface{}{
+	details = wamp.Dict{
+		"roles": wamp.Dict{
+			"publisher": wamp.Dict{
+				"features": wamp.Dict{
 					"subscriber_blackwhite_listing": true,
 				},
 			},
@@ -385,7 +385,7 @@ func TestSubscriberBlackwhiteListing(t *testing.T) {
 	broker.Publish(pubSess, &wamp.Publish{
 		Request: 124,
 		Topic:   testTopic,
-		Options: map[string]interface{}{"eligible": []string{string(sess.ID)}},
+		Options: wamp.Dict{"eligible": []string{string(sess.ID)}},
 	})
 	rsp, err := wamp.RecvTimeout(sess, time.Second)
 	if err != nil {
@@ -395,7 +395,7 @@ func TestSubscriberBlackwhiteListing(t *testing.T) {
 	broker.Publish(pubSess, &wamp.Publish{
 		Request: 125,
 		Topic:   testTopic,
-		Options: map[string]interface{}{"eligible_authrole": []string{"admin"}},
+		Options: wamp.Dict{"eligible_authrole": []string{"admin"}},
 	})
 	rsp, err = wamp.RecvTimeout(sess, time.Second)
 	if err != nil {
@@ -405,7 +405,7 @@ func TestSubscriberBlackwhiteListing(t *testing.T) {
 	broker.Publish(pubSess, &wamp.Publish{
 		Request: 126,
 		Topic:   testTopic,
-		Options: map[string]interface{}{"eligible_authid": []string{"jdoe"}},
+		Options: wamp.Dict{"eligible_authid": []string{"jdoe"}},
 	})
 	rsp, err = wamp.RecvTimeout(sess, time.Second)
 	if err != nil {
@@ -416,7 +416,7 @@ func TestSubscriberBlackwhiteListing(t *testing.T) {
 	broker.Publish(pubSess, &wamp.Publish{
 		Request: 127,
 		Topic:   testTopic,
-		Options: map[string]interface{}{"exclude": []string{string(sess.ID)}},
+		Options: wamp.Dict{"exclude": []string{string(sess.ID)}},
 	})
 	rsp, err = wamp.RecvTimeout(sess, time.Second)
 	if err == nil {
@@ -426,7 +426,7 @@ func TestSubscriberBlackwhiteListing(t *testing.T) {
 	broker.Publish(pubSess, &wamp.Publish{
 		Request: 128,
 		Topic:   testTopic,
-		Options: map[string]interface{}{"exclude_authrole": []string{"admin"}},
+		Options: wamp.Dict{"exclude_authrole": []string{"admin"}},
 	})
 	rsp, err = wamp.RecvTimeout(sess, time.Second)
 	if err == nil {
@@ -436,7 +436,7 @@ func TestSubscriberBlackwhiteListing(t *testing.T) {
 	broker.Publish(pubSess, &wamp.Publish{
 		Request: 129,
 		Topic:   testTopic,
-		Options: map[string]interface{}{"exclude_authid": []string{"jdoe"}},
+		Options: wamp.Dict{"exclude_authid": []string{"jdoe"}},
 	})
 	rsp, err = wamp.RecvTimeout(sess, time.Second)
 	if err == nil {
@@ -447,7 +447,7 @@ func TestSubscriberBlackwhiteListing(t *testing.T) {
 	broker.Publish(pubSess, &wamp.Publish{
 		Request: 126,
 		Topic:   testTopic,
-		Options: map[string]interface{}{"eligible_authid": []string{"jdoe"},
+		Options: wamp.Dict{"eligible_authid": []string{"jdoe"},
 			"exclude_authid": []string{"jdoe"}},
 	})
 	rsp, err = wamp.RecvTimeout(sess, time.Second)
@@ -476,10 +476,10 @@ func TestPublisherExclusion(t *testing.T) {
 
 	publisher := newTestPeer()
 
-	details := map[string]interface{}{
-		"roles": map[string]interface{}{
-			"publisher": map[string]interface{}{
-				"features": map[string]interface{}{
+	details := wamp.Dict{
+		"roles": wamp.Dict{
+			"publisher": wamp.Dict{
+				"features": wamp.Dict{
 					"publisher_exclusion": true,
 				},
 			},
@@ -503,7 +503,7 @@ func TestPublisherExclusion(t *testing.T) {
 	broker.Publish(pubSess, &wamp.Publish{
 		Request: 124,
 		Topic:   testTopic,
-		Options: map[string]interface{}{"exclude_me": false},
+		Options: wamp.Dict{"exclude_me": false},
 	})
 	rsp, err = wamp.RecvTimeout(sess, time.Second)
 	if err != nil {
@@ -518,7 +518,7 @@ func TestPublisherExclusion(t *testing.T) {
 	broker.Publish(pubSess, &wamp.Publish{
 		Request: 124,
 		Topic:   testTopic,
-		Options: map[string]interface{}{"exclude_me": true},
+		Options: wamp.Dict{"exclude_me": true},
 	})
 	rsp, err = wamp.RecvTimeout(sess, time.Second)
 	if err != nil {
@@ -534,10 +534,10 @@ func TestPublisherIdentification(t *testing.T) {
 	broker := NewBroker(false, true).(*broker)
 	subscriber := newTestPeer()
 
-	details := map[string]interface{}{
-		"roles": map[string]interface{}{
-			"subscriber": map[string]interface{}{
-				"features": map[string]interface{}{
+	details := wamp.Dict{
+		"roles": wamp.Dict{
+			"subscriber": wamp.Dict{
+				"features": wamp.Dict{
 					"publisher_identification": true,
 				},
 			},
@@ -561,7 +561,7 @@ func TestPublisherIdentification(t *testing.T) {
 	broker.Publish(pubSess, &wamp.Publish{
 		Request: 124,
 		Topic:   testTopic,
-		Options: map[string]interface{}{"disclose_me": true},
+		Options: wamp.Dict{"disclose_me": true},
 	})
 	rsp = <-sess.Recv()
 	evt, ok := rsp.(*wamp.Event)

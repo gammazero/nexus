@@ -28,7 +28,7 @@ func NewTicketAuthenticator(userDB UserDB) Authenticator {
 }
 
 // Create a PendingCRAuth for ticket CR authentication.
-func (t *ticketAuthenticator) Challenge(details map[string]interface{}) (PendingCRAuth, error) {
+func (t *ticketAuthenticator) Challenge(details wamp.Dict) (PendingCRAuth, error) {
 	// The HELLO.Details.authid|string is the authentication ID (e.g. username)
 	// the client wishes to authenticate as. For Ticket-based authentication,
 	// this MUST be provided.
@@ -74,7 +74,7 @@ func (p *pendingTicketAuth) Msg() *wamp.Challenge {
 	// ticket (using authmethod) and provides no additional challenge info.
 	return &wamp.Challenge{
 		AuthMethod: "ticket",
-		Extra:      map[string]interface{}{},
+		Extra:      wamp.Dict{},
 	}
 }
 
@@ -94,7 +94,7 @@ func (p *pendingTicketAuth) Authenticate(msg *wamp.Authenticate) (*wamp.Welcome,
 	}
 
 	// Create welcome details containing auth info.
-	details := map[string]interface{}{
+	details := wamp.Dict{
 		"authid":       p.authID,
 		"authmethod":   "ticket",
 		"authrole":     p.role,

@@ -135,7 +135,7 @@ func (r *router) Attach(client wamp.Peer) error {
 	sendAbort := func(reason wamp.URI, abortErr error) {
 		abortMsg := wamp.Abort{Reason: reason}
 		if abortErr != nil {
-			abortMsg.Details = map[string]interface{}{"error": abortErr.Error()}
+			abortMsg.Details = wamp.Dict{"error": abortErr.Error()}
 			log.Println("Aborting client connection:", abortErr)
 		}
 		client.Send(&abortMsg)
@@ -225,7 +225,7 @@ func (r *router) Attach(client wamp.Peer) error {
 		sendAbort(wamp.ErrNoSuchRole, err)
 		return err
 	}
-	roleVals, ok := _roleVals.(map[string]interface{})
+	roleVals, ok := _roleVals.(wamp.Dict)
 	if !ok || len(roleVals) == 0 {
 		err = errors.New("no client roles specified")
 		sendAbort(wamp.ErrNoSuchRole, err)
@@ -245,7 +245,7 @@ func (r *router) Attach(client wamp.Peer) error {
 	// specify otherwise.
 	if _, ok = hello.Details["authmethods"]; !ok {
 		if hello.Details == nil {
-			hello.Details = map[string]interface{}{}
+			hello.Details = wamp.Dict{}
 		}
 		hello.Details["authmethods"] = []string{"anonymous"}
 	}
@@ -264,7 +264,7 @@ func (r *router) Attach(client wamp.Peer) error {
 	welcome.ID = wamp.GlobalID()
 
 	// Populate session details.
-	details := map[string]interface{}{}
+	details := wamp.Dict{}
 	details["realm"] = hello.Realm
 	details["roles"] = welcome.Details["roles"]
 	details["authid"] = welcome.Details["authid"]

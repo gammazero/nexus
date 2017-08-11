@@ -14,8 +14,8 @@ import (
 // - call trust levels
 
 // Features supported by this dealer.
-var dealerFeatures = map[string]interface{}{
-	"features": map[string]interface{}{
+var dealerFeatures = wamp.Dict{
+	"features": wamp.Dict{
 		"call_canceling":             true,
 		"call_timeout":               true,
 		"caller_identification":      true,
@@ -81,7 +81,7 @@ type Dealer interface {
 	//
 	// The data returned is suitable for use as the "features" section of the
 	// dealer role in a WELCOME message.
-	Features() map[string]interface{}
+	Features() wamp.Dict
 
 	// RegList retrieves registration IDs listed according to match policies.
 	RegList(*wamp.Invocation) wamp.Message
@@ -127,7 +127,7 @@ type invocation struct {
 }
 
 // Features returns the features supported by this dealer.
-func (d *dealer) Features() map[string]interface{} {
+func (d *dealer) Features() wamp.Dict {
 	return dealerFeatures
 }
 
@@ -226,7 +226,7 @@ func (d *dealer) Register(callee *Session, msg *wamp.Register) {
 			Type:      msg.MessageType(),
 			Request:   msg.Request,
 			Error:     wamp.ErrInvalidURI,
-			Arguments: []interface{}{errMsg},
+			Arguments: wamp.List{errMsg},
 		})
 		return
 	}
@@ -244,7 +244,7 @@ func (d *dealer) Register(callee *Session, msg *wamp.Register) {
 				Type:      msg.MessageType(),
 				Request:   msg.Request,
 				Error:     wamp.ErrInvalidURI,
-				Arguments: []interface{}{errMsg},
+				Arguments: wamp.List{errMsg},
 			})
 			return
 		}
@@ -257,7 +257,7 @@ func (d *dealer) Register(callee *Session, msg *wamp.Register) {
 		callee.Send(&wamp.Error{
 			Type:    msg.MessageType(),
 			Request: msg.Request,
-			Details: map[string]interface{}{},
+			Details: wamp.Dict{},
 			Error:   wamp.ErrOptionDisallowedDiscloseMe,
 		})
 		return
@@ -382,7 +382,7 @@ func (d *dealer) register(callee *Session, msg *wamp.Register, match, invokePoli
 			// wamp.registration.on_create is fired when a registration is
 			// created through a registration request for an URI which was
 			// previously without a registration.
-			details := map[string]interface{}{
+			details := wamp.Dict{
 				"id":      regID,
 				"created": created,
 				"uri":     msg.Procedure,
@@ -392,7 +392,7 @@ func (d *dealer) register(callee *Session, msg *wamp.Register, match, invokePoli
 			d.metaClient.Send(&wamp.Publish{
 				Request:   wamp.GlobalID(),
 				Topic:     wamp.MetaEventRegOnCreate,
-				Arguments: []interface{}{callee.ID, details},
+				Arguments: wamp.List{callee.ID, details},
 			})
 		}
 	} else {
@@ -407,7 +407,7 @@ func (d *dealer) register(callee *Session, msg *wamp.Register, match, invokePoli
 			callee.Send(&wamp.Error{
 				Type:    msg.MessageType(),
 				Request: msg.Request,
-				Details: map[string]interface{}{},
+				Details: wamp.Dict{},
 				Error:   wamp.ErrProcedureAlreadyExists,
 			})
 			return
@@ -422,7 +422,7 @@ func (d *dealer) register(callee *Session, msg *wamp.Register, match, invokePoli
 			callee.Send(&wamp.Error{
 				Type:    msg.MessageType(),
 				Request: msg.Request,
-				Details: map[string]interface{}{},
+				Details: wamp.Dict{},
 				Error:   wamp.ErrProcedureAlreadyExists,
 			})
 			return
@@ -456,7 +456,7 @@ func (d *dealer) register(callee *Session, msg *wamp.Register, match, invokePoli
 		d.metaClient.Send(&wamp.Publish{
 			Request:   wamp.GlobalID(),
 			Topic:     wamp.MetaEventRegOnRegister,
-			Arguments: []interface{}{callee.ID, regID},
+			Arguments: wamp.List{callee.ID, regID},
 		})
 	}
 }
@@ -476,7 +476,7 @@ func (d *dealer) unregister(callee *Session, msg *wamp.Unregister) {
 		callee.Send(&wamp.Error{
 			Type:    msg.MessageType(),
 			Request: msg.Request,
-			Details: map[string]interface{}{},
+			Details: wamp.Dict{},
 			Error:   wamp.ErrNoSuchRegistration,
 		})
 		return
@@ -489,7 +489,7 @@ func (d *dealer) unregister(callee *Session, msg *wamp.Unregister) {
 	d.metaClient.Send(&wamp.Publish{
 		Request:   wamp.GlobalID(),
 		Topic:     wamp.MetaEventRegOnUnregister,
-		Arguments: []interface{}{callee.ID, msg.Registration},
+		Arguments: wamp.List{callee.ID, msg.Registration},
 	})
 
 	if delReg {
@@ -500,7 +500,7 @@ func (d *dealer) unregister(callee *Session, msg *wamp.Unregister) {
 		d.metaClient.Send(&wamp.Publish{
 			Request:   wamp.GlobalID(),
 			Topic:     wamp.MetaEventRegOnDelete,
-			Arguments: []interface{}{callee.ID, msg.Registration},
+			Arguments: wamp.List{callee.ID, msg.Registration},
 		})
 	}
 }
@@ -546,7 +546,7 @@ func (d *dealer) call(caller *Session, msg *wamp.Call) {
 		caller.Send(&wamp.Error{
 			Type:    msg.MessageType(),
 			Request: msg.Request,
-			Details: map[string]interface{}{},
+			Details: wamp.Dict{},
 			Error:   wamp.ErrNoSuchProcedure,
 		})
 		return
@@ -580,7 +580,7 @@ func (d *dealer) call(caller *Session, msg *wamp.Call) {
 	} else {
 		callee = reg.callees[0]
 	}
-	details := map[string]interface{}{}
+	details := wamp.Dict{}
 
 	// A Caller might want to issue a call providing a timeout for the call to
 	// finish.
@@ -615,7 +615,7 @@ func (d *dealer) call(caller *Session, msg *wamp.Call) {
 				caller.Send(&wamp.Error{
 					Type:    msg.MessageType(),
 					Request: msg.Request,
-					Details: map[string]interface{}{},
+					Details: wamp.Dict{},
 					Error:   wamp.ErrOptionDisallowedDiscloseMe,
 				})
 			}
@@ -657,9 +657,9 @@ func (d *dealer) call(caller *Session, msg *wamp.Call) {
 		d.error(&wamp.Error{
 			Type:      wamp.INVOCATION,
 			Request:   invocationID,
-			Details:   map[string]interface{}{},
+			Details:   wamp.Dict{},
 			Error:     wamp.ErrNetworkFailure,
-			Arguments: []interface{}{"client blocked - cannot call procedure"},
+			Arguments: wamp.List{"client blocked - cannot call procedure"},
 		})
 	}
 }
@@ -710,7 +710,7 @@ func (d *dealer) cancel(caller *Session, msg *wamp.Cancel) {
 			// Send INTERRUPT message to callee.
 			err := invk.callee.Send(&wamp.Interrupt{
 				Request: invocationID,
-				Options: map[string]interface{}{},
+				Options: wamp.Dict{},
 			})
 			if err == nil {
 				log.Println("Dealer sent INTERRUPT to to cancel invocation",
@@ -743,7 +743,7 @@ func (d *dealer) cancel(caller *Session, msg *wamp.Cancel) {
 		Type:    wamp.CALL,
 		Request: msg.Request,
 		Error:   wamp.ErrCanceled,
-		Details: map[string]interface{}{},
+		Details: wamp.Dict{},
 	})
 }
 
@@ -773,7 +773,7 @@ func (d *dealer) yield(callee *Session, msg *wamp.Yield) {
 			msg.Request)
 		return
 	}
-	details := map[string]interface{}{}
+	details := wamp.Dict{}
 	if !progress {
 		delete(d.calls, callID)
 		details["progress"] = true
@@ -838,7 +838,7 @@ func (d *dealer) removeSession(callee *Session) {
 		d.metaClient.Send(&wamp.Publish{
 			Request:   wamp.GlobalID(),
 			Topic:     wamp.MetaEventRegOnUnregister,
-			Arguments: []interface{}{callee.ID, regID},
+			Arguments: wamp.List{callee.ID, regID},
 		})
 
 		if !delReg {
@@ -851,7 +851,7 @@ func (d *dealer) removeSession(callee *Session) {
 		d.metaClient.Send(&wamp.Publish{
 			Request:   wamp.GlobalID(),
 			Topic:     wamp.MetaEventRegOnDelete,
-			Arguments: []interface{}{callee.ID, regID},
+			Arguments: wamp.List{callee.ID, regID},
 		})
 	}
 	delete(d.calleeRegIDSet, callee)
@@ -926,14 +926,14 @@ func (d *dealer) RegList(msg *wamp.Invocation) wamp.Message {
 		sync <- struct{}{}
 	}
 	<-sync
-	dict := map[string]interface{}{
+	dict := wamp.Dict{
 		"exact":    exactRegs,
 		"prefix":   pfxRegs,
 		"wildcard": wcRegs,
 	}
 	return &wamp.Yield{
 		Request:   msg.Request,
-		Arguments: []interface{}{dict},
+		Arguments: wamp.List{dict},
 	}
 }
 
@@ -944,7 +944,7 @@ func (d *dealer) RegLookup(msg *wamp.Invocation) wamp.Message {
 		if procedure, ok := wamp.AsURI(msg.Arguments[0]); ok {
 			var match string
 			if len(msg.Arguments) > 1 {
-				opts := msg.Arguments[1].(map[string]interface{})
+				opts := msg.Arguments[1].(wamp.Dict)
 				match = wamp.OptionString(opts, "match")
 			}
 			sync := make(chan wamp.ID)
@@ -970,7 +970,7 @@ func (d *dealer) RegLookup(msg *wamp.Invocation) wamp.Message {
 	}
 	return &wamp.Yield{
 		Request:   msg.Request,
-		Arguments: []interface{}{regID},
+		Arguments: wamp.List{regID},
 	}
 }
 
@@ -992,20 +992,20 @@ func (d *dealer) RegMatch(msg *wamp.Invocation) wamp.Message {
 	}
 	return &wamp.Yield{
 		Request:   msg.Request,
-		Arguments: []interface{}{regID},
+		Arguments: wamp.List{regID},
 	}
 }
 
 // RegGet retrieves information on a particular registration.
 func (d *dealer) RegGet(msg *wamp.Invocation) wamp.Message {
-	var dict map[string]interface{}
+	var dict wamp.Dict
 	if len(msg.Arguments) != 0 {
 		if i64, ok := wamp.AsInt64(msg.Arguments[0]); ok {
 			sync := make(chan struct{})
 			regID := wamp.ID(i64)
 			d.actionChan <- func() {
 				if reg, ok := d.registrations[regID]; ok {
-					dict = map[string]interface{}{
+					dict = wamp.Dict{
 						"id":      regID,
 						"created": reg.created,
 						"uri":     reg.procedure,
@@ -1022,13 +1022,13 @@ func (d *dealer) RegGet(msg *wamp.Invocation) wamp.Message {
 		return &wamp.Error{
 			Type:    msg.MessageType(),
 			Request: msg.Request,
-			Details: map[string]interface{}{},
+			Details: wamp.Dict{},
 			Error:   wamp.ErrNoSuchRegistration,
 		}
 	}
 	return &wamp.Yield{
 		Request:   msg.Request,
-		Arguments: []interface{}{dict},
+		Arguments: wamp.List{dict},
 	}
 }
 
@@ -1056,13 +1056,13 @@ func (d *dealer) RegListCallees(msg *wamp.Invocation) wamp.Message {
 		return &wamp.Error{
 			Type:    msg.MessageType(),
 			Request: msg.Request,
-			Details: map[string]interface{}{},
+			Details: wamp.Dict{},
 			Error:   wamp.ErrNoSuchRegistration,
 		}
 	}
 	return &wamp.Yield{
 		Request:   msg.Request,
-		Arguments: []interface{}{calleeIDs},
+		Arguments: wamp.List{calleeIDs},
 	}
 }
 
@@ -1093,12 +1093,12 @@ func (d *dealer) RegCountCallees(msg *wamp.Invocation) wamp.Message {
 		return &wamp.Error{
 			Type:    msg.MessageType(),
 			Request: msg.Request,
-			Details: map[string]interface{}{},
+			Details: wamp.Dict{},
 			Error:   wamp.ErrNoSuchRegistration,
 		}
 	}
 	return &wamp.Yield{
 		Request:   msg.Request,
-		Arguments: []interface{}{count},
+		Arguments: wamp.List{count},
 	}
 }

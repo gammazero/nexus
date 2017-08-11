@@ -7,17 +7,17 @@ import (
 )
 
 // NormalizeDict takes a dict and creates a new normalized dict where all
-// map[string]xxx are converted to map[string]interface{}.  Values that cannot
+// map[string]xxx are converted to Dict.  Values that cannot
 // be converted, or are already the correct map type, remain the same.
 //
 // This is used for initial conversion of hello details.  The original dict is
 // not mutated.
-func NormalizeDict(v interface{}) map[string]interface{} {
+func NormalizeDict(v interface{}) Dict {
 	val := reflect.ValueOf(v)
 	if val.Kind() != reflect.Map {
 		return nil
 	}
-	dict := map[string]interface{}{}
+	dict := Dict{}
 	for _, key := range val.MapKeys() {
 		if key.Kind() == reflect.Interface {
 			key = key.Elem()
@@ -38,16 +38,16 @@ func NormalizeDict(v interface{}) map[string]interface{} {
 
 // Return the child dictionary for the given key, or nil if not present.
 //
-// If the child is not a map[string]interface{}, an attempt is made to convert
+// If the child is not a Dict, an attempt is made to convert
 // it.  The dict is not modified since features may be looked up cuncurrently
 // for the same session.
-func DictChild(dict map[string]interface{}, key string) map[string]interface{} {
+func DictChild(dict Dict, key string) Dict {
 	iface, ok := dict[key]
 	if !ok || iface == nil {
 		// Map does not have the specified key or value is nil.
 		return nil
 	}
-	child, ok := iface.(map[string]interface{})
+	child, ok := iface.(Dict)
 	if !ok {
 		// value is not in expected form; try to convert
 		// Session details are normalized whensession is attached, so this
@@ -69,7 +69,7 @@ func DictChild(dict map[string]interface{}, key string) map[string]interface{} {
 // For example, the path []string{"roles","callee","features","call_timeout"}
 // returns  the value of the call_timeout feature as interface{}.  An error
 // is returned if the value is not present.
-func DictValue(dict map[string]interface{}, path []string) (interface{}, error) {
+func DictValue(dict Dict, path []string) (interface{}, error) {
 	for i := range path[:len(path)-1] {
 		dict = DictChild(dict, path[i])
 		if dict == nil {
@@ -92,7 +92,7 @@ func DictValue(dict map[string]interface{}, path []string) (interface{}, error) 
 // For example: "roles.subscriber.features.publisher_identification" returns
 // the value of the publisher_identification feature.  An error is returned if
 // the value is not present or is not a boolean type.
-func DictFlag(dict map[string]interface{}, path []string) (bool, error) {
+func DictFlag(dict Dict, path []string) (bool, error) {
 	v, err := DictValue(dict, path)
 	if err != nil {
 		return false, err
@@ -107,7 +107,7 @@ func DictFlag(dict map[string]interface{}, path []string) (bool, error) {
 
 // OptionString returns the string value of the option with the specified name.
 // If the option is not present, an empty string is returned.
-func OptionString(opts map[string]interface{}, optionName string) string {
+func OptionString(opts Dict, optionName string) string {
 	var opt string
 	if _opt, ok := opts[optionName]; ok && _opt != nil {
 		opt, _ = _opt.(string)
@@ -117,7 +117,7 @@ func OptionString(opts map[string]interface{}, optionName string) string {
 
 // OptionURI returns the URI value of the option with the specified name.
 // If the option is not present, an empty URI is returned.
-func OptionURI(opts map[string]interface{}, optionName string) URI {
+func OptionURI(opts Dict, optionName string) URI {
 	var opt URI
 	if _opt, ok := opts[optionName]; ok && _opt != nil {
 		opt, _ = AsURI(_opt)
@@ -127,7 +127,7 @@ func OptionURI(opts map[string]interface{}, optionName string) URI {
 
 // OptionID returns the ID value of the option with the specified name.
 // If the option is not present, an ID 0 is returned.
-func OptionID(opts map[string]interface{}, optionName string) ID {
+func OptionID(opts Dict, optionName string) ID {
 	var opt ID
 	if _opt, ok := opts[optionName]; ok && _opt != nil {
 		opt, _ = AsID(_opt)
@@ -178,7 +178,7 @@ func AsInt64(v interface{}) (int64, bool) {
 
 // OptionInt64 returns the int64 value of the option with the specified name.
 // If the option is not present, a value of 0 is returned.
-func OptionInt64(opts map[string]interface{}, optionName string) int64 {
+func OptionInt64(opts Dict, optionName string) int64 {
 	if opt, ok := opts[optionName]; ok && opt != nil {
 		if i64, ok := AsInt64(opt); ok {
 			return i64
@@ -189,7 +189,7 @@ func OptionInt64(opts map[string]interface{}, optionName string) int64 {
 
 // OptionString returns the boolean value of the option with the specified
 // name.  If the option is not present, false is returned.
-func OptionFlag(opts map[string]interface{}, optionName string) bool {
+func OptionFlag(opts Dict, optionName string) bool {
 	var opt bool
 	if _opt, ok := opts[optionName]; ok && _opt != nil {
 		opt, _ = _opt.(bool)
@@ -198,9 +198,9 @@ func OptionFlag(opts map[string]interface{}, optionName string) bool {
 }
 
 // SetOption sets a single option name-value pair in message options dict.
-func SetOption(dict map[string]interface{}, name string, value interface{}) map[string]interface{} {
+func SetOption(dict Dict, name string, value interface{}) Dict {
 	if dict == nil {
-		dict = map[string]interface{}{}
+		dict = Dict{}
 	}
 	dict[name] = value
 	return dict

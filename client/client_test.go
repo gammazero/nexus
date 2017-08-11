@@ -128,7 +128,7 @@ func TestJoinRealmWithCRAuth(t *testing.T) {
 	peer := getTestPeer(r)
 	client := NewClient(peer, 0, log)
 
-	details := map[string]interface{}{
+	details := wamp.Dict{
 		"username": "jdoe", "authmethods": []string{"testauth"}}
 	authMap := map[string]AuthFunc{"testauth": testAuthFunc}
 	_, err = client.JoinRealm("nexus.test.auth", details, authMap)
@@ -146,7 +146,7 @@ func TestSubscribe(t *testing.T) {
 
 	testTopic := "nexus.test.topic"
 	errChan := make(chan error)
-	evtHandler := func(args []interface{}, kwargs map[string]interface{}, details map[string]interface{}) {
+	evtHandler := func(args wamp.List, kwargs wamp.Dict, details wamp.Dict) {
 		if args[0].(string) != "hello world" {
 			errChan <- errors.New("event missing or bad args")
 			return
@@ -173,7 +173,7 @@ func TestSubscribe(t *testing.T) {
 	}
 
 	// Publish an event to something that matches by wildcard.
-	pub.Publish(testTopic, nil, []interface{}{"hello world"}, nil)
+	pub.Publish(testTopic, nil, wamp.List{"hello world"}, nil)
 
 	// Make sure the event was received.
 	select {
@@ -203,8 +203,8 @@ func TestRemoteProcedureCall(t *testing.T) {
 	}
 
 	// Test registering a valid procedure.
-	handler := func(ctx context.Context, args []interface{}, kwargs, details map[string]interface{}) *InvokeResult {
-		return &InvokeResult{Args: []interface{}{args[0].(int) * 37}}
+	handler := func(ctx context.Context, args wamp.List, kwargs, details wamp.Dict) *InvokeResult {
+		return &InvokeResult{Args: wamp.List{args[0].(int) * 37}}
 	}
 	procName := "myproc"
 	if err = callee.Register(procName, handler, nil); err != nil {
@@ -212,7 +212,7 @@ func TestRemoteProcedureCall(t *testing.T) {
 	}
 
 	// Test calling the procedure.
-	callArgs := []interface{}{73}
+	callArgs := wamp.List{73}
 	ctx := context.Background()
 	result, err := caller.Call(ctx, procName, nil, callArgs, nil, "")
 	if err != nil {
@@ -228,7 +228,7 @@ func TestRemoteProcedureCall(t *testing.T) {
 	}
 
 	// Test calling unregistered procedure.
-	callArgs = []interface{}{555}
+	callArgs = wamp.List{555}
 	result, err = caller.Call(ctx, procName, nil, callArgs, nil, "")
 	if err == nil {
 		t.Fatal("expected error calling unregistered procedure")
@@ -246,7 +246,7 @@ func TestTimeoutCancelRemoteProcedureCall(t *testing.T) {
 	}
 
 	// Test registering a valid procedure.
-	handler := func(ctx context.Context, args []interface{}, kwargs, details map[string]interface{}) *InvokeResult {
+	handler := func(ctx context.Context, args wamp.List, kwargs, details wamp.Dict) *InvokeResult {
 		<-ctx.Done() // handler will block forever until canceled.
 		return &InvokeResult{Err: wamp.ErrCanceled}
 	}
@@ -260,7 +260,7 @@ func TestTimeoutCancelRemoteProcedureCall(t *testing.T) {
 	defer cancel()
 	// Calling the procedure, should block.
 	go func() {
-		callArgs := []interface{}{73}
+		callArgs := wamp.List{73}
 		_, err := caller.Call(ctx, procName, nil, callArgs, nil, "killnowait")
 		errChan <- err
 	}()
@@ -299,7 +299,7 @@ func TestCancelRemoteProcedureCall(t *testing.T) {
 	}
 
 	// Test registering a valid procedure.
-	handler := func(ctx context.Context, args []interface{}, kwargs, details map[string]interface{}) *InvokeResult {
+	handler := func(ctx context.Context, args wamp.List, kwargs, details wamp.Dict) *InvokeResult {
 		<-ctx.Done() // handler will block forever until canceled.
 		return &InvokeResult{Err: wamp.ErrCanceled}
 	}
@@ -312,7 +312,7 @@ func TestCancelRemoteProcedureCall(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
 	// Calling the procedure, should block.
 	go func() {
-		callArgs := []interface{}{73}
+		callArgs := wamp.List{73}
 		_, err := caller.Call(ctx, procName, nil, callArgs, nil, "killnowait")
 		errChan <- err
 	}()
@@ -346,9 +346,9 @@ func TestCancelRemoteProcedureCall(t *testing.T) {
 }
 
 // ---- authentication test stuff ------
-func testAuthFunc(d map[string]interface{}, c map[string]interface{}) (string, map[string]interface{}) {
+func testAuthFunc(d wamp.Dict, c wamp.Dict) (string, wamp.Dict) {
 	ch := c["challenge"].(string)
-	return testCRSign(ch), map[string]interface{}{}
+	return testCRSign(ch), wamp.Dict{}
 }
 
 type testCRAuthenticator struct{}
@@ -360,7 +360,7 @@ type pendingTestAuth struct {
 	role   string
 }
 
-func (t *testCRAuthenticator) Challenge(details map[string]interface{}) (auth.PendingCRAuth, error) {
+func (t *testCRAuthenticator) Challenge(details wamp.Dict) (auth.PendingCRAuth, error) {
 	var username string
 	_username, ok := details["username"]
 	if ok {
@@ -387,7 +387,7 @@ func testCRSign(uname string) string {
 func (p *pendingTestAuth) Msg() *wamp.Challenge {
 	return &wamp.Challenge{
 		AuthMethod: "testauth",
-		Extra:      map[string]interface{}{"challenge": p.authID},
+		Extra:      wamp.Dict{"challenge": p.authID},
 	}
 }
 
@@ -400,7 +400,7 @@ func (p *pendingTestAuth) Authenticate(msg *wamp.Authenticate) (*wamp.Welcome, e
 	}
 
 	// Create welcome details containing auth info.
-	details := map[string]interface{}{
+	details := wamp.Dict{
 		"authid":     p.authID,
 		"authmethod": "testauth",
 		"authrole":   p.role,

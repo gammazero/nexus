@@ -11,21 +11,21 @@ import (
 	"github.com/gammazero/nexus/wamp"
 )
 
-var clientRoleFeatures = map[string]interface{}{
-	"publisher": map[string]interface{}{
-		"features": map[string]interface{}{
+var clientRoleFeatures = wamp.Dict{
+	"publisher": wamp.Dict{
+		"features": wamp.Dict{
 			"subscriber_blackwhite_listing": true,
 			"publisher_exclusion":           true,
 		},
 	},
-	"subscriber": map[string]interface{}{
-		"features": map[string]interface{}{
+	"subscriber": wamp.Dict{
+		"features": wamp.Dict{
 			"pattern_based_subscription": true,
 			"publisher_identification":   true,
 		},
 	},
-	"callee": map[string]interface{}{
-		"features": map[string]interface{}{
+	"callee": wamp.Dict{
+		"features": wamp.Dict{
 			"pattern_based_registration": true,
 			"shared_registration":        true,
 			"call_canceling":             true,
@@ -34,8 +34,8 @@ var clientRoleFeatures = map[string]interface{}{
 			"progressive_call_results":   true,
 		},
 	},
-	"caller": map[string]interface{}{
-		"features": map[string]interface{}{
+	"caller": wamp.Dict{
+		"features": wamp.Dict{
 			"call_canceling":        true,
 			"call_timeout":          true,
 			"caller_identification": true,
@@ -45,8 +45,8 @@ var clientRoleFeatures = map[string]interface{}{
 
 // InvokeResult represents the result of invoking a procedure.
 type InvokeResult struct {
-	Args   []interface{}
-	Kwargs map[string]interface{}
+	Args   wamp.List
+	Kwargs wamp.Dict
 	Err    wamp.URI
 }
 
@@ -71,7 +71,7 @@ type Client struct {
 
 	id           wamp.ID
 	realm        string
-	realmDetails map[string]interface{}
+	realmDetails wamp.Dict
 
 	log logger.Logger
 }
@@ -117,23 +117,23 @@ func (c *Client) run() {
 	}
 }
 
-// AuthFunc takes the HELLO details and CHALLENGE details and returns the
+// AuthFunc takes the HELLO details and CHALLENGE extra data and returns the
 // signature string and a details map.
 //
 // In response to a CHALLENGE message, the Client MUST send an AUTHENTICATE
 // message.  Therefore, AuthFunc does not return an error.  If an error is
-// encountered within AuthFunc, then an empty signature shouuld be returned
+// encountered within AuthFunc, then an empty signature should be returned
 // since the client cannot give a valid signature response.
 //
 // This is used to create the authHandler map passed to JoinRealm.
-type AuthFunc func(map[string]interface{}, map[string]interface{}) (string, map[string]interface{})
+type AuthFunc func(helloDetails wamp.Dict, challengeExtra wamp.Dict) (signature string, details wamp.Dict)
 
 // JoinRealm joins a WAMP realm, handling challenge/response authentication if
 // needed.
 //
 // authHandlers is a map of WAMP authmethods to functions that handle each
 // auth type.  This can be nil if router is expected to allow anonymous.
-func (c *Client) JoinRealm(realm string, details map[string]interface{}, authHandlers map[string]AuthFunc) (map[string]interface{}, error) {
+func (c *Client) JoinRealm(realm string, details wamp.Dict, authHandlers map[string]AuthFunc) (wamp.Dict, error) {
 	joinChan := make(chan bool)
 	c.actionChan <- func() {
 		joinChan <- (c.realm == "")
@@ -143,11 +143,11 @@ func (c *Client) JoinRealm(realm string, details map[string]interface{}, authHan
 		return nil, errors.New("client is already member of realm " + c.realm)
 	}
 	if details == nil {
-		details = map[string]interface{}{}
+		details = wamp.Dict{}
 	}
 	details["roles"] = clientRoles()
 	if len(authHandlers) > 0 {
-		authmethods := make([]interface{}, len(authHandlers))
+		authmethods := make(wamp.List, len(authHandlers))
 		var i int
 		for am := range authHandlers {
 			authmethods[i] = am
@@ -200,7 +200,7 @@ func (c *Client) JoinRealm(realm string, details map[string]interface{}, authHan
 }
 
 // EventHandler handles a publish event.
-type EventHandler func(args []interface{}, kwargs map[string]interface{}, details map[string]interface{})
+type EventHandler func(args wamp.List, kwargs wamp.Dict, details wamp.Dict)
 
 // Subscribe subscribes the client to the specified topic.
 //
@@ -210,9 +210,9 @@ type EventHandler func(args []interface{}, kwargs map[string]interface{}, detail
 // To request a pattern-based subscription set:
 //   options["match"] = "prefix" or "wildcard"
 //
-func (c *Client) Subscribe(topic string, fn EventHandler, options map[string]interface{}) error {
+func (c *Client) Subscribe(topic string, fn EventHandler, options wamp.Dict) error {
 	if options == nil {
-		options = map[string]interface{}{}
+		options = wamp.Dict{}
 	}
 	id := c.idGen.Next()
 	c.expectReply(id)
@@ -313,9 +313,9 @@ func (c *Client) Unsubscribe(topic string) error {
 // To request that publisher's identity is disclosed to subscribers, set:
 //   opts["disclose_me"] = true
 //
-func (c *Client) Publish(topic string, options map[string]interface{}, args []interface{}, kwargs map[string]interface{}) error {
+func (c *Client) Publish(topic string, options wamp.Dict, args wamp.List, kwargs wamp.Dict) error {
 	if options == nil {
-		options = make(map[string]interface{})
+		options = make(wamp.Dict)
 	}
 
 	// Check if the client is asking for a PUBLISHED response.
@@ -357,7 +357,7 @@ func (c *Client) Publish(topic string, options map[string]interface{}, args []in
 // The Context is used to signal that the router issues an INTERRUPT request to
 // cancel the call-in-progress.  The client application can use this to
 // abandon what it is doing, if it chooses to pay attention to ctx.Done().
-type InvocationHandler func(context.Context, []interface{}, map[string]interface{}, map[string]interface{}) (result *InvokeResult)
+type InvocationHandler func(context.Context, wamp.List, wamp.Dict, wamp.Dict) (result *InvokeResult)
 
 // Register registers the client to handle invocations of the specified
 // procedure.  The InvocationHandler is set to be called for each procedure
@@ -369,7 +369,7 @@ type InvocationHandler func(context.Context, []interface{}, map[string]interface
 // To request a shared registration pattern set:
 //  options["invoke"] = "single", "roundrobin", "random", "first", "last"
 //
-func (c *Client) Register(procedure string, fn InvocationHandler, options map[string]interface{}) error {
+func (c *Client) Register(procedure string, fn InvocationHandler, options wamp.Dict) error {
 	id := c.idGen.Next()
 	c.expectReply(id)
 	register := &wamp.Register{
@@ -507,7 +507,7 @@ func (werr RPCError) Error() string {
 // invocation or interrupt from the callee is discarded when received.
 //
 // If the callee does not support call canceling, then behavior is "skip".
-func (c *Client) Call(ctx context.Context, procedure string, options map[string]interface{}, args []interface{}, kwargs map[string]interface{}, cancelMode string) (*wamp.Result, error) {
+func (c *Client) Call(ctx context.Context, procedure string, options wamp.Dict, args wamp.List, kwargs wamp.Dict, cancelMode string) (*wamp.Result, error) {
 	switch cancelMode {
 	case "kill", "killnowait", "skip":
 	case "":
@@ -566,7 +566,7 @@ func (c *Client) LeaveRealm() error {
 	// Send GOODBYE to router.  The reouter will respond with a GOODBYE message
 	// which is handled by receiveFromRouter, and causes it to exit.
 	c.peer.Send(&wamp.Goodbye{
-		Details: map[string]interface{}{},
+		Details: wamp.Dict{},
 		Reason:  wamp.ErrCloseRealm,
 	})
 	return nil
@@ -581,7 +581,7 @@ func (c *Client) Close() error {
 	return nil
 }
 
-func (c *Client) handleCRAuth(challenge *wamp.Challenge, details map[string]interface{}, authHandlers map[string]AuthFunc) (wamp.Message, error) {
+func (c *Client) handleCRAuth(challenge *wamp.Challenge, details wamp.Dict, authHandlers map[string]AuthFunc) (wamp.Message, error) {
 	// Look up the authentication function for the specified authmethod.
 	authFunc, ok := authHandlers[challenge.AuthMethod]
 	if !ok {
@@ -617,7 +617,7 @@ func (c *Client) handleCRAuth(challenge *wamp.Challenge, details map[string]inte
 }
 
 // clientRoles advertises support for these client roles.
-func clientRoles() map[string]interface{} {
+func clientRoles() wamp.Dict {
 	return clientRoleFeatures
 }
 
@@ -627,7 +627,7 @@ func unexpectedMsgError(msg wamp.Message, expected wamp.MessageType) error {
 	s := fmt.Sprint("received unexpected ", msg.MessageType(),
 		" message when expecting ", expected)
 
-	var details map[string]interface{}
+	var details wamp.Dict
 	var reason string
 	switch m := msg.(type) {
 	case *wamp.Abort:
@@ -718,9 +718,9 @@ func (c *Client) handleInvocation(msg *wamp.Invocation) {
 			c.peer.Send(&wamp.Error{
 				Type:      wamp.INVOCATION,
 				Request:   msg.Request,
-				Details:   map[string]interface{}{},
+				Details:   wamp.Dict{},
 				Error:     wamp.ErrInvalidArgument,
-				Arguments: []interface{}{errMsg},
+				Arguments: wamp.List{errMsg},
 			})
 			c.log.Print(errMsg)
 			return
@@ -763,7 +763,7 @@ func (c *Client) handleInvocation(msg *wamp.Invocation) {
 				c.peer.Send(&wamp.Error{
 					Type:        wamp.INVOCATION,
 					Request:     msg.Request,
-					Details:     map[string]interface{}{},
+					Details:     wamp.Dict{},
 					Arguments:   result.Args,
 					ArgumentsKw: result.Kwargs,
 					Error:       result.Err,
@@ -772,7 +772,7 @@ func (c *Client) handleInvocation(msg *wamp.Invocation) {
 			}
 			c.peer.Send(&wamp.Yield{
 				Request:     msg.Request,
-				Options:     map[string]interface{}{},
+				Options:     wamp.Dict{},
 				Arguments:   result.Args,
 				ArgumentsKw: result.Kwargs,
 			})

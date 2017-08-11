@@ -280,10 +280,10 @@ func TestRemovePeer(t *testing.T) {
 func TestCancelCallModeKill(t *testing.T) {
 	dealer, metaClient := newTestDealer()
 
-	calleeRoles := map[string]interface{}{
-		"roles": map[string]interface{}{
-			"callee": map[string]interface{}{
-				"features": map[string]interface{}{
+	calleeRoles := wamp.Dict{
+		"roles": wamp.Dict{
+			"callee": wamp.Dict{
+				"features": wamp.Dict{
 					"call_canceling": true,
 				},
 			},
@@ -338,7 +338,7 @@ func TestCancelCallModeKill(t *testing.T) {
 		Type:    wamp.INVOCATION,
 		Request: inv.Request,
 		Error:   wamp.ErrCanceled,
-		Details: map[string]interface{}{"reason": "callee canceled"},
+		Details: wamp.Dict{"reason": "callee canceled"},
 	})
 
 	// Check that caller receives the ERROR message.
@@ -361,10 +361,10 @@ func TestCancelCallModeKill(t *testing.T) {
 func TestCancelCallModeKillNoWait(t *testing.T) {
 	dealer, metaClient := newTestDealer()
 
-	calleeRoles := map[string]interface{}{
-		"roles": map[string]interface{}{
-			"callee": map[string]interface{}{
-				"features": map[string]interface{}{
+	calleeRoles := wamp.Dict{
+		"roles": wamp.Dict{
+			"callee": wamp.Dict{
+				"features": wamp.Dict{
 					"call_canceling": true,
 				},
 			},
@@ -419,7 +419,7 @@ func TestCancelCallModeKillNoWait(t *testing.T) {
 		Type:    wamp.INVOCATION,
 		Request: inv.Request,
 		Error:   wamp.ErrCanceled,
-		Details: map[string]interface{}{"reason": "callee canceled"},
+		Details: wamp.Dict{"reason": "callee canceled"},
 	})
 
 	// Check that caller receives the ERROR message.
@@ -441,10 +441,10 @@ func TestCancelCallModeSkip(t *testing.T) {
 
 	// Register a procedure.
 	callee := newTestPeer()
-	calleeRoles := map[string]interface{}{
-		"roles": map[string]interface{}{
-			"callee": map[string]interface{}{
-				"features": map[string]interface{}{
+	calleeRoles := wamp.Dict{
+		"roles": wamp.Dict{
+			"callee": wamp.Dict{
+				"features": wamp.Dict{
 					"call_canceling": true,
 				},
 			},
@@ -503,10 +503,10 @@ func TestCancelCallModeSkip(t *testing.T) {
 func TestSharedRegistrationRoundRobin(t *testing.T) {
 	dealer, metaClient := newTestDealer()
 
-	calleeRoles := map[string]interface{}{
-		"roles": map[string]interface{}{
-			"callee": map[string]interface{}{
-				"features": map[string]interface{}{
+	calleeRoles := wamp.Dict{
+		"roles": wamp.Dict{
+			"callee": wamp.Dict{
+				"features": wamp.Dict{
 					"shared_registration": true,
 				},
 			},
@@ -622,10 +622,10 @@ func TestSharedRegistrationRoundRobin(t *testing.T) {
 func TestSharedRegistrationFirst(t *testing.T) {
 	dealer, metaClient := newTestDealer()
 
-	calleeRoles := map[string]interface{}{
-		"roles": map[string]interface{}{
-			"callee": map[string]interface{}{
-				"features": map[string]interface{}{
+	calleeRoles := wamp.Dict{
+		"roles": wamp.Dict{
+			"callee": wamp.Dict{
+				"features": wamp.Dict{
 					"shared_registration": true,
 				},
 			},
@@ -790,10 +790,10 @@ func TestSharedRegistrationFirst(t *testing.T) {
 func TestSharedRegistrationLast(t *testing.T) {
 	dealer, metaClient := newTestDealer()
 
-	calleeRoles := map[string]interface{}{
-		"roles": map[string]interface{}{
-			"callee": map[string]interface{}{
-				"features": map[string]interface{}{
+	calleeRoles := wamp.Dict{
+		"roles": wamp.Dict{
+			"callee": wamp.Dict{
+				"features": wamp.Dict{
 					"shared_registration": true,
 				},
 			},

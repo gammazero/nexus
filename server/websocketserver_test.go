@@ -30,17 +30,17 @@ var (
 	}
 )
 
-func clientRoles() map[string]interface{} {
-	return map[string]interface{}{
-		"roles": map[string]interface{}{
-			"publisher": map[string]interface{}{
-				"features": map[string]interface{}{
+func clientRoles() wamp.Dict {
+	return wamp.Dict{
+		"roles": wamp.Dict{
+			"publisher": wamp.Dict{
+				"features": wamp.Dict{
 					"subscriber_blackwhite_listing": true,
 				},
 			},
-			"subscriber": map[string]interface{}{},
-			"callee":     map[string]interface{}{},
-			"caller":     map[string]interface{}{},
+			"subscriber": wamp.Dict{},
+			"callee":     wamp.Dict{},
+			"caller":     wamp.Dict{},
 		},
 	}
 }

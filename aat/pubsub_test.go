@@ -23,7 +23,7 @@ func TestPubSub(t *testing.T) {
 	}
 
 	errChan := make(chan error)
-	evtHandler := func(args []interface{}, kwargs map[string]interface{}, details map[string]interface{}) {
+	evtHandler := func(args wamp.List, kwargs wamp.Dict, details wamp.Dict) {
 		if args[0].(string) != "hello world" {
 			errChan <- errors.New("event missing or bad args")
 			return
@@ -43,7 +43,7 @@ func TestPubSub(t *testing.T) {
 		t.Fatal("Failed to connect client:", err)
 	}
 	// Publish an event to something that matches by wildcard.
-	publisher.Publish(testTopic, nil, []interface{}{"hello world"}, nil)
+	publisher.Publish(testTopic, nil, wamp.List{"hello world"}, nil)
 
 	// Make sure the event was received.
 	select {
@@ -79,7 +79,7 @@ func TestPubSubWildcard(t *testing.T) {
 	}
 
 	errChan := make(chan error)
-	evtHandler := func(args []interface{}, kwargs map[string]interface{}, details map[string]interface{}) {
+	evtHandler := func(args wamp.List, kwargs wamp.Dict, details wamp.Dict) {
 		if args[0].(string) != "hello world" {
 			errChan <- errors.New("event missing or bad args")
 			return
@@ -104,7 +104,7 @@ func TestPubSubWildcard(t *testing.T) {
 		t.Fatal("Failed to connect client:", err)
 	}
 	// Publish an event to something that matches by wildcard.
-	publisher.Publish(testTopic, nil, []interface{}{"hello world"}, nil)
+	publisher.Publish(testTopic, nil, wamp.List{"hello world"}, nil)
 
 	// Make sure the event was received.
 	select {
@@ -139,7 +139,7 @@ func TestUnsubscribeWrongTopic(t *testing.T) {
 		t.Fatal("Failed to connect client:", err)
 	}
 
-	evtHandler := func(args []interface{}, kwargs map[string]interface{}, details map[string]interface{}) {
+	evtHandler := func(args wamp.List, kwargs wamp.Dict, details wamp.Dict) {
 		return
 	}
 
@@ -201,7 +201,7 @@ func TestSubscribeBurst(t *testing.T) {
 		t.Fatal("Failed to connect client:", err)
 	}
 
-	evtHandler := func(args []interface{}, kwargs map[string]interface{}, details map[string]interface{}) {
+	evtHandler := func(args wamp.List, kwargs wamp.Dict, details wamp.Dict) {
 		return
 	}
 

@@ -20,17 +20,17 @@ func init() {
 	DebugEnabled = true
 }
 
-var clientRoles = map[string]interface{}{
-	"roles": map[string]interface{}{
-		"subscriber": map[string]interface{}{
-			"features": map[string]interface{}{
+var clientRoles = wamp.Dict{
+	"roles": wamp.Dict{
+		"subscriber": wamp.Dict{
+			"features": wamp.Dict{
 				"publisher_identification": true,
 			},
 		},
 		"publisher": struct{}{},
 		"callee":    struct{}{},
-		"caller": map[string]interface{}{
-			"features": map[string]interface{}{
+		"caller": wamp.Dict{
+			"features": wamp.Dict{
 				"call_timeout": true,
 			},
 		},
@@ -191,7 +191,7 @@ func TestPublishAcknowledge(t *testing.T) {
 	id := wamp.GlobalID()
 	client.Send(&wamp.Publish{
 		Request: id,
-		Options: map[string]interface{}{"acknowledge": true},
+		Options: wamp.Dict{"acknowledge": true},
 		Topic:   "some.uri"})
 
 	select {
@@ -223,7 +223,7 @@ func TestPublishFalseAcknowledge(t *testing.T) {
 	id := wamp.GlobalID()
 	client.Send(&wamp.Publish{
 		Request: id,
-		Options: map[string]interface{}{"acknowledge": false},
+		Options: wamp.Dict{"acknowledge": false},
 		Topic:   "some.uri"})
 
 	select {
@@ -404,7 +404,7 @@ func TestSessionMetaProcedures(t *testing.T) {
 	caller.Send(&wamp.Call{
 		Request:   callID,
 		Procedure: wamp.MetaProcSessionGet,
-		Arguments: []interface{}{wamp.ID(123456789)},
+		Arguments: wamp.List{wamp.ID(123456789)},
 	})
 	select {
 	case <-time.After(time.Second):
@@ -424,7 +424,7 @@ func TestSessionMetaProcedures(t *testing.T) {
 	caller.Send(&wamp.Call{
 		Request:   callID,
 		Procedure: wamp.MetaProcSessionGet,
-		Arguments: []interface{}{sessID},
+		Arguments: wamp.List{sessID},
 	})
 	select {
 	case <-time.After(time.Second):
@@ -441,7 +441,7 @@ func TestSessionMetaProcedures(t *testing.T) {
 	if len(result.Arguments) == 0 {
 		t.Fatal("missing expected arguemnt")
 	}
-	dict, ok := result.Arguments[0].(map[string]interface{})
+	dict, ok := result.Arguments[0].(wamp.Dict)
 	if !ok {
 		t.Fatal("expected dict type arg")
 	}
@@ -484,9 +484,9 @@ func TestRegistrationMetaProcedures(t *testing.T) {
 	if len(result.Arguments) == 0 {
 		t.Fatal("missing expected arguemnt")
 	}
-	dict, ok := result.Arguments[0].(map[string]interface{})
+	dict, ok := result.Arguments[0].(wamp.Dict)
 	if !ok {
-		t.Fatal("expected map[string]interface{}")
+		t.Fatal("expected wamp.Dict")
 	}
 	exactPrev, ok := dict["exact"].([]wamp.ID)
 	if !ok {
@@ -529,7 +529,7 @@ func TestRegistrationMetaProcedures(t *testing.T) {
 	callee.Send(&wamp.Register{
 		Request:   wamp.GlobalID(),
 		Procedure: testProcedureWC,
-		Options:   map[string]interface{}{"match": "wildcard"},
+		Options:   wamp.Dict{"match": "wildcard"},
 	})
 	msg := <-callee.Recv()
 	if _, ok := msg.(*wamp.Registered); !ok {
@@ -554,9 +554,9 @@ func TestRegistrationMetaProcedures(t *testing.T) {
 	if len(result.Arguments) == 0 {
 		t.Fatal("missing expected arguemnt")
 	}
-	dict, ok = result.Arguments[0].(map[string]interface{})
+	dict, ok = result.Arguments[0].(wamp.Dict)
 	if !ok {
-		t.Fatal("expected map[string]interface{}")
+		t.Fatal("expected wamp.Dict")
 	}
 	exact := dict["exact"].([]wamp.ID)
 	prefix := dict["prefix"].([]wamp.ID)
@@ -588,7 +588,7 @@ func TestRegistrationMetaProcedures(t *testing.T) {
 	caller.Send(&wamp.Call{
 		Request:   callID,
 		Procedure: wamp.MetaProcRegLookup,
-		Arguments: []interface{}{testProcedure},
+		Arguments: wamp.List{testProcedure},
 	})
 	select {
 	case <-time.After(time.Second):
@@ -618,7 +618,7 @@ func TestRegistrationMetaProcedures(t *testing.T) {
 	caller.Send(&wamp.Call{
 		Request:   callID,
 		Procedure: wamp.MetaProcRegMatch,
-		Arguments: []interface{}{testProcedure},
+		Arguments: wamp.List{testProcedure},
 	})
 	select {
 	case <-time.After(time.Second):
@@ -648,7 +648,7 @@ func TestRegistrationMetaProcedures(t *testing.T) {
 	caller.Send(&wamp.Call{
 		Request:   callID,
 		Procedure: wamp.MetaProcRegGet,
-		Arguments: []interface{}{registrationID},
+		Arguments: wamp.List{registrationID},
 	})
 	select {
 	case <-time.After(time.Second):
@@ -665,9 +665,9 @@ func TestRegistrationMetaProcedures(t *testing.T) {
 	if len(result.Arguments) == 0 {
 		t.Fatal("missing expected arguemnt")
 	}
-	dict, ok = result.Arguments[0].(map[string]interface{})
+	dict, ok = result.Arguments[0].(wamp.Dict)
 	if !ok {
-		t.Fatal("expected map[string]interface{}")
+		t.Fatal("expected wamp.Dict")
 	}
 	regID = wamp.OptionID(dict, "id")
 	if regID != registrationID {
@@ -683,7 +683,7 @@ func TestRegistrationMetaProcedures(t *testing.T) {
 	caller.Send(&wamp.Call{
 		Request:   callID,
 		Procedure: wamp.MetaProcRegListCallees,
-		Arguments: []interface{}{registrationID},
+		Arguments: wamp.List{registrationID},
 	})
 	select {
 	case <-time.After(time.Second):
@@ -716,7 +716,7 @@ func TestRegistrationMetaProcedures(t *testing.T) {
 	caller.Send(&wamp.Call{
 		Request:   callID,
 		Procedure: wamp.MetaProcRegCountCallees,
-		Arguments: []interface{}{registrationID},
+		Arguments: wamp.List{registrationID},
 	})
 	select {
 	case <-time.After(time.Second):

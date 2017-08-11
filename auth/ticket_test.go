@@ -12,7 +12,7 @@ func TestTicketAuth(t *testing.T) {
 	ticketAuth = tAuth
 
 	// Test with missing authid
-	details := map[string]interface{}{"authmethod": "ticket"}
+	details := wamp.Dict{"authmethod": "ticket"}
 	pendingAuth, err := ticketAuth.Challenge(details)
 	if err == nil {
 		t.Fatal("expected error with missing authid")

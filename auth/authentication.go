@@ -21,7 +21,7 @@ const defaultCRAuthTimeout = time.Minute
 type Authenticator interface {
 	// Authenticate takes HELLO details and returns a WELCOME message if
 	// successful, otherwise it returns an error.
-	Authenticate(details map[string]interface{}, client wamp.Peer) (*wamp.Welcome, error)
+	Authenticate(details wamp.Dict, client wamp.Peer) (*wamp.Welcome, error)
 }
 
 // PendingCRAuth is a pending challenge-response.  It contains whatever data is

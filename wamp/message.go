@@ -7,6 +7,10 @@ type Message interface {
 	MessageType() MessageType
 }
 
+type Dict map[string]interface{}
+
+type List []interface{}
+
 // Message Codes and Direction
 const (
 	//                           // | Pub  | Brk  | Subs | Calr | Dealr| Calee|
@@ -140,7 +144,7 @@ func NewMessage(t MessageType) Message {
 // [HELLO, Realm|uri, Details|dict]
 type Hello struct {
 	Realm   URI
-	Details map[string]interface{}
+	Details Dict
 }
 
 func (msg *Hello) MessageType() MessageType { return HELLO }
@@ -150,7 +154,7 @@ func (msg *Hello) MessageType() MessageType { return HELLO }
 // [WELCOME, Session|id, Details|dict]
 type Welcome struct {
 	ID      ID
-	Details map[string]interface{}
+	Details Dict
 }
 
 func (msg *Welcome) MessageType() MessageType { return WELCOME }
@@ -160,7 +164,7 @@ func (msg *Welcome) MessageType() MessageType { return WELCOME }
 //
 // [ABORT, Details|dict, Reason|uri]
 type Abort struct {
-	Details map[string]interface{}
+	Details Dict
 	Reason  URI
 }
 
@@ -171,7 +175,7 @@ func (msg *Abort) MessageType() MessageType { return ABORT }
 //
 // [GOODBYE, Details|dict, Reason|uri]
 type Goodbye struct {
-	Details map[string]interface{}
+	Details Dict
 	Reason  URI
 }
 
@@ -188,10 +192,10 @@ func (msg *Goodbye) MessageType() MessageType { return GOODBYE }
 type Error struct {
 	Type        MessageType
 	Request     ID
-	Details     map[string]interface{}
+	Details     Dict
 	Error       URI
-	Arguments   []interface{}          `wamp:"omitempty"`
-	ArgumentsKw map[string]interface{} `wamp:"omitempty"`
+	Arguments   List `wamp:"omitempty"`
+	ArgumentsKw Dict `wamp:"omitempty"`
 }
 
 func (msg *Error) MessageType() MessageType { return ERROR }
@@ -206,10 +210,10 @@ func (msg *Error) MessageType() MessageType { return ERROR }
 //     ArgumentsKw|dict]
 type Publish struct {
 	Request     ID
-	Options     map[string]interface{}
+	Options     Dict
 	Topic       URI
-	Arguments   []interface{}          `wamp:"omitempty"`
-	ArgumentsKw map[string]interface{} `wamp:"omitempty"`
+	Arguments   List `wamp:"omitempty"`
+	ArgumentsKw Dict `wamp:"omitempty"`
 }
 
 func (msg *Publish) MessageType() MessageType { return PUBLISH }
@@ -229,7 +233,7 @@ func (msg *Published) MessageType() MessageType { return PUBLISHED }
 // [SUBSCRIBE, Request|id, Options|dict, Topic|uri]
 type Subscribe struct {
 	Request ID
-	Options map[string]interface{}
+	Options Dict
 	Topic   URI
 }
 
@@ -276,9 +280,9 @@ func (msg *Unsubscribed) MessageType() MessageType { return UNSUBSCRIBED }
 type Event struct {
 	Subscription ID
 	Publication  ID
-	Details      map[string]interface{}
-	Arguments    []interface{}          `wamp:"omitempty"`
-	ArgumentsKw  map[string]interface{} `wamp:"omitempty"`
+	Details      Dict
+	Arguments    List `wamp:"omitempty"`
+	ArgumentsKw  Dict `wamp:"omitempty"`
 }
 
 func (msg *Event) MessageType() MessageType { return EVENT }
@@ -291,7 +295,7 @@ func (msg *Event) MessageType() MessageType { return EVENT }
 // [REGISTER, Request|id, Options|dict, Procedure|uri]
 type Register struct {
 	Request   ID
-	Options   map[string]interface{}
+	Options   Dict
 	Procedure URI
 }
 
@@ -338,10 +342,10 @@ func (msg *Unregistered) MessageType() MessageType { return UNREGISTERED }
 //     ArgumentsKw|dict]
 type Call struct {
 	Request     ID
-	Options     map[string]interface{}
+	Options     Dict
 	Procedure   URI
-	Arguments   []interface{}          `wamp:"omitempty"`
-	ArgumentsKw map[string]interface{} `wamp:"omitempty"`
+	Arguments   List `wamp:"omitempty"`
+	ArgumentsKw Dict `wamp:"omitempty"`
 }
 
 func (msg *Call) MessageType() MessageType { return CALL }
@@ -358,9 +362,9 @@ func (msg *Call) MessageType() MessageType { return CALL }
 type Invocation struct {
 	Request      ID
 	Registration ID
-	Details      map[string]interface{}
-	Arguments    []interface{}          `wamp:"omitempty"`
-	ArgumentsKw  map[string]interface{} `wamp:"omitempty"`
+	Details      Dict
+	Arguments    List `wamp:"omitempty"`
+	ArgumentsKw  Dict `wamp:"omitempty"`
 }
 
 func (msg *Invocation) MessageType() MessageType { return INVOCATION }
@@ -374,9 +378,9 @@ func (msg *Invocation) MessageType() MessageType { return INVOCATION }
 //     ArgumentsKw|dict]
 type Yield struct {
 	Request     ID
-	Options     map[string]interface{}
-	Arguments   []interface{}          `wamp:"omitempty"`
-	ArgumentsKw map[string]interface{} `wamp:"omitempty"`
+	Options     Dict
+	Arguments   List `wamp:"omitempty"`
+	ArgumentsKw Dict `wamp:"omitempty"`
 }
 
 func (msg *Yield) MessageType() MessageType { return YIELD }
@@ -389,9 +393,9 @@ func (msg *Yield) MessageType() MessageType { return YIELD }
 //     YIELD.ArgumentsKw|dict]
 type Result struct {
 	Request     ID
-	Details     map[string]interface{}
-	Arguments   []interface{}          `wamp:"omitempty"`
-	ArgumentsKw map[string]interface{} `wamp:"omitempty"`
+	Details     Dict
+	Arguments   List `wamp:"omitempty"`
+	ArgumentsKw Dict `wamp:"omitempty"`
 }
 
 func (msg *Result) MessageType() MessageType { return RESULT }
@@ -404,7 +408,7 @@ func (msg *Result) MessageType() MessageType { return RESULT }
 // [CHALLENGE, AuthMethod|string, Extra|dict]
 type Challenge struct {
 	AuthMethod string
-	Extra      map[string]interface{}
+	Extra      Dict
 }
 
 func (msg *Challenge) MessageType() MessageType { return CHALLENGE }
@@ -416,7 +420,7 @@ func (msg *Challenge) MessageType() MessageType { return CHALLENGE }
 // [AUTHENTICATE, Signature|string, Extra|dict]
 type Authenticate struct {
 	Signature string
-	Extra     map[string]interface{}
+	Extra     Dict
 }
 
 func (msg *Authenticate) MessageType() MessageType { return AUTHENTICATE }
@@ -428,7 +432,7 @@ func (msg *Authenticate) MessageType() MessageType { return AUTHENTICATE }
 // [CANCEL, CALL.Request|id, Options|dict]
 type Cancel struct {
 	Request ID
-	Options map[string]interface{}
+	Options Dict
 }
 
 func (msg *Cancel) MessageType() MessageType { return CANCEL }
@@ -440,7 +444,7 @@ func (msg *Cancel) MessageType() MessageType { return CANCEL }
 // [INTERRUPT, INVOCATION.Request|id, Options|dict]
 type Interrupt struct {
 	Request ID
-	Options map[string]interface{}
+	Options Dict
 }
 
 func (msg *Interrupt) MessageType() MessageType { return INTERRUPT }
