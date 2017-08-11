@@ -18,7 +18,7 @@ func TestJoinRealmWithCRAuth(t *testing.T) {
 		t.Fatal("Failed to connect client:", err)
 	}
 
-	details := map[string]interface{}{
+	details := wamp.Dict{
 		"username": "jdoe", "authmethods": []string{"testauth"}}
 	authMap := map[string]client.AuthFunc{"testauth": testAuthFunc}
 
@@ -39,7 +39,7 @@ func TestJoinRealmWithCRAuthBad(t *testing.T) {
 		t.Fatal("Failed to connect client:", err)
 	}
 
-	details := map[string]interface{}{
+	details := wamp.Dict{
 		"username": "malory", "authmethods": []string{"testauth"}}
 	authMap := map[string]client.AuthFunc{"testauth": testAuthFunc}
 
@@ -52,9 +52,9 @@ func TestJoinRealmWithCRAuthBad(t *testing.T) {
 	}
 }
 
-func testAuthFunc(d map[string]interface{}, c map[string]interface{}) (string, map[string]interface{}) {
+func testAuthFunc(d wamp.Dict, c wamp.Dict) (string, wamp.Dict) {
 	ch := c["challenge"].(string)
-	return testCRSign(ch), map[string]interface{}{}
+	return testCRSign(ch), wamp.Dict{}
 }
 
 type testCRAuthenticator struct{}
@@ -66,7 +66,7 @@ type pendingTestAuth struct {
 	role   string
 }
 
-func (t *testCRAuthenticator) Challenge(details map[string]interface{}) (auth.PendingCRAuth, error) {
+func (t *testCRAuthenticator) Challenge(details wamp.Dict) (auth.PendingCRAuth, error) {
 	var username string
 	_username, ok := details["username"]
 	if ok {
@@ -95,7 +95,7 @@ func testCRSign(uname string) string {
 func (p *pendingTestAuth) Msg() *wamp.Challenge {
 	return &wamp.Challenge{
 		AuthMethod: "testauth",
-		Extra:      map[string]interface{}{"challenge": p.authID},
+		Extra:      wamp.Dict{"challenge": p.authID},
 	}
 }
 
@@ -108,7 +108,7 @@ func (p *pendingTestAuth) Authenticate(msg *wamp.Authenticate) (*wamp.Welcome, e
 	}
 
 	// Create welcome details containing auth info.
-	details := map[string]interface{}{
+	details := wamp.Dict{
 		"authid":     p.authID,
 		"authmethod": "testauth",
 		"authrole":   p.role,

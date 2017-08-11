@@ -9,7 +9,7 @@ import (
 func TestAnonAuth(t *testing.T) {
 	anonAuth := AnonymousAuth
 
-	details := map[string]interface{}{
+	details := wamp.Dict{
 		"authid":      "someone",
 		"authmethods": []string{"anonymous"}}
 	welcome, err := anonAuth.Authenticate(details, nil)

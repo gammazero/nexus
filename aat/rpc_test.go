@@ -17,7 +17,7 @@ func TestRPCRegisterAndCall(t *testing.T) {
 	}
 
 	// Test registering a valid procedure.
-	handler := func(ctx context.Context, args []interface{}, kwargs, details map[string]interface{}) *client.InvokeResult {
+	handler := func(ctx context.Context, args wamp.List, kwargs, details wamp.Dict) *client.InvokeResult {
 		var sum int64
 		for i := range args {
 			n, ok := wamp.AsInt64(args[i])
@@ -25,7 +25,7 @@ func TestRPCRegisterAndCall(t *testing.T) {
 				sum += n
 			}
 		}
-		return &client.InvokeResult{Args: []interface{}{sum}}
+		return &client.InvokeResult{Args: wamp.List{sum}}
 	}
 
 	// Register procedure "sum"
@@ -41,7 +41,7 @@ func TestRPCRegisterAndCall(t *testing.T) {
 	}
 
 	// Test calling the procedure.
-	callArgs := []interface{}{1, 2, 3, 4, 5, 6, 7, 8, 9, 10}
+	callArgs := wamp.List{1, 2, 3, 4, 5, 6, 7, 8, 9, 10}
 	ctx := context.Background()
 	result, err := caller.Call(ctx, procName, nil, callArgs, nil, "")
 	if err != nil {
@@ -79,7 +79,7 @@ func TestRPCCallUnregistered(t *testing.T) {
 	}
 
 	// Test calling unregistered procedure.
-	callArgs := []interface{}{555}
+	callArgs := wamp.List{555}
 	ctx := context.Background()
 	result, err := caller.Call(ctx, "NotRegistered", nil, callArgs, nil, "")
 	if err == nil {
@@ -121,7 +121,7 @@ func TestRPCCancelCall(t *testing.T) {
 	}
 
 	// Register procedure that waits.
-	handler := func(ctx context.Context, args []interface{}, kwargs, details map[string]interface{}) *client.InvokeResult {
+	handler := func(ctx context.Context, args wamp.List, kwargs, details wamp.Dict) *client.InvokeResult {
 		<-ctx.Done() // handler will block forever until canceled.
 		return &client.InvokeResult{Err: wamp.ErrCanceled}
 	}
@@ -140,7 +140,7 @@ func TestRPCCancelCall(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
 	// Calling the procedure, should block.
 	go func() {
-		callArgs := []interface{}{73}
+		callArgs := wamp.List{73}
 		_, err := caller.Call(ctx, procName, nil, callArgs, nil, "killnowait")
 		errChan <- err
 	}()

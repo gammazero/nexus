@@ -44,7 +44,7 @@ func main() {
 	}
 }
 
-func sum(ctx context.Context, args []interface{}, kwargs, details map[string]interface{}) *client.InvokeResult {
+func sum(ctx context.Context, args wamp.List, kwargs, details wamp.Dict) *client.InvokeResult {
 	fmt.Print("Calculating sum")
 	var sum int64
 	for i := range args {
@@ -53,5 +53,5 @@ func sum(ctx context.Context, args []interface{}, kwargs, details map[string]int
 			sum += n
 		}
 	}
-	return &client.InvokeResult{Args: []interface{}{sum}}
+	return &client.InvokeResult{Args: wamp.List{sum}}
 }

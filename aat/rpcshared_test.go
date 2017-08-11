@@ -17,8 +17,8 @@ func TestRPCSharedRoundRobin(t *testing.T) {
 	if err != nil {
 		t.Fatal("Failed to connect client:", err)
 	}
-	testProc1 := func(ctx context.Context, args []interface{}, kwargs, details map[string]interface{}) *client.InvokeResult {
-		return &client.InvokeResult{Args: []interface{}{1}}
+	testProc1 := func(ctx context.Context, args wamp.List, kwargs, details wamp.Dict) *client.InvokeResult {
+		return &client.InvokeResult{Args: wamp.List{1}}
 	}
 	if err = callee1.Register(procName, testProc1, options); err != nil {
 		t.Fatal("failed to register procedure:", err)
@@ -29,8 +29,8 @@ func TestRPCSharedRoundRobin(t *testing.T) {
 	if err != nil {
 		t.Fatal("Failed to connect client:", err)
 	}
-	testProc2 := func(ctx context.Context, args []interface{}, kwargs, details map[string]interface{}) *client.InvokeResult {
-		return &client.InvokeResult{Args: []interface{}{2}}
+	testProc2 := func(ctx context.Context, args wamp.List, kwargs, details wamp.Dict) *client.InvokeResult {
+		return &client.InvokeResult{Args: wamp.List{2}}
 	}
 	if err = callee2.Register(procName, testProc2, options); err != nil {
 		t.Fatal("failed to register procedure:", err)
@@ -41,8 +41,8 @@ func TestRPCSharedRoundRobin(t *testing.T) {
 	if err != nil {
 		t.Fatal("Failed to connect client:", err)
 	}
-	testProc3 := func(ctx context.Context, args []interface{}, kwargs, details map[string]interface{}) *client.InvokeResult {
-		return &client.InvokeResult{Args: []interface{}{3}}
+	testProc3 := func(ctx context.Context, args wamp.List, kwargs, details wamp.Dict) *client.InvokeResult {
+		return &client.InvokeResult{Args: wamp.List{3}}
 	}
 	if err = callee3.Register(procName, testProc3, options); err != nil {
 		t.Fatal("failed to register procedure:", err)
@@ -133,8 +133,8 @@ func TestRPCSharedRandom(t *testing.T) {
 	if err != nil {
 		t.Fatal("Failed to connect client:", err)
 	}
-	testProc1 := func(ctx context.Context, args []interface{}, kwargs, details map[string]interface{}) *client.InvokeResult {
-		return &client.InvokeResult{Args: []interface{}{1}}
+	testProc1 := func(ctx context.Context, args wamp.List, kwargs, details wamp.Dict) *client.InvokeResult {
+		return &client.InvokeResult{Args: wamp.List{1}}
 	}
 	if err = callee1.Register(procName, testProc1, options); err != nil {
 		t.Fatal("failed to register procedure:", err)
@@ -145,8 +145,8 @@ func TestRPCSharedRandom(t *testing.T) {
 	if err != nil {
 		t.Fatal("Failed to connect client:", err)
 	}
-	testProc2 := func(ctx context.Context, args []interface{}, kwargs, details map[string]interface{}) *client.InvokeResult {
-		return &client.InvokeResult{Args: []interface{}{2}}
+	testProc2 := func(ctx context.Context, args wamp.List, kwargs, details wamp.Dict) *client.InvokeResult {
+		return &client.InvokeResult{Args: wamp.List{2}}
 	}
 	if err = callee2.Register(procName, testProc2, options); err != nil {
 		t.Fatal("failed to register procedure:", err)
@@ -157,8 +157,8 @@ func TestRPCSharedRandom(t *testing.T) {
 	if err != nil {
 		t.Fatal("Failed to connect client:", err)
 	}
-	testProc3 := func(ctx context.Context, args []interface{}, kwargs, details map[string]interface{}) *client.InvokeResult {
-		return &client.InvokeResult{Args: []interface{}{3}}
+	testProc3 := func(ctx context.Context, args wamp.List, kwargs, details wamp.Dict) *client.InvokeResult {
+		return &client.InvokeResult{Args: wamp.List{3}}
 	}
 	if err = callee3.Register(procName, testProc3, options); err != nil {
 		t.Fatal("failed to register procedure:", err)

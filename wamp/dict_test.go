@@ -5,17 +5,17 @@ import (
 	"testing"
 )
 
-func hasRole(d map[string]interface{}, role string) bool {
+func hasRole(d Dict, role string) bool {
 	_, err := DictValue(d, []string{"roles", role})
 	return err == nil
 }
 
-func hasFeature(d map[string]interface{}, role, feature string) bool {
+func hasFeature(d Dict, role, feature string) bool {
 	b, _ := DictFlag(d, []string{"roles", role, "features", feature})
 	return b
 }
 
-func checkRoles(dict map[string]interface{}) error {
+func checkRoles(dict Dict) error {
 	if !hasRole(dict, "caller") {
 		return errors.New("session does not have caller role")
 	}
@@ -47,15 +47,15 @@ func recognizeRole(roleName string) bool {
 }
 
 func TestHasRoleFeatureLookup(t *testing.T) {
-	dict := map[string]interface{}{}
-	clientRoles := map[string]map[string]interface{}{
-		"publisher": map[string]interface{}{},
-		"subscriber": map[string]interface{}{
+	dict := Dict{}
+	clientRoles := map[string]Dict{
+		"publisher": Dict{},
+		"subscriber": Dict{
 			"junk": struct{}{}},
-		"callee": map[string]interface{}{
+		"callee": Dict{
 			"Hello": "world"},
-		"caller":  map[string]interface{}{},
-		"badrole": map[string]interface{}{},
+		"caller":  Dict{},
+		"badrole": Dict{},
 	}
 	boolMap := map[string]bool{"call_timeout": true}
 	clientRoles["caller"]["features"] = boolMap
@@ -71,7 +71,7 @@ func TestHasRoleFeatureLookup(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	for k, _ := range roleVals.(map[string]interface{}) {
+	for k, _ := range roleVals.(Dict) {
 		if k == "badrole" {
 			if recognizeRole(k) {
 				t.Fatal("badrole is recognized")
@@ -88,17 +88,17 @@ func TestHasRoleFeatureLookup(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	dict = map[string]interface{}{
-		"roles": map[string]interface{}{
-			"subscriber": map[string]interface{}{
-				"features": map[string]interface{}{
+	dict = Dict{
+		"roles": Dict{
+			"subscriber": Dict{
+				"features": Dict{
 					"publisher_identification": true,
 				},
 			},
 			"publisher": struct{}{},
 			"callee":    struct{}{},
-			"caller": map[string]interface{}{
-				"features": map[string]interface{}{
+			"caller": Dict{
+				"features": Dict{
 					"call_timeout": true,
 				},
 			},
@@ -111,7 +111,7 @@ func TestHasRoleFeatureLookup(t *testing.T) {
 }
 
 func TestOptions(t *testing.T) {
-	options := map[string]interface{}{
+	options := Dict{
 		"disclose_me":  true,
 		"call_timeout": 5000,
 		"mode":         "killnowait",
@@ -157,14 +157,14 @@ func TestOptions(t *testing.T) {
 }
 
 func BenchmarkNormalized(b *testing.B) {
-	dict := map[string]interface{}{}
-	clientRoles := map[string]map[string]interface{}{
-		"publisher": map[string]interface{}{},
-		"subscriber": map[string]interface{}{
+	dict := Dict{}
+	clientRoles := map[string]Dict{
+		"publisher": Dict{},
+		"subscriber": Dict{
 			"junk": struct{}{}},
-		"callee": map[string]interface{}{
+		"callee": Dict{
 			"Hello": "world"},
-		"caller": map[string]interface{}{},
+		"caller": Dict{},
 	}
 	boolMap := map[string]bool{"call_timeout": true}
 	clientRoles["caller"]["features"] = boolMap
@@ -178,14 +178,14 @@ func BenchmarkNormalized(b *testing.B) {
 }
 
 func BenchmarkNotNormalized(b *testing.B) {
-	dict := map[string]interface{}{}
-	clientRoles := map[string]map[string]interface{}{
-		"publisher": map[string]interface{}{},
-		"subscriber": map[string]interface{}{
+	dict := Dict{}
+	clientRoles := map[string]Dict{
+		"publisher": Dict{},
+		"subscriber": Dict{
 			"junk": struct{}{}},
-		"callee": map[string]interface{}{
+		"callee": Dict{
 			"Hello": "world"},
-		"caller": map[string]interface{}{},
+		"caller": Dict{},
 	}
 	boolMap := map[string]bool{"call_timeout": true}
 	clientRoles["caller"]["features"] = boolMap

@@ -12,8 +12,8 @@ import (
 // - testament_meta_api
 
 // Features supported by this broker.
-var brokerFeatures = map[string]interface{}{
-	"features": map[string]interface{}{
+var brokerFeatures = wamp.Dict{
+	"features": wamp.Dict{
 		"subscriber_blackwhite_listing": true,
 		"pattern_based_subscription":    true,
 		"publisher_exclusion":           true,
@@ -62,7 +62,7 @@ type Broker interface {
 	//
 	// The data returned is suitable for use as the "features" section of the
 	// broker role in a WELCOME message.
-	Features() map[string]interface{}
+	Features() wamp.Dict
 }
 
 type broker struct {
@@ -116,7 +116,7 @@ func NewBroker(strictURI, allowDisclose bool) Broker {
 }
 
 // Features returns the features supported by this broker.
-func (b *broker) Features() map[string]interface{} {
+func (b *broker) Features() wamp.Dict {
 	return brokerFeatures
 }
 
@@ -140,7 +140,7 @@ func (b *broker) Publish(pub *Session, msg *wamp.Publish) {
 				Type:      msg.MessageType(),
 				Request:   msg.Request,
 				Error:     wamp.ErrInvalidURI,
-				Arguments: []interface{}{errMsg},
+				Arguments: wamp.List{errMsg},
 			})
 		}
 		return
@@ -162,7 +162,7 @@ func (b *broker) Publish(pub *Session, msg *wamp.Publish) {
 			pub.Send(&wamp.Error{
 				Type:    msg.MessageType(),
 				Request: msg.Request,
-				Details: map[string]interface{}{},
+				Details: wamp.Dict{},
 				Error:   wamp.ErrOptionDisallowedDiscloseMe,
 			})
 		}
@@ -197,7 +197,7 @@ func (b *broker) Subscribe(sub *Session, msg *wamp.Subscribe) {
 			Type:      msg.MessageType(),
 			Request:   msg.Request,
 			Error:     wamp.ErrInvalidURI,
-			Arguments: []interface{}{errMsg},
+			Arguments: wamp.List{errMsg},
 		})
 		return
 	}
@@ -447,7 +447,7 @@ func (b *broker) pubEvent(pub *Session, msg *wamp.Publish, pubID wamp.ID, subs m
 			continue
 		}
 
-		details := map[string]interface{}{}
+		details := wamp.Dict{}
 
 		// If a subscription was established with a pattern-based matching
 		// policy, a Broker MUST supply the original PUBLISH.Topic as provided
@@ -498,7 +498,7 @@ func (b *broker) pubSubMeta(metaTopic wamp.URI, subSessID, subID wamp.ID) {
 	pubID := wamp.GlobalID()
 	sendMeta := func(subs map[wamp.ID]*Session, sendTopic bool) {
 		for id, sub := range subs {
-			details := map[string]interface{}{}
+			details := wamp.Dict{}
 			if sendTopic {
 				details["topic"] = metaTopic
 			}
@@ -506,7 +506,7 @@ func (b *broker) pubSubMeta(metaTopic wamp.URI, subSessID, subID wamp.ID) {
 				Publication:  pubID,
 				Subscription: id,
 				Details:      details,
-				Arguments:    []interface{}{subSessID, subID},
+				Arguments:    wamp.List{subSessID, subID},
 			})
 		}
 	}
@@ -522,11 +522,11 @@ func (b *broker) pubSubCreateMeta(subTopic wamp.URI, subSessID, subID wamp.ID, m
 	pubID := wamp.GlobalID()
 	sendMeta := func(subs map[wamp.ID]*Session, sendTopic bool) {
 		for id, sub := range subs {
-			details := map[string]interface{}{}
+			details := wamp.Dict{}
 			if sendTopic {
 				details["topic"] = wamp.MetaEventSubOnCreate
 			}
-			subDetails := map[string]interface{}{
+			subDetails := wamp.Dict{
 				"id":      subID,
 				"created": created,
 				"uri":     subTopic,
@@ -536,7 +536,7 @@ func (b *broker) pubSubCreateMeta(subTopic wamp.URI, subSessID, subID wamp.ID, m
 				Publication:  pubID,
 				Subscription: id,
 				Details:      details,
-				Arguments:    []interface{}{subSessID, subDetails},
+				Arguments:    wamp.List{subSessID, subDetails},
 			})
 		}
 	}

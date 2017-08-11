@@ -8,7 +8,7 @@ import (
 
 // Challenge returns a PendingCRAuth for Challenge/Response authentication.
 type Challenger interface {
-	Challenge(details map[string]interface{}) (PendingCRAuth, error)
+	Challenge(details wamp.Dict) (PendingCRAuth, error)
 }
 
 // CRAuthenticator
@@ -22,7 +22,7 @@ func NewCRAuthenticator(challenger Challenger) (*CRAuthenticator, error) {
 	}, nil
 }
 
-func (cr *CRAuthenticator) Authenticate(details map[string]interface{}, client wamp.Peer) (*wamp.Welcome, error) {
+func (cr *CRAuthenticator) Authenticate(details wamp.Dict, client wamp.Peer) (*wamp.Welcome, error) {
 	pendingCRAuth, err := cr.challenger.Challenge(details)
 	if err != nil {
 		return nil, err

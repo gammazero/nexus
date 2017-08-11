@@ -30,7 +30,7 @@ func main() {
 	procName := "sum"
 
 	// Test calling the procedure.
-	callArgs := []interface{}{1, 2, 3, 4, 5, 6, 7, 8, 9, 10}
+	callArgs := wamp.List{1, 2, 3, 4, 5, 6, 7, 8, 9, 10}
 	ctx := context.Background()
 	fmt.Println("Call remote procedure to sum numbers 1-10")
 	result, err := caller.Call(ctx, procName, nil, callArgs, nil, "")

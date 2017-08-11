@@ -30,23 +30,24 @@ var (
 	}
 )
 
-func clientRoles() map[string]interface{} {
-	return map[string]interface{}{
-		"roles": map[string]interface{}{
-			"publisher": map[string]interface{}{
-				"features": map[string]interface{}{
+func clientRoles() wamp.Dict {
+	return wamp.Dict{
+		"roles": wamp.Dict{
+			"publisher": wamp.Dict{
+				"features": wamp.Dict{
 					"subscriber_blackwhite_listing": true,
 				},
 			},
-			"subscriber": map[string]interface{}{},
-			"callee":     map[string]interface{}{},
-			"caller":     map[string]interface{}{},
+			"subscriber": wamp.Dict{},
+			"callee":     wamp.Dict{},
+			"caller":     wamp.Dict{},
 		},
 	}
 }
 
-func newTestWebsocketServer(t *testing.T) (int, router.Router, io.Closer) {
+func newTestWebsocketServer(t *testing.T) (int, io.Closer) {
 	r, err := router.NewRouter(routerConfig)
+	router.DebugEnabled = true
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -62,11 +63,11 @@ func newTestWebsocketServer(t *testing.T) (int, router.Router, io.Closer) {
 		t.Fatal(err)
 	}
 	go server.Serve(l)
-	return l.Addr().(*net.TCPAddr).Port, r, l
+	return l.Addr().(*net.TCPAddr).Port, l
 }
 
 func TestWSHandshakeJSON(t *testing.T) {
-	port, r, closer := newTestWebsocketServer(t)
+	port, closer := newTestWebsocketServer(t)
 	defer closer.Close()
 
 	client, err := transport.ConnectWebsocketPeer(
@@ -76,8 +77,6 @@ func TestWSHandshakeJSON(t *testing.T) {
 	}
 
 	client.Send(&wamp.Hello{Realm: testRealm, Details: clientRoles()})
-	go r.Attach(client)
-
 	msg, ok := <-client.Recv()
 	if !ok {
 		t.Fatal("recv chan closed")
@@ -86,10 +85,11 @@ func TestWSHandshakeJSON(t *testing.T) {
 	if _, ok = msg.(*wamp.Welcome); !ok {
 		t.Fatal("expected WELCOME, got", msg.MessageType())
 	}
+	client.Close()
 }
 
 func TestWSHandshakeMsgpack(t *testing.T) {
-	port, r, closer := newTestWebsocketServer(t)
+	port, closer := newTestWebsocketServer(t)
 	defer closer.Close()
 
 	client, err := transport.ConnectWebsocketPeer(
@@ -99,8 +99,6 @@ func TestWSHandshakeMsgpack(t *testing.T) {
 	}
 
 	client.Send(&wamp.Hello{Realm: testRealm, Details: clientRoles()})
-	go r.Attach(client)
-
 	msg, ok := <-client.Recv()
 	if !ok {
 		t.Fatal("Receive buffer closed")
@@ -109,4 +107,5 @@ func TestWSHandshakeMsgpack(t *testing.T) {
 	if _, ok = msg.(*wamp.Welcome); !ok {
 		t.Fatalf("expected WELCOME, got %s: %+v", msg.MessageType(), msg)
 	}
+	client.Close()
 }

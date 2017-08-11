@@ -11,27 +11,27 @@ import (
 	"github.com/gammazero/nexus/wamp"
 )
 
-func hasRole(details map[string]interface{}, role string) bool {
+func hasRole(details wamp.Dict, role string) bool {
 	_, err := wamp.DictValue(details, []string{"roles", role})
 	return err == nil
 }
 
-func hasFeature(details map[string]interface{}, role, feature string) bool {
+func hasFeature(details wamp.Dict, role, feature string) bool {
 	b, _ := wamp.DictFlag(details, []string{"roles", role, "features", feature})
 	return b
 }
 
-func detailRolesFeatures() map[string]interface{} {
-	return map[string]interface{}{
-		"roles": map[string]interface{}{
-			"publisher": map[string]interface{}{
-				"features": map[string]interface{}{
+func detailRolesFeatures() wamp.Dict {
+	return wamp.Dict{
+		"roles": wamp.Dict{
+			"publisher": wamp.Dict{
+				"features": wamp.Dict{
 					"subscriber_blackwhite_listing": true,
 				},
 			},
-			"subscriber": map[string]interface{}{},
-			"callee":     map[string]interface{}{},
-			"caller":     map[string]interface{}{},
+			"subscriber": wamp.Dict{},
+			"callee":     wamp.Dict{},
+			"caller":     wamp.Dict{},
 		},
 	}
 }
@@ -65,7 +65,7 @@ func TestJSONDeserialize(t *testing.T) {
 	s := &JSONSerializer{}
 
 	data := `[1,"nexus.realm",{}]`
-	expect := &wamp.Hello{Realm: "nexus.realm", Details: map[string]interface{}{}}
+	expect := &wamp.Hello{Realm: "nexus.realm", Details: wamp.Dict{}}
 	msg, err := s.Deserialize([]byte(data))
 	if err != nil {
 		t.Fatalf("Error decoding good data: %s, %s", err, data)
@@ -106,7 +106,7 @@ func TestMessagePackDeserialize(t *testing.T) {
 	s := &MessagePackSerializer{}
 
 	data := []byte{0x93, 0x01, 0xab, 0x6e, 0x65, 0x78, 0x75, 0x73, 0x2e, 0x72, 0x65, 0x61, 0x6c, 0x6d, 0x80}
-	expect := &wamp.Hello{Realm: "nexus.realm", Details: map[string]interface{}{}}
+	expect := &wamp.Hello{Realm: "nexus.realm", Details: wamp.Dict{}}
 	msg, err := s.Deserialize(data)
 	if err != nil {
 		t.Fatalf("Error decoding good data: %s, %x", err, data)
@@ -150,7 +150,7 @@ func TestAssignSlice(t *testing.T) {
 	pubArgs := []string{"hello", "nexus", "wamp", "router"}
 
 	// Deserializing a slice into a message.
-	elems := []interface{}{msgType, 123, map[string]interface{}{},
+	elems := wamp.List{msgType, 123, wamp.Dict{},
 		"some.valid.topic", pubArgs}
 	msg, err := listToMsg(msgType, elems)
 	if err != nil {
@@ -175,7 +175,7 @@ func TestAssignSlice(t *testing.T) {
 }
 
 func TestMsgToList(t *testing.T) {
-	testMsgToList := func(args []interface{}, kwArgs map[string]interface{}, omit int, message string) error {
+	testMsgToList := func(args wamp.List, kwArgs wamp.Dict, omit int, message string) error {
 		msg := &wamp.Event{Subscription: 0, Publication: 0, Details: nil, Arguments: args, ArgumentsKw: kwArgs}
 		numField := reflect.ValueOf(msg).Elem().NumField() + 1 // +1 for type
 		expect := numField - omit
@@ -193,36 +193,36 @@ func TestMsgToList(t *testing.T) {
 		t.Error(err.Error())
 	}
 
-	err = testMsgToList([]interface{}{}, make(map[string]interface{}), 2,
+	err = testMsgToList(wamp.List{}, make(wamp.Dict), 2,
 		"empty args, empty kwArgs")
 	if err != nil {
 		t.Error(err.Error())
 	}
 
-	err = testMsgToList([]interface{}{1}, nil, 1, "non-empty args, nil kwArgs")
+	err = testMsgToList(wamp.List{1}, nil, 1, "non-empty args, nil kwArgs")
 	if err != nil {
 		t.Error(err.Error())
 	}
 
-	err = testMsgToList(nil, map[string]interface{}{"a": nil}, 0,
+	err = testMsgToList(nil, wamp.Dict{"a": nil}, 0,
 		"nil args, non-empty kwArgs")
 	if err != nil {
 		t.Error(err.Error())
 	}
 
-	err = testMsgToList([]interface{}{1}, make(map[string]interface{}), 1,
+	err = testMsgToList(wamp.List{1}, make(wamp.Dict), 1,
 		"non-empty args, empty kwArgs")
 	if err != nil {
 		t.Error(err.Error())
 	}
 
-	err = testMsgToList([]interface{}{}, map[string]interface{}{"a": nil}, 0,
+	err = testMsgToList(wamp.List{}, wamp.Dict{"a": nil}, 0,
 		"empty args, non-empty kwArgs")
 	if err != nil {
 		t.Error(err.Error())
 	}
 
-	err = testMsgToList([]interface{}{1}, map[string]interface{}{"a": nil}, 0,
+	err = testMsgToList(wamp.List{1}, wamp.Dict{"a": nil}, 0,
 		"test message one")
 	if err != nil {
 		t.Error(err.Error())

@@ -10,7 +10,7 @@ import (
 type Session struct {
 	wamp.Peer
 	ID      wamp.ID
-	Details map[string]interface{}
+	Details wamp.Dict
 
 	stop chan wamp.URI
 }

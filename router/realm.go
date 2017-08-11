@@ -232,7 +232,7 @@ func (r *realm) onJoin(sess *Session) {
 	<-sync
 
 	// The event payload consists of a single positional argument details|dict.
-	details := map[string]interface{}{
+	details := wamp.Dict{
 		"session":      sess.ID,
 		"authid":       wamp.OptionString(sess.Details, "authid"),
 		"authrole":     wamp.OptionString(sess.Details, "authrole"),
@@ -245,7 +245,7 @@ func (r *realm) onJoin(sess *Session) {
 	r.metaClient.Send(&wamp.Publish{
 		Request:   wamp.GlobalID(),
 		Topic:     wamp.MetaEventSessionOnJoin,
-		Arguments: []interface{}{details},
+		Arguments: wamp.List{details},
 	})
 }
 
@@ -267,7 +267,7 @@ func (r *realm) onLeave(sess *Session) {
 	r.metaClient.Send(&wamp.Publish{
 		Request:   wamp.GlobalID(),
 		Topic:     wamp.MetaEventSessionOnLeave,
-		Arguments: []interface{}{sess.ID},
+		Arguments: wamp.List{sess.ID},
 	})
 
 	r.waitHandlers.Done()
@@ -321,7 +321,7 @@ func (r *realm) handleInternalSession(sess *Session) {
 			log.Printf("Stop session %s: %v", sess, reason)
 			sess.Send(&wamp.Goodbye{
 				Reason:  reason,
-				Details: map[string]interface{}{},
+				Details: wamp.Dict{},
 			})
 			return
 		}
@@ -399,7 +399,7 @@ func (r *realm) handleInternalSession(sess *Session) {
 			// Handle client leaving realm.
 			sess.Send(&wamp.Goodbye{
 				Reason:  wamp.ErrGoodbyeAndOut,
-				Details: map[string]interface{}{},
+				Details: wamp.Dict{},
 			})
 			log.Println("GOODBYE from session", sess, "reason:", msg.Reason)
 			return
@@ -413,13 +413,13 @@ func (r *realm) handleInternalSession(sess *Session) {
 
 // authClient authenticates the client according to the authmethods in the
 // HELLO message details and the authenticators available for this realm.
-func (r *realm) authClient(client wamp.Peer, details map[string]interface{}) (*wamp.Welcome, error) {
+func (r *realm) authClient(client wamp.Peer, details wamp.Dict) (*wamp.Welcome, error) {
 	var authmethods []string
 	if _authmethods, ok := details["authmethods"]; ok {
 		switch _authmethods := _authmethods.(type) {
 		case []string:
 			authmethods = _authmethods
-		case []interface{}:
+		case wamp.List:
 			for _, x := range _authmethods {
 				authmethods = append(authmethods, x.(string))
 			}
@@ -440,7 +440,7 @@ func (r *realm) authClient(client wamp.Peer, details map[string]interface{}) (*w
 		return nil, err
 	}
 	welcome.Details["authmethod"] = method
-	welcome.Details["roles"] = map[string]interface{}{
+	welcome.Details["roles"] = wamp.Dict{
 		"broker": r.broker.Features(),
 		"dealer": r.dealer.Features(),
 	}
@@ -503,7 +503,7 @@ func (r *realm) metaProcedureHandler() {
 				r.metaClient.Send(&wamp.Error{
 					Type:    msg.MessageType(),
 					Request: msg.Request,
-					Details: map[string]interface{}{},
+					Details: wamp.Dict{},
 					Error:   wamp.ErrNoSuchProcedure,
 				})
 				continue
@@ -548,7 +548,7 @@ func (r *realm) sessionCount(msg *wamp.Invocation) wamp.Message {
 	nclients := <-retChan
 	return &wamp.Yield{
 		Request:   msg.Request,
-		Arguments: []interface{}{nclients},
+		Arguments: wamp.List{nclients},
 	}
 }
 
@@ -585,7 +585,7 @@ func (r *realm) sessionList(msg *wamp.Invocation) wamp.Message {
 		}
 	}
 	list := <-retChan
-	return &wamp.Yield{Request: msg.Request, Arguments: []interface{}{list}}
+	return &wamp.Yield{Request: msg.Request, Arguments: wamp.List{list}}
 }
 
 func (r *realm) sessionGet(msg *wamp.Invocation) wamp.Message {
@@ -593,7 +593,7 @@ func (r *realm) sessionGet(msg *wamp.Invocation) wamp.Message {
 		return &wamp.Error{
 			Type:    wamp.INVOCATION,
 			Request: msg.Request,
-			Details: map[string]interface{}{},
+			Details: wamp.Dict{},
 			Error:   wamp.ErrNoSuchSession,
 		}
 	}
@@ -625,6 +625,6 @@ func (r *realm) sessionGet(msg *wamp.Invocation) wamp.Message {
 	}
 	return &wamp.Yield{
 		Request:   msg.Request,
-		Arguments: []interface{}{dict},
+		Arguments: wamp.List{dict},
 	}
 }
