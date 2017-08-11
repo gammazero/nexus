@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/gammazero/nexus/logger"
@@ -69,6 +70,9 @@ type Client struct {
 	actionChan chan func()
 	idGen      *wamp.IDGen
 
+	stopping          chan struct{}
+	activeInvHandlers sync.WaitGroup
+
 	id           wamp.ID
 	realm        string
 	realmDetails wamp.Dict
@@ -104,6 +108,7 @@ func NewClient(p wamp.Peer, responseTimeout time.Duration, logger logger.Logger)
 
 		actionChan: make(chan func()),
 		idGen:      wamp.NewIDGen(),
+		stopping:   make(chan struct{}),
 
 		log: logger,
 	}
@@ -577,6 +582,14 @@ func (c *Client) Close() error {
 	if err := c.LeaveRealm(); err != nil {
 		return err
 	}
+	// Cancel any invocation handlers that are still running, without them
+	// returning results to the router, since router has already said goodbye.
+	close(c.stopping)
+
+	// Wait for any active invocation handlers to finish, so that is is safe to
+	// close the actionChan which stops the client.
+	c.activeInvHandlers.Wait()
+	close(c.actionChan)
 	c.peer.Close()
 	return nil
 }
@@ -688,7 +701,6 @@ func (c *Client) receiveFromRouter() {
 		}
 	}
 
-	close(c.actionChan)
 	c.log.Println("Client", c.id, "closed")
 }
 
@@ -730,7 +742,7 @@ func (c *Client) handleInvocation(msg *wamp.Invocation) {
 		var cancel context.CancelFunc
 		ctx, cancel := context.WithCancel(context.Background())
 		c.invHandlerKill[msg.Request] = cancel
-
+		c.activeInvHandlers.Add(1)
 		go func() {
 			defer cancel()
 			resChan := make(chan *InvokeResult)
@@ -746,6 +758,7 @@ func (c *Client) handleInvocation(msg *wamp.Invocation) {
 			defer func() {
 				c.actionChan <- func() {
 					delete(c.invHandlerKill, msg.Request)
+					c.activeInvHandlers.Done()
 				}
 			}()
 
@@ -753,6 +766,11 @@ func (c *Client) handleInvocation(msg *wamp.Invocation) {
 			var result *InvokeResult
 			select {
 			case result = <-resChan:
+			case <-c.stopping:
+				c.log.Print("Client stopping, invocation handler canceled")
+				// Return without sending response to server.  This will also
+				// cancel the context.
+				return
 			case <-ctx.Done():
 				// Received an INTERRUPT message from the router.
 				result = &InvokeResult{Err: wamp.ErrCanceled}
