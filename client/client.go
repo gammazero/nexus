@@ -568,7 +568,7 @@ func (c *Client) LeaveRealm() error {
 		return errors.New("client has not joined a realm")
 	}
 
-	// Send GOODBYE to router.  The reouter will respond with a GOODBYE message
+	// Send GOODBYE to router.  The router will respond with a GOODBYE message
 	// which is handled by receiveFromRouter, and causes it to exit.
 	c.peer.Send(&wamp.Goodbye{
 		Details: wamp.Dict{},
@@ -598,7 +598,7 @@ func (c *Client) handleCRAuth(challenge *wamp.Challenge, details wamp.Dict, auth
 	// Look up the authentication function for the specified authmethod.
 	authFunc, ok := authHandlers[challenge.AuthMethod]
 	if !ok {
-		// The router send a challenge for an auth mehtod the client does not
+		// The router send a challenge for an auth method the client does not
 		// know how to deal with.  In response to a CHALLENGE message, the
 		// Client MUST send an AUTHENTICATE message.  So, send empty
 		// AUTHENTICATE since client does not know what to put in it.
