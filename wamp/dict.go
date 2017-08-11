@@ -28,6 +28,15 @@ func NormalizeDict(v interface{}) Dict {
 		cv := val.MapIndex(key)
 		newVal := NormalizeDict(cv.Interface())
 		if newVal == nil {
+			// If the value is interface{} representing []interface{}, then
+			// convert the slice to a List type.
+			if cv.Kind() == reflect.Interface && cv.Elem().Kind() == reflect.Slice {
+				cv = cv.Elem()
+				listType := reflect.TypeOf(List{})
+				if cv.Type().ConvertibleTo(listType) {
+					cv = cv.Convert(listType)
+				}
+			}
 			dict[key.String()] = cv.Interface()
 			continue
 		}
