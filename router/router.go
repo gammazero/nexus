@@ -30,9 +30,16 @@ var DebugEnabled bool
 
 const helloTimeout = 5 * time.Second
 
+// RouterConfig configures the router with realms, and optionally a template
+// for creating new realms.
 type RouterConfig struct {
-	RealmConfigs  []*RealmConfig `json:"realms"`
-	RealmTemplate *RealmConfig   `json:"realm_template"`
+	// RealmConfigs defines the configurations for realms within the router.
+	RealmConfigs []*RealmConfig `json:"realms"`
+
+	// RealmTemplate, if defined, is used by the router to create new realms
+	// when a client joins a realm that does not yet exist.  If RealmTemplate
+	// is nil (the default), then clients must join existing realms.
+	RealmTemplate *RealmConfig `json:"realm_template"`
 }
 
 // A Router handles new Peers and routes requests to the requested Realm.
