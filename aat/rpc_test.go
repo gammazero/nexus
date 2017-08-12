@@ -31,7 +31,7 @@ func TestRPCRegisterAndCall(t *testing.T) {
 	// Register procedure "sum"
 	procName := "sum"
 	if err = callee.Register(procName, handler, nil); err != nil {
-		t.Fatal("failed to register procedure:", err)
+		t.Fatal("Failed to register procedure:", err)
 	}
 
 	// Connect caller session.
@@ -45,19 +45,19 @@ func TestRPCRegisterAndCall(t *testing.T) {
 	ctx := context.Background()
 	result, err := caller.Call(ctx, procName, nil, callArgs, nil, "")
 	if err != nil {
-		t.Fatal("failed to call procedure:", err)
+		t.Fatal("Failed to call procedure:", err)
 	}
 	sum, ok := wamp.AsInt64(result.Arguments[0])
 	if !ok {
-		t.Fatal("could not convert result to int64")
+		t.Fatal("Could not convert result to int64")
 	}
 	if sum != 55 {
-		t.Fatal("wrong result:", sum)
+		t.Fatal("Wrong result:", sum)
 	}
 
 	// Test unregister.
 	if err = callee.Unregister(procName); err != nil {
-		t.Fatal("failed to unregister procedure:", err)
+		t.Fatal("Failed to unregister procedure:", err)
 	}
 
 	err = caller.Close()
