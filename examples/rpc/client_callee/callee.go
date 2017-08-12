@@ -8,14 +8,13 @@ import (
 	"os/signal"
 
 	"github.com/gammazero/nexus/client"
-	"github.com/gammazero/nexus/transport/serialize"
 	"github.com/gammazero/nexus/wamp"
 )
 
 func main() {
 	logger := log.New(os.Stdout, "CALLEE> ", log.LstdFlags)
 	callee, err := client.NewWebsocketClient(
-		"ws://localhost:8000/", serialize.JSON, nil, nil, 0, logger)
+		"ws://localhost:8000/", client.JSON, nil, nil, 0, logger)
 	if err != nil {
 		logger.Fatal(err)
 	}

@@ -9,6 +9,11 @@ import (
 	"github.com/gammazero/nexus/transport/serialize"
 )
 
+const (
+	JSON    = serialize.JSON
+	MSGPACK = serialize.MSGPACK
+)
+
 // NewWebsocketClient creates a new websocket client connected to the specified
 // URL and using the specified serialization.
 //
