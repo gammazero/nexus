@@ -30,6 +30,10 @@ var (
 	}
 )
 
+func init() {
+	router.DebugEnabled = true
+}
+
 func clientRoles() wamp.Dict {
 	return wamp.Dict{
 		"roles": wamp.Dict{
@@ -47,7 +51,6 @@ func clientRoles() wamp.Dict {
 
 func newTestWebsocketServer(t *testing.T) (int, io.Closer) {
 	r, err := router.NewRouter(routerConfig)
-	router.DebugEnabled = true
 	if err != nil {
 		t.Fatal(err)
 	}
