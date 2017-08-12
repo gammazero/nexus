@@ -15,7 +15,6 @@ import (
 	"github.com/gammazero/nexus/logger"
 	"github.com/gammazero/nexus/router"
 	"github.com/gammazero/nexus/server"
-	"github.com/gammazero/nexus/transport/serialize"
 	"github.com/gammazero/nexus/wamp"
 )
 
@@ -120,7 +119,7 @@ func connectClientNoJoin() (*client.Client, error) {
 	var err error
 	if websocketClient {
 		cli, err = client.NewWebsocketClient(
-			serverURL, serialize.JSON, nil, nil, time.Second, cliLogger)
+			serverURL, client.JSON, nil, nil, time.Second, cliLogger)
 	} else {
 		cli, err = client.NewLocalClient(nxr, 200*time.Millisecond, cliLogger)
 	}
