@@ -616,8 +616,7 @@ func (r *realm) sessionGet(msg *wamp.Invocation) wamp.Message {
 	}
 	dict := wamp.SetOption(nil, "session", sessID)
 	for _, name := range []string{"authid", "authrole", "authmethod", "authprovider", "transport"} {
-		opt := wamp.OptionString(sess.Details, name)
-		if opt != "" {
+		if opt, ok := sess.Details[name]; ok {
 			dict = wamp.SetOption(dict, name, opt)
 		}
 	}
