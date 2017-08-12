@@ -31,9 +31,9 @@ type WebsocketServer struct {
 
 	protocols map[string]protocol
 
-	// The serializer to use for text frames. Defaults to JSONSerializer.
+	// Serializer for text frames.  Defaults to JSONSerializer.
 	TextSerializer serialize.Serializer
-	// The serializer to use for binary frames. Defaults to JSONSerializer.
+	// Serializer for binary frames.  Defaults to MessagePackSerializer.
 	BinarySerializer serialize.Serializer
 }
 
