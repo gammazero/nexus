@@ -23,8 +23,6 @@ type RealmConfig struct {
 // authentication and authorization.  WAMP messages are only routed within a
 // Realm.
 type realm struct {
-	uri wamp.URI
-
 	broker Broker
 	dealer Dealer
 
@@ -62,7 +60,6 @@ func NewRealm(config *RealmConfig) (*realm, error) {
 	}
 
 	r := &realm{
-		uri:            config.URI,
 		authorizer:     config.Authorizer,
 		authenticators: config.Authenticators,
 		clients:        map[wamp.ID]*Session{},
@@ -177,7 +174,6 @@ func (r *realm) close() {
 	// the broker.
 	r.metaSess.stop <- wamp.ErrSystemShutdown
 	<-r.metaDone
-	log.Println("Realm", r.uri, "completed shutdown")
 }
 
 // run must be called to start the Realm.
@@ -186,7 +182,6 @@ func (r *realm) run() {
 	for action := range r.actionChan {
 		action()
 	}
-	log.Println("Realm", r.uri, "stopped")
 }
 
 // createMetaSession creates and starts a session that runs in this realm, and

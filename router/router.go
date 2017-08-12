@@ -293,6 +293,7 @@ func (r *router) Close() {
 			realm.close()
 			// Delete the realm
 			delete(r.realms, uri)
+			log.Println("Realm", uri, "completed shutdown")
 		}
 		sync <- struct{}{}
 	}
