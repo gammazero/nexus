@@ -77,7 +77,8 @@ type Client struct {
 	realm        string
 	realmDetails wamp.Dict
 
-	log logger.Logger
+	log   logger.Logger
+	debug bool
 
 	done chan struct{}
 }
@@ -125,6 +126,13 @@ func (c *Client) Done() <-chan struct{} { return c.done }
 // ID returns the client's session ID that is assigned after attaching to a
 // router and joining a realm.
 func (c *Client) ID() wamp.ID { return c.id }
+
+// SetDebug enable or disabled debug logging.
+func (c *Client) SetDebug(enable bool) {
+	c.actionChan <- func() {
+		c.debug = enable
+	}
+}
 
 // AuthFunc takes the HELLO details and CHALLENGE extra data and returns the
 // signature string and a details map.
@@ -404,6 +412,10 @@ func (c *Client) Register(procedure string, fn InvocationHandler, options wamp.D
 			sync <- struct{}{}
 		}
 		<-sync
+		if c.debug {
+			c.log.Println("Registered", procedure, "as registraton",
+				msg.Registration)
+		}
 	case *wamp.Error:
 		return fmt.Errorf("Error registering procedure '%v': %v", procedure,
 			msg.Error)
@@ -541,7 +553,7 @@ func (c *Client) Call(ctx context.Context, procedure string, options wamp.Dict, 
 	// Wait to receive RESULT message.
 	var msg wamp.Message
 	var err error
-	msg, err = c.waitForReplyWithCancel(ctx, id, cancelMode)
+	msg, err = c.waitForReplyWithCancel(ctx, id, cancelMode, procedure)
 	if err != nil {
 		return nil, err
 	}
@@ -681,6 +693,9 @@ func unexpectedMsgError(msg wamp.Message, expected wamp.MessageType) error {
 // receiveFromRouter handles messages from the router until client closes.
 func (c *Client) receiveFromRouter() {
 	for msg := range c.peer.Recv() {
+		if c.debug {
+			c.log.Println("Client", c.id, "received", msg.MessageType())
+		}
 		switch msg := msg.(type) {
 		case *wamp.Event:
 			c.handleEvent(msg)
@@ -704,7 +719,6 @@ func (c *Client) receiveFromRouter() {
 			c.signalReply(msg, msg.Request)
 
 		case *wamp.Goodbye:
-			c.log.Println("Client", c.id, "received GOODBYE")
 			break
 
 		default:
@@ -713,7 +727,9 @@ func (c *Client) receiveFromRouter() {
 	}
 
 	close(c.done)
-	c.log.Println("Client", c.id, "closed")
+	if c.debug {
+		c.log.Println("Client", c.id, "closed")
+	}
 }
 
 func (c *Client) handleEvent(msg *wamp.Event) {
@@ -872,7 +888,7 @@ func (c *Client) waitForReply(id wamp.ID) (wamp.Message, error) {
 	return msg, err
 }
 
-func (c *Client) waitForReplyWithCancel(ctx context.Context, id wamp.ID, mode string) (wamp.Message, error) {
+func (c *Client) waitForReplyWithCancel(ctx context.Context, id wamp.ID, mode, procedure string) (wamp.Message, error) {
 	sync := make(chan struct{})
 	var wait chan wamp.Message
 	var ok bool
@@ -898,7 +914,7 @@ func (c *Client) waitForReplyWithCancel(ctx context.Context, id wamp.ID, mode st
 	select {
 	case msg = <-wait:
 	case <-ctx.Done():
-		c.log.Printf("Call %v canceled (mode=%s)", id, mode)
+		c.log.Printf("Call to '%s' canceled (mode=%s)", procedure, mode)
 		c.peer.Send(&wamp.Cancel{
 			Request: id,
 			Options: wamp.SetOption(nil, "mode", mode),

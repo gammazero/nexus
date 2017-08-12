@@ -70,10 +70,9 @@ func (s *WebsocketServer) AddProtocol(proto string, payloadType int, serializer 
 
 // ServeHTTP handles HTTP connections.
 func (s *WebsocketServer) ServeHTTP(w http.ResponseWriter, r *http.Request) {
-	log.Println("WebsocketServer.ServeHTTP", r.Method, r.RequestURI)
 	conn, err := s.Upgrader.Upgrade(w, r, nil)
 	if err != nil {
-		log.Println("error upgrading to websocket connection:", err)
+		log.Println("Error upgrading to websocket connection:", err)
 		http.Error(w, err.Error(), http.StatusBadRequest)
 		return
 	}
@@ -107,6 +106,6 @@ func (s *WebsocketServer) handleWebsocket(conn *websocket.Conn) {
 	// peer to the router.
 	peer := transport.NewWebsocketPeer(conn, serializer, payloadType, log)
 	if err := s.Router.Attach(peer); err != nil {
-		log.Println(err)
+		log.Println("Error attaching to router:", err)
 	}
 }

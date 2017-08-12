@@ -129,6 +129,8 @@ func connectClientNoJoin() (*client.Client, error) {
 		return nil, err
 	}
 
+	//cli.SetDebug(true)
+
 	return cli, nil
 }
 

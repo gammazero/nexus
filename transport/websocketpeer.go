@@ -5,7 +5,6 @@ import (
 	"fmt"
 	"net"
 	"net/http"
-	"strings"
 	"time"
 
 	"github.com/gammazero/nexus/logger"
@@ -194,9 +193,12 @@ func (w *websocketPeer) recvHandler() {
 				// Close websocket connection.
 				w.conn.Close()
 			}
-			if !strings.HasPrefix(err.Error(), "websocket: close 1000") {
-				w.log.Print(err)
-			}
+			// The error is only one of these erors.  It is generally not
+			// helpful to log this, so keeping this commented out.
+			// websocket: close sent
+			// websocket: close 1000 (normal): goodbye
+			// read tcp addr:port->addr:port: use of closed network connection
+			//w.log.Print(err)
 			break
 		}
 
