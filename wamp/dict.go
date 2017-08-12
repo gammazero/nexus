@@ -114,36 +114,6 @@ func DictFlag(dict Dict, path []string) (bool, error) {
 	return b, nil
 }
 
-// OptionString returns the string value of the option with the specified name.
-// If the option is not present, an empty string is returned.
-func OptionString(opts Dict, optionName string) string {
-	var opt string
-	if _opt, ok := opts[optionName]; ok && _opt != nil {
-		opt, _ = _opt.(string)
-	}
-	return opt
-}
-
-// OptionURI returns the URI value of the option with the specified name.
-// If the option is not present, an empty URI is returned.
-func OptionURI(opts Dict, optionName string) URI {
-	var opt URI
-	if _opt, ok := opts[optionName]; ok && _opt != nil {
-		opt, _ = AsURI(_opt)
-	}
-	return opt
-}
-
-// OptionID returns the ID value of the option with the specified name.
-// If the option is not present, an ID 0 is returned.
-func OptionID(opts Dict, optionName string) ID {
-	var opt ID
-	if _opt, ok := opts[optionName]; ok && _opt != nil {
-		opt, _ = AsID(_opt)
-	}
-	return opt
-}
-
 func AsID(v interface{}) (ID, bool) {
 	if i64, ok := AsInt64(v); ok {
 		return ID(i64), true
@@ -183,6 +153,59 @@ func AsInt64(v interface{}) (int64, bool) {
 		return int64(v), true
 	}
 	return 0, false
+}
+
+func AsDict(v interface{}) (Dict, bool) {
+	return NormalizeDict(v), v != nil
+}
+
+func AsList(v interface{}) (List, bool) {
+	switch v := v.(type) {
+	case List:
+		return v, true
+	case []interface{}:
+		return List(v), true
+	}
+	val := reflect.ValueOf(v)
+	if val.Kind() != reflect.Slice {
+		return nil, false
+	}
+	list := make(List, val.Len())
+	for i := 0; i < val.Len(); i++ {
+		list[i] = val.Index(i).Interface()
+	}
+	return list, true
+}
+
+// OptionString returns the string value of the option with the specified name.
+// If the option is not present or is not a string type, an empty string is
+// returned.
+func OptionString(opts Dict, optionName string) string {
+	var opt string
+	if _opt, ok := opts[optionName]; ok && _opt != nil {
+		opt, _ = _opt.(string)
+	}
+	return opt
+}
+
+// OptionURI returns the URI value of the option with the specified name.
+// If the option is not present, an empty URI is returned.
+func OptionURI(opts Dict, optionName string) URI {
+	var opt URI
+	if _opt, ok := opts[optionName]; ok && _opt != nil {
+		opt, _ = AsURI(_opt)
+	}
+	return opt
+}
+
+// OptionID returns the ID value of the option with the specified name.
+// If the option is not present, an ID 0 is returned.
+func OptionID(opts Dict, optionName string) ID {
+	var opt ID
+	if _opt, ok := opts[optionName]; ok && _opt != nil {
+		opt, _ = AsID(_opt)
+	}
+	return opt
 }
 
 // OptionInt64 returns the int64 value of the option with the specified name.
