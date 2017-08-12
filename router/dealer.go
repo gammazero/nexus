@@ -338,7 +338,9 @@ func (d *dealer) run() {
 	for action := range d.actionChan {
 		action()
 	}
-	log.Print("Dealer stopped")
+	if DebugEnabled {
+		log.Print("Dealer stopped")
+	}
 }
 
 func (d *dealer) register(callee *Session, msg *wamp.Register, match, invokePolicy string, discloseCaller, wampURI bool) {
@@ -440,8 +442,10 @@ func (d *dealer) register(callee *Session, msg *wamp.Register, match, invokePoli
 	}
 	d.calleeRegIDSet[callee][regID] = struct{}{}
 
-	log.Printf("Dealer registered procedure %v (regID=%v) to callee %v",
-		msg.Procedure, regID, callee)
+	if DebugEnabled {
+		log.Printf("Registered procedure %v (regID=%v) to callee %v",
+			msg.Procedure, regID, callee)
+	}
 	callee.Send(&wamp.Registered{
 		Request:      msg.Request,
 		Registration: regID,
@@ -873,8 +877,10 @@ func (d *dealer) delCalleeReg(callee *Session, regID wamp.ID) (bool, error) {
 	// Remove the callee from the registration.
 	for i := range reg.callees {
 		if reg.callees[i] == callee {
-			log.Printf("Unregistered procedure %v (regID=%v) (callee=%v)",
-				reg.procedure, regID, callee.ID)
+			if DebugEnabled {
+				log.Printf("Unregistered procedure %v (regID=%v) (callee=%v)",
+					reg.procedure, regID, callee.ID)
+			}
 			if len(reg.callees) == 1 {
 				reg.callees = nil
 			} else {
@@ -897,8 +903,10 @@ func (d *dealer) delCalleeReg(callee *Session, regID wamp.ID) (bool, error) {
 		case "wildcard":
 			delete(d.wcProcRegMap, reg.procedure)
 		}
-		log.Printf("Deleted registration %v for procedure %v", regID,
-			reg.procedure)
+		if DebugEnabled {
+			log.Printf("Deleted registration %v for procedure %v", regID,
+				reg.procedure)
+		}
 		return true, nil
 	}
 	return false, nil

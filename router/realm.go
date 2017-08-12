@@ -202,8 +202,10 @@ func (r *realm) createMetaSession() (*Session, *Session) {
 	}
 
 	// Run the session handler for the meta session
-	log.Println("Started meta-session", sess)
 	go r.handleInternalSession(sess)
+	if DebugEnabled {
+		log.Println("Started meta-session", sess)
+	}
 
 	client := &Session{
 		Peer: cli,
@@ -286,7 +288,9 @@ func (r *realm) handleSession(sess *Session) error {
 	r.onJoin(sess)
 	r.closeLock.Unlock()
 
-	log.Println("Started session", sess)
+	if DebugEnabled {
+		log.Println("Started session", sess)
+	}
 	go func() {
 		r.handleInternalSession(sess)
 		r.onLeave(sess)
@@ -300,8 +304,9 @@ func (r *realm) handleSession(sess *Session) error {
 //
 // Routing occurs only between WAMP Sessions that have joined the same Realm.
 func (r *realm) handleInternalSession(sess *Session) {
-	defer log.Println("Ended sesion", sess)
-
+	if DebugEnabled {
+		defer log.Println("Ended sesion", sess)
+	}
 	recvChan := sess.Recv()
 	for {
 		var msg wamp.Message
@@ -313,7 +318,9 @@ func (r *realm) handleInternalSession(sess *Session) {
 				return
 			}
 		case reason := <-sess.stop:
-			log.Printf("Stop session %s: %v", sess, reason)
+			if DebugEnabled {
+				log.Printf("Stop session %s: %v", sess, reason)
+			}
 			sess.Send(&wamp.Goodbye{
 				Reason:  reason,
 				Details: wamp.Dict{},
@@ -399,7 +406,10 @@ func (r *realm) handleInternalSession(sess *Session) {
 				Reason:  wamp.ErrGoodbyeAndOut,
 				Details: wamp.Dict{},
 			})
-			log.Println("GOODBYE from session", sess, "reason:", msg.Reason)
+			if DebugEnabled {
+				log.Println("GOODBYE from session", sess, "reason:",
+					msg.Reason)
+			}
 			return
 
 		default:
@@ -508,7 +518,9 @@ func (r *realm) metaProcedureHandler() {
 			}
 			rsp = metaProcHandler(msg)
 		case *wamp.Goodbye:
-			log.Print("Session meta procedure handler exiting GOODBYE")
+			if DebugEnabled {
+				log.Print("Session meta procedure handler exiting GOODBYE")
+			}
 			return
 		default:
 			log.Println("Meta procedure received unexpected", msg.MessageType())

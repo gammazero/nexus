@@ -235,7 +235,9 @@ func (b *broker) run() {
 	for action := range b.actionChan {
 		action()
 	}
-	log.Print("Broker stopped")
+	if DebugEnabled {
+		log.Print("Broker stopped")
+	}
 }
 
 func (b *broker) publish(pub *Session, msg *wamp.Publish, pubID wamp.ID, excludePub, disclose bool) {

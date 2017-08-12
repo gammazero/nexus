@@ -189,6 +189,16 @@ func TestMetaProcSessionCount(t *testing.T) {
 		t.Fatal("subscribe error:", err)
 	}
 
+	// Wait for any events from previously closed clients.
+	var timeout bool
+	for !timeout {
+		select {
+		case <-sync:
+		case <-time.After(200 * time.Millisecond):
+			timeout = true
+		}
+	}
+
 	// Call meta procedure to get session count.
 	ctx := context.Background()
 	result, err := caller.Call(ctx, metaCount, nil, nil, nil, "")
@@ -282,6 +292,16 @@ func TestMetaProcSessionList(t *testing.T) {
 		t.Fatal("subscribe error:", err)
 	}
 
+	// Wait for any events from previously closed clients.
+	var timeout bool
+	for !timeout {
+		select {
+		case <-sync:
+		case <-time.After(200 * time.Millisecond):
+			timeout = true
+		}
+	}
+
 	// Call meta procedure to get session list.
 	ctx := context.Background()
 	result, err := caller.Call(ctx, metaList, nil, nil, nil, "")
@@ -310,16 +330,6 @@ func TestMetaProcSessionList(t *testing.T) {
 		t.Fatal("Missing session ID from session list")
 	}
 	firstLen := len(list)
-
-	// Wait for any events from previously closed clients.
-	var timeout bool
-	for !timeout {
-		select {
-		case <-sync:
-		case <-time.After(200 * time.Millisecond):
-			timeout = true
-		}
-	}
 
 	err = sess.Close()
 	if err != nil {

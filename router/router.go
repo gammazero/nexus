@@ -278,7 +278,9 @@ func (r *router) Attach(client wamp.Peer) error {
 	}
 
 	client.Send(welcome)
-	log.Println("Created session:", welcome.ID)
+	if DebugEnabled {
+		log.Println("Created session:", welcome.ID)
+	}
 	return nil
 }
 
