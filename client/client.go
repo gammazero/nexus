@@ -78,6 +78,8 @@ type Client struct {
 	realmDetails wamp.Dict
 
 	log logger.Logger
+
+	done chan struct{}
 }
 
 // NewClient takes a connected Peer and returns a new Client.
@@ -120,6 +122,10 @@ func (c *Client) run() {
 	for action := range c.actionChan {
 		action()
 	}
+}
+
+func (c *Client) Done() <-chan struct{} {
+	return c.done
 }
 
 // AuthFunc takes the HELLO details and CHALLENGE extra data and returns the
@@ -196,6 +202,7 @@ func (c *Client) JoinRealm(realm string, details wamp.Dict, authHandlers map[str
 		c.realm = realm
 		c.realmDetails = welcome.Details
 		c.id = welcome.ID
+		c.done = make(chan struct{})
 		joinChan <- true
 	}
 	<-joinChan
@@ -701,6 +708,7 @@ func (c *Client) receiveFromRouter() {
 		}
 	}
 
+	close(c.done)
 	c.log.Println("Client", c.id, "closed")
 }
 
