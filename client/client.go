@@ -118,15 +118,13 @@ func NewClient(p wamp.Peer, responseTimeout time.Duration, logger logger.Logger)
 	return c
 }
 
-func (c *Client) run() {
-	for action := range c.actionChan {
-		action()
-	}
-}
+// Done returns a channel used to signal when the client is no longer connected
+// to a router and has shutdown.
+func (c *Client) Done() <-chan struct{} { return c.done }
 
-func (c *Client) Done() <-chan struct{} {
-	return c.done
-}
+// ID returns the client's session ID that is assigned after attaching to a
+// router and joining a realm.
+func (c *Client) ID() wamp.ID { return c.id }
 
 // AuthFunc takes the HELLO details and CHALLENGE extra data and returns the
 // signature string and a details map.
@@ -599,6 +597,12 @@ func (c *Client) Close() error {
 	close(c.actionChan)
 	c.peer.Close()
 	return nil
+}
+
+func (c *Client) run() {
+	for action := range c.actionChan {
+		action()
+	}
 }
 
 func (c *Client) handleCRAuth(challenge *wamp.Challenge, details wamp.Dict, authHandlers map[string]AuthFunc) (wamp.Message, error) {
