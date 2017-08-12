@@ -332,38 +332,41 @@ func (r *realm) handleInternalSession(sess *Session) {
 				msg.MessageType(), msg)
 		}
 
-		if isAuthz, err := r.authorizer.Authorize(sess, msg); !isAuthz {
-			errMsg := &wamp.Error{Type: msg.MessageType()}
-			// Get the Request from request types of messages.
-			switch msg := msg.(type) {
-			case *wamp.Publish:
-				errMsg.Request = msg.Request
-			case *wamp.Subscribe:
-				errMsg.Request = msg.Request
-			case *wamp.Unsubscribe:
-				errMsg.Request = msg.Request
-			case *wamp.Register:
-				errMsg.Request = msg.Request
-			case *wamp.Unregister:
-				errMsg.Request = msg.Request
-			case *wamp.Call:
-				errMsg.Request = msg.Request
-			case *wamp.Cancel:
-				errMsg.Request = msg.Request
-			case *wamp.Yield:
-				errMsg.Request = msg.Request
+		// N.B. meta session is always authorized
+		if sess != r.metaSess {
+			if isAuthz, err := r.authorizer.Authorize(sess, msg); !isAuthz {
+				errMsg := &wamp.Error{Type: msg.MessageType()}
+				// Get the Request from request types of messages.
+				switch msg := msg.(type) {
+				case *wamp.Publish:
+					errMsg.Request = msg.Request
+				case *wamp.Subscribe:
+					errMsg.Request = msg.Request
+				case *wamp.Unsubscribe:
+					errMsg.Request = msg.Request
+				case *wamp.Register:
+					errMsg.Request = msg.Request
+				case *wamp.Unregister:
+					errMsg.Request = msg.Request
+				case *wamp.Call:
+					errMsg.Request = msg.Request
+				case *wamp.Cancel:
+					errMsg.Request = msg.Request
+				case *wamp.Yield:
+					errMsg.Request = msg.Request
+				}
+				if err != nil {
+					// Error trying to authorize.
+					errMsg.Error = wamp.ErrAuthorizationFailed
+					log.Println("Client", sess, "authorization failed:", err)
+				} else {
+					// Session not authorized.
+					errMsg.Error = wamp.ErrNotAuthorized
+					log.Println("Client", sess, msg.MessageType(), "UNAUTHORIZED")
+				}
+				sess.Send(errMsg)
+				continue
 			}
-			if err != nil {
-				// Error trying to authorize.
-				errMsg.Error = wamp.ErrAuthorizationFailed
-				log.Println("Client", sess, "authorization failed:", err)
-			} else {
-				// Session not authorized.
-				errMsg.Error = wamp.ErrNotAuthorized
-				log.Println("Client", sess, msg.MessageType(), "UNAUTHORIZED")
-			}
-			sess.Send(errMsg)
-			continue
 		}
 
 		switch msg := msg.(type) {

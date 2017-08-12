@@ -263,20 +263,11 @@ func (r *router) Attach(client wamp.Peer) error {
 	// Fill in the values of the welcome message and send to client.
 	welcome.ID = wamp.GlobalID()
 
-	// Populate session details.
-	details := wamp.Dict{}
-	details["realm"] = hello.Realm
-	details["roles"] = welcome.Details["roles"]
-	details["authid"] = welcome.Details["authid"]
-	details["authrole"] = welcome.Details["authrole"]
-	details["authmethod"] = welcome.Details["authmethod"]
-	details["authprovider"] = welcome.Details["authprovider"]
-
 	// Create new session.
 	sess := &Session{
 		Peer:    client,
 		ID:      welcome.ID,
-		Details: details,
+		Details: welcome.Details,
 		stop:    make(chan wamp.URI, 1),
 	}
 
