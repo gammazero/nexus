@@ -549,40 +549,47 @@ func (b *broker) pubSubCreateMeta(subTopic wamp.URI, subSessID, subID wamp.ID, m
 // subscriber, by looking at any blacklists and whitelists provided with the
 // publish message.
 func publishAllowed(msg *wamp.Publish, sub *Session) bool {
+	if len(msg.Options) == 0 {
+		return true
+	}
 	if blacklist, ok := msg.Options["exclude"]; ok {
-		if blacklist, ok := blacklist.([]string); ok {
+		if blacklist, ok := wamp.AsList(blacklist); ok {
 			for i := range blacklist {
-				if blacklist[i] == string(sub.ID) {
+				blVal, _ := wamp.AsID(blacklist[i])
+				if blVal == sub.ID {
 					return false
 				}
 			}
 		}
 	}
 	if blacklist, ok := msg.Options["exclude_authid"]; ok {
-		if blacklist, ok := blacklist.([]string); ok {
-			authid := wamp.OptionString(sub.Details, "authid")
+		if blacklist, ok := wamp.AsList(blacklist); ok {
+			authid, _ := wamp.AsID(sub.Details["authid"])
 			for i := range blacklist {
-				if blacklist[i] == authid {
+				blVal, _ := wamp.AsID(blacklist[i])
+				if blVal == authid {
 					return false
 				}
 			}
 		}
 	}
 	if blacklist, ok := msg.Options["exclude_authrole"]; ok {
-		if blacklist, ok := blacklist.([]string); ok {
+		if blacklist, ok := wamp.AsList(blacklist); ok {
 			authrole := wamp.OptionString(sub.Details, "authrole")
 			for i := range blacklist {
-				if blacklist[i] == authrole {
+				if blacklist[i].(string) == authrole {
 					return false
 				}
 			}
 		}
 	}
+
 	if whitelist, ok := msg.Options["eligible"]; ok {
 		eligible := false
-		if whitelist, ok := whitelist.([]string); ok {
+		if whitelist, ok := wamp.AsList(whitelist); ok {
 			for i := range whitelist {
-				if whitelist[i] == string(sub.ID) {
+				wlID, _ := wamp.AsID(whitelist[i])
+				if wlID == sub.ID {
 					eligible = true
 					break
 				}
@@ -594,10 +601,11 @@ func publishAllowed(msg *wamp.Publish, sub *Session) bool {
 	}
 	if whitelist, ok := msg.Options["eligible_authid"]; ok {
 		eligible := false
-		if whitelist, ok := whitelist.([]string); ok {
-			authid := wamp.OptionString(sub.Details, "authid")
+		if whitelist, ok := wamp.AsList(whitelist); ok {
+			authid, _ := wamp.AsID(sub.Details["authid"])
 			for i := range whitelist {
-				if whitelist[i] == authid {
+				wlVal, _ := wamp.AsID(whitelist[i])
+				if wlVal == authid {
 					eligible = true
 					break
 				}
@@ -609,10 +617,10 @@ func publishAllowed(msg *wamp.Publish, sub *Session) bool {
 	}
 	if whitelist, ok := msg.Options["eligible_authrole"]; ok {
 		eligible := false
-		if whitelist, ok := whitelist.([]string); ok {
+		if whitelist, ok := wamp.AsList(whitelist); ok {
 			authrole := wamp.OptionString(sub.Details, "authrole")
 			for i := range whitelist {
-				if whitelist[i] == authrole {
+				if whitelist[i].(string) == authrole {
 					eligible = true
 					break
 				}

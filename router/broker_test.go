@@ -385,7 +385,7 @@ func TestSubscriberBlackwhiteListing(t *testing.T) {
 	broker.Publish(pubSess, &wamp.Publish{
 		Request: 124,
 		Topic:   testTopic,
-		Options: wamp.Dict{"eligible": []string{string(sess.ID)}},
+		Options: wamp.Dict{"eligible": wamp.List{sess.ID}},
 	})
 	rsp, err := wamp.RecvTimeout(sess, time.Second)
 	if err != nil {
@@ -395,7 +395,7 @@ func TestSubscriberBlackwhiteListing(t *testing.T) {
 	broker.Publish(pubSess, &wamp.Publish{
 		Request: 125,
 		Topic:   testTopic,
-		Options: wamp.Dict{"eligible_authrole": []string{"admin"}},
+		Options: wamp.Dict{"eligible_authrole": wamp.List{"admin"}},
 	})
 	rsp, err = wamp.RecvTimeout(sess, time.Second)
 	if err != nil {
@@ -405,7 +405,7 @@ func TestSubscriberBlackwhiteListing(t *testing.T) {
 	broker.Publish(pubSess, &wamp.Publish{
 		Request: 126,
 		Topic:   testTopic,
-		Options: wamp.Dict{"eligible_authid": []string{"jdoe"}},
+		Options: wamp.Dict{"eligible_authid": wamp.List{"jdoe"}},
 	})
 	rsp, err = wamp.RecvTimeout(sess, time.Second)
 	if err != nil {
@@ -416,7 +416,7 @@ func TestSubscriberBlackwhiteListing(t *testing.T) {
 	broker.Publish(pubSess, &wamp.Publish{
 		Request: 127,
 		Topic:   testTopic,
-		Options: wamp.Dict{"exclude": []string{string(sess.ID)}},
+		Options: wamp.Dict{"exclude": wamp.List{sess.ID}},
 	})
 	rsp, err = wamp.RecvTimeout(sess, time.Second)
 	if err == nil {
@@ -426,7 +426,7 @@ func TestSubscriberBlackwhiteListing(t *testing.T) {
 	broker.Publish(pubSess, &wamp.Publish{
 		Request: 128,
 		Topic:   testTopic,
-		Options: wamp.Dict{"exclude_authrole": []string{"admin"}},
+		Options: wamp.Dict{"exclude_authrole": wamp.List{"admin"}},
 	})
 	rsp, err = wamp.RecvTimeout(sess, time.Second)
 	if err == nil {
@@ -436,7 +436,7 @@ func TestSubscriberBlackwhiteListing(t *testing.T) {
 	broker.Publish(pubSess, &wamp.Publish{
 		Request: 129,
 		Topic:   testTopic,
-		Options: wamp.Dict{"exclude_authid": []string{"jdoe"}},
+		Options: wamp.Dict{"exclude_authid": wamp.List{"jdoe"}},
 	})
 	rsp, err = wamp.RecvTimeout(sess, time.Second)
 	if err == nil {

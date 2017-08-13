@@ -146,6 +146,18 @@ func connectClient() (*client.Client, error) {
 	return cli, nil
 }
 
+func connectClientDetails(details wamp.Dict) (*client.Client, error) {
+	cli, err := connectClientNoJoin()
+	if err != nil {
+		return nil, err
+	}
+	_, err = cli.JoinRealm(testRealm, details, nil)
+	if err != nil {
+		return nil, err
+	}
+	return cli, nil
+}
+
 func TestHandshake(t *testing.T) {
 	cli, err := connectClient()
 	if err != nil {
