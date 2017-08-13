@@ -120,9 +120,11 @@ func TestRPCCancelCall(t *testing.T) {
 		t.Fatal("Failed to connect client:", err)
 	}
 
+	invkCanceled := make(chan struct{}, 1)
 	// Register procedure that waits.
 	handler := func(ctx context.Context, args wamp.List, kwargs, details wamp.Dict) *client.InvokeResult {
 		<-ctx.Done() // handler will block forever until canceled.
+		invkCanceled <- struct{}{}
 		return &client.InvokeResult{Err: wamp.ErrCanceled}
 	}
 	procName := "myproc"
@@ -154,11 +156,25 @@ func TestRPCCancelCall(t *testing.T) {
 
 	cancel()
 
-	// Make sure the call is canceled.
+	// Make sure the call is canceled on caller side.
 	select {
 	case err = <-errChan:
+		if err == nil {
+			t.Fatal("Expected error from canceling call")
+		}
+		if err.(client.RPCError).Err.Error != wamp.ErrCanceled {
+			t.Fatal("Wrong error for canceled call, got",
+				err.(client.RPCError).Err.Error, "want", wamp.ErrCanceled)
+		}
 	case <-time.After(2 * time.Second):
 		t.Fatal("call should have been canceled")
+	}
+
+	// Make sure the invocation is canceled on callee side.
+	select {
+	case <-invkCanceled:
+	case <-time.After(time.Second):
+		t.Fatal("invocation should have been canceled")
 	}
 
 	rpcError, ok := err.(client.RPCError)
