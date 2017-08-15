@@ -441,7 +441,7 @@ func (b *broker) removeSession(sub *Session) {
 func (b *broker) pubEvent(pub *Session, msg *wamp.Publish, pubID wamp.ID, subs map[wamp.ID]*Session, excludePublisher, sendTopic, disclose bool) {
 	// Get blacklists and whitelists, if any, from publish message.
 	blIDs, wlIDs, blMap, wlMap := msgBlackWhiteLists(msg)
-	// Check is any filtering is needed.
+	// Check if any filtering is needed.
 	var filter bool
 	if len(blIDs) != 0 || len(wlIDs) != 0 || len(blMap) != 0 || len(wlMap) != 0 {
 		filter = true
@@ -626,7 +626,7 @@ func publishAllowed(sub *Session, blIDs, wlIDs []wamp.ID, blMap, wlMap map[strin
 	// Check blacklists to see if session has a value in any blacklist.
 	if len(blMap) != 0 {
 		for attr, vals := range blMap {
-			// Get the session attribute value to compate with blacklist.
+			// Get the session attribute value to compare with blacklist.
 			sessAttr := wamp.OptionString(sub.Details, attr)
 			if sessAttr == "" {
 				continue
@@ -658,7 +658,7 @@ func publishAllowed(sub *Session, blIDs, wlIDs []wamp.ID, blMap, wlMap map[strin
 	// Check whitelists to make sure session has value in each whitelist.
 	if len(wlMap) != 0 {
 		for attr, vals := range wlMap {
-			// Get the session attribute value to compate with whitelist.
+			// Get the session attribute value to compare with whitelist.
 			sessAttr := wamp.OptionString(sub.Details, attr)
 			if sessAttr == "" {
 				// Session does not have whitelisted value, so deny.
