@@ -438,11 +438,14 @@ func (b *broker) removeSession(sub *Session) {
 // pubEvent sends an event to all subscribers that are not excluded from
 // receiving the event.
 func (b *broker) pubEvent(pub *Session, msg *wamp.Publish, pubID wamp.ID, subs map[wamp.ID]*Session, excludePublisher, sendTopic, disclose bool) {
-	excs, excAuthIDs, excAuthRoles, incs, incAuthIDs, incAuthRoles := getBWLists(msg)
+	// Get blacklists and whitelists, if any, from publish message.
+	blIDs, blAuthIDs, blAuthRoles, wlIDs, wlAuthIDs, wlAuthRoles := msgBWLists(msg)
+	// Check is any filtering is needed.
 	var filter bool
-	if len(excAuthIDs) != 0 || len(incAuthIDs) != 0 || len(excAuthRoles) != 0 || len(incAuthRoles) != 0 || len(excs) != 0 || len(incs) != 0 {
+	if len(blIDs) != 0 || len(wlIDs) != 0 || len(blAuthIDs) != 0 || len(wlAuthIDs) != 0 || len(blAuthRoles) != 0 || len(wlAuthRoles) != 0 {
 		filter = true
 	}
+
 	for id, sub := range subs {
 		// Do not send event to publisher.
 		if sub == pub && excludePublisher {
@@ -450,7 +453,7 @@ func (b *broker) pubEvent(pub *Session, msg *wamp.Publish, pubID wamp.ID, subs m
 		}
 
 		// Check if receiver is restricted.
-		if filter && !publishAllowed(sub, excs, excAuthIDs, excAuthRoles, incs, incAuthIDs, incAuthRoles) {
+		if filter && !publishAllowed(sub, blIDs, blAuthIDs, blAuthRoles, wlIDs, wlAuthIDs, wlAuthRoles) {
 			continue
 		}
 
@@ -550,7 +553,8 @@ func (b *broker) pubSubCreateMeta(subTopic wamp.URI, subSessID, subID wamp.ID, m
 	b.pubMeta(wamp.MetaEventSubOnCreate, sendMeta)
 }
 
-func getBWLists(msg *wamp.Publish) (excs []wamp.ID, excAuthIDs, excAuthRoles []string, incs []wamp.ID, incAuthIDs, incAuthRoles []string) {
+// msgBWLists gets any blacklists and whitelists included in a PUBLISH message.
+func msgBWLists(msg *wamp.Publish) (blIDs []wamp.ID, blAuthIDs, blAuthRoles []string, wlIDs []wamp.ID, wlAuthIDs, wlAuthRoles []string) {
 	if len(msg.Options) == 0 {
 		return
 	}
@@ -558,7 +562,7 @@ func getBWLists(msg *wamp.Publish) (excs []wamp.ID, excAuthIDs, excAuthRoles []s
 		if blacklist, ok := wamp.AsList(blacklist); ok {
 			for i := range blacklist {
 				if blVal, ok := wamp.AsID(blacklist[i]); ok {
-					excs = append(excs, blVal)
+					blIDs = append(blIDs, blVal)
 				}
 			}
 		}
@@ -567,7 +571,7 @@ func getBWLists(msg *wamp.Publish) (excs []wamp.ID, excAuthIDs, excAuthRoles []s
 		if blacklist, ok := wamp.AsList(blacklist); ok {
 			for i := range blacklist {
 				if blVal, ok := blacklist[i].(string); ok && blVal != "" {
-					excAuthIDs = append(excAuthIDs, blVal)
+					blAuthIDs = append(blAuthIDs, blVal)
 				}
 			}
 		}
@@ -576,7 +580,7 @@ func getBWLists(msg *wamp.Publish) (excs []wamp.ID, excAuthIDs, excAuthRoles []s
 		if blacklist, ok := wamp.AsList(blacklist); ok {
 			for i := range blacklist {
 				if blVal, ok := blacklist[i].(string); ok && blVal != "" {
-					excAuthRoles = append(excAuthRoles, blVal)
+					blAuthRoles = append(blAuthRoles, blVal)
 				}
 			}
 		}
@@ -586,7 +590,7 @@ func getBWLists(msg *wamp.Publish) (excs []wamp.ID, excAuthIDs, excAuthRoles []s
 		if whitelist, ok := wamp.AsList(whitelist); ok {
 			for i := range whitelist {
 				if wlID, ok := wamp.AsID(whitelist[i]); ok {
-					incs = append(incs, wlID)
+					wlIDs = append(wlIDs, wlID)
 				}
 			}
 		}
@@ -595,7 +599,7 @@ func getBWLists(msg *wamp.Publish) (excs []wamp.ID, excAuthIDs, excAuthRoles []s
 		if whitelist, ok := wamp.AsList(whitelist); ok {
 			for i := range whitelist {
 				if wlVal, ok := whitelist[i].(string); ok && wlVal != "" {
-					incAuthIDs = append(incAuthIDs, wlVal)
+					wlAuthIDs = append(wlAuthIDs, wlVal)
 				}
 			}
 		}
@@ -604,7 +608,7 @@ func getBWLists(msg *wamp.Publish) (excs []wamp.ID, excAuthIDs, excAuthRoles []s
 		if whitelist, ok := wamp.AsList(whitelist); ok {
 			for i := range whitelist {
 				if wlVal, ok := whitelist[i].(string); ok && wlVal != "" {
-					incAuthRoles = append(incAuthRoles, wlVal)
+					wlAuthRoles = append(wlAuthRoles, wlVal)
 				}
 			}
 		}
@@ -615,38 +619,36 @@ func getBWLists(msg *wamp.Publish) (excs []wamp.ID, excAuthIDs, excAuthRoles []s
 // publishAllowed determines if a message is allowed to be published to a
 // subscriber, by looking at any blacklists and whitelists provided with the
 // publish message.
-func publishAllowed(sub *Session, excs []wamp.ID, excAuthIDs, excAuthRoles []string, incs []wamp.ID, incAuthIDs, incAuthRoles []string) bool {
-	if len(excs) != 0 {
-		for i := range excs {
-			if excs[i] == sub.ID {
-				return false
-			}
+func publishAllowed(sub *Session, blIDs []wamp.ID, blAuthIDs, blAuthRoles []string, wlIDs []wamp.ID, wlAuthIDs, wlAuthRoles []string) bool {
+	for i := range blIDs {
+		if blIDs[i] == sub.ID {
+			return false
 		}
 	}
-	if len(excAuthIDs) != 0 {
+	if len(blAuthIDs) != 0 {
 		authid := wamp.OptionString(sub.Details, "authid")
 		if authid != "" {
-			for i := range excAuthIDs {
-				if excAuthIDs[i] == authid {
+			for i := range blAuthIDs {
+				if blAuthIDs[i] == authid {
 					return false
 				}
 			}
 		}
 	}
-	if len(excAuthRoles) != 0 {
+	if len(blAuthRoles) != 0 {
 		authrole := wamp.OptionString(sub.Details, "authrole")
 		if authrole != "" {
-			for i := range excAuthRoles {
-				if excAuthRoles[i] == authrole {
+			for i := range blAuthRoles {
+				if blAuthRoles[i] == authrole {
 					return false
 				}
 			}
 		}
 	}
-	if len(incs) != 0 {
+	if len(wlIDs) != 0 {
 		eligible := false
-		for i := range incs {
-			if incs[i] == sub.ID {
+		for i := range wlIDs {
+			if wlIDs[i] == sub.ID {
 				eligible = true
 				break
 			}
@@ -655,12 +657,12 @@ func publishAllowed(sub *Session, excs []wamp.ID, excAuthIDs, excAuthRoles []str
 			return false
 		}
 	}
-	if len(incAuthIDs) != 0 {
+	if len(wlAuthIDs) != 0 {
 		eligible := false
 		authid := wamp.OptionString(sub.Details, "authid")
 		if authid != "" {
-			for i := range incAuthIDs {
-				if incAuthIDs[i] == authid {
+			for i := range wlAuthIDs {
+				if wlAuthIDs[i] == authid {
 					eligible = true
 					break
 				}
@@ -670,12 +672,12 @@ func publishAllowed(sub *Session, excs []wamp.ID, excAuthIDs, excAuthRoles []str
 			return false
 		}
 	}
-	if len(incAuthRoles) != 0 {
+	if len(wlAuthRoles) != 0 {
 		eligible := false
 		authrole := wamp.OptionString(sub.Details, "authrole")
 		if authrole != "" {
-			for i := range incAuthRoles {
-				if incAuthRoles[i] == authrole {
+			for i := range wlAuthRoles {
+				if wlAuthRoles[i] == authrole {
 					eligible = true
 					break
 				}
