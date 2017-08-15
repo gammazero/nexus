@@ -228,21 +228,15 @@ func (r *realm) onJoin(sess *Session) {
 	}
 	<-sync
 
-	// The event payload consists of a single positional argument details|dict.
-	details := wamp.Dict{
-		"session":      sess.ID,
-		"authid":       wamp.OptionString(sess.Details, "authid"),
-		"authrole":     wamp.OptionString(sess.Details, "authrole"),
-		"authmethod":   wamp.OptionString(sess.Details, "authmethod"),
-		"authprovider": wamp.OptionString(sess.Details, "authprovider"),
-	}
-
 	// Session Meta Events MUST be dispatched by the Router to the same realm
 	// as the WAMP session which triggered the event.
+	//
+	// WAMP spec only specifies publishing "authid", "authrole", "authmethod",
+	// "authprovider", "transport".  This implementation publishes all details.
 	r.metaClient.Send(&wamp.Publish{
 		Request:   wamp.GlobalID(),
 		Topic:     wamp.MetaEventSessionOnJoin,
-		Arguments: wamp.List{details},
+		Arguments: wamp.List{sess.Details},
 	})
 }
 
@@ -626,14 +620,12 @@ func (r *realm) sessionGet(msg *wamp.Invocation) wamp.Message {
 	if sess == nil {
 		return makeErr()
 	}
-	dict := wamp.SetOption(nil, "session", sessID)
-	for _, name := range []string{"authid", "authrole", "authmethod", "authprovider", "transport"} {
-		if opt, ok := sess.Details[name]; ok {
-			dict = wamp.SetOption(dict, name, opt)
-		}
-	}
+
+	// WAMP spec only specifies returning "authid", "authrole", "authmethod",
+	// "authprovider", and "transport".  All details are returned in this
+	// implementation.
 	return &wamp.Yield{
 		Request:   msg.Request,
-		Arguments: wamp.List{dict},
+		Arguments: wamp.List{sess.Details},
 	}
 }
