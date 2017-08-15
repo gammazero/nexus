@@ -48,6 +48,16 @@ func TestMetaEventOnJoin(t *testing.T) {
 		t.Fatal("subscribe error:", err)
 	}
 
+	// Wait for any event from subscriber joining.
+	var timeout bool
+	for !timeout {
+		select {
+		case <-errChan:
+		case <-time.After(200 * time.Millisecond):
+			timeout = true
+		}
+	}
+
 	// Connect client to generate wamp.session.on_join event.
 	sess, err := connectClient()
 	if err != nil {
