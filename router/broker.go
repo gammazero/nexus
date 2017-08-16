@@ -2,6 +2,7 @@ package router
 
 import (
 	"fmt"
+	"strings"
 
 	"github.com/gammazero/nexus/wamp"
 )
@@ -438,6 +439,14 @@ func (b *broker) removeSession(sub *Session) {
 // pubEvent sends an event to all subscribers that are not excluded from
 // receiving the event.
 func (b *broker) pubEvent(pub *Session, msg *wamp.Publish, pubID wamp.ID, subs map[wamp.ID]*Session, excludePublisher, sendTopic, disclose bool) {
+	// Get blacklists and whitelists, if any, from publish message.
+	blIDs, wlIDs, blMap, wlMap := msgBlackWhiteLists(msg)
+	// Check if any filtering is needed.
+	var filter bool
+	if len(blIDs) != 0 || len(wlIDs) != 0 || len(blMap) != 0 || len(wlMap) != 0 {
+		filter = true
+	}
+
 	for id, sub := range subs {
 		// Do not send event to publisher.
 		if sub == pub && excludePublisher {
@@ -445,7 +454,7 @@ func (b *broker) pubEvent(pub *Session, msg *wamp.Publish, pubID wamp.ID, subs m
 		}
 
 		// Check if receiver is restricted.
-		if !publishAllowed(msg, sub) {
+		if filter && !publishAllowed(sub, blIDs, wlIDs, blMap, wlMap) {
 			continue
 		}
 
@@ -545,89 +554,129 @@ func (b *broker) pubSubCreateMeta(subTopic wamp.URI, subSessID, subID wamp.ID, m
 	b.pubMeta(wamp.MetaEventSubOnCreate, sendMeta)
 }
 
-// publishAllowed determines if a message is allowed to be published to a
-// subscriber, by looking at any blacklists and whitelists provided with the
-// publish message.
-func publishAllowed(msg *wamp.Publish, sub *Session) bool {
+// msgBWLists gets any blacklists and whitelists included in a PUBLISH message.
+func msgBlackWhiteLists(msg *wamp.Publish) ([]wamp.ID, []wamp.ID, map[string][]string, map[string][]string) {
 	if len(msg.Options) == 0 {
-		return true
+		return nil, nil, nil, nil
 	}
+
+	var blIDs []wamp.ID
 	if blacklist, ok := msg.Options["exclude"]; ok {
 		if blacklist, ok := wamp.AsList(blacklist); ok {
 			for i := range blacklist {
-				blVal, _ := wamp.AsID(blacklist[i])
-				if blVal == sub.ID {
-					return false
+				if blVal, ok := wamp.AsID(blacklist[i]); ok {
+					blIDs = append(blIDs, blVal)
 				}
 			}
 		}
 	}
-	if blacklist, ok := msg.Options["exclude_authid"]; ok {
-		if blacklist, ok := wamp.AsList(blacklist); ok {
-			authid, _ := wamp.AsID(sub.Details["authid"])
-			for i := range blacklist {
-				blVal, _ := wamp.AsID(blacklist[i])
-				if blVal == authid {
-					return false
+
+	var wlIDs []wamp.ID
+	if whitelist, ok := msg.Options["eligible"]; ok {
+		if whitelist, ok := wamp.AsList(whitelist); ok {
+			for i := range whitelist {
+				if wlID, ok := wamp.AsID(whitelist[i]); ok {
+					wlIDs = append(wlIDs, wlID)
 				}
 			}
 		}
 	}
-	if blacklist, ok := msg.Options["exclude_authrole"]; ok {
-		if blacklist, ok := wamp.AsList(blacklist); ok {
-			authrole := wamp.OptionString(sub.Details, "authrole")
-			for i := range blacklist {
-				if blacklist[i].(string) == authrole {
+
+	getAttrMap := func(prefix string) map[string][]string {
+		var attrMap map[string][]string
+		for k, vals := range msg.Options {
+			if !strings.HasPrefix(k, prefix) {
+				continue
+			}
+			if vals, ok := wamp.AsList(vals); ok {
+				vallist := make([]string, 0, len(vals))
+				for i := range vals {
+					if val, ok := vals[i].(string); ok && val != "" {
+						vallist = append(vallist, val)
+					}
+				}
+				if len(vallist) != 0 {
+					attrName := k[len(prefix):]
+					if attrMap == nil {
+						attrMap = map[string][]string{}
+					}
+					attrMap[attrName] = vallist
+				}
+			}
+		}
+		return attrMap
+	}
+
+	blMap := getAttrMap("exclude_")
+	wlMap := getAttrMap("eligible_")
+
+	return blIDs, wlIDs, blMap, wlMap
+}
+
+// publishAllowed determines if a message is allowed to be published to a
+// subscriber, by looking at any blacklists and whitelists provided with the
+// publish message.
+func publishAllowed(sub *Session, blIDs, wlIDs []wamp.ID, blMap, wlMap map[string][]string) bool {
+	// Check each blacklisted ID to see if session ID is blacklisted.
+	for i := range blIDs {
+		if blIDs[i] == sub.ID {
+			return false
+		}
+	}
+	// Check blacklists to see if session has a value in any blacklist.
+	if len(blMap) != 0 {
+		for attr, vals := range blMap {
+			// Get the session attribute value to compare with blacklist.
+			sessAttr := wamp.OptionString(sub.Details, attr)
+			if sessAttr == "" {
+				continue
+			}
+			// Check each blacklisted value to see if session attribute is one.
+			for i := range vals {
+				if vals[i] == sessAttr {
+					// Session has blacklisted attribute value.
 					return false
 				}
 			}
 		}
 	}
 
-	if whitelist, ok := msg.Options["eligible"]; ok {
-		eligible := false
-		if whitelist, ok := wamp.AsList(whitelist); ok {
-			for i := range whitelist {
-				wlID, _ := wamp.AsID(whitelist[i])
-				if wlID == sub.ID {
-					eligible = true
-					break
-				}
+	var eligible bool
+	// If session ID whitelist given, make sure session ID is in whitelist.
+	if len(wlIDs) != 0 {
+		eligible = false
+		for i := range wlIDs {
+			if wlIDs[i] == sub.ID {
+				eligible = true
+				break
 			}
 		}
 		if !eligible {
 			return false
 		}
 	}
-	if whitelist, ok := msg.Options["eligible_authid"]; ok {
-		eligible := false
-		if whitelist, ok := wamp.AsList(whitelist); ok {
-			authid, _ := wamp.AsID(sub.Details["authid"])
-			for i := range whitelist {
-				wlVal, _ := wamp.AsID(whitelist[i])
-				if wlVal == authid {
+	// Check whitelists to make sure session has value in each whitelist.
+	if len(wlMap) != 0 {
+		for attr, vals := range wlMap {
+			// Get the session attribute value to compare with whitelist.
+			sessAttr := wamp.OptionString(sub.Details, attr)
+			if sessAttr == "" {
+				// Session does not have whitelisted value, so deny.
+				return false
+			}
+			eligible = false
+			// Check all whitelisted values to see is session attribute is one.
+			for i := range vals {
+				if vals[i] == sessAttr {
+					// Session has whitelisted attribute value.
 					eligible = true
 					break
 				}
 			}
-		}
-		if !eligible {
-			return false
-		}
-	}
-	if whitelist, ok := msg.Options["eligible_authrole"]; ok {
-		eligible := false
-		if whitelist, ok := wamp.AsList(whitelist); ok {
-			authrole := wamp.OptionString(sub.Details, "authrole")
-			for i := range whitelist {
-				if whitelist[i].(string) == authrole {
-					eligible = true
-					break
-				}
+			// If session attribute value no found in whitelist, then deny.
+			if !eligible {
+				return false
 			}
-		}
-		if !eligible {
-			return false
 		}
 	}
 	return true

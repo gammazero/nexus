@@ -13,7 +13,7 @@ var AnonymousAuth Authenticator = &anonymousAuth{}
 func (a *anonymousAuth) Authenticate(details wamp.Dict, client wamp.Peer) (*wamp.Welcome, error) {
 	// Create welcome details containing auth info.
 	details = wamp.Dict{
-		"authid":       wamp.GlobalID(),
+		"authid":       string(wamp.GlobalID()),
 		"authmethod":   "anonymous",
 		"authrole":     "anonymous",
 		"authprovider": "static",
