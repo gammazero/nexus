@@ -29,7 +29,7 @@ func TestWhitelistAttribute(t *testing.T) {
 	}
 	sync2 := make(chan struct{})
 	evtHandler2 := func(args wamp.List, kwargs wamp.Dict, details wamp.Dict) {
-		sync1 <- struct{}{}
+		sync2 <- struct{}{}
 	}
 	err = subscriber2.Subscribe(testTopic, evtHandler2, nil)
 	if err != nil {
@@ -93,7 +93,7 @@ func TestBlacklistAttribute(t *testing.T) {
 	}
 	sync2 := make(chan struct{})
 	evtHandler2 := func(args wamp.List, kwargs wamp.Dict, details wamp.Dict) {
-		sync1 <- struct{}{}
+		sync2 <- struct{}{}
 	}
 	err = subscriber2.Subscribe(testTopic, evtHandler2, nil)
 	if err != nil {
