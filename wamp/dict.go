@@ -156,7 +156,8 @@ func AsInt64(v interface{}) (int64, bool) {
 }
 
 func AsDict(v interface{}) (Dict, bool) {
-	return NormalizeDict(v), v != nil
+	n := NormalizeDict(v)
+	return n, n != nil
 }
 
 func AsList(v interface{}) (List, bool) {
