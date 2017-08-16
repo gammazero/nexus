@@ -732,16 +732,27 @@ func (c *Client) receiveFromRouter() {
 	}
 }
 
+// handleEvent calls the event handler function a subscriber designated for
+// handling EVENT messages.
+//
+// The eventHandlers are called serially so that they execute in the same order
+// as the messages are received in.  This could not be guaranteed if executing
+// concurrently.
 func (c *Client) handleEvent(msg *wamp.Event) {
+	var handler EventHandler
+	var ok bool
+	sync := make(chan struct{})
 	c.actionChan <- func() {
-		handler, ok := c.eventHandlers[msg.Subscription]
-		if !ok {
-			c.log.Println("No handler registered for subscription:",
-				msg.Subscription)
-			return
-		}
-		go handler(msg.Arguments, msg.ArgumentsKw, msg.Details)
+		handler, ok = c.eventHandlers[msg.Subscription]
+		sync <- struct{}{}
 	}
+	<-sync
+	if !ok {
+		c.log.Println("No handler registered for subscription:",
+			msg.Subscription)
+		return
+	}
+	handler(msg.Arguments, msg.ArgumentsKw, msg.Details)
 }
 
 func (c *Client) handleInvocation(msg *wamp.Invocation) {
