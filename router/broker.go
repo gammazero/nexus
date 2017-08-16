@@ -392,6 +392,7 @@ func (b *broker) unsubscribe(sub *Session, msg *wamp.Unsubscribe) {
 	sub.Send(&wamp.Unsubscribed{Request: msg.Request})
 
 	// Publish WAMP unsubscribe meta event.
+	b.pubSubMeta(wamp.MetaEventSubOnUnsubscribe, sub.ID, msg.Subscription)
 	if delLastSub {
 		// Fired when a subscription is deleted after the last session attached
 		// to it has been removed.
@@ -509,6 +510,12 @@ func (b *broker) pubSubMeta(metaTopic wamp.URI, subSessID, subID wamp.ID) {
 	pubID := wamp.GlobalID()
 	sendMeta := func(subs map[wamp.ID]*Session, sendTopic bool) {
 		for id, sub := range subs {
+			// Do not send the meta event to the session that is causing the
+			// meta event to be generated.  This prevents useless events that
+			// could lead to race conditions on the client.
+			if sub.ID == subSessID {
+				continue
+			}
 			details := wamp.Dict{}
 			if sendTopic {
 				details["topic"] = metaTopic
@@ -533,6 +540,12 @@ func (b *broker) pubSubCreateMeta(subTopic wamp.URI, subSessID, subID wamp.ID, m
 	pubID := wamp.GlobalID()
 	sendMeta := func(subs map[wamp.ID]*Session, sendTopic bool) {
 		for id, sub := range subs {
+			// Do not send the meta event to the session that is causing the
+			// meta event to be generated.  This prevents useless events that
+			// could lead to race conditions on the client.
+			if sub.ID == subSessID {
+				continue
+			}
 			details := wamp.Dict{}
 			if sendTopic {
 				details["topic"] = wamp.MetaEventSubOnCreate

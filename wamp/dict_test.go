@@ -153,6 +153,18 @@ func TestOptions(t *testing.T) {
 	if OptionFlag(NormalizeDict(boolOpts), "not_here") {
 		t.Fatal("expected false value")
 	}
+}
+
+func TestConversionFail(t *testing.T) {
+	num := 1234
+	inum := interface{}(num)
+	d, ok := AsDict(inum)
+	if ok {
+		t.Error("Should fail converting int to Dict")
+	}
+	if d != nil {
+		t.Error("Dict should be nil")
+	}
 
 }
 

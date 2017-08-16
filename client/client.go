@@ -265,6 +265,14 @@ func (c *Client) Subscribe(topic string, fn EventHandler, options wamp.Dict) err
 	return nil
 }
 
+// SubscriptionID returns the subscription id for the specified topic.  If the
+// client does not have an active subscription to the topic, then returns false
+// for second boolean return value.
+func (c *Client) SubscriptionID(topic string) (subID wamp.ID, ok bool) {
+	subID, ok = c.topicSubID[topic]
+	return
+}
+
 // Unsubscribe removes the registered EventHandler from the topic.
 func (c *Client) Unsubscribe(topic string) error {
 	sync := make(chan struct{})
