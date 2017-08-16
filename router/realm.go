@@ -15,6 +15,7 @@ type RealmConfig struct {
 	StrictURI      bool `json:"strict_uri"`
 	AnonymousAuth  bool `json:"anonymous_auth"`
 	AllowDisclose  bool `json:"auto_disclose"`
+	MatchSubOpts   bool `json:"match_subscribe_opts"`
 	Authenticators map[string]auth.Authenticator
 	Authorizer     Authorizer
 }
@@ -92,7 +93,7 @@ func NewRealm(config *RealmConfig) (*realm, error) {
 	// event to any subscribers.
 	r.metaClient, r.metaSess = r.createMetaSession()
 
-	r.broker = NewBroker(config.StrictURI, config.AllowDisclose)
+	r.broker = NewBroker(config.StrictURI, config.AllowDisclose, config.MatchSubOpts)
 	r.dealer = NewDealer(config.StrictURI, config.AllowDisclose, r.metaClient)
 
 	// Register to handle session meta procedures.

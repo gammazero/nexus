@@ -67,6 +67,7 @@ func TestMain(m *testing.M) {
 				StrictURI:     false,
 				AnonymousAuth: true,
 				AllowDisclose: false,
+				MatchSubOpts:  true,
 			},
 			&router.RealmConfig{
 				URI:           wamp.URI("nexus.test.auth"),
