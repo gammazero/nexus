@@ -77,6 +77,9 @@ type broker struct {
 	pfxSubscriptions map[wamp.ID]wamp.URI
 	wcSubscriptions  map[wamp.ID]wamp.URI
 
+	// subscription ID -> subscribe options
+	subOpts map[wamp.ID]wamp.Dict
+
 	// Session -> subscription ID set
 	sessionSubIDSet map[*Session]map[wamp.ID]struct{}
 
@@ -90,7 +93,7 @@ type broker struct {
 }
 
 // NewBroker returns a new default broker implementation instance.
-func NewBroker(strictURI, allowDisclose bool) Broker {
+func NewBroker(strictURI, allowDisclose, matchSubOpts bool) Broker {
 	b := &broker{
 		topicSubscribers:    map[wamp.URI]map[wamp.ID]*Session{},
 		pfxTopicSubscribers: map[wamp.URI]map[wamp.ID]*Session{},
@@ -111,6 +114,10 @@ func NewBroker(strictURI, allowDisclose bool) Broker {
 
 		strictURI:     strictURI,
 		allowDisclose: allowDisclose,
+	}
+	// If matching subscribe options enabled.
+	if matchSubOpts {
+		b.subOpts = map[wamp.ID]wamp.Dict{}
 	}
 	go b.run()
 	return b
@@ -313,6 +320,9 @@ func (b *broker) subscribe(sub *Session, msg *wamp.Subscribe, match string) {
 	id := b.idGen.Next()
 	subscriptions[id] = msg.Topic
 	idSub[id] = sub
+	if b.subOpts != nil {
+		b.subOpts[id] = msg.Options
+	}
 
 	idSet, ok := b.sessionSubIDSet[sub]
 	if !ok {
@@ -388,6 +398,11 @@ func (b *broker) unsubscribe(sub *Session, msg *wamp.Unsubscribe) {
 		}
 	}
 
+	if b.subOpts != nil {
+		// Delete the subscribe options.
+		delete(b.subOpts, msg.Subscription)
+	}
+
 	// Tell sender they are unsubscribed.
 	sub.Send(&wamp.Unsubscribed{Request: msg.Request})
 
@@ -433,6 +448,10 @@ func (b *broker) removeSession(sub *Session) {
 				}
 			}
 		}
+		if b.subOpts != nil {
+			// Delete the subscribe options.
+			delete(b.subOpts, id)
+		}
 	}
 	delete(b.sessionSubIDSet, sub)
 }
@@ -455,7 +474,7 @@ func (b *broker) pubEvent(pub *Session, msg *wamp.Publish, pubID wamp.ID, subs m
 		}
 
 		// Check if receiver is restricted.
-		if filter && !publishAllowed(sub, blIDs, wlIDs, blMap, wlMap) {
+		if filter && !b.publishAllowed(sub, id, blIDs, wlIDs, blMap, wlMap) {
 			continue
 		}
 
@@ -629,20 +648,33 @@ func msgBlackWhiteLists(msg *wamp.Publish) ([]wamp.ID, []wamp.ID, map[string][]s
 // publishAllowed determines if a message is allowed to be published to a
 // subscriber, by looking at any blacklists and whitelists provided with the
 // publish message.
-func publishAllowed(sub *Session, blIDs, wlIDs []wamp.ID, blMap, wlMap map[string][]string) bool {
+func (b *broker) publishAllowed(sub *Session, subID wamp.ID, blIDs, wlIDs []wamp.ID, blMap, wlMap map[string][]string) bool {
 	// Check each blacklisted ID to see if session ID is blacklisted.
 	for i := range blIDs {
 		if blIDs[i] == sub.ID {
 			return false
 		}
 	}
+
+	var subOpts wamp.Dict
+
 	// Check blacklists to see if session has a value in any blacklist.
 	if len(blMap) != 0 {
+		if b.subOpts != nil {
+			subOpts = b.subOpts[subID]
+		}
 		for attr, vals := range blMap {
 			// Get the session attribute value to compare with blacklist.
 			sessAttr := wamp.OptionString(sub.Details, attr)
 			if sessAttr == "" {
-				continue
+				if subOpts == nil {
+					return false
+				}
+				// Look for blacklisted value in subscribe options.
+				sessAttr = wamp.OptionString(subOpts, attr)
+				if sessAttr == "" {
+					continue
+				}
 			}
 			// Check each blacklisted value to see if session attribute is one.
 			for i := range vals {
@@ -670,12 +702,22 @@ func publishAllowed(sub *Session, blIDs, wlIDs []wamp.ID, blMap, wlMap map[strin
 	}
 	// Check whitelists to make sure session has value in each whitelist.
 	if len(wlMap) != 0 {
+		if subOpts == nil && b.subOpts != nil {
+			subOpts = b.subOpts[subID]
+		}
 		for attr, vals := range wlMap {
 			// Get the session attribute value to compare with whitelist.
 			sessAttr := wamp.OptionString(sub.Details, attr)
 			if sessAttr == "" {
-				// Session does not have whitelisted value, so deny.
-				return false
+				if subOpts == nil {
+					return false
+				}
+				// Look for whitelisted value in subscribe options.
+				sessAttr = wamp.OptionString(subOpts, attr)
+				if sessAttr == "" {
+					// Session does not have whitelisted value, so deny.
+					return false
+				}
 			}
 			eligible = false
 			// Check all whitelisted values to see is session attribute is one.

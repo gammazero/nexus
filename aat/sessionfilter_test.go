@@ -31,7 +31,8 @@ func TestWhitelistAttribute(t *testing.T) {
 	evtHandler2 := func(args wamp.List, kwargs wamp.Dict, details wamp.Dict) {
 		sync2 <- struct{}{}
 	}
-	err = subscriber2.Subscribe(testTopic, evtHandler2, nil)
+	err = subscriber2.Subscribe(testTopic, evtHandler2,
+		wamp.Dict{"machine_id": "hal9000"})
 	if err != nil {
 		t.Fatal("subscribe error:", err)
 	}
@@ -42,9 +43,9 @@ func TestWhitelistAttribute(t *testing.T) {
 		t.Fatal("Failed to connect client:", err)
 	}
 
+	// Publish an event with whitelist that matches subscriber1 non-standard
+	// hello options.
 	opts := wamp.Dict{"eligible_org_id": wamp.List{"spirent", "goodguys"}}
-
-	// Publish an event to something that matches by wildcard.
 	publisher.Publish(testTopic, opts, wamp.List{"hello world"}, nil)
 
 	// Make sure the event was received by subscriber1
@@ -58,6 +59,25 @@ func TestWhitelistAttribute(t *testing.T) {
 	select {
 	case <-sync2:
 		t.Fatal("Subscriber2 received published event")
+	case <-time.After(200 * time.Millisecond):
+	}
+
+	// Publish an event with whitelist that matches subscriber2 subscription
+	// options.
+	opts = wamp.Dict{"eligible_machine_id": wamp.List{"hal9000"}}
+	publisher.Publish(testTopic, opts, wamp.List{"hello world"}, nil)
+
+	// Make sure the event was received by subscriber2
+	select {
+	case <-sync2:
+	case <-time.After(200 * time.Millisecond):
+		t.Fatal("Subscriber2 did not get published event")
+	}
+
+	// Make sure the event was not received by subscriber1
+	select {
+	case <-sync1:
+		t.Fatal("Subscriber1 received published event")
 	case <-time.After(200 * time.Millisecond):
 	}
 
