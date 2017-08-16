@@ -18,7 +18,7 @@ func main() {
 	routerConfig := &router.RouterConfig{
 		RealmConfigs: []*router.RealmConfig{
 			&router.RealmConfig{
-				URI:           wamp.URI("nexus.examples.rpc"),
+				URI:           wamp.URI("nexus.examples"),
 				AnonymousAuth: true,
 				AllowDisclose: true,
 			},
@@ -39,7 +39,7 @@ func main() {
 	defer callee.Close()
 
 	// Connect callee session.
-	_, err = callee.JoinRealm("nexus.examples.rpc", nil, nil)
+	_, err = callee.JoinRealm("nexus.examples", nil, nil)
 	if err != nil {
 		logger.Fatal(err)
 	}

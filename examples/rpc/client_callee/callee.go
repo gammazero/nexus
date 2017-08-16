@@ -21,7 +21,7 @@ func main() {
 	defer callee.Close()
 
 	// Connect callee session.
-	_, err = callee.JoinRealm("nexus.examples.rpc", nil, nil)
+	_, err = callee.JoinRealm("nexus.examples", nil, nil)
 	if err != nil {
 		logger.Fatal(err)
 	}

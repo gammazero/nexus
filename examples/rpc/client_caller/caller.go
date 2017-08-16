@@ -20,7 +20,7 @@ func main() {
 	defer caller.Close()
 
 	// Connect callee session.
-	_, err = caller.JoinRealm("nexus.examples.rpc", nil, nil)
+	_, err = caller.JoinRealm("nexus.examples", nil, nil)
 	if err != nil {
 		logger.Fatal(err)
 	}

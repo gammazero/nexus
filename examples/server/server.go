@@ -14,7 +14,7 @@ func main() {
 	routerConfig := &router.RouterConfig{
 		RealmConfigs: []*router.RealmConfig{
 			&router.RealmConfig{
-				URI:           wamp.URI("nexus.examples.rpc"),
+				URI:           wamp.URI("nexus.examples"),
 				AnonymousAuth: true,
 				AllowDisclose: true,
 			},
