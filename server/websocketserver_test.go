@@ -8,6 +8,7 @@ import (
 	"testing"
 
 	"github.com/gammazero/nexus/router"
+	"github.com/gammazero/nexus/stdlog"
 	"github.com/gammazero/nexus/transport"
 	"github.com/gammazero/nexus/transport/serialize"
 	"github.com/gammazero/nexus/wamp"
@@ -27,12 +28,9 @@ var (
 				AllowDisclose: true,
 			},
 		},
+		Debug: true,
 	}
 )
-
-func init() {
-	router.DebugEnabled = true
-}
 
 func clientRoles() wamp.Dict {
 	return wamp.Dict{
@@ -49,8 +47,8 @@ func clientRoles() wamp.Dict {
 	}
 }
 
-func newTestWebsocketServer(t *testing.T) (int, io.Closer) {
-	r, err := router.NewRouter(routerConfig)
+func newTestWebsocketServer(t *testing.T) (int, io.Closer, stdlog.StdLog) {
+	r, err := router.NewRouter(routerConfig, nil)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -66,15 +64,15 @@ func newTestWebsocketServer(t *testing.T) (int, io.Closer) {
 		t.Fatal(err)
 	}
 	go server.Serve(l)
-	return l.Addr().(*net.TCPAddr).Port, l
+	return l.Addr().(*net.TCPAddr).Port, l, r.Logger()
 }
 
 func TestWSHandshakeJSON(t *testing.T) {
-	port, closer := newTestWebsocketServer(t)
+	port, closer, logger := newTestWebsocketServer(t)
 	defer closer.Close()
 
 	client, err := transport.ConnectWebsocketPeer(
-		fmt.Sprintf("ws://localhost:%d/", port), serialize.JSON, nil, nil, router.Logger())
+		fmt.Sprintf("ws://localhost:%d/", port), serialize.JSON, nil, nil, logger)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -92,11 +90,11 @@ func TestWSHandshakeJSON(t *testing.T) {
 }
 
 func TestWSHandshakeMsgpack(t *testing.T) {
-	port, closer := newTestWebsocketServer(t)
+	port, closer, logger := newTestWebsocketServer(t)
 	defer closer.Close()
 
 	client, err := transport.ConnectWebsocketPeer(
-		fmt.Sprintf("ws://localhost:%d/", port), serialize.MSGPACK, nil, nil, router.Logger())
+		fmt.Sprintf("ws://localhost:%d/", port), serialize.MSGPACK, nil, nil, logger)
 	if err != nil {
 		t.Fatal(err)
 	}

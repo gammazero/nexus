@@ -24,7 +24,7 @@ func main() {
 			},
 		},
 	}
-	nxr, err := router.NewRouter(routerConfig)
+	nxr, err := router.NewRouter(routerConfig, nil)
 	if err != nil {
 		log.Fatal(err)
 	}

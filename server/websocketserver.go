@@ -5,8 +5,8 @@ import (
 	"fmt"
 	"net/http"
 
-	"github.com/gammazero/nexus/logger"
 	"github.com/gammazero/nexus/router"
+	"github.com/gammazero/nexus/stdlog"
 	"github.com/gammazero/nexus/transport"
 	"github.com/gammazero/nexus/transport/serialize"
 	"github.com/gorilla/websocket"
@@ -22,8 +22,6 @@ type protocol struct {
 	serializer  serialize.Serializer
 }
 
-var log logger.Logger
-
 // WebsocketServer handles websocket connections.
 type WebsocketServer struct {
 	router.Router
@@ -35,15 +33,17 @@ type WebsocketServer struct {
 	TextSerializer serialize.Serializer
 	// Serializer for binary frames.  Defaults to MessagePackSerializer.
 	BinarySerializer serialize.Serializer
+
+	log stdlog.StdLog
 }
 
 // NewWebsocketServer takes a router instance and creates a new websocket
 // server.
 func NewWebsocketServer(r router.Router) *WebsocketServer {
-	log = router.Logger()
 	s := &WebsocketServer{
 		Router:    r,
 		protocols: map[string]protocol{},
+		log:       r.Logger(),
 	}
 
 	s.Upgrader = &websocket.Upgrader{}
@@ -56,7 +56,7 @@ func NewWebsocketServer(r router.Router) *WebsocketServer {
 
 // AddProtocol registers a serializer for protocol and payload type.
 func (s *WebsocketServer) AddProtocol(proto string, payloadType int, serializer serialize.Serializer) error {
-	log.Println("AddProtocol:", proto)
+	s.log.Println("AddProtocol:", proto)
 	if payloadType != websocket.TextMessage && payloadType != websocket.BinaryMessage {
 		return fmt.Errorf("invalid payload type: %d", payloadType)
 	}
@@ -72,7 +72,7 @@ func (s *WebsocketServer) AddProtocol(proto string, payloadType int, serializer 
 func (s *WebsocketServer) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	conn, err := s.Upgrader.Upgrade(w, r, nil)
 	if err != nil {
-		log.Println("Error upgrading to websocket connection:", err)
+		s.log.Println("Error upgrading to websocket connection:", err)
 		http.Error(w, err.Error(), http.StatusBadRequest)
 		return
 	}
@@ -104,8 +104,8 @@ func (s *WebsocketServer) handleWebsocket(conn *websocket.Conn) {
 
 	// Create a websocket peer from the websocket connection and attach the
 	// peer to the router.
-	peer := transport.NewWebsocketPeer(conn, serializer, payloadType, log)
+	peer := transport.NewWebsocketPeer(conn, serializer, payloadType, s.log)
 	if err := s.Router.Attach(peer); err != nil {
-		log.Println("Error attaching to router:", err)
+		s.log.Println("Error attaching to router:", err)
 	}
 }

@@ -18,9 +18,6 @@ func usage() {
 }
 
 func main() {
-	logger := log.New(os.Stdout, "", log.LstdFlags)
-	router.SetLogger(logger)
-
 	var cfgFile string
 	fs := flag.NewFlagSet("nexus", flag.ExitOnError)
 	fs.StringVar(&cfgFile, "c", "nexus.json", "Path to config file")
@@ -32,7 +29,7 @@ func main() {
 	conf := LoadConfig(cfgFile)
 
 	// Create router and realms from config.
-	r, err := router.NewRouter(&conf.Router)
+	r, err := router.NewRouter(&conf.Router, nil)
 	if err != nil {
 		log.Fatalln(err)
 	}

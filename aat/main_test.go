@@ -12,9 +12,9 @@ import (
 
 	"github.com/gammazero/nexus/auth"
 	"github.com/gammazero/nexus/client"
-	"github.com/gammazero/nexus/logger"
 	"github.com/gammazero/nexus/router"
 	"github.com/gammazero/nexus/server"
+	"github.com/gammazero/nexus/stdlog"
 	"github.com/gammazero/nexus/wamp"
 )
 
@@ -24,8 +24,8 @@ const (
 
 var (
 	nxr       router.Router
-	cliLogger logger.Logger
-	rtrLogger logger.Logger
+	cliLogger stdlog.StdLog
+	rtrLogger stdlog.StdLog
 
 	serverURL string
 	port      int
@@ -51,8 +51,6 @@ func TestMain(m *testing.M) {
 	// Create separate logger for client and router.
 	cliLogger = log.New(os.Stdout, "CLIENT> ", log.LstdFlags)
 	rtrLogger = log.New(os.Stdout, "ROUTER> ", log.LstdFlags)
-	//router.DebugEnabled = true
-	router.SetLogger(rtrLogger)
 
 	crAuth, err := auth.NewCRAuthenticator(&testCRAuthenticator{})
 	if err != nil {
@@ -78,8 +76,9 @@ func TestMain(m *testing.M) {
 				},
 			},
 		},
+		//Debug: true,
 	}
-	nxr, err = router.NewRouter(routerConfig)
+	nxr, err = router.NewRouter(routerConfig, rtrLogger)
 	if err != nil {
 		panic(err)
 	}

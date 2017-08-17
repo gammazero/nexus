@@ -1,9 +1,9 @@
-package logger
+package stdlog
 
-// Logger is a minimal interface implemented by nearly every logging package.
-// // The nexus package uses this interface for all logging, which allows nexus
+// StdLog is a minimal interface implemented by nearly every logging package.
+// The nexus package uses this interface for all logging, which allows nexus
 // to use any logging package desired.
-type Logger interface {
+type StdLog interface {
 	// Print logs a message.  Arguments are handled in the manner of fmt.Print.
 	Print(v ...interface{})
 

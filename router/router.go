@@ -3,30 +3,14 @@ package router
 import (
 	"errors"
 	"fmt"
-	stdlog "log"
+	"log"
 	"os"
 	"sync"
 	"time"
 
-	"github.com/gammazero/nexus/logger"
+	"github.com/gammazero/nexus/stdlog"
 	"github.com/gammazero/nexus/wamp"
 )
-
-// log is an instance of a logger that implements the logger.Logger interface.
-// A stdlib logger is assigned by default (for convenience), but this can be
-// reassigned, using SetLogger(), to use any other logging package.
-var log logger.Logger = stdlog.New(os.Stdout, "", stdlog.LstdFlags)
-
-// SetLogger assigns a logger instance to the router package.  Use this to
-// assign an instance of anything that that implements the logger.Logger
-// interface, before using the router package.
-func SetLogger(logger logger.Logger) { log = logger }
-
-// Log returns the logger that the router package is set to use.
-func Logger() logger.Logger { return log }
-
-// Enable debug logging for router package.
-var DebugEnabled bool
 
 const helloTimeout = 5 * time.Second
 
@@ -40,6 +24,9 @@ type RouterConfig struct {
 	// when a client joins a realm that does not yet exist.  If RealmTemplate
 	// is nil (the default), then clients must join existing realms.
 	RealmTemplate *RealmConfig `json:"realm_template"`
+
+	// Enable debug logging for router, realm, broker, dealer
+	Debug bool
 }
 
 // A Router handles new Peers and routes requests to the requested Realm.
@@ -49,6 +36,9 @@ type Router interface {
 
 	// Close stops the router and waits message processing to stop.
 	Close()
+
+	// Logger returns the logger the router is using.
+	Logger() stdlog.StdLog
 }
 
 // DefaultRouter is the default WAMP router implementation.
@@ -60,6 +50,9 @@ type router struct {
 
 	realmTemplate *RealmConfig
 	closed        bool
+
+	log   stdlog.StdLog
+	debug bool
 }
 
 // NewRouter creates a WAMP router.
@@ -69,16 +62,21 @@ type router struct {
 // create new realms.
 //
 // The strictURI parameter enabled strict URI validation.
-func NewRouter(config *RouterConfig) (Router, error) {
+func NewRouter(config *RouterConfig, logger stdlog.StdLog) (Router, error) {
 	if len(config.RealmConfigs) == 0 && config.RealmTemplate == nil {
 		return nil, fmt.Errorf("invalid router config. Must define either realms or realmsTemplate, or both")
 
 	}
+	// If logger not provided, create one.
+	if logger == nil {
+		logger = log.New(os.Stdout, "", log.LstdFlags)
+	}
 	r := &router{
-		realms:     map[wamp.URI]*realm{},
-		actionChan: make(chan func()),
-
+		realms:        map[wamp.URI]*realm{},
+		actionChan:    make(chan func()),
 		realmTemplate: config.RealmTemplate,
+		log:           logger,
+		debug:         config.Debug,
 	}
 
 	for _, realmConfig := range config.RealmConfigs {
@@ -91,7 +89,7 @@ func NewRouter(config *RouterConfig) (Router, error) {
 	if r.realmTemplate != nil {
 		realmTemplate := *r.realmTemplate
 		realmTemplate.URI = "some.valid.realm"
-		if _, err := NewRealm(&realmTemplate); err != nil {
+		if _, err := newRealm(&realmTemplate, r.log, r.debug); err != nil {
 			return nil, fmt.Errorf("Invalid realmTemplate: %s", err)
 		}
 	}
@@ -99,6 +97,8 @@ func NewRouter(config *RouterConfig) (Router, error) {
 	go r.run()
 	return r, nil
 }
+
+func (r *router) Logger() stdlog.StdLog { return r.log }
 
 // Single goroutine used to safely access router data.
 func (r *router) run() {
@@ -114,7 +114,7 @@ func (r *router) addRealm(config *RealmConfig) (*realm, error) {
 	if _, ok := r.realms[config.URI]; ok {
 		return nil, errors.New("realm already exists: " + string(config.URI))
 	}
-	realm, err := NewRealm(config)
+	realm, err := newRealm(config, r.log, r.debug)
 	if err != nil {
 		return nil, err
 	}
@@ -126,7 +126,7 @@ func (r *router) addRealm(config *RealmConfig) (*realm, error) {
 		r.waitRealms.Done()
 	}()
 
-	log.Println("Added realm:", config.URI)
+	r.log.Println("Added realm:", config.URI)
 	return realm, nil
 }
 
@@ -136,7 +136,7 @@ func (r *router) Attach(client wamp.Peer) error {
 		abortMsg := wamp.Abort{Reason: reason}
 		if abortErr != nil {
 			abortMsg.Details = wamp.Dict{"error": abortErr.Error()}
-			log.Println("Aborting client connection:", abortErr)
+			r.log.Println("Aborting client connection:", abortErr)
 		}
 		client.Send(&abortMsg)
 		client.Close()
@@ -147,8 +147,8 @@ func (r *router) Attach(client wamp.Peer) error {
 	if err != nil {
 		return errors.New("did not receive HELLO: " + err.Error())
 	}
-	if DebugEnabled {
-		log.Printf("New client sent: %s: %+v", msg.MessageType(), msg)
+	if r.debug {
+		r.log.Printf("New client sent: %s: %+v", msg.MessageType(), msg)
 	}
 
 	// A WAMP session is initiated by the Client sending a HELLO message to the
@@ -203,7 +203,7 @@ func (r *router) Attach(client wamp.Peer) error {
 				return
 
 			}
-			log.Println("Auto-added realm:", hello.Realm)
+			r.log.Println("Auto-added realm:", hello.Realm)
 		}
 		sync <- nil
 	}
@@ -292,8 +292,8 @@ func (r *router) Attach(client wamp.Peer) error {
 	}
 
 	client.Send(welcome)
-	if DebugEnabled {
-		log.Println("Created session:", welcome.ID)
+	if r.debug {
+		r.log.Println("Created session:", welcome.ID)
 	}
 	return nil
 }
@@ -309,7 +309,7 @@ func (r *router) Close() {
 			realm.close()
 			// Delete the realm
 			delete(r.realms, uri)
-			log.Println("Realm", uri, "completed shutdown")
+			r.log.Println("Realm", uri, "completed shutdown")
 		}
 		sync <- struct{}{}
 	}

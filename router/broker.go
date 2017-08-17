@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"strings"
 
+	"github.com/gammazero/nexus/stdlog"
 	"github.com/gammazero/nexus/wamp"
 )
 
@@ -87,10 +88,13 @@ type broker struct {
 
 	strictURI     bool
 	allowDisclose bool
+
+	log   stdlog.StdLog
+	debug bool
 }
 
 // NewBroker returns a new default broker implementation instance.
-func NewBroker(strictURI, allowDisclose bool) Broker {
+func NewBroker(logger stdlog.StdLog, strictURI, allowDisclose, debug bool) Broker {
 	b := &broker{
 		topicSubscribers:    map[wamp.URI]map[wamp.ID]*Session{},
 		pfxTopicSubscribers: map[wamp.URI]map[wamp.ID]*Session{},
@@ -111,6 +115,9 @@ func NewBroker(strictURI, allowDisclose bool) Broker {
 
 		strictURI:     strictURI,
 		allowDisclose: allowDisclose,
+
+		log:   logger,
+		debug: debug,
 	}
 	go b.run()
 	return b
@@ -236,8 +243,8 @@ func (b *broker) run() {
 	for action := range b.actionChan {
 		action()
 	}
-	if DebugEnabled {
-		log.Print("Broker stopped")
+	if b.debug {
+		b.log.Print("Broker stopped")
 	}
 }
 
@@ -345,7 +352,7 @@ func (b *broker) unsubscribe(sub *Session, msg *wamp.Unsubscribe) {
 					Error:   wamp.ErrNoSuchSubscription,
 				}
 				sub.Send(err)
-				log.Println("Error unsubscribing: no such subscription",
+				b.log.Println("Error unsubscribing: no such subscription",
 					msg.Subscription)
 				return
 			}
@@ -362,10 +369,10 @@ func (b *broker) unsubscribe(sub *Session, msg *wamp.Unsubscribe) {
 
 	// clean up topic -> subscribed session
 	if subs, ok := topicSubscribers[topic]; !ok {
-		log.Println("Error unsubscribing: unable to find subscribers for",
+		b.log.Println("Error unsubscribing: unable to find subscribers for",
 			topic, "topic")
 	} else if _, ok := subs[msg.Subscription]; !ok {
-		log.Println("Error unsubscribing: topic", topic,
+		b.log.Println("Error unsubscribing: topic", topic,
 			"does not have subscription", msg.Subscription)
 	} else {
 		delete(subs, msg.Subscription)
@@ -377,9 +384,9 @@ func (b *broker) unsubscribe(sub *Session, msg *wamp.Unsubscribe) {
 
 	// clean up sender's subscription
 	if s, ok := b.sessionSubIDSet[sub]; !ok {
-		log.Print("Error unsubscribing: no subscriptions for sender")
+		b.log.Print("Error unsubscribing: no subscriptions for sender")
 	} else if _, ok := s[msg.Subscription]; !ok {
-		log.Println("Error unsubscribing: cannot find subscription",
+		b.log.Println("Error unsubscribing: cannot find subscription",
 			msg.Subscription, "for sender")
 	} else {
 		delete(s, msg.Subscription)
