@@ -100,7 +100,7 @@ Nexus extends WAMP's subscriber black/white listing functionality to support fil
 
 WAMP allows blacklisting `authid` and `authrole` using `exclude_authid` and `exclude_authrole`, and allows whitelisting these attributes using `eligible_authid` and `eligible_authrole`.  Nexus recognizes the publish options `exclude_xxx` and `eligible_xxx`, accompanied with a list of string values to match against, where `xxx` is he name of any attribute in the session details.
 
-As an example, to allow sessions with `org_id=ycorp` or `org_id=zcorp`, a PUBLISH message specifies, in it options, the following:
+As an example, to allow sessions with `org_id=ycorp` or `org_id=zcorp`, a PUBLISH message specifies the following option:
 ```
 eligible_org_id: {"ycorp", "zcorp"}
 ```
