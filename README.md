@@ -47,9 +47,6 @@ Currently in active development - contributions welcome.
 - RawSocket transport (planned)
 - cool logo (maybe)
 
-#### Enhancements
-- Metrics (prometheus? meta procedure?)
-
 ## Advanced Profile Feature Support
 
 ### RPC Features
@@ -95,3 +92,17 @@ Currently in active development - contributions welcome.
 | longpoll transport | No |
 | session meta api | Yes |
 
+## Extended Functionality
+
+### Subscriber black/white listing for any session attribute
+
+Nexus extends WAMP's subscriber black/white listing functionality to support filtering on any attribute in the subscriber session details.
+
+WAMP allows blacklisting `authid` and `authrole` using `exclude_authid` and `exclude_authrole`, and allows whitelisting these attributes using `eligible_authid` and `eligible_authrole`.  Nexus recognizes the publish options `exclude_xxx` and `eligible_xxx`, accompanied with a list of string values to match against, where `xxx` is he name of any attribute in the session details.
+
+As an example, to allow sessions with `org_id=ycorp` or `org_id=zcorp`, a PUBLISH message specifies, in it options, the following:
+```
+eligible_org_id: {"ycorp", "zcorp"}
+```
+
+Note: Nexus includes all attributes from the HELLO message in the session details.
