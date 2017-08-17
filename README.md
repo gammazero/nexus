@@ -19,6 +19,8 @@ The nexus project provides a WAMP router library, client library, and stand-alon
 
 Nexus achieves high throughput by never blocking on I/O.  Messages received from clients are dispatched to the appropriate handlers for routing and are then written to the outbound message queues of the receiving clients.  This way the router never delays processing of messages due to waiting for slow clients.
 
+[Router Concurrency](https://github.com/gammazero/nexus/tree/master/router#router-concurrency)
+
 ### Feature availability
 
 This project intends to implement most or all of the advanced profile features in WAMP v2.
