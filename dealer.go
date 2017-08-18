@@ -1,4 +1,4 @@
-package router
+package nexus
 
 import (
 	"fmt"
@@ -6,6 +6,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/gammazero/nexus/stdlog"
 	"github.com/gammazero/nexus/wamp"
 )
 
@@ -170,6 +171,9 @@ type dealer struct {
 
 	// Meta-procedure registration ID -> handler func.
 	metaProcMap map[wamp.ID]func(*wamp.Invocation) wamp.Message
+
+	log   stdlog.StdLog
+	debug bool
 }
 
 // NewDealer creates the default Dealer implementation.
@@ -178,7 +182,7 @@ type dealer struct {
 // This serialization is limited to the work of determining the message's
 // destination, and then the message is handed off to the next goroutine,
 // typically the receiving client's send handler.
-func NewDealer(strictURI, allowDisclose bool, metaClient wamp.Peer) Dealer {
+func NewDealer(metaClient wamp.Peer, logger stdlog.StdLog, strictURI, allowDisclose, debug bool) Dealer {
 	d := &dealer{
 		procRegMap:    map[wamp.URI]*registration{},
 		pfxProcRegMap: map[wamp.URI]*registration{},
@@ -203,6 +207,9 @@ func NewDealer(strictURI, allowDisclose bool, metaClient wamp.Peer) Dealer {
 		allowDisclose: allowDisclose,
 
 		metaClient: metaClient,
+
+		log:   logger,
+		debug: debug,
 	}
 	go d.run()
 	return d
@@ -338,8 +345,8 @@ func (d *dealer) run() {
 	for action := range d.actionChan {
 		action()
 	}
-	if DebugEnabled {
-		log.Print("Dealer stopped")
+	if d.debug {
+		d.log.Print("Dealer stopped")
 	}
 }
 
@@ -404,7 +411,7 @@ func (d *dealer) register(callee *Session, msg *wamp.Register, match, invokePoli
 		// Found an existing registration that has an invocation strategy that
 		// only allows a single callee on a the given registration.
 		if reg.policy == "" || reg.policy == "single" {
-			log.Println("REGISTER for already registered procedure",
+			d.log.Println("REGISTER for already registered procedure",
 				msg.Procedure, "from callee", callee)
 			callee.Send(&wamp.Error{
 				Type:    msg.MessageType(),
@@ -418,7 +425,7 @@ func (d *dealer) register(callee *Session, msg *wamp.Register, match, invokePoli
 		// Found an existing registration that has an invocation strategy
 		// different from the one requested by the new callee
 		if reg.policy != invokePolicy {
-			log.Println("REGISTER for already registered procedure",
+			d.log.Println("REGISTER for already registered procedure",
 				msg.Procedure, "with conflicting invocation policy (has",
 				reg.policy, "and", invokePolicy, "was requested")
 			callee.Send(&wamp.Error{
@@ -442,8 +449,8 @@ func (d *dealer) register(callee *Session, msg *wamp.Register, match, invokePoli
 	}
 	d.calleeRegIDSet[callee][regID] = struct{}{}
 
-	if DebugEnabled {
-		log.Printf("Registered procedure %v (regID=%v) to callee %v",
+	if d.debug {
+		d.log.Printf("Registered procedure %v (regID=%v) to callee %v",
 			msg.Procedure, regID, callee)
 	}
 	callee.Send(&wamp.Registered{
@@ -476,7 +483,7 @@ func (d *dealer) unregister(callee *Session, msg *wamp.Unregister) {
 
 	delReg, err := d.delCalleeReg(callee, msg.Registration)
 	if err != nil {
-		log.Println("Cannot unregister:", err)
+		d.log.Println("Cannot unregister:", err)
 		callee.Send(&wamp.Error{
 			Type:    msg.MessageType(),
 			Request: msg.Request,
@@ -679,7 +686,7 @@ func (d *dealer) cancel(caller *Session, msg *wamp.Cancel) {
 	if caller != procCaller {
 		// The caller it trying to cancel calls that it does not own.  It it
 		// either confused or trying to do something bad.
-		log.Println("CANCEL received from caller", caller,
+		d.log.Println("CANCEL received from caller", caller,
 			"for call owned by different session")
 		return
 	}
@@ -688,12 +695,12 @@ func (d *dealer) cancel(caller *Session, msg *wamp.Cancel) {
 	invocationID, ok := d.invocationByCall[msg.Request]
 	if !ok {
 		// If there is no pending invocation, ignore cancel.
-		log.Print("Found call with no pending invocation")
+		d.log.Print("Found call with no pending invocation")
 		return
 	}
 	invk, ok := d.invocations[invocationID]
 	if !ok {
-		log.Print("CRITICAL: missing caller for pending invocation")
+		d.log.Print("CRITICAL: missing caller for pending invocation")
 		return
 	}
 	// For those who repeatedly press elevator buttons.
@@ -709,7 +716,7 @@ func (d *dealer) cancel(caller *Session, msg *wamp.Cancel) {
 		// send INTERRUPT to callee.
 		if !invk.callee.HasFeature("callee", "call_canceling") {
 			// Cancel in dealer without sending INTERRUPT to callee.
-			log.Println("Callee", invk.callee, "does not support call canceling")
+			d.log.Println("Callee", invk.callee, "does not support call canceling")
 		} else {
 			// Send INTERRUPT message to callee.
 			err := invk.callee.Send(&wamp.Interrupt{
@@ -717,7 +724,7 @@ func (d *dealer) cancel(caller *Session, msg *wamp.Cancel) {
 				Options: wamp.Dict{},
 			})
 			if err == nil {
-				log.Println("Dealer sent INTERRUPT to to cancel invocation",
+				d.log.Println("Dealer sent INTERRUPT to to cancel invocation",
 					invocationID, "for call", msg.Request)
 
 				// If mode is "kill" then let error from callee trigger the
@@ -729,7 +736,7 @@ func (d *dealer) cancel(caller *Session, msg *wamp.Cancel) {
 			}
 		}
 	} else if mode != "skip" {
-		log.Printf("!! Unrecognized cancel mode '%s', changing to 'skip'",
+		d.log.Printf("!! Unrecognized cancel mode '%s', changing to 'skip'",
 			mode)
 	}
 	// Treat any unrecognized mode the same as "skip".
@@ -756,7 +763,7 @@ func (d *dealer) yield(callee *Session, msg *wamp.Yield) {
 	invk, ok := d.invocations[msg.Request]
 	if !ok {
 		// WAMP does not allow sending error in response to YIELD message.
-		log.Println("YIELD received with unknown invocation request ID:",
+		d.log.Println("YIELD received with unknown invocation request ID:",
 			msg.Request)
 		return
 	}
@@ -773,7 +780,7 @@ func (d *dealer) yield(callee *Session, msg *wamp.Yield) {
 	caller, ok := d.calls[callID]
 	if !ok {
 		// Found invocation id that does not have any call id.
-		log.Println("!!! No matching caller for invocation from YIELD:",
+		d.log.Println("!!! No matching caller for invocation from YIELD:",
 			msg.Request)
 		return
 	}
@@ -796,7 +803,7 @@ func (d *dealer) error(msg *wamp.Error) {
 	// Find and delete pending invocation.
 	invk, ok := d.invocations[msg.Request]
 	if !ok {
-		log.Println("Received ERROR (INVOCATION) with invalid request ID:",
+		d.log.Println("Received ERROR (INVOCATION) with invalid request ID:",
 			msg.Request)
 		return
 	}
@@ -811,7 +818,7 @@ func (d *dealer) error(msg *wamp.Error) {
 	// call canceled with mode "skip" or "killnowait".
 	caller, ok := d.calls[callID]
 	if !ok {
-		log.Println("Received ERROR for call that was already canceled:",
+		d.log.Println("Received ERROR for call that was already canceled:",
 			callID)
 		return
 	}
@@ -833,7 +840,7 @@ func (d *dealer) removeSession(callee *Session) {
 		delReg, err := d.delCalleeReg(callee, regID)
 		if err != nil {
 			// Should probably panic here.
-			log.Print("!!! Callee had ID of nonexistent registration")
+			d.log.Print("!!! Callee had ID of nonexistent registration")
 			continue
 		}
 
@@ -877,8 +884,8 @@ func (d *dealer) delCalleeReg(callee *Session, regID wamp.ID) (bool, error) {
 	// Remove the callee from the registration.
 	for i := range reg.callees {
 		if reg.callees[i] == callee {
-			if DebugEnabled {
-				log.Printf("Unregistered procedure %v (regID=%v) (callee=%v)",
+			if d.debug {
+				d.log.Printf("Unregistered procedure %v (regID=%v) (callee=%v)",
 					reg.procedure, regID, callee.ID)
 			}
 			if len(reg.callees) == 1 {
@@ -903,8 +910,8 @@ func (d *dealer) delCalleeReg(callee *Session, regID wamp.ID) (bool, error) {
 		case "wildcard":
 			delete(d.wcProcRegMap, reg.procedure)
 		}
-		if DebugEnabled {
-			log.Printf("Deleted registration %v for procedure %v", regID,
+		if d.debug {
+			d.log.Printf("Deleted registration %v for procedure %v", regID,
 				reg.procedure)
 		}
 		return true, nil

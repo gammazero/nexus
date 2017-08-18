@@ -1,4 +1,4 @@
-package router
+package nexus
 
 import (
 	"errors"
@@ -6,6 +6,7 @@ import (
 	"sync"
 
 	"github.com/gammazero/nexus/auth"
+	"github.com/gammazero/nexus/stdlog"
 	"github.com/gammazero/nexus/transport"
 	"github.com/gammazero/nexus/wamp"
 )
@@ -49,11 +50,14 @@ type realm struct {
 
 	closed    bool
 	closeLock sync.Mutex
+
+	log   stdlog.StdLog
+	debug bool
 }
 
-// NewRealm creates a new Realm with default broker, dealer, and authorizer
+// newRealm creates a new Realm with default broker, dealer, and authorizer
 // implementtions.  The Realm has no authorizers unless anonymousAuth is true.
-func NewRealm(config *RealmConfig) (*realm, error) {
+func newRealm(config *RealmConfig, logger stdlog.StdLog, debug bool) (*realm, error) {
 	if !config.URI.ValidURI(config.StrictURI, "") {
 		return nil, fmt.Errorf(
 			"invalid realm URI %v (URI strict checking %v)", config.URI, config.StrictURI)
@@ -67,6 +71,8 @@ func NewRealm(config *RealmConfig) (*realm, error) {
 		metaIDGen:      wamp.NewIDGen(),
 		metaDone:       make(chan struct{}),
 		metaProcMap:    make(map[wamp.ID]func(*wamp.Invocation) wamp.Message, 9),
+		log:            logger,
+		debug:          debug,
 	}
 
 	if r.authorizer == nil {
@@ -92,8 +98,8 @@ func NewRealm(config *RealmConfig) (*realm, error) {
 	// event to any subscribers.
 	r.metaClient, r.metaSess = r.createMetaSession()
 
-	r.broker = NewBroker(config.StrictURI, config.AllowDisclose)
-	r.dealer = NewDealer(config.StrictURI, config.AllowDisclose, r.metaClient)
+	r.broker = NewBroker(logger, config.StrictURI, config.AllowDisclose, debug)
+	r.dealer = NewDealer(r.metaClient, logger, config.StrictURI, config.AllowDisclose, debug)
 
 	// Register to handle session meta procedures.
 	r.registerMetaProcedure(wamp.MetaProcSessionCount, r.sessionCount)
@@ -189,7 +195,7 @@ func (r *realm) run() {
 //
 // This is used for creating a local client for publishing meta events.
 func (r *realm) createMetaSession() (*Session, *Session) {
-	cli, rtr := transport.LinkedPeers(log)
+	cli, rtr := transport.LinkedPeers(r.log)
 
 	details := wamp.SetOption(nil, "authrole", "trusted")
 
@@ -203,8 +209,8 @@ func (r *realm) createMetaSession() (*Session, *Session) {
 
 	// Run the session handler for the meta session
 	go r.handleInternalSession(sess)
-	if DebugEnabled {
-		log.Println("Started meta-session", sess)
+	if r.debug {
+		r.log.Println("Started meta-session", sess)
 	}
 
 	client := &Session{
@@ -282,8 +288,8 @@ func (r *realm) handleSession(sess *Session) error {
 	r.onJoin(sess)
 	r.closeLock.Unlock()
 
-	if DebugEnabled {
-		log.Println("Started session", sess)
+	if r.debug {
+		r.log.Println("Started session", sess)
 	}
 	go func() {
 		r.handleInternalSession(sess)
@@ -298,8 +304,8 @@ func (r *realm) handleSession(sess *Session) error {
 //
 // Routing occurs only between WAMP Sessions that have joined the same Realm.
 func (r *realm) handleInternalSession(sess *Session) {
-	if DebugEnabled {
-		defer log.Println("Ended sesion", sess)
+	if r.debug {
+		defer r.log.Println("Ended sesion", sess)
 	}
 	recvChan := sess.Recv()
 	for {
@@ -308,12 +314,12 @@ func (r *realm) handleInternalSession(sess *Session) {
 		select {
 		case msg, open = <-recvChan:
 			if !open {
-				log.Println("Lost", sess)
+				r.log.Println("Lost", sess)
 				return
 			}
 		case reason := <-sess.stop:
-			if DebugEnabled {
-				log.Printf("Stop session %s: %v", sess, reason)
+			if r.debug {
+				r.log.Printf("Stop session %s: %v", sess, reason)
 			}
 			sess.Send(&wamp.Goodbye{
 				Reason:  reason,
@@ -323,8 +329,8 @@ func (r *realm) handleInternalSession(sess *Session) {
 		}
 
 		// Debug
-		if DebugEnabled {
-			log.Printf("Session %s submitting %s: %+v", sess,
+		if r.debug {
+			r.log.Printf("Session %s submitting %s: %+v", sess,
 				msg.MessageType(), msg)
 		}
 
@@ -354,11 +360,11 @@ func (r *realm) handleInternalSession(sess *Session) {
 				if err != nil {
 					// Error trying to authorize.
 					errMsg.Error = wamp.ErrAuthorizationFailed
-					log.Println("Client", sess, "authorization failed:", err)
+					r.log.Println("Client", sess, "authorization failed:", err)
 				} else {
 					// Session not authorized.
 					errMsg.Error = wamp.ErrNotAuthorized
-					log.Println("Client", sess, msg.MessageType(), "UNAUTHORIZED")
+					r.log.Println("Client", sess, msg.MessageType(), "UNAUTHORIZED")
 				}
 				sess.Send(errMsg)
 				continue
@@ -390,7 +396,7 @@ func (r *realm) handleInternalSession(sess *Session) {
 			if msg.Type == wamp.INVOCATION {
 				r.dealer.Error(msg)
 			} else {
-				log.Printf("Invalid ERROR received from session %v: %v",
+				r.log.Printf("Invalid ERROR received from session %v: %v",
 					sess, msg)
 			}
 
@@ -400,15 +406,15 @@ func (r *realm) handleInternalSession(sess *Session) {
 				Reason:  wamp.ErrGoodbyeAndOut,
 				Details: wamp.Dict{},
 			})
-			if DebugEnabled {
-				log.Println("GOODBYE from session", sess, "reason:",
+			if r.debug {
+				r.log.Println("GOODBYE from session", sess, "reason:",
 					msg.Reason)
 			}
 			return
 
 		default:
 			// Received unrecognized message type.
-			log.Println("Unhandled", msg.MessageType(), "from session", sess)
+			r.log.Println("Unhandled", msg.MessageType(), "from session", sess)
 		}
 	}
 }
@@ -418,13 +424,14 @@ func (r *realm) handleInternalSession(sess *Session) {
 func (r *realm) authClient(client wamp.Peer, details wamp.Dict) (*wamp.Welcome, error) {
 	var authmethods []string
 	if _authmethods, ok := details["authmethods"]; ok {
-		switch _authmethods := _authmethods.(type) {
-		case []string:
-			authmethods = _authmethods
-		case wamp.List:
-			for _, x := range _authmethods {
-				authmethods = append(authmethods, x.(string))
+		amList, _ := wamp.AsList(_authmethods)
+		for _, x := range amList {
+			am, ok := wamp.AsString(x)
+			if !ok {
+				r.log.Println("!! Could not convert authmethod:", x)
+				continue
 			}
+			authmethods = append(authmethods, am)
 		}
 	}
 	if len(authmethods) == 0 {
@@ -480,7 +487,7 @@ func (r *realm) registerMetaProcedure(procedure wamp.URI, f func(*wamp.Invocatio
 	if !ok {
 		err, ok := msg.(*wamp.Error)
 		if !ok {
-			log.Println("PANIC! Received unexpected", msg.MessageType())
+			r.log.Println("PANIC! Received unexpected", msg.MessageType())
 			panic("cannot register metapocedure")
 		}
 		errMsg := fmt.Sprintf(
@@ -488,7 +495,7 @@ func (r *realm) registerMetaProcedure(procedure wamp.URI, f func(*wamp.Invocatio
 		if len(err.Arguments) != 0 {
 			errMsg += fmt.Sprint(": ", err.Arguments[0])
 		}
-		log.Print(errMsg)
+		r.log.Print(errMsg)
 		panic(errMsg)
 	}
 	r.metaProcMap[reg.Registration] = f
@@ -512,12 +519,12 @@ func (r *realm) metaProcedureHandler() {
 			}
 			rsp = metaProcHandler(msg)
 		case *wamp.Goodbye:
-			if DebugEnabled {
-				log.Print("Session meta procedure handler exiting GOODBYE")
+			if r.debug {
+				r.log.Print("Session meta procedure handler exiting GOODBYE")
 			}
 			return
 		default:
-			log.Println("Meta procedure received unexpected", msg.MessageType())
+			r.log.Println("Meta procedure received unexpected", msg.MessageType())
 		}
 		r.metaClient.Send(rsp)
 	}

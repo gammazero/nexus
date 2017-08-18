@@ -10,11 +10,10 @@ import (
 	"testing"
 	"time"
 
+	"github.com/gammazero/nexus"
 	"github.com/gammazero/nexus/auth"
 	"github.com/gammazero/nexus/client"
-	"github.com/gammazero/nexus/logger"
-	"github.com/gammazero/nexus/router"
-	"github.com/gammazero/nexus/server"
+	"github.com/gammazero/nexus/stdlog"
 	"github.com/gammazero/nexus/wamp"
 )
 
@@ -23,9 +22,9 @@ const (
 )
 
 var (
-	nxr       router.Router
-	cliLogger logger.Logger
-	rtrLogger logger.Logger
+	nxr       nexus.Router
+	cliLogger stdlog.StdLog
+	rtrLogger stdlog.StdLog
 
 	serverURL string
 	port      int
@@ -51,8 +50,6 @@ func TestMain(m *testing.M) {
 	// Create separate logger for client and router.
 	cliLogger = log.New(os.Stdout, "CLIENT> ", log.LstdFlags)
 	rtrLogger = log.New(os.Stdout, "ROUTER> ", log.LstdFlags)
-	//router.DebugEnabled = true
-	router.SetLogger(rtrLogger)
 
 	crAuth, err := auth.NewCRAuthenticator(&testCRAuthenticator{})
 	if err != nil {
@@ -60,15 +57,15 @@ func TestMain(m *testing.M) {
 	}
 
 	// Create router instance.
-	routerConfig := &router.RouterConfig{
-		RealmConfigs: []*router.RealmConfig{
-			&router.RealmConfig{
+	routerConfig := &nexus.RouterConfig{
+		RealmConfigs: []*nexus.RealmConfig{
+			&nexus.RealmConfig{
 				URI:           wamp.URI(testRealm),
 				StrictURI:     false,
 				AnonymousAuth: true,
 				AllowDisclose: false,
 			},
-			&router.RealmConfig{
+			&nexus.RealmConfig{
 				URI:           wamp.URI("nexus.test.auth"),
 				StrictURI:     false,
 				AnonymousAuth: true,
@@ -78,15 +75,16 @@ func TestMain(m *testing.M) {
 				},
 			},
 		},
+		//Debug: true,
 	}
-	nxr, err = router.NewRouter(routerConfig)
+	nxr, err = nexus.NewRouter(routerConfig, rtrLogger)
 	if err != nil {
 		panic(err)
 	}
 
 	var listener *net.TCPListener
 	if websocketClient {
-		s := server.NewWebsocketServer(nxr)
+		s := nexus.NewWebsocketServer(nxr)
 		server := &http.Server{
 			Handler: s,
 		}

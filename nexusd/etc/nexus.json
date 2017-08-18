@@ -11,6 +11,7 @@
                 "allow_anonymous": true,
             }
         ]
+		debug: false,
     }
 }
 

@@ -1,11 +1,14 @@
-package router
+package nexus
 
 import (
 	"errors"
 	"fmt"
+	"log"
+	"os"
 	"testing"
 	"time"
 
+	"github.com/gammazero/nexus/stdlog"
 	"github.com/gammazero/nexus/transport"
 	"github.com/gammazero/nexus/wamp"
 )
@@ -16,8 +19,14 @@ const (
 	testProcedureWC = wamp.URI("nexus..endpoint")
 )
 
+var (
+	debug  bool
+	logger stdlog.StdLog
+)
+
 func init() {
-	DebugEnabled = true
+	debug = true
+	logger = log.New(os.Stdout, "", log.LstdFlags)
 }
 
 var clientRoles = wamp.Dict{
@@ -27,15 +36,19 @@ var clientRoles = wamp.Dict{
 				"publisher_identification": true,
 			},
 		},
-		"publisher": struct{}{},
-		"callee":    struct{}{},
+		"publisher": wamp.Dict{
+			"features": wamp.Dict{
+				"subscriber_blackwhite_listing": true,
+			},
+		},
+		"callee": wamp.Dict{},
 		"caller": wamp.Dict{
 			"features": wamp.Dict{
 				"call_timeout": true,
 			},
 		},
 	},
-	"authmethods": []string{"anonymous", "ticket"},
+	"authmethods": wamp.List{"anonymous", "ticket"},
 }
 
 func newTestRouter() (Router, error) {
@@ -48,12 +61,13 @@ func newTestRouter() (Router, error) {
 				AllowDisclose: false,
 			},
 		},
+		Debug: debug,
 	}
-	return NewRouter(config)
+	return NewRouter(config, logger)
 }
 
 func testClient(r Router) (*Session, error) {
-	client, server := transport.LinkedPeers(log)
+	client, server := transport.LinkedPeers(logger)
 	// Run as goroutine since Send will block until message read by router, if
 	// client uses unbuffered channel.
 	go client.Send(&wamp.Hello{Realm: testRealm, Details: clientRoles})
@@ -108,7 +122,7 @@ func TestHandshakeBadRealm(t *testing.T) {
 	}
 	defer r.Close()
 
-	client, server := transport.LinkedPeers(log)
+	client, server := transport.LinkedPeers(logger)
 	go client.Send(&wamp.Hello{Realm: "does.not.exist"})
 	err = r.Attach(server)
 	if err == nil {

@@ -3,7 +3,7 @@ package transport
 import (
 	"fmt"
 
-	"github.com/gammazero/nexus/logger"
+	"github.com/gammazero/nexus/stdlog"
 	"github.com/gammazero/nexus/wamp"
 )
 
@@ -15,7 +15,7 @@ const linkedPeersOutQueueSize = 16
 // This is used for connecting client sessions to the router.
 //
 // Exported since it is used in test code for creating in-process test clients.
-func LinkedPeers(logger logger.Logger) (wamp.Peer, wamp.Peer) {
+func LinkedPeers(logger stdlog.StdLog) (wamp.Peer, wamp.Peer) {
 	// The channel used for the router to send messages to the client should be
 	// large enough to prevent blocking while waiting for a slow client, as a
 	// client may block on I/O.  If the client does block, then the message
@@ -39,7 +39,7 @@ func LinkedPeers(logger logger.Logger) (wamp.Peer, wamp.Peer) {
 type localPeer struct {
 	wr  chan<- wamp.Message
 	rd  <-chan wamp.Message
-	log logger.Logger
+	log stdlog.StdLog
 }
 
 // Recv returns the channel this peer reads incoming messages from.

@@ -5,14 +5,14 @@ import (
 	"io/ioutil"
 	"log"
 
-	"github.com/gammazero/nexus/router"
+	"github.com/gammazero/nexus"
 )
 
 type Config struct {
 	Port          int
 	SendQueueSize int    `json:"send_queue_size"`
 	LogPath       string `json:"log_path"`
-	Router        router.RouterConfig
+	Router        nexus.RouterConfig
 }
 
 func LoadConfig(path string) *Config {

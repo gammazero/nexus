@@ -1,4 +1,4 @@
-package router
+package nexus
 
 import "github.com/gammazero/nexus/wamp"
 

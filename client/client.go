@@ -8,7 +8,7 @@ import (
 	"sync"
 	"time"
 
-	"github.com/gammazero/nexus/logger"
+	"github.com/gammazero/nexus/stdlog"
 	"github.com/gammazero/nexus/wamp"
 )
 
@@ -77,7 +77,7 @@ type Client struct {
 	realm        string
 	realmDetails wamp.Dict
 
-	log   logger.Logger
+	log   stdlog.StdLog
 	debug bool
 
 	done chan struct{}
@@ -88,11 +88,11 @@ type Client struct {
 // responseTimeout specifies the amount of time that the client will block
 // waiting for a response from the router.  A value of 0 uses default.
 //
-// Each client can be give a separate Logger instance, which my be desirable
+// Each client can be give a separate StdLog instance, which my be desirable
 // when clients are used for different purposes.
 //
 // JoinRealm must be called before other client functions.
-func NewClient(p wamp.Peer, responseTimeout time.Duration, logger logger.Logger) *Client {
+func NewClient(p wamp.Peer, responseTimeout time.Duration, logger stdlog.StdLog) *Client {
 	if responseTimeout == 0 {
 		responseTimeout = defaultResponseTimeout
 	}
