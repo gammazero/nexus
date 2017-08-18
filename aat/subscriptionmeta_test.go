@@ -215,6 +215,13 @@ func TestMetaEventOnUnsubscribeOnDelete(t *testing.T) {
 		errChanD <- nil
 	}
 
+	// Clear any meta events from subscription removal in previous tests.
+	select {
+	case <-errChan:
+	case <-errChanD:
+	case <-time.After(200 * time.Millisecond):
+	}
+
 	// Subscribe to on_unsubscribe event.
 	err = subscriber.Subscribe(metaOnUnsubscribe, onUnsubHandler, nil)
 	if err != nil {

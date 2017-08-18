@@ -61,7 +61,7 @@ type router struct {
 // client HELLO.  Caution, enabling this allows unauthenticated clients to
 // create new realms.
 //
-// The strictURI parameter enabled strict URI validation.
+// The strictURI parameter enables strict URI validation.
 func NewRouter(config *RouterConfig, logger stdlog.StdLog) (Router, error) {
 	if len(config.RealmConfigs) == 0 && config.RealmTemplate == nil {
 		return nil, fmt.Errorf("invalid router config. Must define either realms or realmsTemplate, or both")
