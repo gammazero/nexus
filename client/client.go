@@ -1,3 +1,9 @@
+/*
+Package client provides a WAMP client implementation that is interoperable with
+any standard WAMP router and is capable of using all of the advanced profile
+features supported by the nexus WAMP router.
+
+*/
 package client
 
 import (
@@ -12,6 +18,7 @@ import (
 	"github.com/gammazero/nexus/wamp"
 )
 
+// Features supported by nexus client.
 var clientRoleFeatures = wamp.Dict{
 	"publisher": wamp.Dict{
 		"features": wamp.Dict{
@@ -85,8 +92,9 @@ type Client struct {
 
 // NewClient takes a connected Peer and returns a new Client.
 //
-// responseTimeout specifies the amount of time that the client will block
-// waiting for a response from the router.  A value of 0 uses default.
+// A non-zero responseTimeout specifies the amount of time that the client will
+// block waiting for a response from the router.  A value of 0 uses the
+// default.
 //
 // Each client can be give a separate StdLog instance, which my be desirable
 // when clients are used for different purposes.
@@ -119,15 +127,15 @@ func NewClient(p wamp.Peer, responseTimeout time.Duration, logger stdlog.StdLog)
 	return c
 }
 
-// Done returns a channel used to signal when the client is no longer connected
+// Done returns a channel that signals when the client is no longer connected
 // to a router and has shutdown.
 func (c *Client) Done() <-chan struct{} { return c.done }
 
-// ID returns the client's session ID that is assigned after attaching to a
+// ID returns the client's session ID which is assigned after attaching to a
 // router and joining a realm.
 func (c *Client) ID() wamp.ID { return c.id }
 
-// SetDebug enable or disabled debug logging.
+// SetDebug enables or disables debug logging.
 func (c *Client) SetDebug(enable bool) {
 	c.actionChan <- func() {
 		c.debug = enable
@@ -135,7 +143,9 @@ func (c *Client) SetDebug(enable bool) {
 }
 
 // AuthFunc takes the HELLO details and CHALLENGE extra data and returns the
-// signature string and a details map.
+// signature string and a details map.  If the signature is accepted, the
+// details are used to populate the welcome message, as well as the session
+// attributes.
 //
 // In response to a CHALLENGE message, the Client MUST send an AUTHENTICATE
 // message.  Therefore, AuthFunc does not return an error.  If an error is
@@ -146,10 +156,9 @@ func (c *Client) SetDebug(enable bool) {
 type AuthFunc func(helloDetails wamp.Dict, challengeExtra wamp.Dict) (signature string, details wamp.Dict)
 
 // JoinRealm joins a WAMP realm, handling challenge/response authentication if
-// needed.
-//
-// authHandlers is a map of WAMP authmethods to functions that handle each
-// auth type.  This can be nil if router is expected to allow anonymous.
+// needed.  The authHandlers argument supplies a map of WAMP authmethod names
+// to functions that handle each auth type.  This can be nil if router is
+// expected to allow anonymous authentication.
 func (c *Client) JoinRealm(realm string, details wamp.Dict, authHandlers map[string]AuthFunc) (wamp.Dict, error) {
 	joinChan := make(chan bool)
 	c.actionChan <- func() {
@@ -217,17 +226,14 @@ func (c *Client) JoinRealm(realm string, details wamp.Dict, authHandlers map[str
 	return welcome.Details, nil
 }
 
-// EventHandler handles a publish event.
+// EventHandler is a function that handles a publish event.
 type EventHandler func(args wamp.List, kwargs wamp.Dict, details wamp.Dict)
 
-// Subscribe subscribes the client to the specified topic.
+// Subscribe subscribes the client to the specified topic or topic pattern.
 //
 // The specified EventHandler is registered to be called every time an event is
-// received for the topic.
-//
-// To request a pattern-based subscription set:
+// received for the topic.  To request a pattern-based subscription set:
 //   options["match"] = "prefix" or "wildcard"
-//
 func (c *Client) Subscribe(topic string, fn EventHandler, options wamp.Dict) error {
 	if options == nil {
 		options = wamp.Dict{}
@@ -321,24 +327,31 @@ func (c *Client) Unsubscribe(topic string) error {
 	return unexpectedMsgError(msg, wamp.UNSUBSCRIBED)
 }
 
-// Publish publishes an EVENT to all subscribed peers.
+// Publish publishes an EVENT to all subscribed clients.
 //
 // To receive a PUBLISHED response set:
 //   options["acknowledge"] = true
 //
 // To request subscriber blacklisting by subscriber, authid, or authrole, set:
-//   opts["exclude"] = [subscriberID, ...]
-//   opts["exclude_authid"] = ["authid", ..]
-//   opts["exclude_authrole"] = ["authrole", ..]
+//   options["exclude"] = [subscriberID, ...]
+//   options["exclude_authid"] = ["authid", ..]
+//   options["exclude_authrole"] = ["authrole", ..]
 //
 // To request subscriber whitelisting by subscriber, authid, or authrole, set:
-//   opts["eligible"] = [subscriberID, ...]
-//   opts["eligible_authid"] = ["authid", ..]
-//   opts["eligible_authrole"] = ["authrole", ..]
+//   options["eligible"] = [subscriberID, ...]
+//   options["eligible_authid"] = ["authid", ..]
+//   options["eligible_authrole"] = ["authrole", ..]
+//
+// When connecting to a nexus router, blacklisting and whitelisting can be used
+// with any attribute assigned to the subscriber session, by setting:
+//   options["exclude_xxx"] = [val1, val2, ..]
+// and
+//   options["eligible_xxx"] = [val1, val2, ..]
+// where xxx is the name of any session attribute, typically supplied with the
+// HELLO message.
 //
 // To request that publisher's identity is disclosed to subscribers, set:
-//   opts["disclose_me"] = true
-//
+//   options["disclose_me"] = true
 func (c *Client) Publish(topic string, options wamp.Dict, args wamp.List, kwargs wamp.Dict) error {
 	if options == nil {
 		options = make(wamp.Dict)
@@ -393,7 +406,7 @@ type InvocationHandler func(context.Context, wamp.List, wamp.Dict, wamp.Dict) (r
 //   options["match"] = "prefix" or "wildcard"
 //
 // To request a shared registration pattern set:
-//  options["invoke"] = "single", "roundrobin", "random", "first", "last"
+//   options["invoke"] = "single", "roundrobin", "random", "first", "last"
 //
 func (c *Client) Register(procedure string, fn InvocationHandler, options wamp.Dict) error {
 	id := c.idGen.Next()
@@ -421,7 +434,7 @@ func (c *Client) Register(procedure string, fn InvocationHandler, options wamp.D
 		}
 		<-sync
 		if c.debug {
-			c.log.Println("Registered", procedure, "as registraton",
+			c.log.Println("Registered", procedure, "as registration",
 				msg.Registration)
 		}
 	case *wamp.Error:
@@ -433,7 +446,7 @@ func (c *Client) Register(procedure string, fn InvocationHandler, options wamp.D
 	return nil
 }
 
-// Unregister removes a the registration of a procedure from the router.
+// Unregister removes the registration of a procedure from the router.
 func (c *Client) Unregister(procedure string) error {
 	sync := make(chan struct{})
 	var procID wamp.ID
@@ -483,8 +496,8 @@ func (c *Client) Unregister(procedure string) error {
 	return nil
 }
 
-// RPCError a wrapper for a WAMP ERROR message that is received as a result of
-// a CALL.  This allows the client application to type assert the error to a
+// RPCError is a wrapper for a WAMP ERROR message that is received as a result
+// of a CALL.  This allows the client application to type assert the error to a
 // RPCError and inspect the the ERROR message contents, as may be necessary to
 // process an error response from the callee.
 type RPCError struct {
@@ -523,16 +536,16 @@ func (werr RPCError) Error() string {
 //
 // Cancellation behaves differently depending on the mode:
 //
-// - "skip": The pending call is canceled and ERROR is send immediately back to
+// "skip": The pending call is canceled and ERROR is sent immediately back to
 // the caller.  No INTERRUPT is sent to the callee and the result is discarded
 // when received.
 //
-// - "kill": INTERRUPT is sent to the client, but ERROR is not returned to the
+// "kill": INTERRUPT is sent to the client, but ERROR is not returned to the
 // caller until after the callee has responded to the canceled call.  In this
 // case the caller may receive RESULT or ERROR depending whether the callee
 // finishes processing the invocation or the interrupt first.
 //
-// - "killnowait": The pending call is canceled and ERROR is send immediately
+// "killnowait": The pending call is canceled and ERROR is send immediately
 // back to the caller.  INTERRUPT is sent to the callee and any response to the
 // invocation or interrupt from the callee is discarded when received.
 //

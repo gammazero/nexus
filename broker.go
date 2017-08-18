@@ -38,7 +38,7 @@ type Broker interface {
 	// subscriptions via EVENT.PUBLISHED.Publication, which will be identical.
 	Publish(*Session, *wamp.Publish)
 
-	// subscribe subscribes the client to the given topic.
+	// Subscribe subscribes the client to the given topic.
 	//
 	// In case of receiving a SUBSCRIBE message from the same Subscriber and to
 	// already subscribed topic, Broker should answer with SUBSCRIBED message,

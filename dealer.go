@@ -48,19 +48,18 @@ type Dealer interface {
 	//
 	// Cancellation behaves differently depending on the mode:
 	//
-	// - "skip": The pending call is canceled and ERROR is send immediately
-	// back to the caller.  No INTERRUPT is sent to the callee and the result
-	// is discarded when received.
+	// "skip": The pending call is canceled and ERROR is send immediately back
+	// to the caller.  No INTERRUPT is sent to the callee and the result is
+	// discarded when received.
 	//
-	// - "kill": INTERRUPT is sent to the client, but ERROR is not returned to
+	// "kill": INTERRUPT is sent to the client, but ERROR is not returned to
 	// the caller until after the callee has responded to the canceled call.
 	// In this case the caller may receive RESULT or ERROR depending whether
 	// the callee finishes processing the invocation or the interrupt first.
 	//
-	// - "killnowait": The pending call is canceled and ERROR is send
-	// immediately back to the caller.  INTERRUPT is sent to the callee and any
-	// response to the invocation or interrupt from the callee is discarded
-	// when received.
+	// "killnowait": The pending call is canceled and ERROR is send immediately
+	// back to the caller.  INTERRUPT is sent to the callee and any response to
+	// the invocation or interrupt from the callee is discarded when received.
 	//
 	// If the callee does not support call canceling, then behavior is "skip".
 	Cancel(caller *Session, msg *wamp.Cancel)

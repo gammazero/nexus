@@ -13,7 +13,7 @@ import (
 	"github.com/gorilla/websocket"
 )
 
-// WebsocketPeer implements the Peer interface, connecting the Send and Recv
+// websocketPeer implements the Peer interface, connecting the Send and Recv
 // methods to a websocket.
 type websocketPeer struct {
 	conn        *websocket.Conn
@@ -47,10 +47,10 @@ type DialFunc func(network, addr string) (net.Conn, error)
 // ConnectWebsockerPeer creates a new websockerPeer with the specified config,
 // and connects it to the websocket server at the specified URL.
 //
-// queueSize is the maximum number of messages that can be queue to be written
-// to the websocker.  Once the queue has reached this limit, the WAMP router
-// will drop messages in order to not block.  A value of < 1 uses the default
-// size.
+// A positive queueSize value specifies the maximum number of messages that can
+// be queued waiting to be written to the websocker.  Once the queue has
+// reached this limit, the WAMP router will drop messages in order to not
+// block.  A value of < 1 uses the default size.
 func ConnectWebsocketPeer(url string, serialization serialize.Serialization, tlsConfig *tls.Config, dial DialFunc, logger stdlog.StdLog) (wamp.Peer, error) {
 	var (
 		protocol    string
@@ -85,8 +85,8 @@ func ConnectWebsocketPeer(url string, serialization serialize.Serialization, tls
 }
 
 // NewWebsockerPeer creates a websocket peer from an existing websocket
-// connection.  This is used for for hanndling clients connecting to the WAMP
-// service.
+// connection.  This is used for handling clients connecting to the WAMP
+// router.
 func NewWebsocketPeer(conn *websocket.Conn, serializer serialize.Serializer, payloadType int, logger stdlog.StdLog) wamp.Peer {
 	w := &websocketPeer{
 		conn:         conn,

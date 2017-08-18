@@ -9,12 +9,9 @@ import (
 
 const linkedPeersOutQueueSize = 16
 
-// LinkedPeers creates two connected peers.  Messages sent to one peer
-// appear in the Recv of the other.
-//
-// This is used for connecting client sessions to the router.
-//
-// Exported since it is used in test code for creating in-process test clients.
+// LinkedPeers creates two connected peers.  Messages sent to one peer appear
+// in the Recv of the other.  This is used for connecting client sessions to
+// the router.
 func LinkedPeers(logger stdlog.StdLog) (wamp.Peer, wamp.Peer) {
 	// The channel used for the router to send messages to the client should be
 	// large enough to prevent blocking while waiting for a slow client, as a
@@ -45,7 +42,7 @@ type localPeer struct {
 // Recv returns the channel this peer reads incoming messages from.
 func (p *localPeer) Recv() <-chan wamp.Message { return p.rd }
 
-// Send write a message to the channel the peer sends outgoing messages to.
+// Send writes a message to the peer's outbound message channel.
 func (p *localPeer) Send(msg wamp.Message) error {
 	// If capacity is > 0, then wr is the rToC channel.
 	if cap(p.wr) > 1 {
