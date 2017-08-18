@@ -207,8 +207,8 @@ func (r *realm) createMetaSession() (*Session, *Session) {
 		stop:    make(chan wamp.URI, 1),
 	}
 
-	// Run the session handler for the meta session
-	go r.handleInternalSession(sess)
+	// Run the handler for messages from the meta session.
+	go r.handleInboundMessages(sess)
 	if r.debug {
 		r.log.Println("Started meta-session", sess)
 	}
@@ -272,6 +272,7 @@ func (r *realm) onLeave(sess *Session) {
 
 // HandleSession starts a session attached to this realm.
 //
+// Routing occurs only between WAMP Sessions that have joined the same Realm.
 func (r *realm) handleSession(sess *Session) error {
 	// The lock is held in mutual exclusion with the closing of the realm.
 	// This ensures that no new session handler can start once the realm is
@@ -292,7 +293,7 @@ func (r *realm) handleSession(sess *Session) error {
 		r.log.Println("Started session", sess)
 	}
 	go func() {
-		r.handleInternalSession(sess)
+		r.handleInboundMessages(sess)
 		r.onLeave(sess)
 		sess.Close()
 	}()
@@ -300,10 +301,9 @@ func (r *realm) handleSession(sess *Session) error {
 	return nil
 }
 
-// handleInternalSession a session attached to this realm.
-//
-// Routing occurs only between WAMP Sessions that have joined the same Realm.
-func (r *realm) handleInternalSession(sess *Session) {
+// handleInboundMessages handles the messages sent from a client session to
+// the router.
+func (r *realm) handleInboundMessages(sess *Session) {
 	if r.debug {
 		defer r.log.Println("Ended sesion", sess)
 	}
@@ -328,7 +328,6 @@ func (r *realm) handleInternalSession(sess *Session) {
 			return
 		}
 
-		// Debug
 		if r.debug {
 			r.log.Printf("Session %s submitting %s: %+v", sess,
 				msg.MessageType(), msg)

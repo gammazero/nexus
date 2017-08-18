@@ -1,5 +1,5 @@
 # nexus
-nexus is a [Go](http://golang.org/) implementation of [WAMP](http://wamp-proto.org/) v2
+nexus is a [Go](http://golang.org/) implementation of [WAMP](http://wamp-proto.org/) v2 that provides router and client libraries and a router service.
 
 [![Build Status](https://travis-ci.org/gammazero/nexus.svg)](https://travis-ci.org/gammazero/nexus)
 
@@ -10,7 +10,7 @@ Using WAMP you can build distributed systems out of application components which
 
 The nexus project provides a WAMP router library, client library, and stand-alone WAMP router service.
  - The router library can be used to build custom WAMP routers or to embed a WAMP router in an application.
- - The client library can be used to build clients that connect to any WAMP server.
+ - The client library can be used to build clients that connect to any WAMP server, or to communicate in-process with a WAMP router embedded in the same application.
  - The router service can be run as-is to provide WAMP routing.
 
 ## Status
@@ -27,21 +27,23 @@ go get github.com/gammazero/nexus
 
 https://github.com/gammazero/nexus/tree/master/examples
 
-## Objectives
+## Features
 
-### Performance 
+### Concurrent Asynchronous I/O
 
-Nexus achieves high throughput by never blocking on I/O.  Messages received from clients are dispatched to the appropriate handlers for routing and are then written to the outbound message queues of the receiving clients.  This way the router never delays processing of messages due to waiting for slow clients.
+Nexus supports large numbers of clients concurrently sending and receiving message, and never blocks on I/O, even if a client becomes unresponsive.  
 
 See [Router Concurrency](https://github.com/gammazero/nexus#router-concurrency) for details.
 
-### Feature availability
+### WAMP Advanced Profile
 
-This project intends to implement most or all of the advanced profile features in WAMP v2.  See [current feature support](https://github.com/gammazero/nexus#advanced-profile-feature-support) provided by nexus:
+This project implements most of the advanced profile features in WAMP v2.  See [current feature support](https://github.com/gammazero/nexus#advanced-profile-feature-support) provided by nexus.
 
 ### Flexibility
 
-Multiple transports and serialization options will be supported to maximize interoperability.
+Multiple transports and serialization options are supported, and more are being developed to maximize interoperability.  Currently nexus provides websocket and local (in-process) transports.  JSON and [MessagePack](http://msgpack.org/index.html) serialization is available over websockets.
+
+Nexus offers extended functionality for retrieving session information and for message filtering, giving clients more ability to decide where to send messages.
 
 ### Security
 
@@ -59,6 +61,7 @@ TLS over websockets is included with the [Gorilla WebSocket](https://github.com/
 #### Items to complete:
 - documentation (in progress)
 - examples (in progress)
+- TLS config for `nexusd`
 - RawSocket transport (planned)
 - cool logo (maybe)
 
