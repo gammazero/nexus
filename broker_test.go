@@ -218,8 +218,9 @@ func TestBasicPubSub(t *testing.T) {
 	if len(evt.Arguments) == 0 {
 		t.Fatal("missing event payload")
 	}
-	if evt.Arguments[0].(string) != "hello world" {
-		t.Fatal("wrong argument value in payload:", evt.Arguments[0])
+	arg, _ := wamp.AsString(evt.Arguments[0])
+	if arg != "hello world" {
+		t.Fatal("wrong argument value in payload:", arg)
 	}
 }
 

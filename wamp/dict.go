@@ -196,7 +196,7 @@ func AsList(v interface{}) (List, bool) {
 func OptionString(opts Dict, optionName string) string {
 	var opt string
 	if _opt, ok := opts[optionName]; ok && _opt != nil {
-		opt, _ = _opt.(string)
+		opt, _ = AsString(_opt)
 	}
 	return opt
 }

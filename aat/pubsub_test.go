@@ -24,7 +24,8 @@ func TestPubSub(t *testing.T) {
 
 	errChan := make(chan error)
 	evtHandler := func(args wamp.List, kwargs wamp.Dict, details wamp.Dict) {
-		if args[0].(string) != "hello world" {
+		arg, _ := wamp.AsString(args[0])
+		if arg != "hello world" {
 			errChan <- errors.New("event missing or bad args")
 			return
 		}
@@ -80,7 +81,8 @@ func TestPubSubWildcard(t *testing.T) {
 
 	errChan := make(chan error)
 	evtHandler := func(args wamp.List, kwargs wamp.Dict, details wamp.Dict) {
-		if args[0].(string) != "hello world" {
+		arg, _ := wamp.AsString(args[0])
+		if arg != "hello world" {
 			errChan <- errors.New("event missing or bad args")
 			return
 		}

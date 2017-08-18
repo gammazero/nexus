@@ -146,7 +146,8 @@ func TestSubscribe(t *testing.T) {
 	testTopic := "nexus.test.topic"
 	errChan := make(chan error)
 	evtHandler := func(args wamp.List, kwargs wamp.Dict, details wamp.Dict) {
-		if args[0].(string) != "hello world" {
+		arg, _ := wamp.AsString(args[0])
+		if arg != "hello world" {
 			errChan <- errors.New("event missing or bad args")
 			return
 		}
@@ -346,7 +347,7 @@ func TestCancelRemoteProcedureCall(t *testing.T) {
 
 // ---- authentication test stuff ------
 func testAuthFunc(d wamp.Dict, c wamp.Dict) (string, wamp.Dict) {
-	ch := c["challenge"].(string)
+	ch := wamp.OptionString(c, "challenge")
 	return testCRSign(ch), wamp.Dict{}
 }
 
@@ -360,11 +361,7 @@ type pendingTestAuth struct {
 }
 
 func (t *testCRAuthenticator) Challenge(details wamp.Dict) (auth.PendingCRAuth, error) {
-	var username string
-	_username, ok := details["username"]
-	if ok {
-		username = _username.(string)
-	}
+	username := wamp.OptionString(details, "username")
 	if username == "" {
 		return nil, errors.New("no username given")
 	}

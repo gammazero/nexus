@@ -32,15 +32,14 @@ func (t *ticketAuthenticator) Challenge(details wamp.Dict) (PendingCRAuth, error
 	// The HELLO.Details.authid|string is the authentication ID (e.g. username)
 	// the client wishes to authenticate as. For Ticket-based authentication,
 	// this MUST be provided.
-	_authID, ok := details["authid"]
-	if !ok {
+	authID := wamp.OptionString(details, "authid")
+	if authID == "" {
 		return nil, errors.New("missing authid")
 	}
-	authID := _authID.(string)
 
 	// Ticket authenticator should not have been used for authmethod other than
 	// "ticket", but check anyway.
-	if "ticket" != details["authmethod"].(string) {
+	if "ticket" != wamp.OptionString(details, "authmethod") {
 		return nil, errors.New("invalid authmethod for ticket authentication")
 	}
 

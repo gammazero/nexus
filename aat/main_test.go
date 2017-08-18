@@ -34,12 +34,17 @@ var (
 	// Creates websocket client if true.  Otherwise, create embedded client
 	// that only uses channels to communicate with router.
 	websocketClient bool
+
+	// Use msgpack serialization with websockets if true.  Otherwise, use JSON.
+	msgPack bool
 )
 
 func TestMain(m *testing.M) {
 	// ----- Setup environment -----
 	flag.BoolVar(&websocketClient, "websocket", false,
 		"use websocket to connect clients to router")
+	flag.BoolVar(&msgPack, "msgpack", false,
+		"use msgpack serialization with websockets")
 	flag.Parse()
 	if websocketClient {
 		fmt.Println("===== USING WEBSOCKET CLIENT =====")
@@ -116,8 +121,13 @@ func connectClientNoJoin() (*client.Client, error) {
 	var cli *client.Client
 	var err error
 	if websocketClient {
-		cli, err = client.NewWebsocketClient(
-			serverURL, client.JSON, nil, nil, time.Second, cliLogger)
+		if msgPack {
+			cli, err = client.NewWebsocketClient(
+				serverURL, client.MSGPACK, nil, nil, time.Second, cliLogger)
+		} else {
+			cli, err = client.NewWebsocketClient(
+				serverURL, client.JSON, nil, nil, time.Second, cliLogger)
+		}
 	} else {
 		cli, err = client.NewLocalClient(nxr, 200*time.Millisecond, cliLogger)
 	}

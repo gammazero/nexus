@@ -353,7 +353,7 @@ func TestCancelCallModeKill(t *testing.T) {
 	if len(rslt.Details) == 0 {
 		t.Fatal("expected details in message")
 	}
-	if rslt.Details["reason"].(string) != "callee canceled" {
+	if wamp.OptionString(rslt.Details, "reason") != "callee canceled" {
 		t.Fatal("Did not get error message from caller")
 	}
 }

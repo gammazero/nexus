@@ -53,7 +53,7 @@ func TestJoinRealmWithCRAuthBad(t *testing.T) {
 }
 
 func testAuthFunc(d wamp.Dict, c wamp.Dict) (string, wamp.Dict) {
-	ch := c["challenge"].(string)
+	ch := wamp.OptionString(c, "challenge")
 	return testCRSign(ch), wamp.Dict{}
 }
 
@@ -67,11 +67,7 @@ type pendingTestAuth struct {
 }
 
 func (t *testCRAuthenticator) Challenge(details wamp.Dict) (auth.PendingCRAuth, error) {
-	var username string
-	_username, ok := details["username"]
-	if ok {
-		username = _username.(string)
-	}
+	username := wamp.OptionString(details, "username")
 	if username == "" {
 		return nil, errors.New("no username given")
 	}

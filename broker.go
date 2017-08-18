@@ -611,7 +611,7 @@ func msgBlackWhiteLists(msg *wamp.Publish) ([]wamp.ID, []wamp.ID, map[string][]s
 			if vals, ok := wamp.AsList(vals); ok {
 				vallist := make([]string, 0, len(vals))
 				for i := range vals {
-					if val, ok := vals[i].(string); ok && val != "" {
+					if val, ok := wamp.AsString(vals[i]); ok && val != "" {
 						vallist = append(vallist, val)
 					}
 				}

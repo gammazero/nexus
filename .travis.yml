@@ -11,3 +11,4 @@ before_script:
 script:
   - go test -v -race ./...
   - go test -v -race ./aat -websocket
+  - go test -v ./aat -websocket -msgpack

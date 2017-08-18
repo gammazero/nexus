@@ -24,10 +24,10 @@ func TestAnonAuth(t *testing.T) {
 		t.Fatal("expected WELCOME message, got: ", welcome.MessageType())
 	}
 
-	if welcome.Details["authmethod"].(string) != "anonymous" {
+	if wamp.OptionString(welcome.Details, "authmethod") != "anonymous" {
 		t.Fatal("invalid authmethod in welcome details")
 	}
-	if welcome.Details["authrole"].(string) != "anonymous" {
+	if wamp.OptionString(welcome.Details, "authrole") != "anonymous" {
 		t.Fatal("incorrect authrole in welcome details")
 	}
 }

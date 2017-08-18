@@ -66,10 +66,10 @@ func TestTicketAuth(t *testing.T) {
 		t.Fatal("expected WELCOME message, got: ", welcome.MessageType())
 	}
 
-	if welcome.Details["authmethod"].(string) != "ticket" {
+	if wamp.OptionString(welcome.Details, "authmethod") != "ticket" {
 		t.Fatal("invalid authmethod in welcome details")
 	}
-	if welcome.Details["authrole"].(string) != "user" {
+	if wamp.OptionString(welcome.Details, "authrole") != "user" {
 		t.Fatal("incorrect authrole in welcome details")
 	}
 }
