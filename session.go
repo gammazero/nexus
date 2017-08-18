@@ -1,4 +1,4 @@
-package router
+package nexus
 
 import (
 	"fmt"
@@ -29,17 +29,4 @@ func (s Session) HasRole(role string) bool {
 func (s Session) HasFeature(role, feature string) bool {
 	b, _ := wamp.DictFlag(s.Details, []string{"roles", role, "features", feature})
 	return b
-}
-
-// CheckFeature returns true all the sessions have the feature for the role.
-func CheckFeature(role, feature string, sessions ...Session) bool {
-	if len(sessions) == 0 {
-		return false
-	}
-	for i := range sessions {
-		if !sessions[i].HasFeature(role, feature) {
-			return false
-		}
-	}
-	return true
 }

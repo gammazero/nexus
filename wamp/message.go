@@ -1,3 +1,8 @@
+/*
+Package wamp defines all message types, data types, and reserved URI valies
+defined by the WAMP specification.
+
+*/
 package wamp
 
 type MessageType int
@@ -7,8 +12,10 @@ type Message interface {
 	MessageType() MessageType
 }
 
+// Dict is a dictionary that maps keys to objects in a WAMP message.
 type Dict map[string]interface{}
 
+// List represents a list of items in a WAMP message.
 type List []interface{}
 
 // Message Codes and Direction

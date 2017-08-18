@@ -8,8 +8,8 @@ import (
 	"testing"
 	"time"
 
+	"github.com/gammazero/nexus"
 	"github.com/gammazero/nexus/auth"
-	"github.com/gammazero/nexus/router"
 	"github.com/gammazero/nexus/stdlog"
 	"github.com/gammazero/nexus/transport"
 	"github.com/gammazero/nexus/wamp"
@@ -25,21 +25,21 @@ func init() {
 	logger = log.New(os.Stdout, "", log.LstdFlags)
 }
 
-func getTestPeer(r router.Router) wamp.Peer {
+func getTestPeer(r nexus.Router) wamp.Peer {
 	cli, rtr := transport.LinkedPeers(r.Logger())
 	go r.Attach(rtr)
 	return cli
 }
 
-func getTestRouter(realmConfig *router.RealmConfig) (router.Router, error) {
-	config := &router.RouterConfig{
-		RealmConfigs: []*router.RealmConfig{realmConfig},
+func getTestRouter(realmConfig *nexus.RealmConfig) (nexus.Router, error) {
+	config := &nexus.RouterConfig{
+		RealmConfigs: []*nexus.RealmConfig{realmConfig},
 	}
-	return router.NewRouter(config, logger)
+	return nexus.NewRouter(config, logger)
 }
 
 func connectedTestClients() (*Client, *Client, error) {
-	realmConfig := &router.RealmConfig{
+	realmConfig := &nexus.RealmConfig{
 		URI:           wamp.URI(testRealm),
 		StrictURI:     true,
 		AnonymousAuth: true,
@@ -73,7 +73,7 @@ func newTestClient(p wamp.Peer) (*Client, error) {
 }
 
 func TestJoinRealm(t *testing.T) {
-	realmConfig := &router.RealmConfig{
+	realmConfig := &nexus.RealmConfig{
 		URI:           wamp.URI(testRealm),
 		StrictURI:     true,
 		AnonymousAuth: true,
@@ -92,7 +92,7 @@ func TestJoinRealm(t *testing.T) {
 	}
 
 	// Test that client cannot join realm when anonymous auth is disabled.
-	realmConfig = &router.RealmConfig{
+	realmConfig = &nexus.RealmConfig{
 		URI:           wamp.URI("nexus.testnoanon"),
 		StrictURI:     true,
 		AnonymousAuth: false,
@@ -110,7 +110,7 @@ func TestJoinRealmWithCRAuth(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	realmConfig := &router.RealmConfig{
+	realmConfig := &nexus.RealmConfig{
 		URI:           wamp.URI("nexus.test.auth"),
 		StrictURI:     true,
 		AnonymousAuth: false,

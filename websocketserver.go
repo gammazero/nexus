@@ -1,11 +1,10 @@
-package server
+package nexus
 
 import (
 	"errors"
 	"fmt"
 	"net/http"
 
-	"github.com/gammazero/nexus/router"
 	"github.com/gammazero/nexus/stdlog"
 	"github.com/gammazero/nexus/transport"
 	"github.com/gammazero/nexus/transport/serialize"
@@ -24,7 +23,7 @@ type protocol struct {
 
 // WebsocketServer handles websocket connections.
 type WebsocketServer struct {
-	router.Router
+	Router
 	Upgrader *websocket.Upgrader
 
 	protocols map[string]protocol
@@ -39,7 +38,7 @@ type WebsocketServer struct {
 
 // NewWebsocketServer takes a router instance and creates a new websocket
 // server.
-func NewWebsocketServer(r router.Router) *WebsocketServer {
+func NewWebsocketServer(r Router) *WebsocketServer {
 	s := &WebsocketServer{
 		Router:    r,
 		protocols: map[string]protocol{},

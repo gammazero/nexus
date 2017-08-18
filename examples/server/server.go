@@ -4,30 +4,29 @@ import (
 	"log"
 	"net/http"
 
-	"github.com/gammazero/nexus/router"
-	"github.com/gammazero/nexus/server"
+	"github.com/gammazero/nexus"
 	"github.com/gammazero/nexus/wamp"
 )
 
 func main() {
 	// Create router instance.
-	routerConfig := &router.RouterConfig{
-		RealmConfigs: []*router.RealmConfig{
-			&router.RealmConfig{
+	routerConfig := &nexus.RouterConfig{
+		RealmConfigs: []*nexus.RealmConfig{
+			&nexus.RealmConfig{
 				URI:           wamp.URI("nexus.examples"),
 				AnonymousAuth: true,
 				AllowDisclose: true,
 			},
 		},
 	}
-	nxr, err := router.NewRouter(routerConfig, nil)
+	nxr, err := nexus.NewRouter(routerConfig, nil)
 	if err != nil {
 		log.Fatal(err)
 	}
 	defer nxr.Close()
 
 	// Run server.
-	s := server.NewWebsocketServer(nxr)
+	s := nexus.NewWebsocketServer(nxr)
 	server := &http.Server{
 		Handler: s,
 		Addr:    ":8000",

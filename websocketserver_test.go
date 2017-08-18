@@ -1,4 +1,4 @@
-package server
+package nexus
 
 import (
 	"fmt"
@@ -7,21 +7,16 @@ import (
 	"net/http"
 	"testing"
 
-	"github.com/gammazero/nexus/router"
 	"github.com/gammazero/nexus/stdlog"
 	"github.com/gammazero/nexus/transport"
 	"github.com/gammazero/nexus/transport/serialize"
 	"github.com/gammazero/nexus/wamp"
 )
 
-const (
-	testRealm = wamp.URI("test.realm")
-)
-
 var (
-	routerConfig = &router.RouterConfig{
-		RealmConfigs: []*router.RealmConfig{
-			&router.RealmConfig{
+	routerConfig = &RouterConfig{
+		RealmConfigs: []*RealmConfig{
+			&RealmConfig{
 				URI:           testRealm,
 				StrictURI:     false,
 				AnonymousAuth: true,
@@ -32,23 +27,8 @@ var (
 	}
 )
 
-func clientRoles() wamp.Dict {
-	return wamp.Dict{
-		"roles": wamp.Dict{
-			"publisher": wamp.Dict{
-				"features": wamp.Dict{
-					"subscriber_blackwhite_listing": true,
-				},
-			},
-			"subscriber": wamp.Dict{},
-			"callee":     wamp.Dict{},
-			"caller":     wamp.Dict{},
-		},
-	}
-}
-
 func newTestWebsocketServer(t *testing.T) (int, io.Closer, stdlog.StdLog) {
-	r, err := router.NewRouter(routerConfig, nil)
+	r, err := NewRouter(routerConfig, nil)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -77,7 +57,7 @@ func TestWSHandshakeJSON(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	client.Send(&wamp.Hello{Realm: testRealm, Details: clientRoles()})
+	client.Send(&wamp.Hello{Realm: testRealm, Details: clientRoles})
 	msg, ok := <-client.Recv()
 	if !ok {
 		t.Fatal("recv chan closed")
@@ -99,7 +79,7 @@ func TestWSHandshakeMsgpack(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	client.Send(&wamp.Hello{Realm: testRealm, Details: clientRoles()})
+	client.Send(&wamp.Hello{Realm: testRealm, Details: clientRoles})
 	msg, ok := <-client.Recv()
 	if !ok {
 		t.Fatal("Receive buffer closed")

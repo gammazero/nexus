@@ -9,8 +9,7 @@ import (
 	"os/signal"
 	"time"
 
-	"github.com/gammazero/nexus/router"
-	"github.com/gammazero/nexus/server"
+	"github.com/gammazero/nexus"
 )
 
 func usage() {
@@ -29,13 +28,13 @@ func main() {
 	conf := LoadConfig(cfgFile)
 
 	// Create router and realms from config.
-	r, err := router.NewRouter(&conf.Router, nil)
+	r, err := nexus.NewRouter(&conf.Router, nil)
 	if err != nil {
 		log.Fatalln(err)
 	}
 
 	// Create a new websocket server with the router.
-	s := server.NewWebsocketServer(r)
+	s := nexus.NewWebsocketServer(r)
 
 	shutdown := make(chan os.Signal, 1)
 	signal.Notify(shutdown, os.Interrupt)

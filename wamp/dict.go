@@ -114,6 +114,18 @@ func DictFlag(dict Dict, path []string) (bool, error) {
 	return b, nil
 }
 
+func AsString(v interface{}) (string, bool) {
+	switch v := v.(type) {
+	case string:
+		return v, true
+	case []byte:
+		return string(v), true
+	case URI:
+		return string(v), true
+	}
+	return "", false
+}
+
 func AsID(v interface{}) (ID, bool) {
 	if i64, ok := AsInt64(v); ok {
 		return ID(i64), true

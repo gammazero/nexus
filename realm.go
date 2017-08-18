@@ -1,4 +1,4 @@
-package router
+package nexus
 
 import (
 	"errors"
@@ -424,13 +424,14 @@ func (r *realm) handleInternalSession(sess *Session) {
 func (r *realm) authClient(client wamp.Peer, details wamp.Dict) (*wamp.Welcome, error) {
 	var authmethods []string
 	if _authmethods, ok := details["authmethods"]; ok {
-		switch _authmethods := _authmethods.(type) {
-		case []string:
-			authmethods = _authmethods
-		case wamp.List:
-			for _, x := range _authmethods {
-				authmethods = append(authmethods, x.(string))
+		amList, _ := wamp.AsList(_authmethods)
+		for _, x := range amList {
+			am, ok := wamp.AsString(x)
+			if !ok {
+				r.log.Println("!! Could not convert authmethod:", x)
+				continue
 			}
+			authmethods = append(authmethods, am)
 		}
 	}
 	if len(authmethods) == 0 {

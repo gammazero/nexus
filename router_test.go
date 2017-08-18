@@ -1,4 +1,4 @@
-package router
+package nexus
 
 import (
 	"errors"
@@ -36,15 +36,19 @@ var clientRoles = wamp.Dict{
 				"publisher_identification": true,
 			},
 		},
-		"publisher": struct{}{},
-		"callee":    struct{}{},
+		"publisher": wamp.Dict{
+			"features": wamp.Dict{
+				"subscriber_blackwhite_listing": true,
+			},
+		},
+		"callee": wamp.Dict{},
 		"caller": wamp.Dict{
 			"features": wamp.Dict{
 				"call_timeout": true,
 			},
 		},
 	},
-	"authmethods": []string{"anonymous", "ticket"},
+	"authmethods": wamp.List{"anonymous", "ticket"},
 }
 
 func newTestRouter() (Router, error) {

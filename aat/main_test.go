@@ -10,10 +10,9 @@ import (
 	"testing"
 	"time"
 
+	"github.com/gammazero/nexus"
 	"github.com/gammazero/nexus/auth"
 	"github.com/gammazero/nexus/client"
-	"github.com/gammazero/nexus/router"
-	"github.com/gammazero/nexus/server"
 	"github.com/gammazero/nexus/stdlog"
 	"github.com/gammazero/nexus/wamp"
 )
@@ -23,7 +22,7 @@ const (
 )
 
 var (
-	nxr       router.Router
+	nxr       nexus.Router
 	cliLogger stdlog.StdLog
 	rtrLogger stdlog.StdLog
 
@@ -58,15 +57,15 @@ func TestMain(m *testing.M) {
 	}
 
 	// Create router instance.
-	routerConfig := &router.RouterConfig{
-		RealmConfigs: []*router.RealmConfig{
-			&router.RealmConfig{
+	routerConfig := &nexus.RouterConfig{
+		RealmConfigs: []*nexus.RealmConfig{
+			&nexus.RealmConfig{
 				URI:           wamp.URI(testRealm),
 				StrictURI:     false,
 				AnonymousAuth: true,
 				AllowDisclose: false,
 			},
-			&router.RealmConfig{
+			&nexus.RealmConfig{
 				URI:           wamp.URI("nexus.test.auth"),
 				StrictURI:     false,
 				AnonymousAuth: true,
@@ -78,14 +77,14 @@ func TestMain(m *testing.M) {
 		},
 		//Debug: true,
 	}
-	nxr, err = router.NewRouter(routerConfig, rtrLogger)
+	nxr, err = nexus.NewRouter(routerConfig, rtrLogger)
 	if err != nil {
 		panic(err)
 	}
 
 	var listener *net.TCPListener
 	if websocketClient {
-		s := server.NewWebsocketServer(nxr)
+		s := nexus.NewWebsocketServer(nxr)
 		server := &http.Server{
 			Handler: s,
 		}
