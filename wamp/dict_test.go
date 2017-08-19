@@ -49,13 +49,13 @@ func recognizeRole(roleName string) bool {
 func TestHasRoleFeatureLookup(t *testing.T) {
 	dict := Dict{}
 	clientRoles := map[string]Dict{
-		"publisher": Dict{},
-		"subscriber": Dict{
+		"publisher": {},
+		"subscriber": {
 			"junk": struct{}{}},
-		"callee": Dict{
+		"callee": {
 			"Hello": "world"},
-		"caller":  Dict{},
-		"badrole": Dict{},
+		"caller":  {},
+		"badrole": {},
 	}
 	boolMap := map[string]bool{"call_timeout": true}
 	clientRoles["caller"]["features"] = boolMap
@@ -71,7 +71,7 @@ func TestHasRoleFeatureLookup(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	for k, _ := range roleVals.(Dict) {
+	for k := range roleVals.(Dict) {
 		if k == "badrole" {
 			if recognizeRole(k) {
 				t.Fatal("badrole is recognized")
@@ -171,12 +171,12 @@ func TestConversionFail(t *testing.T) {
 func BenchmarkNormalized(b *testing.B) {
 	dict := Dict{}
 	clientRoles := map[string]Dict{
-		"publisher": Dict{},
-		"subscriber": Dict{
+		"publisher": {},
+		"subscriber": {
 			"junk": struct{}{}},
-		"callee": Dict{
+		"callee": {
 			"Hello": "world"},
-		"caller": Dict{},
+		"caller": {},
 	}
 	boolMap := map[string]bool{"call_timeout": true}
 	clientRoles["caller"]["features"] = boolMap
@@ -192,12 +192,12 @@ func BenchmarkNormalized(b *testing.B) {
 func BenchmarkNotNormalized(b *testing.B) {
 	dict := Dict{}
 	clientRoles := map[string]Dict{
-		"publisher": Dict{},
-		"subscriber": Dict{
+		"publisher": {},
+		"subscriber": {
 			"junk": struct{}{}},
-		"callee": Dict{
+		"callee": {
 			"Hello": "world"},
-		"caller": Dict{},
+		"caller": {},
 	}
 	boolMap := map[string]bool{"call_timeout": true}
 	clientRoles["caller"]["features"] = boolMap

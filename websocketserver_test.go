@@ -16,7 +16,7 @@ import (
 var (
 	routerConfig = &RouterConfig{
 		RealmConfigs: []*RealmConfig{
-			&RealmConfig{
+			{
 				URI:           testRealm,
 				StrictURI:     false,
 				AnonymousAuth: true,

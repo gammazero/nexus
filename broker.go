@@ -409,7 +409,7 @@ func (b *broker) unsubscribe(sub *Session, msg *wamp.Unsubscribe) {
 
 func (b *broker) removeSession(sub *Session) {
 	var topicSubscribers map[wamp.URI]map[wamp.ID]*Session
-	for id, _ := range b.sessionSubIDSet[sub] {
+	for id := range b.sessionSubIDSet[sub] {
 		// For each subscription ID, delete the subscription: topic map entry.
 		topic, ok := b.subscriptions[id]
 		if !ok {
@@ -644,19 +644,17 @@ func publishAllowed(sub *Session, blIDs, wlIDs []wamp.ID, blMap, wlMap map[strin
 		}
 	}
 	// Check blacklists to see if session has a value in any blacklist.
-	if len(blMap) != 0 {
-		for attr, vals := range blMap {
-			// Get the session attribute value to compare with blacklist.
-			sessAttr := wamp.OptionString(sub.Details, attr)
-			if sessAttr == "" {
-				continue
-			}
-			// Check each blacklisted value to see if session attribute is one.
-			for i := range vals {
-				if vals[i] == sessAttr {
-					// Session has blacklisted attribute value.
-					return false
-				}
+	for attr, vals := range blMap {
+		// Get the session attribute value to compare with blacklist.
+		sessAttr := wamp.OptionString(sub.Details, attr)
+		if sessAttr == "" {
+			continue
+		}
+		// Check each blacklisted value to see if session attribute is one.
+		for i := range vals {
+			if vals[i] == sessAttr {
+				// Session has blacklisted attribute value.
+				return false
 			}
 		}
 	}
@@ -664,7 +662,6 @@ func publishAllowed(sub *Session, blIDs, wlIDs []wamp.ID, blMap, wlMap map[strin
 	var eligible bool
 	// If session ID whitelist given, make sure session ID is in whitelist.
 	if len(wlIDs) != 0 {
-		eligible = false
 		for i := range wlIDs {
 			if wlIDs[i] == sub.ID {
 				eligible = true
@@ -676,27 +673,25 @@ func publishAllowed(sub *Session, blIDs, wlIDs []wamp.ID, blMap, wlMap map[strin
 		}
 	}
 	// Check whitelists to make sure session has value in each whitelist.
-	if len(wlMap) != 0 {
-		for attr, vals := range wlMap {
-			// Get the session attribute value to compare with whitelist.
-			sessAttr := wamp.OptionString(sub.Details, attr)
-			if sessAttr == "" {
-				// Session does not have whitelisted value, so deny.
-				return false
+	for attr, vals := range wlMap {
+		// Get the session attribute value to compare with whitelist.
+		sessAttr := wamp.OptionString(sub.Details, attr)
+		if sessAttr == "" {
+			// Session does not have whitelisted value, so deny.
+			return false
+		}
+		eligible = false
+		// Check all whitelisted values to see is session attribute is one.
+		for i := range vals {
+			if vals[i] == sessAttr {
+				// Session has whitelisted attribute value.
+				eligible = true
+				break
 			}
-			eligible = false
-			// Check all whitelisted values to see is session attribute is one.
-			for i := range vals {
-				if vals[i] == sessAttr {
-					// Session has whitelisted attribute value.
-					eligible = true
-					break
-				}
-			}
-			// If session attribute value no found in whitelist, then deny.
-			if !eligible {
-				return false
-			}
+		}
+		// If session attribute value no found in whitelist, then deny.
+		if !eligible {
+			return false
 		}
 	}
 	return true

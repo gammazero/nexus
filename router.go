@@ -231,7 +231,7 @@ func (r *router) Attach(client wamp.Peer) error {
 		sendAbort(wamp.ErrNoSuchRole, err)
 		return err
 	}
-	for roleName, _ := range roleVals {
+	for roleName := range roleVals {
 		switch roleName {
 		case "publisher", "subscriber", "caller", "callee":
 		default:

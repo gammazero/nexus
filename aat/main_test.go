@@ -64,13 +64,13 @@ func TestMain(m *testing.M) {
 	// Create router instance.
 	routerConfig := &nexus.RouterConfig{
 		RealmConfigs: []*nexus.RealmConfig{
-			&nexus.RealmConfig{
+			{
 				URI:           wamp.URI(testRealm),
 				StrictURI:     false,
 				AnonymousAuth: true,
 				AllowDisclose: false,
 			},
-			&nexus.RealmConfig{
+			{
 				URI:           wamp.URI("nexus.test.auth"),
 				StrictURI:     false,
 				AnonymousAuth: true,
