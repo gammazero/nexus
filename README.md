@@ -120,14 +120,14 @@ WAMP allows blacklisting `authid` and `authrole` using `exclude_authid` and `exc
 
 As an example, to allow sessions with `org_id=ycorp` or `org_id=zcorp`, a PUBLISH message specifies the following option:
 ```
-eligible_org_id: {"ycorp", "zcorp"}
+eligible_org_id: ["ycorp", "zcorp"]
 ```
 
 Note: Nexus includes all attributes from the HELLO message in the session details.
 
 ### Session Meta API provides all session attributes
 
-The `wamp.session.on_join` meta event message and the response to a `wamp.session.get` meta procedure includes the attributes specified by the WAMP specification (`session`, `authid`, `authrole`, `authmethod`, `authprovider`, `transport`), and includes all attrubutes from the session HELLO message.  This allows clients to provide more information about themselves, via HELLO, that may then be used by other sessions to make decisions about who to send messages to.
+The `wamp.session.on_join` meta event message and the response to a `wamp.session.get` meta procedure includes the attributes specified by the WAMP specification (`session`, `authid`, `authrole`, `authmethod`, `authprovider`, `transport`), and includes all attributes from the session HELLO message.  This allows clients to provide more information about themselves, via HELLO, that may then be used by other sessions to make decisions about who to send messages to.
 
 ## Router Concurrency
 

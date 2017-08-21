@@ -3,7 +3,7 @@ package nexus
 import "github.com/gammazero/nexus/wamp"
 
 // Authorizer is the interface implemented by a type that provides the ability
-// to authroize request messages.
+// to authorize request messages.
 type Authorizer interface {
 	// Authorize returns true if the request is authorized or not.  An error is
 	// returned if there is a failure to determine authorization.
