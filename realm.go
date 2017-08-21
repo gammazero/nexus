@@ -449,8 +449,8 @@ func (r *realm) authClient(client wamp.Peer, details wamp.Dict) (*wamp.Welcome, 
 	}
 	welcome.Details["authmethod"] = method
 	welcome.Details["roles"] = wamp.Dict{
-		"broker": r.broker.Features(),
-		"dealer": r.dealer.Features(),
+		"broker": r.broker.Role(),
+		"dealer": r.dealer.Role(),
 	}
 	return welcome, nil
 }

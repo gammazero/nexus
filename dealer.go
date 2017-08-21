@@ -42,8 +42,8 @@ const (
 	cancelModeSkip       = "skip"
 )
 
-// Features supported by this dealer.
-var dealerFeatures = wamp.Dict{
+// Role information for this broker.
+var dealerRole = wamp.Dict{
 	"features": wamp.Dict{
 		featureCallCanceling:   true,
 		featureCallTimeout:     true,
@@ -105,11 +105,9 @@ type Dealer interface {
 	// Close shuts down the dealer.
 	Close()
 
-	// Features returns the features supported by this dealer.
-	//
-	// The data returned is suitable for use as the "features" section of the
-	// dealer role in a WELCOME message.
-	Features() wamp.Dict
+	// Role returns the role information for the "dealer" role.  The data
+	// returned is suitable for use as broker role info in a WELCOME message.
+	Role() wamp.Dict
 
 	// RegList retrieves registration IDs listed according to match policies.
 	RegList(*wamp.Invocation) wamp.Message
@@ -237,9 +235,9 @@ func NewDealer(metaClient wamp.Peer, logger stdlog.StdLog, strictURI, allowDiscl
 	return d
 }
 
-// Features returns the features supported by this dealer.
-func (d *dealer) Features() wamp.Dict {
-	return dealerFeatures
+// Role returns the role information for the "dealer" role.
+func (d *dealer) Role() wamp.Dict {
+	return dealerRole
 }
 
 // Register registers a callee to handle calls to a procedure.

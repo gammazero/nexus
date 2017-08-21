@@ -33,8 +33,8 @@ const (
 	detailTopic = "topic"
 )
 
-// Features supported by this broker.
-var brokerFeatures = wamp.Dict{
+// Role information for this broker.
+var brokerRole = wamp.Dict{
 	"features": wamp.Dict{
 		featureSubBlackWhiteListing: true,
 		featurePatternSub:           true,
@@ -80,11 +80,9 @@ type Broker interface {
 	// Close shuts down the broker.
 	Close()
 
-	// Features returns the features supported by this broker.
-	//
-	// The data returned is suitable for use as the "features" section of the
-	// broker role in a WELCOME message.
-	Features() wamp.Dict
+	// Role returns the role information for the "broker" role.  The data
+	// returned is suitable for use as broker role info in a WELCOME message.
+	Role() wamp.Dict
 }
 
 type broker struct {
@@ -146,9 +144,9 @@ func NewBroker(logger stdlog.StdLog, strictURI, allowDisclose, debug bool) Broke
 	return b
 }
 
-// Features returns the features supported by this broker.
-func (b *broker) Features() wamp.Dict {
-	return brokerFeatures
+// Role returns the role information for the "broker" role.
+func (b *broker) Role() wamp.Dict {
+	return brokerRole
 }
 
 // Publish publishes an event to subscribers.
