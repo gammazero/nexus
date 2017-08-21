@@ -75,7 +75,7 @@ type Broker interface {
 	Unsubscribe(*Session, *wamp.Unsubscribe)
 
 	// RemoveSession removes all subscriptions of the subscriber.
-	RemoveSession(*Session)
+	RemoveSession(*Session, bool)
 
 	// Close shuts down the broker.
 	Close()
@@ -243,12 +243,12 @@ func (b *broker) Unsubscribe(sub *Session, msg *wamp.Unsubscribe) {
 	}
 }
 
-func (b *broker) RemoveSession(sess *Session) {
+func (b *broker) RemoveSession(sess *Session, disableMeta bool) {
 	if sess == nil {
 		return
 	}
 	b.actionChan <- func() {
-		b.removeSession(sess)
+		b.removeSession(sess, disableMeta)
 	}
 }
 
@@ -425,7 +425,7 @@ func (b *broker) unsubscribe(sub *Session, msg *wamp.Unsubscribe) {
 	}
 }
 
-func (b *broker) removeSession(sub *Session) {
+func (b *broker) removeSession(sub *Session, disableMeta bool) {
 	var topicSubscribers map[wamp.URI]map[wamp.ID]*Session
 	for id := range b.sessionSubIDSet[sub] {
 		// For each subscription ID, delete the subscription: topic map entry.
@@ -452,9 +452,11 @@ func (b *broker) removeSession(sub *Session) {
 				delete(subs, id)
 				if len(subs) == 0 {
 					delete(b.topicSubscribers, topic)
-					// Fired when a subscription is deleted after the last
-					// session attached to it has been removed.
-					b.pubSubMeta(wamp.MetaEventSubOnDelete, sub.ID, id)
+					if !disableMeta {
+						// Fired when a subscription is deleted after the last
+						// session attached to it has been removed.
+						b.pubSubMeta(wamp.MetaEventSubOnDelete, sub.ID, id)
+					}
 				}
 			}
 		}

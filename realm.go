@@ -118,31 +118,23 @@ func newRealm(config *RealmConfig, logger stdlog.StdLog, debug bool) (*realm, er
 	return r, nil
 }
 
-// close kills all clients, causing them to send a goodbye message.  This
-// is only called from the router's single action goroutine, so will never be
-// called by multiple goroutines.
+// close performs an orderly shutdown of the realm.
 //
-// - Realm guarantees there are never multiple calls to broker.Close() or
-// dealer.Close()
+// First it prevents any new clients from joining the realm and makes sure any
+// new clients in the process of joining finish joining.
 //
-// - handleSession() and metaProcedureHandler() are the only things than can
-// submit request to the broker and dealer.
+// Next, each client session is killed, removing it from the broker and dealer,
+// and triggering a GOODBYE message to the client, and causing the session's
+// message handler to exit.  This ensures there are no messages remaining to be
+// send to the router.
 //
-// - Closing realm prevents router from starting any new sessions on realm.
+// After that, the meta client session is killed.  This ensures there are no
+// more meta messages to sent to the router.
 //
-// - When new session is starting, lock is held in mutual exclusion with
-// closing realm until session is capable of receiving its exit signal.
+// At this point the broker and dealer are shutdown since they cannot receive
+// any more messages to route, and have no clients to route messages to.
 //
-// - Closing Realm waits until all realm.handleSession() and
-// realm.metaProcedureHandler() have exited, thereby guaranteeing that there
-// will be no more requests for broker or dealer, therefore no chance of
-// submitting to closed channel.
-//
-// - Finally realm closes broker and dealer reqChan, which is safe. Even if
-// broker or dealer are in the process of publishing meta events or calling
-// meta procedures, there is no metaProcedureHandler() to submit requests. Any
-// client sessions that are still active likewise have no handleSession() to
-// call submit requests.
+// Finally, the realm's action channel is closed and its goroutine is stopped.
 func (r *realm) close() {
 	// The lock is held in mutual exclusion with the router starting any new
 	// session handlers for this realm.  This prevents the router from starting
@@ -155,31 +147,39 @@ func (r *realm) close() {
 		return
 	}
 	r.closed = true
-	// Stop broker and dealer so they can be GC'd, and then so can this realm.
-	defer r.broker.Close()
-	defer r.dealer.Close()
 
+	// Kick all clients off.  Clients will not generate meta events when the
+	// ErrSystesShutdown reason is given.
 	r.actionChan <- func() {
 		for _, client := range r.clients {
 			client.stop <- wamp.ErrSystemShutdown
 		}
 	}
 
-	// Wait until handleSession for all clients has exited.
+	// Wait until handleInboundMessages() for all clients has exited.  No new
+	// messages can be generated once sessions are closed.
 	r.waitHandlers.Wait()
-	close(r.actionChan)
 
-	if r.metaSess == nil {
-		return
+	if r.metaSess != nil {
+		// All normal handlers have exite, so now stop the meta session.  When
+		// the meta client receives GOODBYE from the meta session, the meta
+		// session is done and will not try to publish anything more to the
+		// broker, and it is finally safe to exit and close the broker.
+		r.metaSess.stop <- wamp.ErrSystemShutdown
+		<-r.metaDone
 	}
-	// All normal handlers have exited.  There may still be pending meta events
-	// from the session getting booted off the router.  Send the meta session a
-	// stop signal.  When the meta client receives GOODBYE from the meta
-	// session, this means the meta session is done and will not try to publish
-	// anything more to the broker, and it is finally safe to exit and close
-	// the broker.
-	r.metaSess.stop <- wamp.ErrSystemShutdown
-	<-r.metaDone
+
+	// handleInboundMessages() and metaProcedureHandler() are the only things
+	// than can submit request to the broker and dealer, so not that these are
+	// finished there can be no more messages to broker and dealer.
+
+	// No new messages, so safe to close dealer and broker.  Stop broker and
+	// dealer so they can be GC'd, and then so can this realm.
+	r.dealer.Close()
+	r.broker.Close()
+
+	// Finally close realm's action channel.
+	close(r.actionChan)
 }
 
 // run must be called to start the Realm.
@@ -249,23 +249,33 @@ func (r *realm) onJoin(sess *Session) {
 // onLeave is called when a non-meta session leaves this realm.  The session is
 // removed from the realm's clients and a meta event is published.
 //
+// If the session handler exited due to realm shutdown, then remove the session
+// from broker, dealer, and realm without generating meta events.  If not
+// shutdown, then remove thesession and generate meta events as appropriate.
+//
+// There is no point to generating meta events at realm shutdown since those
+// events would only be received by meta event subscribers that had not been
+// removed yet, and clients are removed in any order.
+//
 // Note: onLeave() must be called from outside handleSession() so that it is
 // not called for the meta client.
-func (r *realm) onLeave(sess *Session) {
+func (r *realm) onLeave(sess *Session, shutdown bool) {
 	sync := make(chan struct{})
 	r.actionChan <- func() {
 		delete(r.clients, sess.ID)
-		r.dealer.RemoveSession(sess)
-		r.broker.RemoveSession(sess)
+		r.dealer.RemoveSession(sess, shutdown)
+		r.broker.RemoveSession(sess, shutdown)
 		sync <- struct{}{}
 	}
 	<-sync
 
-	r.metaClient.Send(&wamp.Publish{
-		Request:   wamp.GlobalID(),
-		Topic:     wamp.MetaEventSessionOnLeave,
-		Arguments: wamp.List{sess.ID},
-	})
+	if !shutdown {
+		r.metaClient.Send(&wamp.Publish{
+			Request:   wamp.GlobalID(),
+			Topic:     wamp.MetaEventSessionOnLeave,
+			Arguments: wamp.List{sess.ID},
+		})
+	}
 
 	r.waitHandlers.Done()
 }
@@ -293,8 +303,8 @@ func (r *realm) handleSession(sess *Session) error {
 		r.log.Println("Started session", sess)
 	}
 	go func() {
-		r.handleInboundMessages(sess)
-		r.onLeave(sess)
+		shutdown := r.handleInboundMessages(sess)
+		r.onLeave(sess, shutdown)
 		sess.Close()
 	}()
 
@@ -303,7 +313,7 @@ func (r *realm) handleSession(sess *Session) error {
 
 // handleInboundMessages handles the messages sent from a client session to
 // the router.
-func (r *realm) handleInboundMessages(sess *Session) {
+func (r *realm) handleInboundMessages(sess *Session) bool {
 	if r.debug {
 		defer r.log.Println("Ended sesion", sess)
 	}
@@ -315,7 +325,7 @@ func (r *realm) handleInboundMessages(sess *Session) {
 		case msg, open = <-recvChan:
 			if !open {
 				r.log.Println("Lost", sess)
-				return
+				return false
 			}
 		case reason := <-sess.stop:
 			if r.debug {
@@ -325,7 +335,7 @@ func (r *realm) handleInboundMessages(sess *Session) {
 				Reason:  reason,
 				Details: wamp.Dict{},
 			})
-			return
+			return reason == wamp.ErrSystemShutdown
 		}
 
 		if r.debug {
@@ -409,7 +419,7 @@ func (r *realm) handleInboundMessages(sess *Session) {
 				r.log.Println("GOODBYE from session", sess, "reason:",
 					msg.Reason)
 			}
-			return
+			return false
 
 		default:
 			// Received unrecognized message type.

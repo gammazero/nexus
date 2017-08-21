@@ -159,8 +159,7 @@ func TestRemove(t *testing.T) {
 	rsp = <-sess.Recv()
 	subID2 := rsp.(*wamp.Subscribed).Subscription
 
-	// Subscribe to unregister meta events
-	broker.RemoveSession(sess)
+	broker.RemoveSession(sess, true)
 
 	// Wait for another subscriber as a way to wait for the RemoveSession to
 	// complete.
