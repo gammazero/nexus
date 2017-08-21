@@ -161,7 +161,7 @@ func (r *realm) close() {
 	r.waitHandlers.Wait()
 
 	if r.metaSess != nil {
-		// All normal handlers have exite, so now stop the meta session.  When
+		// All normal handlers have exited, so now stop the meta session.  When
 		// the meta client receives GOODBYE from the meta session, the meta
 		// session is done and will not try to publish anything more to the
 		// broker, and it is finally safe to exit and close the broker.
@@ -251,7 +251,7 @@ func (r *realm) onJoin(sess *Session) {
 //
 // If the session handler exited due to realm shutdown, then remove the session
 // from broker, dealer, and realm without generating meta events.  If not
-// shutdown, then remove thesession and generate meta events as appropriate.
+// shutdown, then remove the session and generate meta events as appropriate.
 //
 // There is no point to generating meta events at realm shutdown since those
 // events would only be received by meta event subscribers that had not been
@@ -295,7 +295,7 @@ func (r *realm) handleSession(sess *Session) error {
 		return err
 	}
 
-	// Ensure sesson is capable of receiving exit signal before releasing lock.
+	// Ensure session is capable of receiving exit signal before releasing lock.
 	r.onJoin(sess)
 	r.closeLock.Unlock()
 
@@ -315,7 +315,7 @@ func (r *realm) handleSession(sess *Session) error {
 // the router.
 func (r *realm) handleInboundMessages(sess *Session) bool {
 	if r.debug {
-		defer r.log.Println("Ended sesion", sess)
+		defer r.log.Println("Ended session", sess)
 	}
 	recvChan := sess.Recv()
 	for {
@@ -502,7 +502,7 @@ func (r *realm) registerMetaProcedure(procedure wamp.URI, f func(*wamp.Invocatio
 		err, ok := msg.(*wamp.Error)
 		if !ok {
 			r.log.Println("PANIC! Received unexpected", msg.MessageType())
-			panic("cannot register metapocedure")
+			panic("cannot register meta procedure")
 		}
 		errMsg := fmt.Sprintf(
 			"PANIC! Failed to register session meta procedure: %v", err.Error)
