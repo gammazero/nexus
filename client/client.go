@@ -18,6 +18,20 @@ import (
 	"github.com/gammazero/nexus/wamp"
 )
 
+const (
+	pubAcknowledge = "acknowledge"
+
+	optError = "error"
+	optMode  = "mode"
+
+	helloAuthmethods = "authmethods"
+	helloRoles       = "roles"
+
+	cancelModeKill       = "kill"
+	cancelModeKillNoWait = "killnowait"
+	cancelModeSkip       = "skip"
+)
+
 // Features supported by nexus client.
 var clientRoleFeatures = wamp.Dict{
 	"publisher": wamp.Dict{
@@ -171,7 +185,7 @@ func (c *Client) JoinRealm(realm string, details wamp.Dict, authHandlers map[str
 	if details == nil {
 		details = wamp.Dict{}
 	}
-	details["roles"] = clientRoles()
+	details[helloRoles] = clientRoles()
 	if len(authHandlers) > 0 {
 		authmethods := make(wamp.List, len(authHandlers))
 		var i int
@@ -179,7 +193,7 @@ func (c *Client) JoinRealm(realm string, details wamp.Dict, authHandlers map[str
 			authmethods[i] = am
 			i++
 		}
-		details["authmethods"] = authmethods
+		details[helloAuthmethods] = authmethods
 	}
 
 	c.peer.Send(&wamp.Hello{Realm: wamp.URI(realm), Details: details})
@@ -358,7 +372,7 @@ func (c *Client) Publish(topic string, options wamp.Dict, args wamp.List, kwargs
 	}
 
 	// Check if the client is asking for a PUBLISHED response.
-	pubAck, _ := options["acknowledge"].(bool)
+	pubAck, _ := options[pubAcknowledge].(bool)
 
 	id := c.idGen.Next()
 	if pubAck {
@@ -552,12 +566,12 @@ func (werr RPCError) Error() string {
 // If the callee does not support call canceling, then behavior is "skip".
 func (c *Client) Call(ctx context.Context, procedure string, options wamp.Dict, args wamp.List, kwargs wamp.Dict, cancelMode string) (*wamp.Result, error) {
 	switch cancelMode {
-	case "kill", "killnowait", "skip":
+	case cancelModeKill, cancelModeKillNoWait, cancelModeSkip:
 	case "":
-		cancelMode = "killnowait"
+		cancelMode = cancelModeKillNoWait
 	default:
-		return nil, errors.New(
-			"cancel mode not one of: 'kill', 'killnowait', 'skip'")
+		return nil, fmt.Errorf("cancel mode not one of: '%s', '%s', '%s'",
+			cancelModeKill, cancelModeKillNoWait, cancelModeSkip)
 	}
 
 	id := c.idGen.Next()
@@ -662,7 +676,7 @@ func (c *Client) handleCRAuth(challenge *wamp.Challenge, details wamp.Dict, auth
 	// If router sent back ABORT in response to client's authentication attempt
 	// return error.
 	if abort, ok := msg.(*wamp.Abort); ok {
-		authErr := wamp.OptionString(abort.Details, "error")
+		authErr := wamp.OptionString(abort.Details, optError)
 		if authErr == "" {
 			authErr = "authentication failed"
 		}
@@ -949,7 +963,7 @@ func (c *Client) waitForReplyWithCancel(ctx context.Context, id wamp.ID, mode, p
 		c.log.Printf("Call to '%s' canceled (mode=%s)", procedure, mode)
 		c.peer.Send(&wamp.Cancel{
 			Request: id,
-			Options: wamp.SetOption(nil, "mode", mode),
+			Options: wamp.SetOption(nil, optMode, mode),
 		})
 	}
 	if msg == nil {
