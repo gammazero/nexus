@@ -26,12 +26,12 @@ type WebsocketServer struct {
 	Router
 	Upgrader *websocket.Upgrader
 
-	protocols map[string]protocol
-
 	// Serializer for text frames.  Defaults to JSONSerializer.
 	TextSerializer serialize.Serializer
 	// Serializer for binary frames.  Defaults to MessagePackSerializer.
 	BinarySerializer serialize.Serializer
+
+	protocols map[string]protocol
 
 	log stdlog.StdLog
 }
