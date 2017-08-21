@@ -56,7 +56,7 @@ type realm struct {
 }
 
 // newRealm creates a new Realm with default broker, dealer, and authorizer
-// implementtions.  The Realm has no authorizers unless anonymousAuth is true.
+// implementations.  The Realm has no authorizers unless anonymousAuth is true.
 func newRealm(config *RealmConfig, logger stdlog.StdLog, debug bool) (*realm, error) {
 	if !config.URI.ValidURI(config.StrictURI, "") {
 		return nil, fmt.Errorf(
@@ -176,7 +176,7 @@ func (r *realm) close() {
 	// from the session getting booted off the router.  Send the meta session a
 	// stop signal.  When the meta client receives GOODBYE from the meta
 	// session, this means the meta session is done and will not try to publish
-	// anything more to the broker, and it is finally save to exit and close
+	// anything more to the broker, and it is finally safe to exit and close
 	// the broker.
 	r.metaSess.stop <- wamp.ErrSystemShutdown
 	<-r.metaDone
@@ -482,6 +482,11 @@ func (r *realm) registerMetaProcedure(procedure wamp.URI, f func(*wamp.Invocatio
 		Procedure: procedure,
 	})
 	msg := <-r.metaClient.Recv()
+	if msg == nil {
+		// This would only happen if the meta client was closed before or
+		// during meta procedure registration at realm startup.  Safety first.
+		return
+	}
 	reg, ok := msg.(*wamp.Registered)
 	if !ok {
 		err, ok := msg.(*wamp.Error)

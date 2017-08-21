@@ -14,16 +14,44 @@ import (
 // - call timeout (need timeout goroutine)
 // - call trust levels
 
+const (
+	roleCallee = "callee"
+	roleCaller = "caller"
+
+	regMatchExact    = "exact"
+	regMatchPrefix   = "prefix"
+	regMatchWildcard = "wildcard"
+
+	optCancelMode          = "mode"
+	optRegMatch            = "match"
+	optRegDiscloseCaller   = "disclose_caller"
+	optCallDiscloseMe      = "disclose_me"
+	optCallReceiveProgress = "receive_progress"
+	optTimeout             = "timeout"
+
+	featureCallCanceling   = "call_canceling"
+	featureCallTimeout     = "call_timeout"
+	featureCallerIdent     = "caller_identification"
+	featurePatternBasedReg = "pattern_based_registration"
+	featureProgCallResults = "progressive_call_results"
+	featureSharedReg       = "shared_registration"
+	featureRegMetaAPI      = "registration_meta_api"
+
+	cancelModeKill       = "kill"
+	cancelModeKillNoWait = "killnowait"
+	cancelModeSkip       = "skip"
+)
+
 // Features supported by this dealer.
 var dealerFeatures = wamp.Dict{
 	"features": wamp.Dict{
-		"call_canceling":             true,
-		"call_timeout":               true,
-		"caller_identification":      true,
-		"pattern_based_registration": true,
-		"progressive_call_results":   true,
-		"shared_registration":        true,
-		"registration_meta_api":      true,
+		featureCallCanceling:   true,
+		featureCallTimeout:     true,
+		featureCallerIdent:     true,
+		featurePatternBasedReg: true,
+		featureProgCallResults: true,
+		featureSharedReg:       true,
+		featureRegMetaAPI:      true,
 	},
 }
 
@@ -126,11 +154,6 @@ type invocation struct {
 	canceled bool
 }
 
-// Features returns the features supported by this dealer.
-func (d *dealer) Features() wamp.Dict {
-	return dealerFeatures
-}
-
 type dealer struct {
 	// procedure URI -> registration ID
 	procRegMap    map[wamp.URI]*registration
@@ -214,6 +237,11 @@ func NewDealer(metaClient wamp.Peer, logger stdlog.StdLog, strictURI, allowDiscl
 	return d
 }
 
+// Features returns the features supported by this dealer.
+func (d *dealer) Features() wamp.Dict {
+	return dealerFeatures
+}
+
 // Register registers a callee to handle calls to a procedure.
 func (d *dealer) Register(callee *Session, msg *wamp.Register) {
 	if callee == nil || msg == nil {
@@ -223,7 +251,7 @@ func (d *dealer) Register(callee *Session, msg *wamp.Register) {
 	// Validate procedure URI.  For REGISTER, must be valid URI (either strict
 	// or loose), and all URI components must be non-empty other than for
 	// wildcard or prefix matched procedures.
-	match := wamp.OptionString(msg.Options, "match")
+	match := wamp.OptionString(msg.Options, optRegMatch)
 	if !msg.Procedure.ValidURI(d.strictURI, match) {
 		errMsg := fmt.Sprintf(
 			"register for invalid procedure URI %v (URI strict checking %v)",
@@ -258,7 +286,7 @@ func (d *dealer) Register(callee *Session, msg *wamp.Register) {
 
 	// If callee requests disclosure of caller identity, but dealer does not
 	// allow, then send error as registration response.
-	discloseCaller := wamp.OptionFlag(msg.Options, "disclose_caller")
+	discloseCaller := wamp.OptionFlag(msg.Options, optRegDiscloseCaller)
 	if !d.allowDisclose && discloseCaller {
 		callee.Send(&wamp.Error{
 			Type:    msg.MessageType(),
@@ -335,7 +363,7 @@ func (d *dealer) RemoveSession(sess *Session) {
 	}
 }
 
-// Close stops the dealer and waits message processing to stop.
+// Close stops the dealer letting already queued actions finish.
 func (d *dealer) Close() {
 	close(d.actionChan)
 }
@@ -354,9 +382,9 @@ func (d *dealer) register(callee *Session, msg *wamp.Register, match, invokePoli
 	switch match {
 	default:
 		reg = d.procRegMap[msg.Procedure]
-	case "prefix":
+	case regMatchPrefix:
 		reg = d.pfxProcRegMap[msg.Procedure]
-	case "wildcard":
+	case regMatchWildcard:
 		reg = d.wcProcRegMap[msg.Procedure]
 	}
 
@@ -380,9 +408,9 @@ func (d *dealer) register(callee *Session, msg *wamp.Register, match, invokePoli
 		switch match {
 		default:
 			d.procRegMap[msg.Procedure] = reg
-		case "prefix":
+		case regMatchPrefix:
 			d.pfxProcRegMap[msg.Procedure] = reg
-		case "wildcard":
+		case regMatchWildcard:
 			d.wcProcRegMap[msg.Procedure] = reg
 		}
 
@@ -597,11 +625,11 @@ func (d *dealer) call(caller *Session, msg *wamp.Call) {
 	//
 	// A timeout allows to automatically cancel a call after a specified time
 	// either at the Callee or at the Dealer.
-	timeout := wamp.OptionInt64(msg.Options, "timeout")
+	timeout := wamp.OptionInt64(msg.Options, optTimeout)
 	if timeout > 0 {
 		// Check that callee supports call_timeout.
-		if callee.HasFeature("callee", "call_timeout") {
-			details["timeout"] = timeout
+		if callee.HasFeature(roleCallee, featureCallTimeout) {
+			details[optTimeout] = timeout
 		}
 
 		// TODO: Start a goroutine to cancel the pending call on timeout.
@@ -614,12 +642,12 @@ func (d *dealer) call(caller *Session, msg *wamp.Call) {
 	// If the callee has requested disclosure of caller identity when the
 	// registration was created, and this was allowed by the dealer.
 	if reg.disclose {
-		details["caller"] = caller.ID
+		details[roleCaller] = caller.ID
 	} else {
 		// A Caller MAY request the disclosure of its identity (its WAMP
 		// session ID) to endpoints of a routed call.  This is indicated by the
 		// "disclose_me" flag in the message options.
-		if wamp.OptionFlag(msg.Options, "disclose_me") {
+		if wamp.OptionFlag(msg.Options, optCallDiscloseMe) {
 			// Dealer MAY deny a Caller's request to disclose its identity.
 			if !d.allowDisclose {
 				caller.Send(&wamp.Error{
@@ -629,20 +657,20 @@ func (d *dealer) call(caller *Session, msg *wamp.Call) {
 					Error:   wamp.ErrOptionDisallowedDiscloseMe,
 				})
 			}
-			if callee.HasFeature("callee", "caller_identification") {
-				details["caller"] = caller.ID
+			if callee.HasFeature(roleCallee, featureCallerIdent) {
+				details[roleCaller] = caller.ID
 			}
 		}
 	}
 
 	// A Caller indicates its willingness to receive progressive results by
 	// setting CALL.Options.receive_progress|bool := true
-	if wamp.OptionFlag(msg.Options, "receive_progress") {
+	if wamp.OptionFlag(msg.Options, optCallReceiveProgress) {
 		// If the Callee supports progressive calls, the Dealer will
 		// forward the Caller's willingness to receive progressive
 		// results by setting.
-		if callee.HasFeature("callee", "progressive_call_results") {
-			details["receive_progress"] = true
+		if callee.HasFeature(roleCallee, featureProgCallResults) {
+			details[featureProgCallResults] = true
 		}
 	}
 
@@ -709,11 +737,11 @@ func (d *dealer) cancel(caller *Session, msg *wamp.Cancel) {
 	invk.canceled = true
 
 	// Cancel mode should be one of: "skip", "kill", "killnowait"
-	mode := wamp.OptionString(msg.Options, "mode")
-	if mode == "killnowait" || mode == "kill" {
+	mode := wamp.OptionString(msg.Options, optCancelMode)
+	if mode == cancelModeKillNoWait || mode == cancelModeKill {
 		// Check that callee supports call canceling to see if it is alright to
 		// send INTERRUPT to callee.
-		if !invk.callee.HasFeature("callee", "call_canceling") {
+		if !invk.callee.HasFeature(roleCallee, featureCallCanceling) {
 			// Cancel in dealer without sending INTERRUPT to callee.
 			d.log.Println("Callee", invk.callee, "does not support call canceling")
 		} else {
@@ -729,12 +757,12 @@ func (d *dealer) cancel(caller *Session, msg *wamp.Cancel) {
 				// If mode is "kill" then let error from callee trigger the
 				// response to the caller.  This is how the caller waits for
 				// the callee to cancel the call.
-				if mode == "kill" {
+				if mode == cancelModeKill {
 					return
 				}
 			}
 		}
-	} else if mode != "skip" {
+	} else if mode != cancelModeSkip {
 		d.log.Printf("!! Unrecognized cancel mode '%s', changing to 'skip'",
 			mode)
 	}
@@ -838,9 +866,7 @@ func (d *dealer) removeSession(callee *Session) {
 	for regID := range d.calleeRegIDSet[callee] {
 		delReg, err := d.delCalleeReg(callee, regID)
 		if err != nil {
-			// Should probably panic here.
-			d.log.Print("!!! Callee had ID of nonexistent registration")
-			continue
+			panic("!!! Callee had ID of nonexistent registration")
 		}
 
 		// Publish wamp.registration.on_unregister meta event.  Fired when a
@@ -904,9 +930,9 @@ func (d *dealer) delCalleeReg(callee *Session, regID wamp.ID) (bool, error) {
 		switch reg.match {
 		default:
 			delete(d.procRegMap, reg.procedure)
-		case "prefix":
+		case regMatchPrefix:
 			delete(d.pfxProcRegMap, reg.procedure)
-		case "wildcard":
+		case regMatchWildcard:
 			delete(d.wcProcRegMap, reg.procedure)
 		}
 		if d.debug {
@@ -941,9 +967,9 @@ func (d *dealer) RegList(msg *wamp.Invocation) wamp.Message {
 	}
 	<-sync
 	dict := wamp.Dict{
-		"exact":    exactRegs,
-		"prefix":   pfxRegs,
-		"wildcard": wcRegs,
+		regMatchExact:    exactRegs,
+		regMatchPrefix:   pfxRegs,
+		regMatchWildcard: wcRegs,
 	}
 	return &wamp.Yield{
 		Request:   msg.Request,
@@ -959,7 +985,7 @@ func (d *dealer) RegLookup(msg *wamp.Invocation) wamp.Message {
 			var match string
 			if len(msg.Arguments) > 1 {
 				opts := msg.Arguments[1].(wamp.Dict)
-				match = wamp.OptionString(opts, "match")
+				match = wamp.OptionString(opts, optRegMatch)
 			}
 			sync := make(chan wamp.ID)
 			d.actionChan <- func() {
@@ -969,9 +995,9 @@ func (d *dealer) RegLookup(msg *wamp.Invocation) wamp.Message {
 				switch match {
 				default:
 					reg, ok = d.procRegMap[procedure]
-				case "prefix":
+				case regMatchPrefix:
 					reg, ok = d.pfxProcRegMap[procedure]
-				case "wildcard":
+				case regMatchWildcard:
 					reg, ok = d.wcProcRegMap[procedure]
 				}
 				if ok {

@@ -13,14 +13,34 @@ import (
 // - event history
 // - testament_meta_api
 
+const (
+	pubAcknowledge   = "acknowledge"
+	subMatchPrefix   = "prefix"
+	subMatchWildcard = "wildcard"
+
+	roleSub = "subscriber"
+	rolePub = "publisher"
+
+	featureSubBlackWhiteListing = "subscriber_blackwhite_listing"
+	featurePatternSub           = "pattern_based_subscription"
+	featurePubExclusion         = "publisher_exclusion"
+	featurePubIdent             = "publisher_identification"
+	featureSubMetaAPI           = "subscription_meta_api"
+
+	optSubMatch      = "match"
+	optPubDiscloseMe = "disclose_me"
+
+	detailTopic = "topic"
+)
+
 // Features supported by this broker.
 var brokerFeatures = wamp.Dict{
 	"features": wamp.Dict{
-		"subscriber_blackwhite_listing": true,
-		"pattern_based_subscription":    true,
-		"publisher_exclusion":           true,
-		"publisher_identification":      true,
-		"subscription_meta_api":         true,
+		featureSubBlackWhiteListing: true,
+		featurePatternSub:           true,
+		featurePubExclusion:         true,
+		featurePubIdent:             true,
+		featureSubMetaAPI:           true,
 	},
 }
 
@@ -95,6 +115,9 @@ type broker struct {
 
 // NewBroker returns a new default broker implementation instance.
 func NewBroker(logger stdlog.StdLog, strictURI, allowDisclose, debug bool) Broker {
+	if logger == nil {
+		panic("logger is nil")
+	}
 	b := &broker{
 		topicSubscribers:    map[wamp.URI]map[wamp.ID]*Session{},
 		pfxTopicSubscribers: map[wamp.URI]map[wamp.ID]*Session{},
@@ -136,21 +159,18 @@ func (b *broker) Publish(pub *Session, msg *wamp.Publish) {
 	// Validate URI.  For PUBLISH, must be valid URI (either strict or loose),
 	// and all URI components must be non-empty.
 	if !msg.Topic.ValidURI(b.strictURI, "") {
-		opt, ok := msg.Options["acknowledge"]
-		if !ok {
+		if pubAck, _ := msg.Options[pubAcknowledge].(bool); !pubAck {
 			return
 		}
-		if ack, ok := opt.(bool); ok && ack {
-			errMsg := fmt.Sprintf(
-				"publish with invalid topic URI %v (URI strict checking %v)",
-				msg.Topic, b.strictURI)
-			pub.Send(&wamp.Error{
-				Type:      msg.MessageType(),
-				Request:   msg.Request,
-				Error:     wamp.ErrInvalidURI,
-				Arguments: wamp.List{errMsg},
-			})
-		}
+		errMsg := fmt.Sprintf(
+			"publish with invalid topic URI %v (URI strict checking %v)",
+			msg.Topic, b.strictURI)
+		pub.Send(&wamp.Error{
+			Type:      msg.MessageType(),
+			Request:   msg.Request,
+			Error:     wamp.ErrInvalidURI,
+			Arguments: wamp.List{errMsg},
+		})
 		return
 	}
 
@@ -160,11 +180,11 @@ func (b *broker) Publish(pub *Session, msg *wamp.Publish) {
 	}
 
 	// A Broker may also (automatically) disclose the identity of a
-	// Publisher even without the Publisher having explicitly requested to
+	// publisher even without the publisher having explicitly requested to
 	// do so when the Broker configuration (for the publication topic) is
 	// set up to do so.  TODO: Currently no broker config for this.
 	var disclose bool
-	if wamp.OptionFlag(msg.Options, "disclose_me") {
+	if wamp.OptionFlag(msg.Options, optPubDiscloseMe) {
 		// Broker MAY deny a publisher's request to disclose its identity.
 		if !b.allowDisclose {
 			pub.Send(&wamp.Error{
@@ -182,7 +202,7 @@ func (b *broker) Publish(pub *Session, msg *wamp.Publish) {
 	}
 
 	// Send Published message if acknowledge is present and true.
-	if pubAck, _ := msg.Options["acknowledge"].(bool); pubAck {
+	if pubAck, _ := msg.Options[pubAcknowledge].(bool); pubAck {
 		pub.Send(&wamp.Published{Request: msg.Request, Publication: pubID})
 	}
 }
@@ -196,7 +216,7 @@ func (b *broker) Subscribe(sub *Session, msg *wamp.Subscribe) {
 	// loose), and all URI components must be non-empty for normal
 	// subscriptions, may be empty for wildcard subscriptions and must be
 	// non-empty for all but the last component for prefix subscriptions.
-	match := wamp.OptionString(msg.Options, "match")
+	match := wamp.OptionString(msg.Options, optSubMatch)
 	if !msg.Topic.ValidURI(b.strictURI, match) {
 		errMsg := fmt.Sprintf(
 			"subscribe for invalid topic URI %v (URI strict checking %v)",
@@ -234,7 +254,7 @@ func (b *broker) RemoveSession(sess *Session) {
 	}
 }
 
-// Close stops the broker and waits message processing to stop.
+// Close stops the broker letting already queued actions finish.
 func (b *broker) Close() {
 	close(b.actionChan)
 }
@@ -273,7 +293,7 @@ func (b *broker) subscribe(sub *Session, msg *wamp.Subscribe, match string) {
 	var subscriptions map[wamp.ID]wamp.URI
 	var ok bool
 	switch match {
-	case "prefix":
+	case subMatchPrefix:
 		// Subscribe to any topic that matches by the given prefix URI
 		idSub, ok = b.pfxTopicSubscribers[msg.Topic]
 		if !ok {
@@ -281,7 +301,7 @@ func (b *broker) subscribe(sub *Session, msg *wamp.Subscribe, match string) {
 			b.pfxTopicSubscribers[msg.Topic] = idSub
 		}
 		subscriptions = b.pfxSubscriptions
-	case "wildcard":
+	case subMatchWildcard:
 		// Subscribe to any topic that matches by the given wildcard URI.
 		idSub, ok = b.wcTopicSubscribers[msg.Topic]
 		if !ok {
@@ -472,11 +492,11 @@ func (b *broker) pubEvent(pub *Session, msg *wamp.Publish, pubID wamp.ID, subs m
 		// policy, a Broker MUST supply the original PUBLISH.Topic as provided
 		// by the Publisher in EVENT.Details.topic|uri.
 		if sendTopic {
-			details["topic"] = msg.Topic
+			details[detailTopic] = msg.Topic
 		}
 
-		if disclose && sub.HasFeature("subscriber", "publisher_identification") {
-			details["publisher"] = pub.ID
+		if disclose && sub.HasFeature(roleSub, featurePubIdent) {
+			details[rolePub] = pub.ID
 		}
 
 		// TODO: Handle publication trust levels
@@ -525,7 +545,7 @@ func (b *broker) pubSubMeta(metaTopic wamp.URI, subSessID, subID wamp.ID) {
 			}
 			details := wamp.Dict{}
 			if sendTopic {
-				details["topic"] = metaTopic
+				details[detailTopic] = metaTopic
 			}
 			sub.Send(&wamp.Event{
 				Publication:  pubID,
@@ -555,7 +575,7 @@ func (b *broker) pubSubCreateMeta(subTopic wamp.URI, subSessID, subID wamp.ID, m
 			}
 			details := wamp.Dict{}
 			if sendTopic {
-				details["topic"] = wamp.MetaEventSubOnCreate
+				details[detailTopic] = wamp.MetaEventSubOnCreate
 			}
 			subDetails := wamp.Dict{
 				"id":      subID,
@@ -576,12 +596,20 @@ func (b *broker) pubSubCreateMeta(subTopic wamp.URI, subSessID, subID wamp.ID, m
 
 // msgBWLists gets any blacklists and whitelists included in a PUBLISH message.
 func msgBlackWhiteLists(msg *wamp.Publish) ([]wamp.ID, []wamp.ID, map[string][]string, map[string][]string) {
+
+	const (
+		blacklistKey    = "exclude"
+		blacklistPrefix = "exclude_"
+		whitelistKey    = "eligible"
+		whitelistPrefix = "eligible_"
+	)
+
 	if len(msg.Options) == 0 {
 		return nil, nil, nil, nil
 	}
 
 	var blIDs []wamp.ID
-	if blacklist, ok := msg.Options["exclude"]; ok {
+	if blacklist, ok := msg.Options[blacklistKey]; ok {
 		if blacklist, ok := wamp.AsList(blacklist); ok {
 			for i := range blacklist {
 				if blVal, ok := wamp.AsID(blacklist[i]); ok {
@@ -592,7 +620,7 @@ func msgBlackWhiteLists(msg *wamp.Publish) ([]wamp.ID, []wamp.ID, map[string][]s
 	}
 
 	var wlIDs []wamp.ID
-	if whitelist, ok := msg.Options["eligible"]; ok {
+	if whitelist, ok := msg.Options[whitelistKey]; ok {
 		if whitelist, ok := wamp.AsList(whitelist); ok {
 			for i := range whitelist {
 				if wlID, ok := wamp.AsID(whitelist[i]); ok {
@@ -627,8 +655,8 @@ func msgBlackWhiteLists(msg *wamp.Publish) ([]wamp.ID, []wamp.ID, map[string][]s
 		return attrMap
 	}
 
-	blMap := getAttrMap("exclude_")
-	wlMap := getAttrMap("eligible_")
+	blMap := getAttrMap(blacklistPrefix)
+	wlMap := getAttrMap(whitelistPrefix)
 
 	return blIDs, wlIDs, blMap, wlMap
 }
