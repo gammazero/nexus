@@ -120,13 +120,14 @@ func newRealm(config *RealmConfig, logger stdlog.StdLog, debug bool) (*realm, er
 
 // close performs an orderly shutdown of the realm.
 //
-// First it prevents any new clients from joining the realm and makes sure any
-// new clients in the process of joining finish joining.
+// First a lock is acquired that prevents any new clients from joining the
+// realm and makes sure any clients already in the process of joining finish
+// joining.
 //
 // Next, each client session is killed, removing it from the broker and dealer,
-// and triggering a GOODBYE message to the client, and causing the session's
+// triggering a GOODBYE message to the client, and causing the session's
 // message handler to exit.  This ensures there are no messages remaining to be
-// send to the router.
+// sent to the router.
 //
 // After that, the meta client session is killed.  This ensures there are no
 // more meta messages to sent to the router.
@@ -156,7 +157,7 @@ func (r *realm) close() {
 		}
 	}
 
-	// Wait until handleInboundMessages() for all clients has exited.  No new
+	// Wait until each client's handleInboundMessages() has exited.  No new
 	// messages can be generated once sessions are closed.
 	r.waitHandlers.Wait()
 
@@ -170,7 +171,7 @@ func (r *realm) close() {
 	}
 
 	// handleInboundMessages() and metaProcedureHandler() are the only things
-	// than can submit request to the broker and dealer, so not that these are
+	// than can submit request to the broker and dealer, so now that these are
 	// finished there can be no more messages to broker and dealer.
 
 	// No new messages, so safe to close dealer and broker.  Stop broker and
@@ -295,7 +296,7 @@ func (r *realm) handleSession(sess *Session) error {
 		return err
 	}
 
-	// Ensure session is capable of receiving exit signal before releasing lock.
+	// Ensure session is capable of receiving exit signal before releasing lock
 	r.onJoin(sess)
 	r.closeLock.Unlock()
 
