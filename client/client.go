@@ -638,6 +638,9 @@ func (c *Client) Close() error {
 	// returning results to the router, since router has already said goodbye.
 	close(c.stopping)
 
+	// Wait for message handler to exit.
+	<-c.done
+
 	// Wait for any active invocation handlers to finish, so that is is safe to
 	// close the actionChan which stops the client.
 	c.activeInvHandlers.Wait()
@@ -727,7 +730,20 @@ func unexpectedMsgError(msg wamp.Message, expected wamp.MessageType) error {
 
 // receiveFromRouter handles messages from the router until client closes.
 func (c *Client) receiveFromRouter() {
-	for msg := range c.peer.Recv() {
+	//for msg := range c.peer.Recv() {
+RecvLoop:
+	for {
+		var msg wamp.Message
+		var open bool
+		select {
+		case msg, open = <-c.peer.Recv():
+			if !open {
+				break RecvLoop
+			}
+		case <-c.stopping:
+			break RecvLoop
+		}
+
 		if c.debug {
 			c.log.Println("Client", c.id, "received", msg.MessageType())
 		}
@@ -754,7 +770,7 @@ func (c *Client) receiveFromRouter() {
 			c.signalReply(msg, msg.Request)
 
 		case *wamp.Goodbye:
-			break
+			break RecvLoop
 
 		default:
 			c.log.Println("Unhandled message from router:", msg.MessageType(), msg)
