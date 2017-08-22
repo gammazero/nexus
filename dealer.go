@@ -100,7 +100,7 @@ type Dealer interface {
 	Error(msg *wamp.Error)
 
 	// Remove a callee's registrations.
-	RemoveSession(*Session, bool)
+	RemoveSession(*Session)
 
 	// Close shuts down the dealer.
 	Close()
@@ -351,13 +351,13 @@ func (d *dealer) Error(msg *wamp.Error) {
 	}
 }
 
-func (d *dealer) RemoveSession(sess *Session, disableMeta bool) {
+func (d *dealer) RemoveSession(sess *Session) {
 	if sess == nil {
 		// No session specified, no session removed.
 		return
 	}
 	d.actionChan <- func() {
-		d.removeSession(sess, disableMeta)
+		d.removeSession(sess)
 	}
 }
 
@@ -860,15 +860,11 @@ func (d *dealer) error(msg *wamp.Error) {
 	})
 }
 
-func (d *dealer) removeSession(callee *Session, disableMeta bool) {
+func (d *dealer) removeSession(callee *Session) {
 	for regID := range d.calleeRegIDSet[callee] {
 		delReg, err := d.delCalleeReg(callee, regID)
 		if err != nil {
 			panic("!!! Callee had ID of nonexistent registration")
-		}
-
-		if disableMeta {
-			continue
 		}
 
 		// Publish wamp.registration.on_unregister meta event.  Fired when a

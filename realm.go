@@ -264,8 +264,12 @@ func (r *realm) onLeave(sess *Session, shutdown bool) {
 	sync := make(chan struct{})
 	r.actionChan <- func() {
 		delete(r.clients, sess.ID)
-		r.dealer.RemoveSession(sess, shutdown)
-		r.broker.RemoveSession(sess, shutdown)
+		// If realm is shutdown, do not bother to remove session from broker
+		// and dealer.  They will be closed after sessions are closed.
+		if !shutdown {
+			r.dealer.RemoveSession(sess)
+			r.broker.RemoveSession(sess)
+		}
 		sync <- struct{}{}
 	}
 	<-sync

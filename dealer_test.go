@@ -251,7 +251,7 @@ func TestRemovePeer(t *testing.T) {
 	}
 
 	// Test that removing the callee session removes the registration.
-	dealer.RemoveSession(sess, true)
+	dealer.RemoveSession(sess)
 
 	// Register as a way to sync with dealer.
 	sess2 := &Session{Peer: callee}
@@ -749,7 +749,7 @@ func TestSharedRegistrationFirst(t *testing.T) {
 	}
 
 	// Remove callee1
-	dealer.RemoveSession(calleeSess1, false)
+	dealer.RemoveSession(calleeSess1)
 	if err = checkMetaReg(metaClient, calleeSess1.ID); err != nil {
 		t.Fatal("Registration meta event fail:", err)
 	}
@@ -899,7 +899,7 @@ func TestSharedRegistrationLast(t *testing.T) {
 	}
 
 	// Remove callee2
-	dealer.RemoveSession(calleeSess2, false)
+	dealer.RemoveSession(calleeSess2)
 	if err = checkMetaReg(metaClient, calleeSess2.ID); err != nil {
 		t.Fatal("Registration meta event fail:", err)
 	}
