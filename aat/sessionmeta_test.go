@@ -82,13 +82,12 @@ func TestMetaEventOnJoin(t *testing.T) {
 	if err != nil {
 		t.Fatal("unsubscribe error:", err)
 	}
-
-	err = sess.Close()
+	err = subscriber.Close()
 	if err != nil {
 		t.Fatal("Failed to disconnect client:", err)
 	}
 
-	err = subscriber.Close()
+	err = sess.Close()
 	if err != nil {
 		t.Fatal("Failed to disconnect client:", err)
 	}
@@ -165,7 +164,6 @@ func TestMetaEventOnLeave(t *testing.T) {
 	if err != nil {
 		t.Fatal("unsubscribe error:", err)
 	}
-
 	err = subscriber.Close()
 	if err != nil {
 		t.Fatal("Failed to disconnect client:", err)
@@ -264,13 +262,17 @@ func TestMetaProcSessionCount(t *testing.T) {
 		t.Fatal("Session count should be same as first")
 	}
 
-	err = caller.Close()
+	subscriber.Unsubscribe(metaOnJoin)
+	subscriber.Unsubscribe(metaOnLeave)
+	err = subscriber.Close()
 	if err != nil {
 		t.Fatal("Failed to disconnect client:", err)
 	}
 
-	subscriber.Unsubscribe(metaOnJoin)
-	subscriber.Unsubscribe(metaOnLeave)
+	err = caller.Close()
+	if err != nil {
+		t.Fatal("Failed to disconnect client:", err)
+	}
 }
 
 func TestMetaProcSessionList(t *testing.T) {
@@ -375,13 +377,13 @@ func TestMetaProcSessionList(t *testing.T) {
 		t.Fatal("Session ID should not be in session list")
 	}
 
+	subscriber.Unsubscribe(metaOnLeave)
+	subscriber.Close()
+
 	err = caller.Close()
 	if err != nil {
 		t.Fatal("Failed to disconnect client:", err)
 	}
-
-	subscriber.Unsubscribe(metaOnLeave)
-	subscriber.Close()
 }
 
 func TestMetaProcSessionGet(t *testing.T) {
@@ -464,11 +466,14 @@ func TestMetaProcSessionGet(t *testing.T) {
 		t.Fatal("Expected error URI:", wamp.ErrNoSuchSession, "got", rpcErr.Err.Error)
 	}
 
-	err = caller.Close()
+	subscriber.Unsubscribe(metaOnLeave)
+	err = subscriber.Close()
 	if err != nil {
 		t.Fatal("Failed to disconnect client:", err)
 	}
 
-	subscriber.Unsubscribe(metaOnLeave)
-	subscriber.Close()
+	err = caller.Close()
+	if err != nil {
+		t.Fatal("Failed to disconnect client:", err)
+	}
 }
