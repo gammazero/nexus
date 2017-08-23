@@ -635,14 +635,23 @@ func (c *Client) Close() error {
 		return err
 	}
 	// Cancel any invocation handlers that are still running, without them
-	// returning results to the router, since router has already said goodbye.
+	// returning results to the router, since client has already said goodbye
+	// to router.
 	close(c.stopping)
 
 	// Wait for any active invocation handlers to finish, so that is is safe to
 	// close the actionChan which stops the client.
 	c.activeInvHandlers.Wait()
-	close(c.actionChan)
+
+	// Close the peer.  This causes receiveFromRouter to exit if it has not
+	// already done so after receiving GOODBYE from router.
 	c.peer.Close()
+
+	// Wait for receiveFromRouter to exit.
+	<-c.done
+
+	// Stop the client's main goroutine.
+	close(c.actionChan)
 	return nil
 }
 
@@ -727,6 +736,10 @@ func unexpectedMsgError(msg wamp.Message, expected wamp.MessageType) error {
 
 // receiveFromRouter handles messages from the router until client closes.
 func (c *Client) receiveFromRouter() {
+	defer close(c.done)
+	if c.debug {
+		defer c.log.Println("Client", c.id, "closed")
+	}
 	for msg := range c.peer.Recv() {
 		if c.debug {
 			c.log.Println("Client", c.id, "received", msg.MessageType())
@@ -754,16 +767,11 @@ func (c *Client) receiveFromRouter() {
 			c.signalReply(msg, msg.Request)
 
 		case *wamp.Goodbye:
-			break
+			return
 
 		default:
 			c.log.Println("Unhandled message from router:", msg.MessageType(), msg)
 		}
-	}
-
-	close(c.done)
-	if c.debug {
-		c.log.Println("Client", c.id, "closed")
 	}
 }
 
