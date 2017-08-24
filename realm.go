@@ -140,14 +140,12 @@ func (r *realm) close() {
 	// messages can be generated once sessions are closed.
 	r.waitHandlers.Wait()
 
-	if r.metaSess != nil {
-		// All normal handlers have exited, so now stop the meta session.  When
-		// the meta client receives GOODBYE from the meta session, the meta
-		// session is done and will not try to publish anything more to the
-		// broker, and it is finally safe to exit and close the broker.
-		r.metaSess.stop <- wamp.ErrSystemShutdown
-		<-r.metaDone
-	}
+	// All normal handlers have exited, so now stop the meta session.  When
+	// the meta client receives GOODBYE from the meta session, the meta
+	// session is done and will not try to publish anything more to the
+	// broker, and it is finally safe to exit and close the broker.
+	r.metaSess.stop <- wamp.ErrSystemShutdown
+	<-r.metaDone
 
 	// handleInboundMessages() and metaProcedureHandler() are the only things
 	// than can submit request to the broker and dealer, so now that these are
