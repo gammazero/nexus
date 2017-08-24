@@ -476,10 +476,9 @@ func (r *realm) authClient(client wamp.Peer, details wamp.Dict) (*wamp.Welcome, 
 func (r *realm) getAuthenticator(methods []string) (auth auth.Authenticator, authMethod string) {
 	sync := make(chan struct{})
 	r.actionChan <- func() {
-		// Iterate through the methods and see if there is an Authenticator or
-		// a CRAuthenticator for the method.
-		for _, method := range methods {
-			if len(r.authenticators) != 0 {
+		// Iterate through the methods and see if there is an Authenticator for the method.
+		if len(r.authenticators) != 0 {
+			for _, method := range methods {
 				if a, ok := r.authenticators[method]; ok {
 					auth = a
 					authMethod = method
