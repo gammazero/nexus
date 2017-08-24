@@ -57,13 +57,15 @@ type realm struct {
 
 // newRealm creates a new Realm with default broker, dealer, and authorizer
 // implementations.  The Realm has no authorizers unless anonymousAuth is true.
-func newRealm(config *RealmConfig, logger stdlog.StdLog, debug bool) (*realm, error) {
+func newRealm(config *RealmConfig, broker Broker, dealer Dealer, logger stdlog.StdLog, debug bool) (*realm, error) {
 	if !config.URI.ValidURI(config.StrictURI, "") {
 		return nil, fmt.Errorf(
 			"invalid realm URI %v (URI strict checking %v)", config.URI, config.StrictURI)
 	}
 
 	r := &realm{
+		broker:         broker,
+		dealer:         dealer,
 		authorizer:     config.Authorizer,
 		authenticators: config.Authenticators,
 		clients:        map[wamp.ID]*Session{},
@@ -92,29 +94,6 @@ func newRealm(config *RealmConfig, logger stdlog.StdLog, debug bool) (*realm, er
 		}
 	}
 
-	// Create a session that bridges two peers.  Meta events are published by
-	// the metaClient returned, which is the remote side of the router uplink.
-	// Sending a PUBLISH message to it will result in the router publishing the
-	// event to any subscribers.
-	r.metaClient, r.metaSess = r.createMetaSession()
-
-	r.broker = NewBroker(logger, config.StrictURI, config.AllowDisclose, debug)
-	r.dealer = NewDealer(r.metaClient, logger, config.StrictURI, config.AllowDisclose, debug)
-
-	// Register to handle session meta procedures.
-	r.registerMetaProcedure(wamp.MetaProcSessionCount, r.sessionCount)
-	r.registerMetaProcedure(wamp.MetaProcSessionList, r.sessionList)
-	r.registerMetaProcedure(wamp.MetaProcSessionGet, r.sessionGet)
-
-	// Register to handle registration meta procedures.
-	r.registerMetaProcedure(wamp.MetaProcRegList, r.dealer.RegList)
-	r.registerMetaProcedure(wamp.MetaProcRegLookup, r.dealer.RegLookup)
-	r.registerMetaProcedure(wamp.MetaProcRegMatch, r.dealer.RegMatch)
-	r.registerMetaProcedure(wamp.MetaProcRegGet, r.dealer.RegGet)
-	r.registerMetaProcedure(wamp.MetaProcRegListCallees, r.dealer.RegListCallees)
-	r.registerMetaProcedure(wamp.MetaProcRegCountCallees, r.dealer.RegCountCallees)
-
-	go r.metaProcedureHandler()
 	return r, nil
 }
 
@@ -186,6 +165,29 @@ func (r *realm) close() {
 // run must be called to start the Realm.
 // It blocks so should be executed in a separate goroutine
 func (r *realm) run() {
+	// Create a session that bridges two peers.  Meta events are published by
+	// the metaClient returned, which is the remote side of the router uplink.
+	// Sending a PUBLISH message to it will result in the router publishing the
+	// event to any subscribers.
+	r.metaClient, r.metaSess = r.createMetaSession()
+
+	r.dealer.SetMetaClient(r.metaClient)
+
+	// Register to handle session meta procedures.
+	r.registerMetaProcedure(wamp.MetaProcSessionCount, r.sessionCount)
+	r.registerMetaProcedure(wamp.MetaProcSessionList, r.sessionList)
+	r.registerMetaProcedure(wamp.MetaProcSessionGet, r.sessionGet)
+
+	// Register to handle registration meta procedures.
+	r.registerMetaProcedure(wamp.MetaProcRegList, r.dealer.RegList)
+	r.registerMetaProcedure(wamp.MetaProcRegLookup, r.dealer.RegLookup)
+	r.registerMetaProcedure(wamp.MetaProcRegMatch, r.dealer.RegMatch)
+	r.registerMetaProcedure(wamp.MetaProcRegGet, r.dealer.RegGet)
+	r.registerMetaProcedure(wamp.MetaProcRegListCallees, r.dealer.RegListCallees)
+	r.registerMetaProcedure(wamp.MetaProcRegCountCallees, r.dealer.RegCountCallees)
+
+	go r.metaProcedureHandler()
+
 	for action := range r.actionChan {
 		action()
 	}

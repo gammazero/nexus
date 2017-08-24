@@ -89,7 +89,7 @@ func NewRouter(config *RouterConfig, logger stdlog.StdLog) (Router, error) {
 	if r.realmTemplate != nil {
 		realmTemplate := *r.realmTemplate
 		realmTemplate.URI = "some.valid.realm"
-		if _, err := newRealm(&realmTemplate, r.log, r.debug); err != nil {
+		if _, err := newRealm(&realmTemplate, nil, nil, r.log, r.debug); err != nil {
 			return nil, fmt.Errorf("Invalid realmTemplate: %s", err)
 		}
 	}
@@ -114,7 +114,12 @@ func (r *router) addRealm(config *RealmConfig) (*realm, error) {
 	if _, ok := r.realms[config.URI]; ok {
 		return nil, errors.New("realm already exists: " + string(config.URI))
 	}
-	realm, err := newRealm(config, r.log, r.debug)
+
+	realm, err := newRealm(
+		config,
+		NewBroker(r.log, config.StrictURI, config.AllowDisclose, r.debug),
+		NewDealer(r.log, config.StrictURI, config.AllowDisclose, r.debug),
+		r.log, r.debug)
 	if err != nil {
 		return nil, err
 	}
