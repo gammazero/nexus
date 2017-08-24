@@ -11,8 +11,10 @@ import (
 )
 
 func newTestDealer() (*dealer, wamp.Peer) {
+	d := NewDealer(logger, false, true, debug).(*dealer)
 	metaClient, rtr := transport.LinkedPeers(logger)
-	return NewDealer(rtr, logger, false, true, debug).(*dealer), metaClient
+	d.SetMetaClient(rtr)
+	return d, metaClient
 }
 
 func checkMetaReg(metaClient wamp.Peer, sessID wamp.ID) error {

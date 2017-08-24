@@ -128,6 +128,8 @@ type Dealer interface {
 	// RegCountCallees obtains the number of sessions currently attached to the
 	// registration.
 	RegCountCallees(*wamp.Invocation) wamp.Message
+
+	SetMetaClient(metaClient wamp.Peer)
 }
 
 // remoteProcedure tracks in-progress remote procedure call
@@ -202,7 +204,7 @@ type dealer struct {
 // This serialization is limited to the work of determining the message's
 // destination, and then the message is handed off to the next goroutine,
 // typically the receiving client's send handler.
-func NewDealer(metaClient wamp.Peer, logger stdlog.StdLog, strictURI, allowDisclose, debug bool) Dealer {
+func NewDealer(logger stdlog.StdLog, strictURI, allowDisclose, debug bool) Dealer {
 	d := &dealer{
 		procRegMap:    map[wamp.URI]*registration{},
 		pfxProcRegMap: map[wamp.URI]*registration{},
@@ -226,13 +228,18 @@ func NewDealer(metaClient wamp.Peer, logger stdlog.StdLog, strictURI, allowDiscl
 		strictURI:     strictURI,
 		allowDisclose: allowDisclose,
 
-		metaClient: metaClient,
-
 		log:   logger,
 		debug: debug,
 	}
 	go d.run()
 	return d
+}
+
+// SetMetaClient sets the client that the dealer uses to publish meta events.
+func (d *dealer) SetMetaClient(metaClient wamp.Peer) {
+	d.actionChan <- func() {
+		d.metaClient = metaClient
+	}
 }
 
 // Role returns the role information for the "dealer" role.
@@ -412,7 +419,7 @@ func (d *dealer) register(callee *Session, msg *wamp.Register, match, invokePoli
 			d.wcProcRegMap[msg.Procedure] = reg
 		}
 
-		if !wampURI {
+		if !wampURI && d.metaClient != nil {
 			// wamp.registration.on_create is fired when a registration is
 			// created through a registration request for an URI which was
 			// previously without a registration.
@@ -483,7 +490,7 @@ func (d *dealer) register(callee *Session, msg *wamp.Register, match, invokePoli
 		Registration: regID,
 	})
 
-	if !wampURI {
+	if !wampURI && d.metaClient != nil {
 		// Publish wamp.registration.on_register meta event.  Fired when a
 		// session is added to a registration.  A wamp.registration.on_register
 		// event MUST be fired subsequent to a wamp.registration.on_create
@@ -519,6 +526,10 @@ func (d *dealer) unregister(callee *Session, msg *wamp.Unregister) {
 	}
 
 	callee.Send(&wamp.Unregistered{Request: msg.Request})
+
+	if d.metaClient == nil {
+		return
+	}
 
 	// Publish wamp.registration.on_unregister meta event.  Fired when a
 	// session is removed from a subscription.
@@ -865,6 +876,10 @@ func (d *dealer) removeSession(callee *Session) {
 		delReg, err := d.delCalleeReg(callee, regID)
 		if err != nil {
 			panic("!!! Callee had ID of nonexistent registration")
+		}
+
+		if d.metaClient == nil {
+			continue
 		}
 
 		// Publish wamp.registration.on_unregister meta event.  Fired when a
