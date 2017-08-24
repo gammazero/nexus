@@ -15,7 +15,7 @@ type RealmConfig struct {
 	URI            wamp.URI
 	StrictURI      bool `json:"strict_uri"`
 	AnonymousAuth  bool `json:"anonymous_auth"`
-	AllowDisclose  bool `json:"auto_disclose"`
+	AllowDisclose  bool `json:"allow_disclose"`
 	Authenticators map[string]auth.Authenticator
 	Authorizer     Authorizer
 }
