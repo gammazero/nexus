@@ -942,9 +942,6 @@ func (d *dealer) delCalleeReg(callee *Session, regID wamp.ID) (bool, error) {
 	return false, nil
 }
 
-func (d *dealer) addCalleeRegistration(callee *Session, reg wamp.ID) {
-}
-
 // ----- Meta Procedure Handlers -----
 
 // RegList retrieves registration IDs listed according to match policies.

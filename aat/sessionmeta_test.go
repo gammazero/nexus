@@ -78,17 +78,12 @@ func TestMetaEventOnJoin(t *testing.T) {
 		t.Fatal(metaOnJoin, "meta even had wrong session ID")
 	}
 
-	err = subscriber.Unsubscribe(metaOnJoin)
-	if err != nil {
-		t.Fatal("unsubscribe error:", err)
-	}
-
-	err = sess.Close()
+	err = subscriber.Close()
 	if err != nil {
 		t.Fatal("Failed to disconnect client:", err)
 	}
 
-	err = subscriber.Close()
+	err = sess.Close()
 	if err != nil {
 		t.Fatal("Failed to disconnect client:", err)
 	}
@@ -159,11 +154,6 @@ func TestMetaEventOnLeave(t *testing.T) {
 	if onLeaveID != sess.ID() {
 		t.Fatal(metaOnLeave, "meta even had wrong session ID, got", onLeaveID,
 			"want", sess.ID())
-	}
-
-	err = subscriber.Unsubscribe(metaOnLeave)
-	if err != nil {
-		t.Fatal("unsubscribe error:", err)
 	}
 
 	err = subscriber.Close()
@@ -264,13 +254,15 @@ func TestMetaProcSessionCount(t *testing.T) {
 		t.Fatal("Session count should be same as first")
 	}
 
-	err = caller.Close()
+	err = subscriber.Close()
 	if err != nil {
 		t.Fatal("Failed to disconnect client:", err)
 	}
 
-	subscriber.Unsubscribe(metaOnJoin)
-	subscriber.Unsubscribe(metaOnLeave)
+	err = caller.Close()
+	if err != nil {
+		t.Fatal("Failed to disconnect client:", err)
+	}
 }
 
 func TestMetaProcSessionList(t *testing.T) {
@@ -375,13 +367,15 @@ func TestMetaProcSessionList(t *testing.T) {
 		t.Fatal("Session ID should not be in session list")
 	}
 
-	err = caller.Close()
+	err = subscriber.Close()
 	if err != nil {
 		t.Fatal("Failed to disconnect client:", err)
 	}
 
-	subscriber.Unsubscribe(metaOnLeave)
-	subscriber.Close()
+	err = caller.Close()
+	if err != nil {
+		t.Fatal("Failed to disconnect client:", err)
+	}
 }
 
 func TestMetaProcSessionGet(t *testing.T) {
@@ -464,11 +458,13 @@ func TestMetaProcSessionGet(t *testing.T) {
 		t.Fatal("Expected error URI:", wamp.ErrNoSuchSession, "got", rpcErr.Err.Error)
 	}
 
-	err = caller.Close()
+	err = subscriber.Close()
 	if err != nil {
 		t.Fatal("Failed to disconnect client:", err)
 	}
 
-	subscriber.Unsubscribe(metaOnLeave)
-	subscriber.Close()
+	err = caller.Close()
+	if err != nil {
+		t.Fatal("Failed to disconnect client:", err)
+	}
 }
