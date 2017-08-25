@@ -39,6 +39,18 @@ var (
 	msgPack bool
 )
 
+type testAuthz struct{}
+
+func (a *testAuthz) Authorize(sess *nexus.Session, msg wamp.Message) (bool, error) {
+	m, ok := msg.(*wamp.Subscribe)
+	if !ok {
+		return true, nil
+	}
+	wamp.SetOption(m.Options, "foobar", "baz")
+	wamp.SetOption(sess.Details, "foobar", "baz")
+	return true, nil
+}
+
 func TestMain(m *testing.M) {
 	// ----- Setup environment -----
 	flag.BoolVar(&websocketClient, "websocket", false,
@@ -78,6 +90,7 @@ func TestMain(m *testing.M) {
 				Authenticators: map[string]auth.Authenticator{
 					"testauth": crAuth,
 				},
+				Authorizer: &testAuthz{},
 			},
 		},
 		//Debug: true,

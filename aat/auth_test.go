@@ -1,6 +1,7 @@
 package aat
 
 import (
+	"context"
 	"errors"
 	"strings"
 	"testing"
@@ -49,6 +50,59 @@ func TestJoinRealmWithCRAuthBad(t *testing.T) {
 	}
 	if !strings.HasSuffix(err.Error(), "invalid signature") {
 		t.Fatal("wrong error message:", err)
+	}
+}
+
+func TestAuthz(t *testing.T) {
+	// Connect subscriber session.
+	subscriber, err := connectClientNoJoin()
+	if err != nil {
+		t.Fatal("Failed to connect client:", err)
+	}
+	_, err = subscriber.JoinRealm("nexus.test.auth", nil, nil)
+	if err != nil {
+		t.Fatal("Failed to join realm:", err)
+	}
+
+	// Connect caller.
+	caller, err := connectClientNoJoin()
+	if err != nil {
+		t.Fatal("Failed to connect client:", err)
+	}
+	_, err = caller.JoinRealm("nexus.test.auth", nil, nil)
+	if err != nil {
+		t.Fatal("Failed to join realm:", err)
+	}
+
+	// Check that subscriber does not have special info provided by authorizer.
+	ctx := context.Background()
+	args := wamp.List{subscriber.ID()}
+	result, err := caller.Call(ctx, metaGet, nil, args, nil, "")
+	if err != nil {
+		t.Fatal("Call error:", err)
+	}
+	dict, _ := wamp.AsDict(result.Arguments[0])
+	if wamp.OptionString(dict, "foobar") != "" {
+		t.Fatal("Should not have special info in session")
+	}
+
+	// Subscribe to event.
+	evtHandler := func(args wamp.List, kwargs wamp.Dict, details wamp.Dict) {
+		return
+	}
+	err = subscriber.Subscribe(testTopic, evtHandler, nil)
+	if err != nil {
+		t.Fatal("subscribe error:", err)
+	}
+
+	// Check that authorizer modified session with special info.
+	result, err = caller.Call(ctx, metaGet, nil, args, nil, "")
+	if err != nil {
+		t.Fatal("Call error:", err)
+	}
+	dict, _ = wamp.AsDict(result.Arguments[0])
+	if wamp.OptionString(dict, "foobar") != "baz" {
+		t.Fatal("Missing special info in session")
 	}
 }
 
