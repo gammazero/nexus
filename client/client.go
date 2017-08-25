@@ -12,6 +12,7 @@ import (
 	"fmt"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"time"
 
 	"github.com/gammazero/nexus/stdlog"
@@ -101,7 +102,8 @@ type Client struct {
 	log   stdlog.StdLog
 	debug bool
 
-	done chan struct{}
+	closed int32
+	done   chan struct{}
 }
 
 // NewClient takes a connected Peer and returns a new Client.
@@ -174,6 +176,9 @@ type AuthFunc func(helloDetails wamp.Dict, challengeExtra wamp.Dict) (signature 
 // to functions that handle each auth type.  This can be nil if router is
 // expected to allow anonymous authentication.
 func (c *Client) JoinRealm(realm string, details wamp.Dict, authHandlers map[string]AuthFunc) (wamp.Dict, error) {
+	if c.closed == 1 {
+		return nil, errors.New("client closed")
+	}
 	joinChan := make(chan bool)
 	c.actionChan <- func() {
 		joinChan <- (c.realm == "")
@@ -199,8 +204,10 @@ func (c *Client) JoinRealm(realm string, details wamp.Dict, authHandlers map[str
 	c.peer.Send(&wamp.Hello{Realm: wamp.URI(realm), Details: details})
 	msg, err := wamp.RecvTimeout(c.peer, c.responseTimeout)
 	if err != nil {
-		c.peer.Close()
-		close(c.actionChan)
+		if atomic.CompareAndSwapInt32(&c.closed, 0, 1) {
+			c.peer.Close()
+			close(c.actionChan)
+		}
 		return nil, err
 	}
 
@@ -210,8 +217,10 @@ func (c *Client) JoinRealm(realm string, details wamp.Dict, authHandlers map[str
 		if challenge, ok := msg.(*wamp.Challenge); ok {
 			msg, err = c.handleCRAuth(challenge, details, authHandlers)
 			if err != nil {
-				c.peer.Close()
-				close(c.actionChan)
+				if atomic.CompareAndSwapInt32(&c.closed, 0, 1) {
+					c.peer.Close()
+					close(c.actionChan)
+				}
 				return nil, err
 			}
 		}
@@ -222,8 +231,10 @@ func (c *Client) JoinRealm(realm string, details wamp.Dict, authHandlers map[str
 	welcome, ok := msg.(*wamp.Welcome)
 	if !ok {
 		// Received unexpected message from router.
-		c.peer.Close()
-		close(c.actionChan)
+		if atomic.CompareAndSwapInt32(&c.closed, 0, 1) {
+			c.peer.Close()
+			close(c.actionChan)
+		}
 		return nil, unexpectedMsgError(msg, wamp.WELCOME)
 	}
 
@@ -631,6 +642,9 @@ func (c *Client) LeaveRealm() error {
 
 // Close closes the connection to the router.
 func (c *Client) Close() error {
+	if !atomic.CompareAndSwapInt32(&c.closed, 0, 1) {
+		return nil
+	}
 	if err := c.LeaveRealm(); err != nil {
 		return err
 	}
@@ -827,7 +841,10 @@ func (c *Client) handleInvocation(msg *wamp.Invocation) {
 		c.activeInvHandlers.Add(1)
 		go func() {
 			defer cancel()
-			resChan := make(chan *InvokeResult)
+			// Create channel to hold result.  Channel must be buffered.
+			// Otherwise, canceling the call will leak the goroutine that is
+			// blocked forever waiting to send the result to the chanel.
+			resChan := make(chan *InvokeResult, 1)
 			go func() {
 				// The Context is passed into the handler to tell the client
 				// application to stop whatever it is doing if it cares to pay
