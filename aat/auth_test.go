@@ -87,10 +87,15 @@ func TestAuthz(t *testing.T) {
 	}
 
 	// Subscribe to event.
+	gotEvent := make(chan struct{})
 	evtHandler := func(args wamp.List, kwargs wamp.Dict, details wamp.Dict) {
-		return
+		arg, _ := wamp.AsString(args[0])
+		if arg != "hi" {
+			return
+		}
+		close(gotEvent)
 	}
-	err = subscriber.Subscribe(testTopic, evtHandler, nil)
+	err = subscriber.Subscribe("nexus.interceptor", evtHandler, nil)
 	if err != nil {
 		t.Fatal("subscribe error:", err)
 	}
@@ -104,6 +109,18 @@ func TestAuthz(t *testing.T) {
 	if wamp.OptionString(dict, "foobar") != "baz" {
 		t.Fatal("Missing special info in session")
 	}
+
+	// Publish an event to something that matches by wildcard.
+	caller.Publish("nexus.interceptor.foobar.baz", nil, wamp.List{"hi"}, nil)
+	// Make sure the event was received.
+	select {
+	case <-gotEvent:
+	case <-time.After(200 * time.Millisecond):
+		t.Fatal("did not get published event")
+	}
+
+	subscriber.Close()
+	caller.Close()
 }
 
 func testAuthFunc(d wamp.Dict, c wamp.Dict) (string, wamp.Dict) {

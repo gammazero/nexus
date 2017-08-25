@@ -46,7 +46,9 @@ func (a *testAuthz) Authorize(sess *nexus.Session, msg wamp.Message) (bool, erro
 	if !ok {
 		return true, nil
 	}
-	wamp.SetOption(m.Options, "foobar", "baz")
+	if m.Topic == "nexus.interceptor" {
+		m.Topic = "nexus.interceptor.foobar.baz"
+	}
 	wamp.SetOption(sess.Details, "foobar", "baz")
 	return true, nil
 }
