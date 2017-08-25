@@ -1,6 +1,7 @@
 package aat
 
 import (
+	"context"
 	"errors"
 	"strings"
 	"testing"
@@ -50,6 +51,76 @@ func TestJoinRealmWithCRAuthBad(t *testing.T) {
 	if !strings.HasSuffix(err.Error(), "invalid signature") {
 		t.Fatal("wrong error message:", err)
 	}
+}
+
+func TestAuthz(t *testing.T) {
+	// Connect subscriber session.
+	subscriber, err := connectClientNoJoin()
+	if err != nil {
+		t.Fatal("Failed to connect client:", err)
+	}
+	_, err = subscriber.JoinRealm("nexus.test.auth", nil, nil)
+	if err != nil {
+		t.Fatal("Failed to join realm:", err)
+	}
+
+	// Connect caller.
+	caller, err := connectClientNoJoin()
+	if err != nil {
+		t.Fatal("Failed to connect client:", err)
+	}
+	_, err = caller.JoinRealm("nexus.test.auth", nil, nil)
+	if err != nil {
+		t.Fatal("Failed to join realm:", err)
+	}
+
+	// Check that subscriber does not have special info provided by authorizer.
+	ctx := context.Background()
+	args := wamp.List{subscriber.ID()}
+	result, err := caller.Call(ctx, metaGet, nil, args, nil, "")
+	if err != nil {
+		t.Fatal("Call error:", err)
+	}
+	dict, _ := wamp.AsDict(result.Arguments[0])
+	if wamp.OptionString(dict, "foobar") != "" {
+		t.Fatal("Should not have special info in session")
+	}
+
+	// Subscribe to event.
+	gotEvent := make(chan struct{})
+	evtHandler := func(args wamp.List, kwargs wamp.Dict, details wamp.Dict) {
+		arg, _ := wamp.AsString(args[0])
+		if arg != "hi" {
+			return
+		}
+		close(gotEvent)
+	}
+	err = subscriber.Subscribe("nexus.interceptor", evtHandler, nil)
+	if err != nil {
+		t.Fatal("subscribe error:", err)
+	}
+
+	// Check that authorizer modified session with special info.
+	result, err = caller.Call(ctx, metaGet, nil, args, nil, "")
+	if err != nil {
+		t.Fatal("Call error:", err)
+	}
+	dict, _ = wamp.AsDict(result.Arguments[0])
+	if wamp.OptionString(dict, "foobar") != "baz" {
+		t.Fatal("Missing special info in session")
+	}
+
+	// Publish an event to something that matches by wildcard.
+	caller.Publish("nexus.interceptor.foobar.baz", nil, wamp.List{"hi"}, nil)
+	// Make sure the event was received.
+	select {
+	case <-gotEvent:
+	case <-time.After(200 * time.Millisecond):
+		t.Fatal("did not get published event")
+	}
+
+	subscriber.Close()
+	caller.Close()
 }
 
 func testAuthFunc(d wamp.Dict, c wamp.Dict) (string, wamp.Dict) {

@@ -407,7 +407,7 @@ func TestMetaProcSessionGet(t *testing.T) {
 		t.Fatal("subscribe error:", err)
 	}
 
-	// Call meta procedure to get session list.
+	// Call meta procedure to get session info.
 	ctx := context.Background()
 	args := wamp.List{sess.ID()}
 	result, err := caller.Call(ctx, metaGet, nil, args, nil, "")
