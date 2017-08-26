@@ -7,6 +7,7 @@ import (
 	"net/http"
 	"testing"
 
+	"github.com/fortytw2/leaktest"
 	"github.com/gammazero/nexus/stdlog"
 	"github.com/gammazero/nexus/transport"
 	"github.com/gammazero/nexus/transport/serialize"
@@ -43,12 +44,17 @@ func newTestWebsocketServer(t *testing.T) (int, io.Closer, stdlog.StdLog) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	go server.Serve(l)
+	go func() {
+		server.Serve(l)
+		r.Close()
+	}()
 	return l.Addr().(*net.TCPAddr).Port, l, r.Logger()
 }
 
 func TestWSHandshakeJSON(t *testing.T) {
+	defer leaktest.Check(t)()
 	port, closer, logger := newTestWebsocketServer(t)
+
 	defer closer.Close()
 
 	client, err := transport.ConnectWebsocketPeer(
@@ -70,6 +76,7 @@ func TestWSHandshakeJSON(t *testing.T) {
 }
 
 func TestWSHandshakeMsgpack(t *testing.T) {
+	defer leaktest.Check(t)()
 	port, closer, logger := newTestWebsocketServer(t)
 	defer closer.Close()
 

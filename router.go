@@ -321,4 +321,5 @@ func (r *router) Close() {
 	<-sync
 	// Wait for all existing realms to close.
 	r.waitRealms.Wait()
+	close(r.actionChan)
 }

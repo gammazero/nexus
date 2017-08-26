@@ -6,6 +6,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/fortytw2/leaktest"
 	"github.com/gammazero/nexus/client"
 	"github.com/gammazero/nexus/wamp"
 )
@@ -20,6 +21,7 @@ const (
 )
 
 func TestMetaEventOnJoin(t *testing.T) {
+	defer leaktest.Check(t)()
 	// Connect subscriber session.
 	subscriber, err := connectClient()
 	if err != nil {
@@ -90,6 +92,7 @@ func TestMetaEventOnJoin(t *testing.T) {
 }
 
 func TestMetaEventOnLeave(t *testing.T) {
+	defer leaktest.Check(t)()
 	// Connect subscriber session.
 	subscriber, err := connectClient()
 	if err != nil {
@@ -163,6 +166,7 @@ func TestMetaEventOnLeave(t *testing.T) {
 }
 
 func TestMetaProcSessionCount(t *testing.T) {
+	defer leaktest.Check(t)()
 	// Connect caller.
 	caller, err := connectClient()
 	if err != nil {
@@ -266,6 +270,7 @@ func TestMetaProcSessionCount(t *testing.T) {
 }
 
 func TestMetaProcSessionList(t *testing.T) {
+	defer leaktest.Check(t)()
 	// Connect a client to session.
 	sess, err := connectClient()
 	if err != nil {
@@ -379,6 +384,7 @@ func TestMetaProcSessionList(t *testing.T) {
 }
 
 func TestMetaProcSessionGet(t *testing.T) {
+	defer leaktest.Check(t)()
 	// Connect a client to session.
 	sess, err := connectClient()
 	if err != nil {

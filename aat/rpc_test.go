@@ -5,11 +5,13 @@ import (
 	"testing"
 	"time"
 
+	"github.com/fortytw2/leaktest"
 	"github.com/gammazero/nexus/client"
 	"github.com/gammazero/nexus/wamp"
 )
 
 func TestRPCRegisterAndCall(t *testing.T) {
+	defer leaktest.Check(t)()
 	// Connect callee session.
 	callee, err := connectClient()
 	if err != nil {
@@ -72,6 +74,7 @@ func TestRPCRegisterAndCall(t *testing.T) {
 }
 
 func TestRPCCallUnregistered(t *testing.T) {
+	defer leaktest.Check(t)()
 	// Connect caller session.
 	caller, err := connectClient()
 	if err != nil {
@@ -96,6 +99,7 @@ func TestRPCCallUnregistered(t *testing.T) {
 }
 
 func TestRPCUnregisterUnregistered(t *testing.T) {
+	defer leaktest.Check(t)()
 	// Connect caller session.
 	callee, err := connectClient()
 	if err != nil {
@@ -114,6 +118,7 @@ func TestRPCUnregisterUnregistered(t *testing.T) {
 }
 
 func TestRPCCancelCall(t *testing.T) {
+	defer leaktest.Check(t)()
 	// Connect callee session.
 	callee, err := connectClient()
 	if err != nil {

@@ -10,6 +10,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/fortytw2/leaktest"
 	"github.com/gammazero/nexus"
 	"github.com/gammazero/nexus/auth"
 	"github.com/gammazero/nexus/client"
@@ -18,7 +19,8 @@ import (
 )
 
 const (
-	testRealm = "nexus.test.realm"
+	testRealm     = "nexus.test.realm"
+	testAuthRealm = "nexus.test.auth"
 )
 
 var (
@@ -85,7 +87,7 @@ func TestMain(m *testing.M) {
 				AllowDisclose: false,
 			},
 			{
-				URI:           wamp.URI("nexus.test.auth"),
+				URI:           wamp.URI(testAuthRealm),
 				StrictURI:     false,
 				AnonymousAuth: true,
 				AllowDisclose: false,
@@ -119,6 +121,35 @@ func TestMain(m *testing.M) {
 		serverURL = fmt.Sprintf("ws://127.0.0.1:%d/", port)
 
 		rtrLogger.Println("Server listening on", serverURL)
+	}
+
+	// Connect and disconnect so that router is started before running tests.
+	// Otherwise, goroutine leak detection will think the router goroutines
+	// have leaked if that are not already running.
+	cli, err := connectClient()
+	if err != nil {
+		fmt.Fprintln(os.Stderr, "Failed to connect client:", err)
+		os.Exit(1)
+	}
+	err = cli.Close()
+	if err != nil {
+		fmt.Fprintln(os.Stderr, "Failed to disconnect client:", err)
+		os.Exit(1)
+	}
+	cli, err = connectClientNoJoin()
+	if err != nil {
+		fmt.Fprintln(os.Stderr, "Failed to connect client:", err)
+		os.Exit(1)
+	}
+	_, err = cli.JoinRealm(testAuthRealm, nil, nil)
+	if err != nil {
+		fmt.Fprintln(os.Stderr, "Failed to connect client:", err)
+		os.Exit(1)
+	}
+	err = cli.Close()
+	if err != nil {
+		fmt.Fprintln(os.Stderr, "Failed to disconnect client:", err)
+		os.Exit(1)
 	}
 
 	// Run tests.
@@ -182,12 +213,21 @@ func connectClientDetails(details wamp.Dict) (*client.Client, error) {
 }
 
 func TestHandshake(t *testing.T) {
+	defer leaktest.Check(t)()
 	cli, err := connectClient()
 	if err != nil {
 		t.Fatal("Failed to connect client:", err)
 	}
 	err = cli.Close()
 	if err != nil {
-		t.Fatal("Failed to disconnect client:", err)
+		t.Fatal("Failed to close client:", err)
+	}
+	err = cli.Close()
+	if err != nil {
+		t.Fatal("Failed to close client 2nd time:", err)
+	}
+	err = cli.Close()
+	if err != nil {
+		t.Fatal("Failed to close client 3rd time:", err)
 	}
 }
