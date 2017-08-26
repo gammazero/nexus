@@ -757,11 +757,11 @@ func (d *dealer) cancel(caller *Session, msg *wamp.Cancel) {
 			// Send INTERRUPT message to callee.
 			err := invk.callee.Send(&wamp.Interrupt{
 				Request: invocationID,
-				Options: wamp.Dict{},
+				Options: msg.Options,
 			})
 			if err == nil {
-				d.log.Println("Dealer sent INTERRUPT to to cancel invocation",
-					invocationID, "for call", msg.Request)
+				d.log.Println("Dealer sent INTERRUPT to cancel invocation",
+					invocationID, "for call", msg.Request, "mode:", mode)
 
 				// If mode is "kill" then let error from callee trigger the
 				// response to the caller.  This is how the caller waits for
@@ -784,6 +784,7 @@ func (d *dealer) cancel(caller *Session, msg *wamp.Cancel) {
 	// This also stops repeated CANCEL messages.
 	delete(d.calls, msg.Request)
 	delete(d.invocationByCall, msg.Request)
+	delete(d.invocations, invocationID)
 
 	// Send error to the caller.
 	caller.Send(&wamp.Error{
@@ -840,7 +841,7 @@ func (d *dealer) error(msg *wamp.Error) {
 	invk, ok := d.invocations[msg.Request]
 	if !ok {
 		d.log.Println("Received ERROR (INVOCATION) with invalid request ID:",
-			msg.Request)
+			msg.Request, "(response to canceled call)")
 		return
 	}
 	delete(d.invocations, msg.Request)
