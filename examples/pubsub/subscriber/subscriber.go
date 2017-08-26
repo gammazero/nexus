@@ -14,18 +14,16 @@ const exampleTopic = "example.hello"
 
 func main() {
 	logger := log.New(os.Stdout, "SUBSCRIBER> ", log.LstdFlags)
+	cfg := client.ClientConfig{
+		Realm: "nexus.examples",
+	}
+	// Connect subscriber session.
 	subscriber, err := client.NewWebsocketClient(
-		"ws://localhost:8000/", client.JSON, nil, nil, 0, logger)
+		"ws://localhost:8000/", client.JSON, nil, nil, cfg, logger)
 	if err != nil {
 		logger.Fatal(err)
 	}
 	defer subscriber.Close()
-
-	// Connect subscriber session.
-	_, err = subscriber.JoinRealm("nexus.examples", nil, nil)
-	if err != nil {
-		logger.Fatal(err)
-	}
 
 	// Define function to handle events received.
 	evtHandler := func(args wamp.List, kwargs wamp.Dict, details wamp.Dict) {

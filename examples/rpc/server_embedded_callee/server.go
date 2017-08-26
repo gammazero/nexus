@@ -29,19 +29,16 @@ func main() {
 	}
 	defer nxr.Close()
 
-	// Create local client.
 	logger := log.New(os.Stdout, "CALLEE> ", log.LstdFlags)
-	callee, err := client.NewLocalClient(nxr, 0, logger)
+	cfg := client.ClientConfig{
+		Realm: "nexus.examples",
+	}
+	// Create local callee client.
+	callee, err := client.NewLocalClient(nxr, cfg, logger)
 	if err != nil {
 		logger.Fatal(err)
 	}
 	defer callee.Close()
-
-	// Connect callee session.
-	_, err = callee.JoinRealm("nexus.examples", nil, nil)
-	if err != nil {
-		logger.Fatal(err)
-	}
 
 	// Register procedure "sum"
 	procName := "sum"

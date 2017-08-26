@@ -13,18 +13,16 @@ import (
 
 func main() {
 	logger := log.New(os.Stdout, "CALLEE> ", log.LstdFlags)
+	cfg := client.ClientConfig{
+		Realm: "nexus.examples",
+	}
+	// Connect callee session.
 	callee, err := client.NewWebsocketClient(
-		"ws://localhost:8000/", client.JSON, nil, nil, 0, logger)
+		"ws://localhost:8000/", client.JSON, nil, nil, cfg, logger)
 	if err != nil {
 		logger.Fatal(err)
 	}
 	defer callee.Close()
-
-	// Connect callee session.
-	_, err = callee.JoinRealm("nexus.examples", nil, nil)
-	if err != nil {
-		logger.Fatal(err)
-	}
 
 	// Register procedure "sum"
 	procName := "sum"

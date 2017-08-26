@@ -16,22 +16,23 @@ import (
 func TestJoinRealmWithCRAuth(t *testing.T) {
 	defer leaktest.Check(t)()
 
-	// Connect callee session.
-	cli, err := connectClientNoJoin()
+	cfg := client.ClientConfig{
+		Realm: testAuthRealm,
+		HelloDetails: wamp.Dict{
+			"username": "jdoe",
+		},
+		AuthHandlers: map[string]client.AuthFunc{
+			"testauth": testAuthFunc,
+		},
+	}
+
+	cli, err := connectClientCfg(cfg)
 	if err != nil {
 		t.Fatal("Failed to connect client:", err)
 	}
 
-	details := wamp.Dict{
-		"username": "jdoe", "authmethods": []string{"testauth"}}
-	authMap := map[string]client.AuthFunc{"testauth": testAuthFunc}
-
-	details, err = cli.JoinRealm(testAuthRealm, details, authMap)
-	if err != nil {
-		t.Fatal(err)
-	}
-
-	if wamp.OptionString(details, "authrole") != "user" {
+	realmDetails := cli.RealmDetails()
+	if wamp.OptionString(realmDetails, "authrole") != "user" {
 		t.Fatal("missing or incorrect authrole")
 	}
 
@@ -40,47 +41,46 @@ func TestJoinRealmWithCRAuth(t *testing.T) {
 
 func TestJoinRealmWithCRAuthBad(t *testing.T) {
 	defer leaktest.Check(t)()
-	// Connect callee session.
-	cli, err := connectClientNoJoin()
-	if err != nil {
-		t.Fatal("Failed to connect client:", err)
+
+	cfg := client.ClientConfig{
+		Realm: testAuthRealm,
+		HelloDetails: wamp.Dict{
+			"username": "malory",
+		},
+		AuthHandlers: map[string]client.AuthFunc{
+			"testauth": testAuthFunc,
+		},
 	}
 
-	details := wamp.Dict{
-		"username": "malory", "authmethods": []string{"testauth"}}
-	authMap := map[string]client.AuthFunc{"testauth": testAuthFunc}
-
-	_, err = cli.JoinRealm(testAuthRealm, details, authMap)
+	cli, err := connectClientCfg(cfg)
 	if err == nil {
 		t.Fatal("expected error with bad username")
 	}
 	if !strings.HasSuffix(err.Error(), "invalid signature") {
 		t.Fatal("wrong error message:", err)
 	}
-
-	cli.Close()
+	if cli != nil {
+		t.Fatal("Client should be nil on connect error")
+	}
 }
 
 func TestAuthz(t *testing.T) {
 	defer leaktest.Check(t)()
+
+	cfg := client.ClientConfig{
+		Realm: testAuthRealm,
+	}
+
 	// Connect subscriber session.
-	subscriber, err := connectClientNoJoin()
+	subscriber, err := connectClientCfg(cfg)
 	if err != nil {
 		t.Fatal("Failed to connect client:", err)
-	}
-	_, err = subscriber.JoinRealm(testAuthRealm, nil, nil)
-	if err != nil {
-		t.Fatal("Failed to join realm:", err)
 	}
 
 	// Connect caller.
-	caller, err := connectClientNoJoin()
+	caller, err := connectClientCfg(cfg)
 	if err != nil {
 		t.Fatal("Failed to connect client:", err)
-	}
-	_, err = caller.JoinRealm(testAuthRealm, nil, nil)
-	if err != nil {
-		t.Fatal("Failed to join realm:", err)
 	}
 
 	// Check that subscriber does not have special info provided by authorizer.

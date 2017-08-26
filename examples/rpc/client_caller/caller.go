@@ -12,18 +12,16 @@ import (
 
 func main() {
 	logger := log.New(os.Stderr, "CALLER> ", log.LstdFlags)
+	cfg := client.ClientConfig{
+		Realm: "nexus.examples",
+	}
+	// Connect caller session.
 	caller, err := client.NewWebsocketClient(
-		"ws://localhost:8000/", client.JSON, nil, nil, 0, logger)
+		"ws://localhost:8000/", client.JSON, nil, nil, cfg, logger)
 	if err != nil {
 		logger.Fatal(err)
 	}
 	defer caller.Close()
-
-	// Connect callee session.
-	_, err = caller.JoinRealm("nexus.examples", nil, nil)
-	if err != nil {
-		logger.Fatal(err)
-	}
 
 	// Register procedure "sum"
 	procName := "sum"

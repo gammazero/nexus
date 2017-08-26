@@ -51,26 +51,23 @@ func connectedTestClients() (*Client, *Client, nexus.Router, error) {
 		return nil, nil, nil, err
 	}
 
-	peer1 := getTestPeer(r)
-	peer2 := getTestPeer(r)
-	c1, err := newTestClient(peer1)
+	c1, err := newTestClient(r)
 	if err != nil {
 		return nil, nil, nil, err
 	}
-	c2, err := newTestClient(peer2)
+	c2, err := newTestClient(r)
 	if err != nil {
 		return nil, nil, nil, err
 	}
 	return c1, c2, r, nil
 }
 
-func newTestClient(p wamp.Peer) (*Client, error) {
-	client := NewClient(p, 500*time.Millisecond, logger)
-	_, err := client.JoinRealm(testRealm, nil, nil)
-	if err != nil {
-		return nil, err
+func newTestClient(r nexus.Router) (*Client, error) {
+	cfg := ClientConfig{
+		Realm:           testRealm,
+		ResponseTimeout: 500 * time.Millisecond,
 	}
-	return client, nil
+	return NewLocalClient(r, cfg, logger)
 }
 
 func TestJoinRealm(t *testing.T) {
@@ -88,12 +85,12 @@ func TestJoinRealm(t *testing.T) {
 	}
 
 	// Test that client can join realm.
-	client := NewClient(getTestPeer(r), 0, logger)
-	_, err = client.JoinRealm("nexus.test", nil, nil)
+	client, err := newTestClient(r)
 	if err != nil {
 		t.Fatal(err)
 	}
 	client.Close()
+	r.Close()
 
 	// Test that client cannot join realm when anonymous auth is disabled.
 	realmConfig = &nexus.RealmConfig{
@@ -102,11 +99,19 @@ func TestJoinRealm(t *testing.T) {
 		AnonymousAuth: false,
 		AllowDisclose: false,
 	}
-	client = NewClient(getTestPeer(r), 0, logger)
-	if _, err = client.JoinRealm("nexus.testnoanon", nil, nil); err == nil {
+	r, err = getTestRouter(realmConfig)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	cfg := ClientConfig{
+		Realm:           "nexus.testnoanon",
+		ResponseTimeout: 500 * time.Millisecond,
+	}
+	_, err = NewLocalClient(r, cfg, logger)
+	if err == nil {
 		t.Fatal("expected error due to no anonymous authentication")
 	}
-	client.Close()
 	r.Close()
 }
 
@@ -132,13 +137,16 @@ func TestClientJoinRealmWithCRAuth(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	peer := getTestPeer(r)
-	client := NewClient(peer, 0, logger)
-
-	details := wamp.Dict{
-		"username": "jdoe", "authmethods": []string{"testauth"}}
-	authMap := map[string]AuthFunc{"testauth": testAuthFunc}
-	_, err = client.JoinRealm("nexus.test.auth", details, authMap)
+	cfg := ClientConfig{
+		Realm: "nexus.test.auth",
+		HelloDetails: wamp.Dict{
+			"username": "jdoe",
+		},
+		AuthHandlers: map[string]AuthFunc{
+			"testauth": testAuthFunc,
+		},
+	}
+	client, err := NewLocalClient(r, cfg, logger)
 	if err != nil {
 		t.Fatal(err)
 	}

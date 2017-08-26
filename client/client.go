@@ -33,8 +33,27 @@ const (
 	cancelModeSkip       = "skip"
 )
 
+// ClientConfig configures a client with everything needed to begin a session
+// with a WAMP router.
+type ClientConfig struct {
+	// Realm is the URI of the realm the client will join.
+	Realm string
+
+	// HelloDetails contains details about the client.  The client provides the
+	// roles, unless already supplied by the user.
+	HelloDetails wamp.Dict
+
+	// AuthHandlers is a map of authmethod to AuthFunc.  All authmethod keys
+	// from this map are automatically added to HelloDetails["authmethods"]
+	AuthHandlers map[string]AuthFunc
+
+	// ResponseTimeout specifies the amount of time that the client will block
+	// waiting for a response from the router.  A value of 0 uses the default.
+	ResponseTimeout time.Duration
+}
+
 // Features supported by nexus client.
-var clientRoleFeatures = wamp.Dict{
+var clientRoles = wamp.Dict{
 	"publisher": wamp.Dict{
 		"features": wamp.Dict{
 			"subscriber_blackwhite_listing": true,
@@ -96,7 +115,6 @@ type Client struct {
 	activeInvHandlers sync.WaitGroup
 
 	id           wamp.ID
-	realm        string
 	realmDetails wamp.Dict
 
 	log   stdlog.StdLog
@@ -106,24 +124,30 @@ type Client struct {
 	done   chan struct{}
 }
 
-// NewClient takes a connected Peer and returns a new Client.
+// NewClient takes a connected Peer, joins the realm specified in cfg, and if
+// successful, returns a new client.
 //
-// A non-zero responseTimeout specifies the amount of time that the client will
-// block waiting for a response from the router.  A value of 0 uses the
-// default.
-//
-// Each client can be give a separate StdLog instance, which my be desirable
+// Each client can be given a separate StdLog instance, which my be desirable
 // when clients are used for different purposes.
 //
-// JoinRealm must be called before other client functions.
-func NewClient(p wamp.Peer, responseTimeout time.Duration, logger stdlog.StdLog) *Client {
-	if responseTimeout == 0 {
-		responseTimeout = defaultResponseTimeout
+// NOTE: This method is provided for clients that use a Peer implementation not
+// provided with the nexus package.  Generally, clients are created using the
+// NewLocalPeer() or NewWebsocketPeer() functions.
+func NewClient(p wamp.Peer, cfg ClientConfig, logger stdlog.StdLog) (*Client, error) {
+	if cfg.ResponseTimeout == 0 {
+		cfg.ResponseTimeout = defaultResponseTimeout
 	}
+
+	welcome, err := joinRealm(p, cfg)
+	if err != nil {
+		p.Close()
+		return nil, err
+	}
+
 	c := &Client{
 		peer: p,
 
-		responseTimeout: responseTimeout,
+		responseTimeout: cfg.ResponseTimeout,
 		awaitingReply:   map[wamp.ID]chan wamp.Message{},
 
 		eventHandlers: map[wamp.ID]EventHandler{},
@@ -136,11 +160,16 @@ func NewClient(p wamp.Peer, responseTimeout time.Duration, logger stdlog.StdLog)
 		actionChan: make(chan func()),
 		idGen:      wamp.NewIDGen(),
 		stopping:   make(chan struct{}),
+		done:       make(chan struct{}),
 
 		log: logger,
+
+		realmDetails: welcome.Details,
+		id:           welcome.ID,
 	}
 	go c.run()
-	return c
+	go c.receiveFromRouter()
+	return c, nil
 }
 
 // Done returns a channel that signals when the client is no longer connected
@@ -168,88 +197,12 @@ func (c *Client) SetDebug(enable bool) {
 // encountered within AuthFunc, then an empty signature should be returned
 // since the client cannot give a valid signature response.
 //
-// This is used to create the authHandler map passed to JoinRealm.
+// This is used in the AuthHandler map, in a ClientConfig, and is used when
+// the client joins a realm.
 type AuthFunc func(helloDetails wamp.Dict, challengeExtra wamp.Dict) (signature string, details wamp.Dict)
 
-// JoinRealm joins a WAMP realm, handling challenge/response authentication if
-// needed.  The authHandlers argument supplies a map of WAMP authmethod names
-// to functions that handle each auth type.  This can be nil if router is
-// expected to allow anonymous authentication.
-func (c *Client) JoinRealm(realm string, details wamp.Dict, authHandlers map[string]AuthFunc) (wamp.Dict, error) {
-	if c.closed == 1 {
-		return nil, errors.New("client closed")
-	}
-	joinChan := make(chan bool)
-	c.actionChan <- func() {
-		joinChan <- (c.realm == "")
-	}
-	ok := <-joinChan
-	if !ok {
-		return nil, errors.New("client is already member of realm " + c.realm)
-	}
-	if details == nil {
-		details = wamp.Dict{}
-	}
-	details[helloRoles] = clientRoles()
-	if len(authHandlers) > 0 {
-		authmethods := make(wamp.List, len(authHandlers))
-		var i int
-		for am := range authHandlers {
-			authmethods[i] = am
-			i++
-		}
-		details[helloAuthmethods] = authmethods
-	}
-
-	c.peer.Send(&wamp.Hello{Realm: wamp.URI(realm), Details: details})
-	msg, err := wamp.RecvTimeout(c.peer, c.responseTimeout)
-	if err != nil {
-		if atomic.CompareAndSwapInt32(&c.closed, 0, 1) {
-			c.peer.Close()
-			close(c.actionChan)
-		}
-		return nil, err
-	}
-
-	// Only expect CHALLENGE if client offered authmethod(s).
-	if len(authHandlers) > 0 {
-		// See if router sent CHALLENGE in response to client HELLO.
-		if challenge, ok := msg.(*wamp.Challenge); ok {
-			msg, err = c.handleCRAuth(challenge, details, authHandlers)
-			if err != nil {
-				if atomic.CompareAndSwapInt32(&c.closed, 0, 1) {
-					c.peer.Close()
-					close(c.actionChan)
-				}
-				return nil, err
-			}
-		}
-		// Do not error if the message is not a CHALLENGE, as the auth methods
-		// may have allowed the router to authenticate without CR auth.
-	}
-
-	welcome, ok := msg.(*wamp.Welcome)
-	if !ok {
-		// Received unexpected message from router.
-		if atomic.CompareAndSwapInt32(&c.closed, 0, 1) {
-			c.peer.Close()
-			close(c.actionChan)
-		}
-		return nil, unexpectedMsgError(msg, wamp.WELCOME)
-	}
-
-	c.actionChan <- func() {
-		c.realm = realm
-		c.realmDetails = welcome.Details
-		c.id = welcome.ID
-		c.done = make(chan struct{})
-		joinChan <- true
-	}
-	<-joinChan
-
-	go c.receiveFromRouter()
-	return welcome.Details, nil
-}
+// RealmDetails returns the realm information received in the WELCOME message.
+func (c *Client) RealmDetails() wamp.Dict { return c.realmDetails }
 
 // EventHandler is a function that handles a publish event.
 type EventHandler func(args wamp.List, kwargs wamp.Dict, details wamp.Dict)
@@ -626,9 +579,77 @@ func (c *Client) Close() error {
 	close(c.stopping)
 	c.activeInvHandlers.Wait()
 
-	if err := c.leaveRealm(); err != nil {
-		return err
+	c.leaveRealm()
+
+	// Stop the client's main goroutine.
+	close(c.actionChan)
+
+	c.realmDetails = nil
+	return nil
+}
+
+// joinRealm joins a WAMP realm, handling challenge/response authentication if
+// needed.  The authHandlers argument supplies a map of WAMP authmethod names
+// to functions that handle each auth type.  This can be nil if router is
+// expected to allow anonymous authentication.
+func joinRealm(peer wamp.Peer, cfg ClientConfig) (*wamp.Welcome, error) {
+	if cfg.Realm == "" {
+		return nil, errors.New("realm not specified")
 	}
+	details := cfg.HelloDetails
+	if details == nil {
+		details = wamp.Dict{}
+	}
+	if _, ok := details[helloRoles]; !ok {
+		details[helloRoles] = clientRoles
+	}
+	if len(cfg.AuthHandlers) > 0 {
+		authmethods := make(wamp.List, len(cfg.AuthHandlers))
+		var i int
+		for am := range cfg.AuthHandlers {
+			authmethods[i] = am
+			i++
+		}
+		details[helloAuthmethods] = authmethods
+	}
+
+	peer.Send(&wamp.Hello{Realm: wamp.URI(cfg.Realm), Details: details})
+	msg, err := wamp.RecvTimeout(peer, cfg.ResponseTimeout)
+	if err != nil {
+		return nil, err
+	}
+
+	// Only expect CHALLENGE if client offered authmethod(s).
+	if len(cfg.AuthHandlers) > 0 {
+		// See if router sent CHALLENGE in response to client HELLO.
+		if challenge, ok := msg.(*wamp.Challenge); ok {
+			msg, err = handleCRAuth(peer, challenge, details, cfg.AuthHandlers,
+				cfg.ResponseTimeout)
+			if err != nil {
+				return nil, err
+			}
+		}
+		// Do not error if the message is not a CHALLENGE, as the auth methods
+		// may have allowed the router to authenticate without CR auth.
+	}
+
+	welcome, ok := msg.(*wamp.Welcome)
+	if !ok {
+		// Received unexpected message from router.
+		return nil, unexpectedMsgError(msg, wamp.WELCOME)
+	}
+	return welcome, nil
+}
+
+// leaveRealm leaves the current realm without closing the connection to the
+// router.
+func (c *Client) leaveRealm() {
+	// Send GOODBYE to router.  The router will respond with a GOODBYE message
+	// which is handled by receiveFromRouter, and causes it to exit.
+	c.peer.Send(&wamp.Goodbye{
+		Details: wamp.Dict{},
+		Reason:  wamp.ErrCloseRealm,
+	})
 
 	// Close the peer.  This causes receiveFromRouter to exit if it has not
 	// already done so after receiving GOODBYE from router.
@@ -636,37 +657,7 @@ func (c *Client) Close() error {
 
 	// Wait for receiveFromRouter to exit.
 	<-c.done
-
-	// Stop the client's main goroutine.
-	close(c.actionChan)
-	return nil
-}
-
-// leaveRealm leaves the current realm without closing the connection to the
-// router.
-func (c *Client) leaveRealm() error {
-	leaveChan := make(chan bool)
-	c.actionChan <- func() {
-		if c.realm == "" {
-			leaveChan <- false
-			return
-		}
-		c.realm = ""
-		c.realmDetails = nil
-		leaveChan <- true
-	}
-	ok := <-leaveChan
-	if !ok {
-		return errors.New("client has not joined a realm")
-	}
-
-	// Send GOODBYE to router.  The router will respond with a GOODBYE message
-	// which is handled by receiveFromRouter, and causes it to exit.
-	c.peer.Send(&wamp.Goodbye{
-		Details: wamp.Dict{},
-		Reason:  wamp.ErrCloseRealm,
-	})
-	return nil
+	// Elvis has left the building!
 }
 
 func (c *Client) run() {
@@ -675,7 +666,7 @@ func (c *Client) run() {
 	}
 }
 
-func (c *Client) handleCRAuth(challenge *wamp.Challenge, details wamp.Dict, authHandlers map[string]AuthFunc) (wamp.Message, error) {
+func handleCRAuth(peer wamp.Peer, challenge *wamp.Challenge, details wamp.Dict, authHandlers map[string]AuthFunc, rspTimeout time.Duration) (wamp.Message, error) {
 	// Look up the authentication function for the specified authmethod.
 	authFunc, ok := authHandlers[challenge.AuthMethod]
 	if !ok {
@@ -683,16 +674,16 @@ func (c *Client) handleCRAuth(challenge *wamp.Challenge, details wamp.Dict, auth
 		// know how to deal with.  In response to a CHALLENGE message, the
 		// Client MUST send an AUTHENTICATE message.  So, send empty
 		// AUTHENTICATE since client does not know what to put in it.
-		c.peer.Send(&wamp.Authenticate{})
+		peer.Send(&wamp.Authenticate{})
 	} else {
 		// Create signature and send AUTHENTICATE.
 		signature, authDetails := authFunc(details, challenge.Extra)
-		c.peer.Send(&wamp.Authenticate{
+		peer.Send(&wamp.Authenticate{
 			Signature: signature,
 			Extra:     authDetails,
 		})
 	}
-	msg, err := wamp.RecvTimeout(c.peer, c.responseTimeout)
+	msg, err := wamp.RecvTimeout(peer, rspTimeout)
 	if err != nil {
 		return nil, err
 	}
@@ -708,11 +699,6 @@ func (c *Client) handleCRAuth(challenge *wamp.Challenge, details wamp.Dict, auth
 
 	// Return the router's response to AUTHENTICATE, this should be WELCOME.
 	return msg, nil
-}
-
-// clientRoles advertises support for these client roles.
-func clientRoles() wamp.Dict {
-	return clientRoleFeatures
 }
 
 // unexpectedMsgError creates an error with information about the unexpected
@@ -843,7 +829,7 @@ func (c *Client) handleInvocation(msg *wamp.Invocation) {
 			defer cancel()
 			// Create channel to hold result.  Channel must be buffered.
 			// Otherwise, canceling the call will leak the goroutine that is
-			// blocked forever waiting to send the result to the chanel.
+			// blocked forever waiting to send the result to the channel.
 			resChan := make(chan *InvokeResult, 1)
 			go func() {
 				// The Context is passed into the handler to tell the client
