@@ -613,9 +613,38 @@ func (c *Client) Call(ctx context.Context, procedure string, options wamp.Dict, 
 	}
 }
 
-// LeaveRealm leaves the current realm without closing the connection to the
+// Close closes the connection to the router.
+func (c *Client) Close() error {
+	if !atomic.CompareAndSwapInt32(&c.closed, 0, 1) {
+		return nil
+	}
+
+	// Cancel any running invocation handlers and wait for them to finish.
+	// This makes it safe to close the actionChan.  Do this before leaving the
+	// realm so that any invocation handlers do not hang waiting to send to the
+	// router after it has stopped receiving from the client.
+	close(c.stopping)
+	c.activeInvHandlers.Wait()
+
+	if err := c.leaveRealm(); err != nil {
+		return err
+	}
+
+	// Close the peer.  This causes receiveFromRouter to exit if it has not
+	// already done so after receiving GOODBYE from router.
+	c.peer.Close()
+
+	// Wait for receiveFromRouter to exit.
+	<-c.done
+
+	// Stop the client's main goroutine.
+	close(c.actionChan)
+	return nil
+}
+
+// leaveRealm leaves the current realm without closing the connection to the
 // router.
-func (c *Client) LeaveRealm() error {
+func (c *Client) leaveRealm() error {
 	leaveChan := make(chan bool)
 	c.actionChan <- func() {
 		if c.realm == "" {
@@ -637,35 +666,6 @@ func (c *Client) LeaveRealm() error {
 		Details: wamp.Dict{},
 		Reason:  wamp.ErrCloseRealm,
 	})
-	return nil
-}
-
-// Close closes the connection to the router.
-func (c *Client) Close() error {
-	if !atomic.CompareAndSwapInt32(&c.closed, 0, 1) {
-		return nil
-	}
-	if err := c.LeaveRealm(); err != nil {
-		return err
-	}
-	// Cancel any invocation handlers that are still running, without them
-	// returning results to the router, since client has already said goodbye
-	// to router.
-	close(c.stopping)
-
-	// Wait for any active invocation handlers to finish, so that is is safe to
-	// close the actionChan which stops the client.
-	c.activeInvHandlers.Wait()
-
-	// Close the peer.  This causes receiveFromRouter to exit if it has not
-	// already done so after receiving GOODBYE from router.
-	c.peer.Close()
-
-	// Wait for receiveFromRouter to exit.
-	<-c.done
-
-	// Stop the client's main goroutine.
-	close(c.actionChan)
 	return nil
 }
 
@@ -872,11 +872,27 @@ func (c *Client) handleInvocation(msg *wamp.Invocation) {
 				return
 			case <-ctx.Done():
 				// Received an INTERRUPT message from the router.
+				// Note: handler is also just as likely to return on INTERRUPT.
 				result = &InvokeResult{Err: wamp.ErrCanceled}
 				c.log.Println("INVOCATION", msg.Request, "canceled by router")
 			}
 
 			if result.Err != "" {
+				// If the cancel is already deleted, this is the signal that
+				// kill mode was "killnowait", in which case do not send a
+				// response to the router.  Check is done here since a cancel
+				// can cause either the handler to return or ctx.Done() to
+				// close, indeterminately .
+				okChan := make(chan bool)
+				c.actionChan <- func() {
+					_, ok := c.invHandlerKill[msg.Request]
+					okChan <- ok
+				}
+				ok := <-okChan
+				if !ok {
+					return
+				}
+
 				c.peer.Send(&wamp.Error{
 					Type:        wamp.INVOCATION,
 					Request:     msg.Request,
@@ -906,8 +922,13 @@ func (c *Client) handleInterrupt(msg *wamp.Interrupt) {
 			c.log.Print("Received INTERRUPT for message that no longer exists")
 			return
 		}
+		// If the interrupt mode is "killnowait", then the router is not
+		// waiting for a response, so do not send one.  This is indicated by
+		// deleting the cancel for the invocation early.
+		if wamp.OptionString(msg.Options, optMode) == cancelModeKillNoWait {
+			delete(c.invHandlerKill, msg.Request)
+		}
 		cancel()
-		delete(c.invHandlerKill, msg.Request)
 	}
 }
 
