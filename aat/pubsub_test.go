@@ -6,6 +6,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/fortytw2/leaktest"
 	"github.com/gammazero/nexus/wamp"
 )
 
@@ -16,6 +17,8 @@ const (
 )
 
 func TestPubSub(t *testing.T) {
+	defer leaktest.Check(t)()
+
 	// Connect subscriber session.
 	subscriber, err := connectClient()
 	if err != nil {
@@ -73,6 +76,7 @@ func TestPubSub(t *testing.T) {
 }
 
 func TestPubSubWildcard(t *testing.T) {
+	defer leaktest.Check(t)()
 	// Connect subscriber session.
 	subscriber, err := connectClient()
 	if err != nil {
@@ -135,6 +139,7 @@ func TestPubSubWildcard(t *testing.T) {
 }
 
 func TestUnsubscribeWrongTopic(t *testing.T) {
+	defer leaktest.Check(t)()
 	// Connect subscriber session.
 	subscriber, err := connectClient()
 	if err != nil {
@@ -197,6 +202,7 @@ func TestUnsubscribeWrongTopic(t *testing.T) {
 }
 
 func TestSubscribeBurst(t *testing.T) {
+	defer leaktest.Check(t)()
 	// Connect subscriber session.
 	sub, err := connectClient()
 	if err != nil {

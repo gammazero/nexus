@@ -8,6 +8,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/fortytw2/leaktest"
 	"github.com/gammazero/nexus"
 	"github.com/gammazero/nexus/auth"
 	"github.com/gammazero/nexus/stdlog"
@@ -38,7 +39,7 @@ func getTestRouter(realmConfig *nexus.RealmConfig) (nexus.Router, error) {
 	return nexus.NewRouter(config, logger)
 }
 
-func connectedTestClients() (*Client, *Client, error) {
+func connectedTestClients() (*Client, *Client, nexus.Router, error) {
 	realmConfig := &nexus.RealmConfig{
 		URI:           wamp.URI(testRealm),
 		StrictURI:     true,
@@ -47,20 +48,20 @@ func connectedTestClients() (*Client, *Client, error) {
 	}
 	r, err := getTestRouter(realmConfig)
 	if err != nil {
-		return nil, nil, err
+		return nil, nil, nil, err
 	}
 
 	peer1 := getTestPeer(r)
 	peer2 := getTestPeer(r)
 	c1, err := newTestClient(peer1)
 	if err != nil {
-		return nil, nil, err
+		return nil, nil, nil, err
 	}
 	c2, err := newTestClient(peer2)
 	if err != nil {
-		return nil, nil, err
+		return nil, nil, nil, err
 	}
-	return c1, c2, nil
+	return c1, c2, r, nil
 }
 
 func newTestClient(p wamp.Peer) (*Client, error) {
@@ -73,6 +74,8 @@ func newTestClient(p wamp.Peer) (*Client, error) {
 }
 
 func TestJoinRealm(t *testing.T) {
+	defer leaktest.Check(t)()
+
 	realmConfig := &nexus.RealmConfig{
 		URI:           wamp.URI(testRealm),
 		StrictURI:     true,
@@ -90,6 +93,7 @@ func TestJoinRealm(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
+	client.Close()
 
 	// Test that client cannot join realm when anonymous auth is disabled.
 	realmConfig = &nexus.RealmConfig{
@@ -102,9 +106,13 @@ func TestJoinRealm(t *testing.T) {
 	if _, err = client.JoinRealm("nexus.testnoanon", nil, nil); err == nil {
 		t.Fatal("expected error due to no anonymous authentication")
 	}
+	client.Close()
+	r.Close()
 }
 
-func TestJoinRealmWithCRAuth(t *testing.T) {
+func TestClientJoinRealmWithCRAuth(t *testing.T) {
+	defer leaktest.Check(t)()
+
 	crAuth, err := auth.NewCRAuthenticator(&testCRAuthenticator{})
 	if err != nil {
 		t.Fatal(err)
@@ -134,11 +142,15 @@ func TestJoinRealmWithCRAuth(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
+	client.Close()
+	r.Close()
 }
 
 func TestSubscribe(t *testing.T) {
+	defer leaktest.Check(t)()
+
 	// Connect to clients to the same server
-	sub, pub, err := connectedTestClients()
+	sub, pub, r, err := connectedTestClients()
 	if err != nil {
 		t.Fatal("failed to connect test clients:", err)
 	}
@@ -188,11 +200,16 @@ func TestSubscribe(t *testing.T) {
 	if err != nil {
 		t.Fatal("unsubscribe error:", err)
 	}
+	pub.Close()
+	sub.Close()
+	r.Close()
 }
 
 func TestRemoteProcedureCall(t *testing.T) {
+	defer leaktest.Check(t)()
+
 	// Connect to clients to the same server
-	callee, caller, err := connectedTestClients()
+	callee, caller, r, err := connectedTestClients()
 	if err != nil {
 		t.Fatal("failed to connect test clients:", err)
 	}
@@ -236,11 +253,16 @@ func TestRemoteProcedureCall(t *testing.T) {
 	if result != nil {
 		t.Fatal("result should be nil on error")
 	}
+	caller.Close()
+	callee.Close()
+	r.Close()
 }
 
 func TestTimeoutCancelRemoteProcedureCall(t *testing.T) {
+	defer leaktest.Check(t)()
+
 	// Connect to clients to the same server
-	callee, caller, err := connectedTestClients()
+	callee, caller, r, err := connectedTestClients()
 	if err != nil {
 		t.Fatal("failed to connect test clients:", err)
 	}
@@ -289,11 +311,15 @@ func TestTimeoutCancelRemoteProcedureCall(t *testing.T) {
 	if err = callee.Unregister(procName); err != nil {
 		t.Fatal("failed to unregister procedure:", err)
 	}
+
+	caller.Close()
+	callee.Close()
+	r.Close()
 }
 
 func TestCancelRemoteProcedureCall(t *testing.T) {
 	// Connect to clients to the same server
-	callee, caller, err := connectedTestClients()
+	callee, caller, r, err := connectedTestClients()
 	if err != nil {
 		t.Fatal("failed to connect test clients:", err)
 	}
@@ -343,6 +369,10 @@ func TestCancelRemoteProcedureCall(t *testing.T) {
 	if err = callee.Unregister(procName); err != nil {
 		t.Fatal("failed to unregister procedure:", err)
 	}
+
+	caller.Close()
+	callee.Close()
+	r.Close()
 }
 
 // ---- authentication test stuff ------

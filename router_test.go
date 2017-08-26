@@ -8,6 +8,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/fortytw2/leaktest"
 	"github.com/gammazero/nexus/stdlog"
 	"github.com/gammazero/nexus/transport"
 	"github.com/gammazero/nexus/wamp"
@@ -94,6 +95,7 @@ func testClient(r Router) (*Session, error) {
 }
 
 func TestHandshake(t *testing.T) {
+	defer leaktest.Check(t)()
 	r, err := newTestRouter()
 	if err != nil {
 		t.Fatal(err)
@@ -116,6 +118,7 @@ func TestHandshake(t *testing.T) {
 }
 
 func TestHandshakeBadRealm(t *testing.T) {
+	defer leaktest.Check(t)()
 	r, err := newTestRouter()
 	if err != nil {
 		t.Error(err)
@@ -140,6 +143,7 @@ func TestHandshakeBadRealm(t *testing.T) {
 }
 
 func TestRouterSubscribe(t *testing.T) {
+	defer leaktest.Check(t)()
 	const testTopic = wamp.URI("some.uri")
 	r, err := newTestRouter()
 	if err != nil {
@@ -192,6 +196,7 @@ func TestRouterSubscribe(t *testing.T) {
 }
 
 func TestPublishAcknowledge(t *testing.T) {
+	defer leaktest.Check(t)()
 	r, err := newTestRouter()
 	if err != nil {
 		t.Error(err)
@@ -274,6 +279,7 @@ func TestPublishNoAcknowledge(t *testing.T) {
 }
 
 func TestRouterCall(t *testing.T) {
+	defer leaktest.Check(t)()
 	r, err := newTestRouter()
 	if err != nil {
 		t.Error(err)
@@ -344,6 +350,7 @@ func TestRouterCall(t *testing.T) {
 }
 
 func TestSessionMetaProcedures(t *testing.T) {
+	defer leaktest.Check(t)()
 	r, err := newTestRouter()
 	if err != nil {
 		t.Error(err)
@@ -466,6 +473,7 @@ func TestSessionMetaProcedures(t *testing.T) {
 }
 
 func TestRegistrationMetaProcedures(t *testing.T) {
+	defer leaktest.Check(t)()
 	r, err := newTestRouter()
 	if err != nil {
 		t.Error(err)

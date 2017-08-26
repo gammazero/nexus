@@ -7,12 +7,15 @@ import (
 	"testing"
 	"time"
 
+	"github.com/fortytw2/leaktest"
 	"github.com/gammazero/nexus/auth"
 	"github.com/gammazero/nexus/client"
 	"github.com/gammazero/nexus/wamp"
 )
 
 func TestJoinRealmWithCRAuth(t *testing.T) {
+	defer leaktest.Check(t)()
+
 	// Connect callee session.
 	cli, err := connectClientNoJoin()
 	if err != nil {
@@ -23,7 +26,7 @@ func TestJoinRealmWithCRAuth(t *testing.T) {
 		"username": "jdoe", "authmethods": []string{"testauth"}}
 	authMap := map[string]client.AuthFunc{"testauth": testAuthFunc}
 
-	details, err = cli.JoinRealm("nexus.test.auth", details, authMap)
+	details, err = cli.JoinRealm(testAuthRealm, details, authMap)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -31,9 +34,12 @@ func TestJoinRealmWithCRAuth(t *testing.T) {
 	if wamp.OptionString(details, "authrole") != "user" {
 		t.Fatal("missing or incorrect authrole")
 	}
+
+	cli.Close()
 }
 
 func TestJoinRealmWithCRAuthBad(t *testing.T) {
+	defer leaktest.Check(t)()
 	// Connect callee session.
 	cli, err := connectClientNoJoin()
 	if err != nil {
@@ -44,22 +50,25 @@ func TestJoinRealmWithCRAuthBad(t *testing.T) {
 		"username": "malory", "authmethods": []string{"testauth"}}
 	authMap := map[string]client.AuthFunc{"testauth": testAuthFunc}
 
-	_, err = cli.JoinRealm("nexus.test.auth", details, authMap)
+	_, err = cli.JoinRealm(testAuthRealm, details, authMap)
 	if err == nil {
 		t.Fatal("expected error with bad username")
 	}
 	if !strings.HasSuffix(err.Error(), "invalid signature") {
 		t.Fatal("wrong error message:", err)
 	}
+
+	cli.Close()
 }
 
 func TestAuthz(t *testing.T) {
+	defer leaktest.Check(t)()
 	// Connect subscriber session.
 	subscriber, err := connectClientNoJoin()
 	if err != nil {
 		t.Fatal("Failed to connect client:", err)
 	}
-	_, err = subscriber.JoinRealm("nexus.test.auth", nil, nil)
+	_, err = subscriber.JoinRealm(testAuthRealm, nil, nil)
 	if err != nil {
 		t.Fatal("Failed to join realm:", err)
 	}
@@ -69,7 +78,7 @@ func TestAuthz(t *testing.T) {
 	if err != nil {
 		t.Fatal("Failed to connect client:", err)
 	}
-	_, err = caller.JoinRealm("nexus.test.auth", nil, nil)
+	_, err = caller.JoinRealm(testAuthRealm, nil, nil)
 	if err != nil {
 		t.Fatal("Failed to join realm:", err)
 	}
