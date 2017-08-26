@@ -136,12 +136,10 @@ func TestMain(m *testing.M) {
 		fmt.Fprintln(os.Stderr, "Failed to disconnect client:", err)
 		os.Exit(1)
 	}
-	cli, err = connectClientNoJoin()
-	if err != nil {
-		fmt.Fprintln(os.Stderr, "Failed to connect client:", err)
-		os.Exit(1)
+	cfg := client.ClientConfig{
+		Realm: testAuthRealm,
 	}
-	_, err = cli.JoinRealm(testAuthRealm, nil, nil)
+	cli, err = connectClientCfg(cfg)
 	if err != nil {
 		fmt.Fprintln(os.Stderr, "Failed to connect client:", err)
 		os.Exit(1)
@@ -163,19 +161,21 @@ func TestMain(m *testing.M) {
 	os.Exit(rc)
 }
 
-func connectClientNoJoin() (*client.Client, error) {
+func connectClientCfg(cfg client.ClientConfig) (*client.Client, error) {
 	var cli *client.Client
 	var err error
 	if websocketClient {
+		// Use larger response timeout for very slow test systems.
+		cfg.ResponseTimeout = time.Second
 		if msgPack {
 			cli, err = client.NewWebsocketClient(
-				serverURL, client.MSGPACK, nil, nil, time.Second, cliLogger)
+				serverURL, client.MSGPACK, nil, nil, cfg, cliLogger)
 		} else {
 			cli, err = client.NewWebsocketClient(
-				serverURL, client.JSON, nil, nil, time.Second, cliLogger)
+				serverURL, client.JSON, nil, nil, cfg, cliLogger)
 		}
 	} else {
-		cli, err = client.NewLocalClient(nxr, 200*time.Millisecond, cliLogger)
+		cli, err = client.NewLocalClient(nxr, cfg, cliLogger)
 	}
 
 	if err != nil {
@@ -189,23 +189,10 @@ func connectClientNoJoin() (*client.Client, error) {
 }
 
 func connectClient() (*client.Client, error) {
-	cli, err := connectClientNoJoin()
-	if err != nil {
-		return nil, err
+	cfg := client.ClientConfig{
+		Realm: testRealm,
 	}
-	_, err = cli.JoinRealm(testRealm, nil, nil)
-	if err != nil {
-		return nil, err
-	}
-	return cli, nil
-}
-
-func connectClientDetails(details wamp.Dict) (*client.Client, error) {
-	cli, err := connectClientNoJoin()
-	if err != nil {
-		return nil, err
-	}
-	_, err = cli.JoinRealm(testRealm, details, nil)
+	cli, err := connectClientCfg(cfg)
 	if err != nil {
 		return nil, err
 	}

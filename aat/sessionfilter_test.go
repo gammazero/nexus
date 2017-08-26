@@ -4,12 +4,17 @@ import (
 	"testing"
 	"time"
 
+	"github.com/gammazero/nexus/client"
 	"github.com/gammazero/nexus/wamp"
 )
 
 func TestWhitelistAttribute(t *testing.T) {
 	// Setup subscriber1
-	subscriber1, err := connectClientDetails(wamp.Dict{"org_id": "zcorp"})
+	cfg := client.ClientConfig{
+		Realm:        testRealm,
+		HelloDetails: wamp.Dict{"org_id": "zcorp"},
+	}
+	subscriber1, err := connectClientCfg(cfg)
 	if err != nil {
 		t.Fatal("Failed to connect client:", err)
 	}
@@ -23,7 +28,11 @@ func TestWhitelistAttribute(t *testing.T) {
 	}
 
 	// Setup subscriber2
-	subscriber2, err := connectClientDetails(wamp.Dict{"org_id": "other"})
+	cfg = client.ClientConfig{
+		Realm:        testRealm,
+		HelloDetails: wamp.Dict{"org_id": "other"},
+	}
+	subscriber2, err := connectClientCfg(cfg)
 	if err != nil {
 		t.Fatal("Failed to connect client:", err)
 	}
@@ -109,7 +118,11 @@ func TestWhitelistAttribute(t *testing.T) {
 
 func TestBlacklistAttribute(t *testing.T) {
 	// Setup subscriber1
-	subscriber1, err := connectClientDetails(wamp.Dict{"org_id": "zcorp"})
+	cfg := client.ClientConfig{
+		Realm:        testRealm,
+		HelloDetails: wamp.Dict{"org_id": "zcorp"},
+	}
+	subscriber1, err := connectClientCfg(cfg)
 	if err != nil {
 		t.Fatal("Failed to connect client:", err)
 	}
@@ -123,7 +136,11 @@ func TestBlacklistAttribute(t *testing.T) {
 	}
 
 	// Setup subscriber2
-	subscriber2, err := connectClientDetails(wamp.Dict{"org_id": "other"})
+	cfg = client.ClientConfig{
+		Realm:        testRealm,
+		HelloDetails: wamp.Dict{"org_id": "other"},
+	}
+	subscriber2, err := connectClientCfg(cfg)
 	if err != nil {
 		t.Fatal("Failed to connect client:", err)
 	}

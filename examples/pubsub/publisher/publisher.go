@@ -12,18 +12,16 @@ const exampleTopic = "example.hello"
 
 func main() {
 	logger := log.New(os.Stdout, "PUBLISHER> ", log.LstdFlags)
+	cfg := client.ClientConfig{
+		Realm: "nexus.examples",
+	}
+	// Connect publisher session.
 	publisher, err := client.NewWebsocketClient(
-		"ws://localhost:8000/", client.JSON, nil, nil, 0, logger)
+		"ws://localhost:8000/", client.JSON, nil, nil, cfg, logger)
 	if err != nil {
 		logger.Fatal(err)
 	}
 	defer publisher.Close()
-
-	// Connect publisher session.
-	_, err = publisher.JoinRealm("nexus.examples", nil, nil)
-	if err != nil {
-		logger.Fatal(err)
-	}
 
 	// Publish to topic.
 	args := wamp.List{"hello world"}
