@@ -50,6 +50,9 @@ type ClientConfig struct {
 	// ResponseTimeout specifies the amount of time that the client will block
 	// waiting for a response from the router.  A value of 0 uses the default.
 	ResponseTimeout time.Duration
+
+	// Enable debug logging for client.
+	Debug bool
 }
 
 // Features supported by nexus client.
@@ -162,7 +165,8 @@ func NewClient(p wamp.Peer, cfg ClientConfig, logger stdlog.StdLog) (*Client, er
 		stopping:   make(chan struct{}),
 		done:       make(chan struct{}),
 
-		log: logger,
+		log:   logger,
+		debug: cfg.Debug,
 
 		realmDetails: welcome.Details,
 		id:           welcome.ID,
@@ -179,13 +183,6 @@ func (c *Client) Done() <-chan struct{} { return c.done }
 // ID returns the client's session ID which is assigned after attaching to a
 // router and joining a realm.
 func (c *Client) ID() wamp.ID { return c.id }
-
-// SetDebug enables or disables debug logging.
-func (c *Client) SetDebug(enable bool) {
-	c.actionChan <- func() {
-		c.debug = enable
-	}
-}
 
 // AuthFunc takes the HELLO details and CHALLENGE extra data and returns the
 // signature string and a details map.  If the signature is accepted, the

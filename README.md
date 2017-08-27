@@ -60,10 +60,9 @@ TLS over websockets is included with the [Gorilla WebSocket](https://github.com/
 
 #### Items to complete:
 - documentation (in progress)
-- examples (in progress)
+- advanced profile examples (in progress)
 - TLS config for `nexusd`
 - RawSocket transport (planned)
-- cool logo (maybe)
 
 ## Advanced Profile Feature Support
 
