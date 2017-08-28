@@ -129,7 +129,7 @@ type Dealer interface {
 	// registration.
 	RegCountCallees(*wamp.Invocation) wamp.Message
 
-	SetMetaClient(metaClient wamp.Peer)
+	SetMetaPeer(metaPeer wamp.Peer)
 }
 
 // remoteProcedure tracks in-progress remote procedure call
@@ -189,7 +189,7 @@ type dealer struct {
 	strictURI     bool
 	allowDisclose bool
 
-	metaClient wamp.Peer
+	metaPeer wamp.Peer
 
 	// Meta-procedure registration ID -> handler func.
 	metaProcMap map[wamp.ID]func(*wamp.Invocation) wamp.Message
@@ -236,9 +236,9 @@ func NewDealer(logger stdlog.StdLog, strictURI, allowDisclose, debug bool) Deale
 }
 
 // SetMetaClient sets the client that the dealer uses to publish meta events.
-func (d *dealer) SetMetaClient(metaClient wamp.Peer) {
+func (d *dealer) SetMetaPeer(metaPeer wamp.Peer) {
 	d.actionChan <- func() {
-		d.metaClient = metaClient
+		d.metaPeer = metaPeer
 	}
 }
 
@@ -419,7 +419,7 @@ func (d *dealer) register(callee *Session, msg *wamp.Register, match, invokePoli
 			d.wcProcRegMap[msg.Procedure] = reg
 		}
 
-		if !wampURI && d.metaClient != nil {
+		if !wampURI && d.metaPeer != nil {
 			// wamp.registration.on_create is fired when a registration is
 			// created through a registration request for an URI which was
 			// previously without a registration.
@@ -430,7 +430,7 @@ func (d *dealer) register(callee *Session, msg *wamp.Register, match, invokePoli
 				"match":   match,
 				"invoke":  invokePolicy,
 			}
-			d.metaClient.Send(&wamp.Publish{
+			d.metaPeer.Send(&wamp.Publish{
 				Request:   wamp.GlobalID(),
 				Topic:     wamp.MetaEventRegOnCreate,
 				Arguments: wamp.List{callee.ID, details},
@@ -490,13 +490,13 @@ func (d *dealer) register(callee *Session, msg *wamp.Register, match, invokePoli
 		Registration: regID,
 	})
 
-	if !wampURI && d.metaClient != nil {
+	if !wampURI && d.metaPeer != nil {
 		// Publish wamp.registration.on_register meta event.  Fired when a
 		// session is added to a registration.  A wamp.registration.on_register
 		// event MUST be fired subsequent to a wamp.registration.on_create
 		// event, since the first registration results in both the creation of
 		// the registration and the addition of a session.
-		d.metaClient.Send(&wamp.Publish{
+		d.metaPeer.Send(&wamp.Publish{
 			Request:   wamp.GlobalID(),
 			Topic:     wamp.MetaEventRegOnRegister,
 			Arguments: wamp.List{callee.ID, regID},
@@ -527,13 +527,13 @@ func (d *dealer) unregister(callee *Session, msg *wamp.Unregister) {
 
 	callee.Send(&wamp.Unregistered{Request: msg.Request})
 
-	if d.metaClient == nil {
+	if d.metaPeer == nil {
 		return
 	}
 
 	// Publish wamp.registration.on_unregister meta event.  Fired when a
 	// session is removed from a subscription.
-	d.metaClient.Send(&wamp.Publish{
+	d.metaPeer.Send(&wamp.Publish{
 		Request:   wamp.GlobalID(),
 		Topic:     wamp.MetaEventRegOnUnregister,
 		Arguments: wamp.List{callee.ID, msg.Registration},
@@ -544,7 +544,7 @@ func (d *dealer) unregister(callee *Session, msg *wamp.Unregister) {
 		// registration is deleted after the last session attached to it has
 		// been removed.  The wamp.registration.on_delete event MUST be
 		// preceded by a wamp.registration.on_unregister event.
-		d.metaClient.Send(&wamp.Publish{
+		d.metaPeer.Send(&wamp.Publish{
 			Request:   wamp.GlobalID(),
 			Topic:     wamp.MetaEventRegOnDelete,
 			Arguments: wamp.List{callee.ID, msg.Registration},
@@ -879,13 +879,13 @@ func (d *dealer) removeSession(callee *Session) {
 			panic("!!! Callee had ID of nonexistent registration")
 		}
 
-		if d.metaClient == nil {
+		if d.metaPeer == nil {
 			continue
 		}
 
 		// Publish wamp.registration.on_unregister meta event.  Fired when a
 		// callee session is removed from a subscription.
-		d.metaClient.Send(&wamp.Publish{
+		d.metaPeer.Send(&wamp.Publish{
 			Request:   wamp.GlobalID(),
 			Topic:     wamp.MetaEventRegOnUnregister,
 			Arguments: wamp.List{callee.ID, regID},
@@ -898,7 +898,7 @@ func (d *dealer) removeSession(callee *Session) {
 		// registration is deleted after the last session attached to it
 		// has been removed.  The wamp.registration.on_delete event MUST be
 		// preceded by a wamp.registration.on_unregister event.
-		d.metaClient.Send(&wamp.Publish{
+		d.metaPeer.Send(&wamp.Publish{
 			Request:   wamp.GlobalID(),
 			Topic:     wamp.MetaEventRegOnDelete,
 			Arguments: wamp.List{callee.ID, regID},
