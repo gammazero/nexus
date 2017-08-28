@@ -235,7 +235,7 @@ func NewDealer(logger stdlog.StdLog, strictURI, allowDisclose, debug bool) Deale
 	return d
 }
 
-// SetMetaClient sets the client that the dealer uses to publish meta events.
+// SetMetaPeer sets the client that the dealer uses to publish meta events.
 func (d *dealer) SetMetaPeer(metaPeer wamp.Peer) {
 	d.actionChan <- func() {
 		d.metaPeer = metaPeer
