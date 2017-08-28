@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"net"
 	"net/http"
+	"runtime"
 	"time"
 
 	"github.com/gammazero/nexus/stdlog"
@@ -28,6 +29,7 @@ type websocketPeer struct {
 	wr chan wamp.Message
 
 	wsWriterDone chan struct{}
+	recvDone     chan struct{}
 
 	log stdlog.StdLog
 }
@@ -94,6 +96,7 @@ func NewWebsocketPeer(conn *websocket.Conn, serializer serialize.Serializer, pay
 		payloadType:  payloadType,
 		closed:       make(chan struct{}),
 		wsWriterDone: make(chan struct{}),
+		recvDone:     make(chan struct{}),
 
 		// The router will read from this channen and immediately dispatch the
 		// message to the broker or dealer.  Therefore this channel can be
@@ -151,6 +154,18 @@ func (w *websocketPeer) Close() {
 	w.conn.WriteControl(websocket.CloseMessage, closeMsg,
 		time.Now().Add(ctrlTimeout))
 	w.conn.Close()
+	select {
+	case <-w.recvDone:
+	case <-time.After(time.Second):
+		// Timed out waiting for recvHandler to finish, so it may be waiting to
+		// write w.rd and nothing is reading from it - need to close the
+		// channel to free it.  So, install recover func in case receiveHandler
+		// does close w.rd first, and close w.rd.
+		defer func() {
+			recover()
+		}()
+		close(w.rd)
+	}
 }
 
 // sendHandler pulls messages from the write channel, and pushes them to the
@@ -175,6 +190,17 @@ func (w *websocketPeer) sendHandler() {
 // recvHandler pulls messages from the websocket and pushes them to the read
 // channel.
 func (w *websocketPeer) recvHandler() {
+	defer func() {
+		if r := recover(); r != nil {
+			// Only panic if not a runtime error, as caused by channel closed.
+			if r, ok := r.(runtime.Error); !ok {
+				// Not runtime error, so maybe important panic from websocket.
+				panic(r)
+			}
+		}
+		// Close websocket connection.
+		w.conn.Close()
+	}()
 	for {
 		msgType, b, err := w.conn.ReadMessage()
 		if err != nil {
@@ -220,4 +246,5 @@ func (w *websocketPeer) recvHandler() {
 	}
 	// Close read channel, cause router to remove session if not already.
 	close(w.rd)
+	close(w.recvDone)
 }
