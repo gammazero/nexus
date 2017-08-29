@@ -1,7 +1,17 @@
-# nexus
-nexus is a [Go](http://golang.org/) implementation of [WAMP](http://wamp-proto.org/) v2 that provides router and client libraries and a router service.
+# nexus: Full-feature WAMP v2 router and client
 
 [![Build Status](https://travis-ci.org/gammazero/nexus.svg)](https://travis-ci.org/gammazero/nexus)
+[![License](https://img.shields.io/badge/License-MIT-blue.svg)](https://github.com/gammazero/nexus/blob/master/LICENSE)
+
+nexus is a [Go](http://golang.org/) implementation of [WAMP](http://wamp-proto.org/) v2 that provides router and client libraries and a router service.
+
+## Full Documentation
+
+See the [Wiki](https://github.com/gammazero/nexus/wiki) for full documentation, examples, and operational details.
+
+For the API: [![GoDoc](https://godoc.org/github.com/gammazero/nexus?status.svg)](https://godoc.org/github.com/gammazero/nexus)
+
+## What is WAMP and nexus
 
 The Web Application Messaging Protocol (WAMP) is an open standard WebSocket subprotocol that provides two application messaging patterns in one unified protocol:
 [Remote Procedure Calls](http://wamp-proto.org/faq/#rpc) and [Publish & Subscribe](http://wamp-proto.org/faq/#pubsub)
