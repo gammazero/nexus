@@ -24,42 +24,39 @@ The nexus project provides a WAMP router library, client library, and stand-alon
  - The router library can be used to build custom WAMP routers or to embed a WAMP router in an application.
  - The client library can be used to build clients that connect to any WAMP server, or to communicate in-process with a WAMP router embedded in the same application.
  - The router service can be run as-is to provide WAMP routing.
+ 
+### Nexus Features
 
-## Status
-Currently in active development - contributions welcome.
+- **Concurrent Asynchronous I/O** Nexus supports large numbers of clients concurrently sending and receiving messages, and never blocks on I/O, even if a client becomes unresponsive.  See [Router Concurrency](https://github.com/gammazero/nexus/wiki/Router-Concurrency) for details.
+- **WAMP Advanced Profile Features**  This project implements most of the advanced profile features in WAMP v2.  See [current feature support](https://github.com/gammazero/nexus#advanced-profile-feature-support) provided by nexus.  Nexus also offers extended functionality for retrieving session information and for message filtering, giving clients more ability to decide where to send messages.
+- **Flexibility** Multiple transports and serialization options are supported, and more are being developed to maximize interoperability.  Currently nexus provides websocket and local (in-process) transports.  JSON and [MessagePack](http://msgpack.org/index.html) serialization is available over websockets.
+- **Security** TLS over websockets is included with the [Gorilla WebSocket](https://github.com/gorilla/websocket) package that nexus uses as its websocket implementation.  The nexus router library provides interfaces for integration of client authentication and authorization logic.
 
-Initial stable release **nexus-1.0** planned: 31 August 2017
+## Quick Start
 
-## Installation
+### Installation
 ```
 go get github.com/gammazero/nexus
 ```
 
-## Examples
+### Examples
+
+Look at the examples to see how to create simple clients and servers.  Examples of using advanced profile features are provide in the full documentation.
 
 https://github.com/gammazero/nexus/tree/master/examples
 
-## Features
+## Contributions
 
-### Concurrent Asynchronous I/O
+By submitting a pull request, or other form of submission of a contribution to this project, you agree:
 
-Nexus supports large numbers of clients concurrently sending and receiving messages, and never blocks on I/O, even if a client becomes unresponsive.  
+1. To license your contribution under the MIT license, to this project, perpetually and irrevocably. 
+2. Your controbution does not infringe on anyone elses copyright, patent calims, or any grant of rights which you have made to third parties.
+3. You acknowledge that the nexus project is not obligated to use your contribution and may decide to include any contribution nexus consider appropriate.
+4. You have legal authority to enter into this agreement.
 
-See [Router Concurrency](https://github.com/gammazero/nexus/wiki/Router-Concurrency) for details.
 
-### WAMP Advanced Profile
-
-This project implements most of the advanced profile features in WAMP v2.  See [current feature support](https://github.com/gammazero/nexus#advanced-profile-feature-support) provided by nexus.
-
-### Flexibility
-
-Multiple transports and serialization options are supported, and more are being developed to maximize interoperability.  Currently nexus provides websocket and local (in-process) transports.  JSON and [MessagePack](http://msgpack.org/index.html) serialization is available over websockets.
-
-Nexus offers extended functionality for retrieving session information and for message filtering, giving clients more ability to decide where to send messages.
-
-### Security
-
-TLS over websockets is included with the [Gorilla WebSocket](https://github.com/gorilla/websocket) package that nexus uses as its websocket implementation.  The nexus router library provides interfaces for integration of client authentication and authorization logic.
+## Status
+Initial stable release **nexus-1.0** planned: 31 August 2017
 
 ### TODO
 
