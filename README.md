@@ -3,7 +3,9 @@
 [![Build Status](https://travis-ci.org/gammazero/nexus.svg)](https://travis-ci.org/gammazero/nexus)
 [![License](https://img.shields.io/badge/License-MIT-blue.svg)](https://github.com/gammazero/nexus/blob/master/LICENSE)
 
-nexus is a [Go](http://golang.org/) implementation of [WAMP](http://wamp-proto.org/) v2 that provides router and client libraries and a router service.
+<img src="https://github.com/gammazero/nexus/raw/master/doc/n-logo2.png" align="left" hspace="10" vspace="6">
+
+**nexus** is a [WAMP](http://wamp-proto.org/) v2 router library and client library, and a router service, that implements most of the features defined in the advanced profile.  The nexus project is written in [Go](http://golang.org/) and designed for highly concurrent asynchronous I/O.  The nexus router provides extended functionality, and router and client interoperate with other WAMP implementations.
 
 ## Full Documentation
 
@@ -41,7 +43,7 @@ https://github.com/gammazero/nexus/tree/master/examples
 
 ### Concurrent Asynchronous I/O
 
-Nexus supports large numbers of clients concurrently sending and receiving message, and never blocks on I/O, even if a client becomes unresponsive.  
+Nexus supports large numbers of clients concurrently sending and receiving messages, and never blocks on I/O, even if a client becomes unresponsive.  
 
 See [Router Concurrency](https://github.com/gammazero/nexus/wiki/Router-Concurrency) for details.
 
@@ -121,27 +123,5 @@ TLS over websockets is included with the [Gorilla WebSocket](https://github.com/
 
 ## Extended Functionality
 
-### Subscriber black/white listing for any session attribute
-
-Nexus extends WAMP's subscriber black/white listing functionality to support filtering on any attribute in the subscriber session details.
-
-WAMP allows blacklisting `authid` and `authrole` using `exclude_authid` and `exclude_authrole`, and allows whitelisting these attributes using `eligible_authid` and `eligible_authrole`.  Nexus recognizes the publish options `exclude_xxx` and `eligible_xxx`, accompanied with a list of string values to match against, where `xxx` is he name of any attribute in the session details.
-
-As an example, to allow sessions with `org_id=ycorp` or `org_id=zcorp`, a PUBLISH message specifies the following option:
-```
-eligible_org_id: ["ycorp", "zcorp"]
-```
-
-Note: Nexus includes all attributes from the HELLO message in the session details.
-
-### Session Meta API provides all session attributes
-
-The `wamp.session.on_join` meta event message and the response to a `wamp.session.get` meta procedure includes the attributes specified by the WAMP specification (`session`, `authid`, `authrole`, `authmethod`, `authprovider`, `transport`), and includes all attributes from the session HELLO message.  This allows clients to provide more information about themselves, via HELLO, that may then be used by other sessions to make decisions about who to send messages to.
-
-### Handling Message Overflow
-
-If there are too many messages sent to the same session before the session can consume them, the session's channel that the router is writing may become full and block. When this happens the broker or dealer will need to drop messages to be able to continue processing.
-
-The current implementation drops messages in this situation.  If a RPC invocation message is dropped, an error is returned to the caller.
-
-This may be addressed by putting the outgoing messages on a dynamically sized output queue for the session.  See: https://github.com/gammazero/bigchan.  This approach was not chosen as dropping messages will not lead to unbounded memory use. 
+- [Subscriber black/white listing for any session attribute](https://github.com/gammazero/nexus/wiki/Subscriber-black-white-listing-for-any-session-attribute)
+- [Session Meta API provides all session attributes](https://github.com/gammazero/nexus/wiki/Session-Meta-API-provides-all-session-attributes)
