@@ -15,7 +15,7 @@ type RealmConfig struct {
 	URI            wamp.URI
 	StrictURI      bool `json:"strict_uri"`
 	AnonymousAuth  bool `json:"anonymous_auth"`
-	AllowDisclose  bool `json:"auto_disclose"`
+	AllowDisclose  bool `json:"allow_disclose"`
 	Authenticators map[string]auth.Authenticator
 	Authorizer     Authorizer
 }
@@ -35,9 +35,9 @@ type realm struct {
 	// session ID -> Session
 	clients map[wamp.ID]*Session
 
-	metaClient *Session
-	metaSess   *Session
-	metaIDGen  *wamp.IDGen
+	metaPeer  wamp.Peer
+	metaSess  *Session
+	metaIDGen *wamp.IDGen
 
 	actionChan chan func()
 
@@ -140,14 +140,12 @@ func (r *realm) close() {
 	// messages can be generated once sessions are closed.
 	r.waitHandlers.Wait()
 
-	if r.metaSess != nil {
-		// All normal handlers have exited, so now stop the meta session.  When
-		// the meta client receives GOODBYE from the meta session, the meta
-		// session is done and will not try to publish anything more to the
-		// broker, and it is finally safe to exit and close the broker.
-		r.metaSess.stop <- wamp.ErrSystemShutdown
-		<-r.metaDone
-	}
+	// All normal handlers have exited, so now stop the meta session.  When
+	// the meta client receives GOODBYE from the meta session, the meta
+	// session is done and will not try to publish anything more to the
+	// broker, and it is finally safe to exit and close the broker.
+	r.metaSess.stop <- wamp.ErrSystemShutdown
+	<-r.metaDone
 
 	// handleInboundMessages() and metaProcedureHandler() are the only things
 	// than can submit request to the broker and dealer, so now that these are
@@ -166,12 +164,12 @@ func (r *realm) close() {
 // It blocks so should be executed in a separate goroutine
 func (r *realm) run() {
 	// Create a session that bridges two peers.  Meta events are published by
-	// the metaClient returned, which is the remote side of the router uplink.
+	// the metaPeer returned, which is the remote side of the router uplink.
 	// Sending a PUBLISH message to it will result in the router publishing the
 	// event to any subscribers.
-	r.metaClient, r.metaSess = r.createMetaSession()
+	r.metaPeer, r.metaSess = r.createMetaSession()
 
-	r.dealer.SetMetaClient(r.metaClient)
+	r.dealer.SetMetaPeer(r.metaPeer)
 
 	// Register to handle session meta procedures.
 	r.registerMetaProcedure(wamp.MetaProcSessionCount, r.sessionCount)
@@ -197,7 +195,7 @@ func (r *realm) run() {
 // returns both sides of the session.
 //
 // This is used for creating a local client for publishing meta events.
-func (r *realm) createMetaSession() (*Session, *Session) {
+func (r *realm) createMetaSession() (wamp.Peer, *Session) {
 	cli, rtr := transport.LinkedPeers(r.log)
 
 	details := wamp.SetOption(nil, "authrole", "trusted")
@@ -216,11 +214,7 @@ func (r *realm) createMetaSession() (*Session, *Session) {
 		r.log.Println("Started meta-session", sess)
 	}
 
-	client := &Session{
-		Peer: cli,
-	}
-
-	return client, sess
+	return cli, sess
 }
 
 // onJoin is called when a non-meta session joins this realm.  The session is
@@ -242,7 +236,7 @@ func (r *realm) onJoin(sess *Session) {
 	//
 	// WAMP spec only specifies publishing "authid", "authrole", "authmethod",
 	// "authprovider", "transport".  This implementation publishes all details.
-	r.metaClient.Send(&wamp.Publish{
+	r.metaPeer.Send(&wamp.Publish{
 		Request:   wamp.GlobalID(),
 		Topic:     wamp.MetaEventSessionOnJoin,
 		Arguments: wamp.List{sess.Details},
@@ -277,7 +271,7 @@ func (r *realm) onLeave(sess *Session, shutdown bool) {
 	<-sync
 
 	if !shutdown {
-		r.metaClient.Send(&wamp.Publish{
+		r.metaPeer.Send(&wamp.Publish{
 			Request:   wamp.GlobalID(),
 			Topic:     wamp.MetaEventSessionOnLeave,
 			Arguments: wamp.List{sess.ID},
@@ -476,10 +470,9 @@ func (r *realm) authClient(client wamp.Peer, details wamp.Dict) (*wamp.Welcome, 
 func (r *realm) getAuthenticator(methods []string) (auth auth.Authenticator, authMethod string) {
 	sync := make(chan struct{})
 	r.actionChan <- func() {
-		// Iterate through the methods and see if there is an Authenticator or
-		// a CRAuthenticator for the method.
-		for _, method := range methods {
-			if len(r.authenticators) != 0 {
+		// Iterate through the methods and see if there is an Authenticator for the method.
+		if len(r.authenticators) != 0 {
+			for _, method := range methods {
 				if a, ok := r.authenticators[method]; ok {
 					auth = a
 					authMethod = method
@@ -494,11 +487,11 @@ func (r *realm) getAuthenticator(methods []string) (auth auth.Authenticator, aut
 }
 
 func (r *realm) registerMetaProcedure(procedure wamp.URI, f func(*wamp.Invocation) wamp.Message) {
-	r.metaClient.Send(&wamp.Register{
+	r.metaPeer.Send(&wamp.Register{
 		Request:   r.metaIDGen.Next(),
 		Procedure: procedure,
 	})
-	msg := <-r.metaClient.Recv()
+	msg := <-r.metaPeer.Recv()
 	if msg == nil {
 		// This would only happen if the meta client was closed before or
 		// during meta procedure registration at realm startup.  Safety first.
@@ -525,12 +518,12 @@ func (r *realm) registerMetaProcedure(procedure wamp.URI, f func(*wamp.Invocatio
 func (r *realm) metaProcedureHandler() {
 	defer close(r.metaDone)
 	var rsp wamp.Message
-	for msg := range r.metaClient.Recv() {
+	for msg := range r.metaPeer.Recv() {
 		switch msg := msg.(type) {
 		case *wamp.Invocation:
 			metaProcHandler, ok := r.metaProcMap[msg.Registration]
 			if !ok {
-				r.metaClient.Send(&wamp.Error{
+				r.metaPeer.Send(&wamp.Error{
 					Type:    msg.MessageType(),
 					Request: msg.Request,
 					Details: wamp.Dict{},
@@ -547,7 +540,7 @@ func (r *realm) metaProcedureHandler() {
 		default:
 			r.log.Println("Meta procedure received unexpected", msg.MessageType())
 		}
-		r.metaClient.Send(rsp)
+		r.metaPeer.Send(rsp)
 	}
 }
 

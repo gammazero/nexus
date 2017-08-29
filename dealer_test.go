@@ -13,7 +13,7 @@ import (
 func newTestDealer() (*dealer, wamp.Peer) {
 	d := NewDealer(logger, false, true, debug).(*dealer)
 	metaClient, rtr := transport.LinkedPeers(logger)
-	d.SetMetaClient(rtr)
+	d.SetMetaPeer(rtr)
 	return d, metaClient
 }
 
