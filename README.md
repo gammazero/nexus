@@ -5,7 +5,7 @@
 
 <img src="https://github.com/gammazero/nexus/raw/master/doc/n-logo2.png" align="left" hspace="10" vspace="6">
 
-**nexus** is a [WAMP](http://wamp-proto.org/) v2 router library and client library, and a router service, that implements most of the features defined in the advanced profile.  The nexus project is written in [Go](http://golang.org/) and designed for highly concurrent asynchronous I/O.  The nexus router provides extended functionality, and router and client interoperate with other WAMP implementations.
+**nexus** is a [WAMP](http://wamp-proto.org/) v2 router library, client library, and a router service, that implements most of the features defined in the advanced profile.  The nexus project is written in [Go](http://golang.org/) and designed for highly concurrent asynchronous I/O.  The nexus router provides extended functionality, and router and client interoperate with other WAMP implementations.
 
 ## Full Documentation
 
@@ -51,7 +51,7 @@ By submitting a pull request, or other form of submission of a contribution to t
 
 1. To license your contribution under the MIT license, to this project, perpetually and irrevocably. 
 2. Your controbution does not infringe on anyone elses copyright, patent calims, or any grant of rights which you have made to third parties.
-3. You acknowledge that the nexus project is not obligated to use your contribution and may decide to include any contribution nexus consider appropriate.
+3. You acknowledge that the nexus project is not obligated to use your contribution and may decide to include any contribution nexus considers appropriate.
 4. You have legal authority to enter into this agreement.
 
 
