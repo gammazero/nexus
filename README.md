@@ -47,13 +47,7 @@ https://github.com/gammazero/nexus/tree/master/examples
 
 ## Contributions
 
-By submitting a pull request, or other form of submission of a contribution to this project, you agree:
-
-1. To license your contribution under the MIT license, to this project, perpetually and irrevocably. 
-2. Your controbution does not infringe on anyone elses copyright, patent calims, or any grant of rights which you have made to third parties.
-3. You acknowledge that the nexus project is not obligated to use your contribution and may decide to include any contribution nexus considers appropriate.
-4. You have legal authority to enter into this agreement.
-
+Please read the [contributing](https://github.com/gammazero/nexus/blob/master/CONTRIBUTING.md#welcome) guide if you are interested in becoming a contributor to this project.
 
 ## Status
 Initial stable release **nexus-1.0** planned: 31 August 2017
