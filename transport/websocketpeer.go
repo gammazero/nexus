@@ -175,6 +175,9 @@ func (w *websocketPeer) sendHandler() {
 // recvHandler pulls messages from the websocket and pushes them to the read
 // channel.
 func (w *websocketPeer) recvHandler() {
+	// When done, close read channel to cause router to remove session if not
+	// already removed.
+	defer close(w.rd)
 	for {
 		msgType, b, err := w.conn.ReadMessage()
 		if err != nil {
@@ -216,8 +219,21 @@ func (w *websocketPeer) recvHandler() {
 		// It is OK for the router to block a client since routing should be
 		// very quick compared to the time to transfer a message over
 		// websocket, and a blocked client will not block other clients.
-		w.rd <- msg
+		//
+		// Need to wake up on w.closed so this goroutine can exit in the case
+		// that messages are not being read from the peer and prevent this
+		// write from completing.
+		select {
+		case w.rd <- msg:
+		case <-w.closed:
+			// If closed, try for one second to send the last message and then
+			// exit recvHandler.
+			select {
+			case w.rd <- msg:
+			case <-time.After(time.Second):
+				w.conn.Close()
+				return
+			}
+		}
 	}
-	// Close read channel, cause router to remove session if not already.
-	close(w.rd)
 }
