@@ -46,12 +46,12 @@ Look at the examples to see how to create simple clients and servers.  Examples 
 
 https://github.com/gammazero/nexus/tree/master/examples
 
-## Contributions
+## Contributing
 
-Please read the [contributing](https://github.com/gammazero/nexus/blob/master/CONTRIBUTING.md#welcome) guide if you are interested in becoming a contributor to this project.
+Please read the [Contributing](https://github.com/gammazero/nexus/blob/master/CONTRIBUTING.md#welcome) guide if you are interested in becoming a contributor to this project.
 
 ## Status
-Initial stable release **nexus-1.0** planned: 31 August 2017
+Initial stable release **nexus-1.0** planned: 05 September 2017
 
 ### TODO
 
