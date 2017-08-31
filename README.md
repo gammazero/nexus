@@ -48,7 +48,7 @@ https://github.com/gammazero/nexus/tree/master/examples
 
 ## Contributing
 
-Please read the [Contributing](https://github.com/gammazero/nexus/blob/master/CONTRIBUTING.md#welcome) guide if you are interested in becoming a contributor to this project.
+Please read the [Contributing](https://github.com/gammazero/nexus/blob/master/CONTRIBUTING.md#contributing-to-nexus) guide if you are interested in becoming a contributor to this project.
 
 ## Status
 Initial stable release **nexus-1.0** planned: 05 September 2017
