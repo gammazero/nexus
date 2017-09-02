@@ -55,10 +55,11 @@ func TestRPCSharedRoundRobin(t *testing.T) {
 	}
 
 	expect := int64(1)
+	var result *wamp.Result
 	for i := 0; i < 5; i++ {
 		// Test calling the procedure - expect callee1-3
 		ctx := context.Background()
-		result, err := caller.Call(ctx, procName, options, nil, nil, "")
+		result, err = caller.Call(ctx, procName, options, nil, nil, "")
 		if err != nil {
 			t.Fatal("failed to call procedure:", err)
 		}
@@ -82,7 +83,7 @@ func TestRPCSharedRoundRobin(t *testing.T) {
 	for i := 0; i < 5; i++ {
 		// Test calling the procedure - expect callee1-3
 		ctx := context.Background()
-		result, err := caller.Call(ctx, procName, options, nil, nil, "")
+		result, err = caller.Call(ctx, procName, options, nil, nil, "")
 		if err != nil {
 			t.Fatal("failed to call procedure:", err)
 		}
@@ -172,10 +173,11 @@ func TestRPCSharedRandom(t *testing.T) {
 
 	var called1, called2, called3 int
 	var i int
+	var result *wamp.Result
 	for i = 0; i < 20; i++ {
 		// Test calling the procedure - expect callee1-3
 		ctx := context.Background()
-		result, err := caller.Call(ctx, procName, options, nil, nil, "")
+		result, err = caller.Call(ctx, procName, options, nil, nil, "")
 		if err != nil {
 			t.Fatal("failed to call procedure:", err)
 		}

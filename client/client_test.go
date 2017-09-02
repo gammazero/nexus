@@ -291,8 +291,8 @@ func TestTimeoutCancelRemoteProcedureCall(t *testing.T) {
 	// Calling the procedure, should block.
 	go func() {
 		callArgs := wamp.List{73}
-		_, err := caller.Call(ctx, procName, nil, callArgs, nil, "killnowait")
-		errChan <- err
+		_, e := caller.Call(ctx, procName, nil, callArgs, nil, "killnowait")
+		errChan <- e
 	}()
 
 	// Make sure the call is blocked.
@@ -347,8 +347,8 @@ func TestCancelRemoteProcedureCall(t *testing.T) {
 	// Calling the procedure, should block.
 	go func() {
 		callArgs := wamp.List{73}
-		_, err := caller.Call(ctx, procName, nil, callArgs, nil, "killnowait")
-		errChan <- err
+		_, e := caller.Call(ctx, procName, nil, callArgs, nil, "killnowait")
+		errChan <- e
 	}()
 
 	// Make sure the call is blocked.

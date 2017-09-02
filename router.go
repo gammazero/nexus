@@ -187,9 +187,9 @@ func (r *router) Attach(client wamp.Peer) error {
 		}
 		// Realm is a string identifying the realm this session should attach
 		// to.  Check if the requested realm exists.
-		var ok bool
-		realm, ok = r.realms[hello.Realm]
-		if !ok {
+		var found bool
+		realm, found = r.realms[hello.Realm]
+		if !found {
 			// If the router is not configured to automatically create the
 			// realm, then respond with an ABORT message.
 			if r.realmTemplate == nil {
@@ -204,7 +204,8 @@ func (r *router) Attach(client wamp.Peer) error {
 			config.URI = hello.Realm
 			if realm, err = r.addRealm(&config); err != nil {
 				sendAbort(wamp.ErrNoSuchRealm, nil)
-				sync <- fmt.Errorf("failed to create realm \"%s\"", string(hello.Realm))
+				sync <- fmt.Errorf("failed to create realm \"%s\"",
+					string(hello.Realm))
 				return
 
 			}

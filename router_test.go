@@ -427,11 +427,12 @@ func TestSessionMetaProcedures(t *testing.T) {
 		Procedure: wamp.MetaProcSessionGet,
 		Arguments: wamp.List{wamp.ID(123456789)},
 	})
+	var errRsp *wamp.Error
 	select {
 	case <-time.After(time.Second):
 		t.Fatal("Timed out waiting for RESULT")
 	case msg := <-caller.Recv():
-		errRsp, ok := msg.(*wamp.Error)
+		errRsp, ok = msg.(*wamp.Error)
 		if !ok {
 			t.Fatal("expected ERROR, got", msg.MessageType())
 		}
@@ -533,11 +534,12 @@ func TestRegistrationMetaProcedures(t *testing.T) {
 	callee.Send(&wamp.Register{Request: registerID, Procedure: testProcedure})
 
 	var registrationID wamp.ID
+	var registered *wamp.Registered
 	select {
 	case <-time.After(time.Second):
 		t.Fatal("Timed out waiting for REGISTERED")
 	case msg := <-callee.Recv():
-		registered, ok := msg.(*wamp.Registered)
+		registered, ok = msg.(*wamp.Registered)
 		if !ok {
 			t.Fatal("expected REGISTERED, got:", msg.MessageType())
 		}
@@ -554,7 +556,7 @@ func TestRegistrationMetaProcedures(t *testing.T) {
 		Options:   wamp.Dict{"match": "wildcard"},
 	})
 	msg := <-callee.Recv()
-	if _, ok := msg.(*wamp.Registered); !ok {
+	if _, ok = msg.(*wamp.Registered); !ok {
 		t.Fatal("expected REGISTERED, got:", msg.MessageType())
 	}
 

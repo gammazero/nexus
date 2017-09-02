@@ -1128,7 +1128,7 @@ func (d *dealer) RegCountCallees(msg *wamp.Invocation) wamp.Message {
 			sync := make(chan int)
 			regID := wamp.ID(i64)
 			d.actionChan <- func() {
-				if reg, ok := d.registrations[regID]; ok {
+				if reg, found := d.registrations[regID]; found {
 					sync <- len(reg.callees)
 				} else {
 					sync <- -1
