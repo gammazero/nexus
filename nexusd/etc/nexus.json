@@ -1,6 +1,5 @@
 {
     "port": 8080,
-    "send_queue_size": 16,
     "log_path": "./nexusd.log",
     "router": {
         "realms": [
@@ -11,7 +10,7 @@
                 "allow_anonymous": true
             }
         ],
-		"debug": false
+        "debug": false
     }
 }
 

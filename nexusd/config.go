@@ -9,10 +9,9 @@ import (
 )
 
 type Config struct {
-	Port          int
-	SendQueueSize int    `json:"send_queue_size"`
-	LogPath       string `json:"log_path"`
-	Router        nexus.RouterConfig
+	Port    int
+	LogPath string `json:"log_path"`
+	Router  nexus.RouterConfig
 }
 
 func LoadConfig(path string) *Config {
