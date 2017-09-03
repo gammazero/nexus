@@ -7,7 +7,9 @@ go:
   - tip
 
 before_script:
-  - go vet -all -composites=false -shadow=true ./...
+  - go get github.com/fortytw2/leaktest
+  - go tool vet -all -composites=false -shadow=true ./*.go
+  - go tool vet -all -composites=false -shadow=true aat auth client transport examples nexusd transport wamp
 
 script:
   - go test -v -race ./...
