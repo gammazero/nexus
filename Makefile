@@ -1,11 +1,8 @@
-SERVICE_NAME	= nexusd
-SERVICE_BIN	= $(BIN_DIR)/$(SERVICE_NAME)
-BIN_DIR	= ./bin
-LIB_DIR	= ./lib
+SERVICE_DIR = nexusd
 
-.PHONY: all $(SERVICE_BIN) clean
+.PHONY: all vet test service clean
 
-all: vet $(SERVICE_BIN)
+all: vet test service
 
 vet:
 	go vet -all -composites=false -shadow=true ./...
@@ -15,11 +12,12 @@ test:
 	go test -race ./aat -websocket
 	go test ./aat -websocket -msgpack
 
-$(BIN_DIR)/:
-	mkdir -p $@
+service: $(SERVICE_DIR)/nexusd
 
-$(SERVICE_BIN): test $(BIN_DIR)/
-	go build -i -o $(SERVICE_BIN) .
+$(SERVICE_DIR)/nexusd:
+	@cd $(SERVICE_DIR); go build
+	@echo "===> built $(SERVICE_DIR)/nexusd"
 
 clean:
-	rm -rf $(BIN_DIR)
+	@rm -f $(SERVICE_DIR)/nexusd
+	@rm -f $(SERVICE_DIR)/*.log
