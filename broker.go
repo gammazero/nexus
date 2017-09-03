@@ -607,8 +607,8 @@ func msgBlackWhiteLists(msg *wamp.Publish) ([]wamp.ID, []wamp.ID, map[string][]s
 	}
 
 	var blIDs []wamp.ID
-	if blacklist, ok := msg.Options[blacklistKey]; ok {
-		if blacklist, ok := wamp.AsList(blacklist); ok {
+	if blacklistFilter, ok := msg.Options[blacklistKey]; ok {
+		if blacklist, ok := wamp.AsList(blacklistFilter); ok {
 			for i := range blacklist {
 				if blVal, ok := wamp.AsID(blacklist[i]); ok {
 					blIDs = append(blIDs, blVal)
@@ -618,8 +618,8 @@ func msgBlackWhiteLists(msg *wamp.Publish) ([]wamp.ID, []wamp.ID, map[string][]s
 	}
 
 	var wlIDs []wamp.ID
-	if whitelist, ok := msg.Options[whitelistKey]; ok {
-		if whitelist, ok := wamp.AsList(whitelist); ok {
+	if whitelistFilter, ok := msg.Options[whitelistKey]; ok {
+		if whitelist, ok := wamp.AsList(whitelistFilter); ok {
 			for i := range whitelist {
 				if wlID, ok := wamp.AsID(whitelist[i]); ok {
 					wlIDs = append(wlIDs, wlID)
@@ -630,11 +630,11 @@ func msgBlackWhiteLists(msg *wamp.Publish) ([]wamp.ID, []wamp.ID, map[string][]s
 
 	getAttrMap := func(prefix string) map[string][]string {
 		var attrMap map[string][]string
-		for k, vals := range msg.Options {
+		for k, values := range msg.Options {
 			if !strings.HasPrefix(k, prefix) {
 				continue
 			}
-			if vals, ok := wamp.AsList(vals); ok {
+			if vals, ok := wamp.AsList(values); ok {
 				vallist := make([]string, 0, len(vals))
 				for i := range vals {
 					if val, ok := wamp.AsString(vals[i]); ok && val != "" {
