@@ -71,6 +71,8 @@ func NewRouter(config *RouterConfig, logger stdlog.StdLog) (Router, error) {
 	if logger == nil {
 		logger = log.New(os.Stdout, "", log.LstdFlags)
 	}
+	logger.Println("Starting router")
+
 	r := &router{
 		realms:        map[wamp.URI]*realm{},
 		actionChan:    make(chan func()),
@@ -317,10 +319,11 @@ func (r *router) Close() {
 			delete(r.realms, uri)
 			r.log.Println("Realm", uri, "completed shutdown")
 		}
-		sync <- struct{}{}
+		close(sync)
 	}
 	<-sync
 	// Wait for all existing realms to close.
 	r.waitRealms.Wait()
 	close(r.actionChan)
+	r.log.Println("Router stopped")
 }

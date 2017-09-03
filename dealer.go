@@ -974,7 +974,7 @@ func (d *dealer) RegList(msg *wamp.Invocation) wamp.Message {
 		for _, reg := range d.wcProcRegMap {
 			wcRegs = append(wcRegs, reg.id)
 		}
-		sync <- struct{}{}
+		close(sync)
 	}
 	<-sync
 	dict := wamp.Dict{
@@ -1064,7 +1064,7 @@ func (d *dealer) RegGet(msg *wamp.Invocation) wamp.Message {
 						"invoke":  reg.policy,
 					}
 				}
-				sync <- struct{}{}
+				close(sync)
 			}
 			<-sync
 		}
@@ -1098,7 +1098,7 @@ func (d *dealer) RegListCallees(msg *wamp.Invocation) wamp.Message {
 						calleeIDs[i] = reg.callees[i].ID
 					}
 				}
-				sync <- struct{}{}
+				close(sync)
 			}
 			<-sync
 		}
