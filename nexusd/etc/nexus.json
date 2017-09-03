@@ -1,17 +1,17 @@
 {
     "port": 8080,
     "send_queue_size": 16,
-    "log_path": "/var/somelog",
+    "log_path": "./nexusd.log",
     "router": {
         "realms": [
             {
                 "uri": "nexus.reaml1",
                 "strict_uri": false,
                 "allow_disclose": true,
-                "allow_anonymous": true,
+                "allow_anonymous": true
             }
-        ]
-		debug: false,
+        ],
+		"debug": false
     }
 }
 
