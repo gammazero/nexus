@@ -30,7 +30,7 @@ The nexus project provides a WAMP router library, client library, and stand-alon
 
 - **Concurrent Asynchronous I/O** Nexus supports large numbers of clients concurrently sending and receiving messages, and never blocks on I/O, even if a client becomes unresponsive.  See [Router Concurrency](https://github.com/gammazero/nexus/wiki/Router-Concurrency) for details.
 - **WAMP Advanced Profile Features**  This project implements most of the advanced profile features in WAMP v2.  See [current feature support](https://github.com/gammazero/nexus#advanced-profile-feature-support) provided by nexus.  Nexus also offers extended functionality for retrieving session information and for message filtering, giving clients more ability to decide where to send messages.
-- **Flexibility** Multiple transports and serialization options are supported, and more are being developed to maximize interoperability.  Currently nexus provides websocket and local (in-process) transports.  JSON and [MessagePack](http://msgpack.org/index.html) serialization is available over websockets.
+- **Flexibility** Multiple transports and serialization options are supported, and more are being developed to maximize interoperability.  Currently nexus provides websocket and local (in-process) transports.  [JSON](https://en.wikipedia.org/wiki/JSON) and [MessagePack](http://msgpack.org/index.html) serialization is available over websockets.
 - **Security** TLS over websockets is included with the [Gorilla WebSocket](https://github.com/gorilla/websocket) package that nexus uses as its websocket implementation.  The nexus router library provides interfaces for integration of client authentication and authorization logic.
 
 ## Quick Start
@@ -40,9 +40,17 @@ The nexus project provides a WAMP router library, client library, and stand-alon
 go get github.com/gammazero/nexus
 ```
 
+### Build, Configure, and Run Router Service
+```
+cd nexusd
+go build
+vi etc/nexus.json
+./nexusd
+```
+
 ### Examples
 
-Look at the examples to see how to create simple clients and servers.  Examples of using advanced profile features are provide in the full documentation.
+Look at the examples to see how to create simple clients and servers.  Examples of using advanced profile features are available in the [full documentation](https://github.com/gammazero/nexus/wiki).
 
 https://github.com/gammazero/nexus/tree/master/examples
 
@@ -65,8 +73,8 @@ Initial stable release **nexus-1.0** planned: 05 September 2017
 #### Items to complete:
 - documentation (in progress)
 - advanced profile examples (in progress)
-- TLS config for `nexusd`
 - RawSocket transport (planned)
+- TLS config for `nexusd`
 
 ## Advanced Profile Feature Support
 
