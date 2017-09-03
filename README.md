@@ -21,7 +21,7 @@ The Web Application Messaging Protocol (WAMP) is an open standard WebSocket subp
 
 Using WAMP you can build distributed systems out of application components which are loosely coupled and communicate in (soft) real-time.
 
-The nexus project provides a WAMP router library, client library, and stand-alone WAMP router service.
+Nexus is a software package that provides a WAMP router library, client library, and stand-alone WAMP router service.  This communication package is intended to provide the messaging system to help you build distributed systems.
  - The router library can be used to build custom WAMP routers or to embed a WAMP router in an application.
  - The client library can be used to build clients that connect to any WAMP server, or to communicate in-process with a WAMP router embedded in the same application.
  - The router service can be run as-is to provide WAMP routing.
