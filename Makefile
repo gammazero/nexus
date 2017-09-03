@@ -8,6 +8,7 @@ vet:
 	go vet -all -composites=false -shadow=true ./...
 
 test:
+	go get github.com/fortytw2/leaktest
 	go test -race ./...
 	go test -race ./aat -websocket
 	go test ./aat -websocket -msgpack
