@@ -61,6 +61,8 @@ Please read the [Contributing](https://github.com/gammazero/nexus/blob/master/CO
 ## Status
 Initial stable release **nexus-1.0** planned: 05 September 2017
 
+Nexus is in active development, primarily to add support for additional features (e.g. RawSocket transport), examples, automated tests, and documentation.
+
 ### TODO
 
 #### Features to complete - priority order:
@@ -74,6 +76,7 @@ Initial stable release **nexus-1.0** planned: 05 September 2017
 - documentation (in progress)
 - advanced profile examples (in progress)
 - RawSocket transport (planned)
+- [CBOR](https://tools.ietf.org/html/rfc7049) Serialization (planned)
 - TLS config for `nexusd`
 
 ## Advanced Profile Feature Support
@@ -123,5 +126,4 @@ Initial stable release **nexus-1.0** planned: 05 September 2017
 
 ## Extended Functionality
 
-- [Subscriber black/white listing for any session attribute](https://github.com/gammazero/nexus/wiki/Subscriber-black-white-listing-for-any-session-attribute)
-- [Session Meta API provides all session attributes](https://github.com/gammazero/nexus/wiki/Session-Meta-API-provides-all-session-attributes)
+Nexus provides [extended functionality](https://github.com/gammazero/nexus/wiki/Extended-Functionality) around subscriber black/white listing and in the information available via the session meta API.  This enhances the ability of clients to make desisions about message recipients.
