@@ -246,11 +246,19 @@ func (c *Client) Subscribe(topic string, fn EventHandler, options wamp.Dict) err
 	return nil
 }
 
-// SubscriptionID returns the subscription id for the specified topic.  If the
+// SubscriptionID returns the subscription ID for the specified topic.  If the
 // client does not have an active subscription to the topic, then returns false
 // for second boolean return value.
 func (c *Client) SubscriptionID(topic string) (subID wamp.ID, ok bool) {
 	subID, ok = c.topicSubID[topic]
+	return
+}
+
+// RegistrationID returns the registration ID for the specified procedure.  If
+// the client is not registered for the procedure, then returns false for
+// second boolean return value.
+func (c *Client) RegistrationID(procedure string) (regID wamp.ID, ok bool) {
+	regID, ok = c.nameProcID[procedure]
 	return
 }
 
