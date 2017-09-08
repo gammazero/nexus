@@ -250,7 +250,12 @@ func (c *Client) Subscribe(topic string, fn EventHandler, options wamp.Dict) err
 // client does not have an active subscription to the topic, then returns false
 // for second boolean return value.
 func (c *Client) SubscriptionID(topic string) (subID wamp.ID, ok bool) {
-	subID, ok = c.topicSubID[topic]
+	sync := make(chan struct{})
+	c.actionChan <- func() {
+		subID, ok = c.topicSubID[topic]
+		close(sync)
+	}
+	<-sync
 	return
 }
 
@@ -258,7 +263,12 @@ func (c *Client) SubscriptionID(topic string) (subID wamp.ID, ok bool) {
 // the client is not registered for the procedure, then returns false for
 // second boolean return value.
 func (c *Client) RegistrationID(procedure string) (regID wamp.ID, ok bool) {
-	regID, ok = c.nameProcID[procedure]
+	sync := make(chan struct{})
+	c.actionChan <- func() {
+		regID, ok = c.nameProcID[procedure]
+		close(sync)
+	}
+	<-sync
 	return
 }
 
