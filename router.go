@@ -102,41 +102,6 @@ func NewRouter(config *RouterConfig, logger stdlog.StdLog) (Router, error) {
 
 func (r *router) Logger() stdlog.StdLog { return r.log }
 
-// Single goroutine used to safely access router data.
-func (r *router) run() {
-	for action := range r.actionChan {
-		action()
-	}
-}
-
-// addRealm creates a new Realm and adds that to the router.
-//
-// At least one realm is needed, unless automatic realm creation is enabled.
-func (r *router) addRealm(config *RealmConfig) (*realm, error) {
-	if _, ok := r.realms[config.URI]; ok {
-		return nil, errors.New("realm already exists: " + string(config.URI))
-	}
-
-	realm, err := newRealm(
-		config,
-		NewBroker(r.log, config.StrictURI, config.AllowDisclose, r.debug),
-		NewDealer(r.log, config.StrictURI, config.AllowDisclose, r.debug),
-		r.log, r.debug)
-	if err != nil {
-		return nil, err
-	}
-	r.realms[config.URI] = realm
-
-	r.waitRealms.Add(1)
-	go func() {
-		realm.run()
-		r.waitRealms.Done()
-	}()
-
-	r.log.Println("Added realm:", config.URI)
-	return realm, nil
-}
-
 // Attach connects a client to the router and to the requested realm.
 func (r *router) Attach(client wamp.Peer) error {
 	sendAbort := func(reason wamp.URI, abortErr error) {
@@ -326,4 +291,39 @@ func (r *router) Close() {
 	r.waitRealms.Wait()
 	close(r.actionChan)
 	r.log.Println("Router stopped")
+}
+
+// addRealm creates a new Realm and adds that to the router.
+//
+// At least one realm is needed, unless automatic realm creation is enabled.
+func (r *router) addRealm(config *RealmConfig) (*realm, error) {
+	if _, ok := r.realms[config.URI]; ok {
+		return nil, errors.New("realm already exists: " + string(config.URI))
+	}
+
+	realm, err := newRealm(
+		config,
+		NewBroker(r.log, config.StrictURI, config.AllowDisclose, r.debug),
+		NewDealer(r.log, config.StrictURI, config.AllowDisclose, r.debug),
+		r.log, r.debug)
+	if err != nil {
+		return nil, err
+	}
+	r.realms[config.URI] = realm
+
+	r.waitRealms.Add(1)
+	go func() {
+		realm.run()
+		r.waitRealms.Done()
+	}()
+
+	r.log.Println("Added realm:", config.URI)
+	return realm, nil
+}
+
+// Single goroutine used to safely access router data.
+func (r *router) run() {
+	for action := range r.actionChan {
+		action()
+	}
 }

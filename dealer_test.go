@@ -939,20 +939,65 @@ func TestSharedRegistrationLast(t *testing.T) {
 	}
 }
 
-func TestCallTimeout(t *testing.T) {
-}
-
-func TestCallerIdentification(t *testing.T) {
-	// Test disclose_caller
-	// Test disclose_me
-}
-
 func TestPatternBasedRegistration(t *testing.T) {
-	// Test match=prefix
-	// Test match=wildcard
-}
+	dealer, metaClient := newTestDealer()
 
-func TestProgressiveCallResults(t *testing.T) {
+	calleeRoles := wamp.Dict{
+		"roles": wamp.Dict{
+			"callee": wamp.Dict{
+				"features": wamp.Dict{
+					"shared_registration": true,
+				},
+			},
+		},
+	}
+
+	// Register a procedure with wildcard match.
+	callee := newTestPeer()
+	calleeSess := &Session{Peer: callee, Details: calleeRoles}
+	dealer.Register(calleeSess,
+		&wamp.Register{
+			Request:   123,
+			Procedure: testProcedureWC,
+			Options:   wamp.Dict{optRegMatch: regMatchWildcard},
+		})
+	rsp := <-callee.Recv()
+	_, ok := rsp.(*wamp.Registered)
+	if !ok {
+		t.Fatal("did not receive REGISTERED response")
+	}
+	if err := checkMetaReg(metaClient, calleeSess.ID); err != nil {
+		t.Fatal("Registration meta event fail:", err)
+	}
+	if err := checkMetaReg(metaClient, calleeSess.ID); err != nil {
+		t.Fatal("Registration meta event fail:", err)
+	}
+
+	caller := newTestPeer()
+	callerSession := &Session{Peer: caller}
+
+	// Test calling valid procedure with full name.  Widlcard should match.
+	dealer.Call(callerSession,
+		&wamp.Call{Request: 125, Procedure: testProcedure})
+
+	// Test that callee received an INVOCATION message.
+	rsp = <-callee.Recv()
+	inv, ok := rsp.(*wamp.Invocation)
+	if !ok {
+		t.Fatal("expected INVOCATION, got:", rsp.MessageType())
+	}
+
+	// Callee responds with a YIELD message
+	dealer.Yield(calleeSess, &wamp.Yield{Request: inv.Request})
+	// Check that caller received a RESULT message.
+	rsp = <-caller.Recv()
+	rslt, ok := rsp.(*wamp.Result)
+	if !ok {
+		t.Fatal("expected RESULT, got:", rsp.MessageType())
+	}
+	if rslt.Request != 125 {
+		t.Fatal("wrong request ID in RESULT")
+	}
 }
 
 func TestRPCBlockedSlowClientCall(t *testing.T) {
@@ -992,5 +1037,63 @@ func TestRPCBlockedSlowClientCall(t *testing.T) {
 	}
 	if rslt.Error != wamp.ErrNetworkFailure {
 		t.Fatal("wrong error, want", wamp.ErrNetworkFailure, "got", rslt.Error)
+	}
+}
+
+func TestCallerIdentification(t *testing.T) {
+	// Test disclose_caller
+	// Test disclose_me
+	dealer, metaClient := newTestDealer()
+
+	calleeRoles := wamp.Dict{
+		"roles": wamp.Dict{
+			"callee": wamp.Dict{
+				"features": wamp.Dict{
+					"caller_identification": true,
+				},
+			},
+		},
+	}
+
+	// Register a procedure, set option to request disclosing caller.
+	callee := newTestPeer()
+	calleeSess := &Session{Peer: callee, Details: calleeRoles}
+	dealer.Register(calleeSess,
+		&wamp.Register{
+			Request:   123,
+			Procedure: testProcedure,
+			Options:   wamp.Dict{optRegDiscloseCaller: true},
+		})
+	rsp := <-callee.Recv()
+	_, ok := rsp.(*wamp.Registered)
+	if !ok {
+		t.Fatal("did not receive REGISTERED response")
+	}
+	if err := checkMetaReg(metaClient, calleeSess.ID); err != nil {
+		t.Fatal("Registration meta event fail:", err)
+	}
+	if err := checkMetaReg(metaClient, calleeSess.ID); err != nil {
+		t.Fatal("Registration meta event fail:", err)
+	}
+
+	caller := newTestPeer()
+	callerID := wamp.ID(11235813)
+	callerSession := &Session{Peer: caller, ID: callerID}
+
+	// Test calling valid procedure with full name.  Widlcard should match.
+	dealer.Call(callerSession,
+		&wamp.Call{Request: 125, Procedure: testProcedure})
+
+	// Test that callee received an INVOCATION message.
+	rsp = <-callee.Recv()
+	inv, ok := rsp.(*wamp.Invocation)
+	if !ok {
+		t.Fatal("expected INVOCATION, got:", rsp.MessageType())
+	}
+
+	// Test that invocation contains caller ID.
+	if wamp.OptionID(inv.Details, "caller") != callerID {
+		fmt.Println("===> details:", inv.Details)
+		t.Fatal("Did not get expected caller ID")
 	}
 }

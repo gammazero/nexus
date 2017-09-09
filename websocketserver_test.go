@@ -24,7 +24,7 @@ var (
 				AllowDisclose: true,
 			},
 		},
-		Debug: true,
+		Debug: false,
 	}
 )
 

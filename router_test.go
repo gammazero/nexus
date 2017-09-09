@@ -26,7 +26,7 @@ var (
 )
 
 func init() {
-	debug = true
+	debug = false
 	logger = log.New(os.Stdout, "", log.LstdFlags)
 }
 
