@@ -234,7 +234,7 @@ func (c *Client) Subscribe(topic string, fn EventHandler, options wamp.Dict) err
 		c.actionChan <- func() {
 			c.eventHandlers[msg.Subscription] = fn
 			c.topicSubID[topic] = msg.Subscription
-			sync <- struct{}{}
+			close(sync)
 		}
 		<-sync
 	case *wamp.Error:
@@ -290,7 +290,7 @@ func (c *Client) Unsubscribe(topic string) error {
 			delete(c.topicSubID, topic)
 			delete(c.eventHandlers, subID)
 		}
-		sync <- struct{}{}
+		close(sync)
 	}
 	<-sync
 	if err != nil {
@@ -423,7 +423,7 @@ func (c *Client) Register(procedure string, fn InvocationHandler, options wamp.D
 		c.actionChan <- func() {
 			c.invHandlers[msg.Registration] = fn
 			c.nameProcID[procedure] = msg.Registration
-			sync <- struct{}{}
+			close(sync)
 		}
 		<-sync
 		if c.debug {
@@ -457,7 +457,7 @@ func (c *Client) Unregister(procedure string) error {
 			delete(c.nameProcID, procedure)
 			delete(c.invHandlers, procID)
 		}
-		sync <- struct{}{}
+		close(sync)
 	}
 	<-sync
 	if err != nil {
@@ -802,7 +802,7 @@ func (c *Client) handleEvent(msg *wamp.Event) {
 	sync := make(chan struct{})
 	c.actionChan <- func() {
 		handler, ok = c.eventHandlers[msg.Subscription]
-		sync <- struct{}{}
+		close(sync)
 	}
 	<-sync
 	if !ok {
@@ -950,7 +950,7 @@ func (c *Client) expectReply(id wamp.ID) {
 	sync := make(chan struct{})
 	c.actionChan <- func() {
 		c.awaitingReply[id] = wait
-		sync <- struct{}{}
+		close(sync)
 	}
 	<-sync
 }
@@ -961,7 +961,7 @@ func (c *Client) waitForReply(id wamp.ID) (wamp.Message, error) {
 	var ok bool
 	c.actionChan <- func() {
 		wait, ok = c.awaitingReply[id]
-		sync <- struct{}{}
+		close(sync)
 	}
 	<-sync
 	if !ok {
@@ -987,7 +987,7 @@ func (c *Client) waitForReplyWithCancel(ctx context.Context, id wamp.ID, mode, p
 	var ok bool
 	c.actionChan <- func() {
 		wait, ok = c.awaitingReply[id]
-		sync <- struct{}{}
+		close(sync)
 	}
 	<-sync
 	if !ok {
