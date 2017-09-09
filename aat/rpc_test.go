@@ -201,3 +201,87 @@ func TestRPCCancelCall(t *testing.T) {
 		t.Fatal("Failed to disconnect client:", err)
 	}
 }
+
+func TestRPCTimeoutCall(t *testing.T) {
+	defer leaktest.Check(t)()
+	// Connect callee session.
+	callee, err := connectClient()
+	if err != nil {
+		t.Fatal("Failed to connect client:", err)
+	}
+
+	invkCanceled := make(chan struct{}, 1)
+	// Register procedure that waits.
+	handler := func(ctx context.Context, args wamp.List, kwargs, details wamp.Dict) *client.InvokeResult {
+		<-ctx.Done() // handler will block forever until canceled.
+		invkCanceled <- struct{}{}
+		return &client.InvokeResult{Err: wamp.ErrCanceled}
+	}
+	procName := "myproc"
+	if err = callee.Register(procName, handler, nil); err != nil {
+		t.Fatal("failed to register procedure:", err)
+	}
+
+	// Connect caller session.
+	caller, err := connectClient()
+	if err != nil {
+		t.Fatal("Failed to connect client:", err)
+	}
+
+	errChan := make(chan error)
+	ctx := context.Background()
+	opts := wamp.Dict{"timeout": 1000}
+	// Calling the procedure, should block.
+	go func() {
+		callArgs := wamp.List{73}
+		_, e := caller.Call(ctx, procName, opts, callArgs, nil, "killnowait")
+		errChan <- e
+	}()
+
+	// Make sure the call is blocked.
+	select {
+	case err = <-errChan:
+		t.Fatal("call should have been blocked")
+	case <-time.After(200 * time.Millisecond):
+	}
+
+	// Make sure the call is canceled on caller side.
+	select {
+	case err = <-errChan:
+		if err == nil {
+			t.Fatal("Expected error from canceling call")
+		}
+		if err.(client.RPCError).Err.Error != wamp.ErrCanceled {
+			t.Fatal("Wrong error for canceled call, got",
+				err.(client.RPCError).Err.Error, "want", wamp.ErrCanceled)
+		}
+	case <-time.After(2 * time.Second):
+		t.Fatal("call should have been canceled")
+	}
+
+	// Make sure the invocation is canceled on callee side.
+	select {
+	case <-invkCanceled:
+	case <-time.After(time.Second):
+		t.Fatal("invocation should have been canceled")
+	}
+
+	rpcError, ok := err.(client.RPCError)
+	if !ok {
+		t.Fatal("expected RPCError type of error")
+	}
+	if rpcError.Err.Error != wamp.ErrCanceled {
+		t.Fatal("expected canceled error, got:", err)
+	}
+	if err = callee.Unregister(procName); err != nil {
+		t.Fatal("failed to unregister procedure:", err)
+	}
+	err = callee.Close()
+	if err != nil {
+		t.Fatal("Failed to disconnect client:", err)
+	}
+	err = caller.Close()
+	if err != nil {
+		t.Fatal("Failed to disconnect client:", err)
+	}
+}

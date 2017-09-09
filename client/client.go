@@ -22,8 +22,9 @@ import (
 const (
 	pubAcknowledge = "acknowledge"
 
-	optError = "error"
-	optMode  = "mode"
+	optError   = "error"
+	optMode    = "mode"
+	optTimeout = "timeout"
 
 	helloAuthmethods = "authmethods"
 	helloRoles       = "roles"
@@ -207,7 +208,13 @@ type EventHandler func(args wamp.List, kwargs wamp.Dict, details wamp.Dict)
 // Subscribe subscribes the client to the specified topic or topic pattern.
 //
 // The specified EventHandler is registered to be called every time an event is
-// received for the topic.  To request a pattern-based subscription set:
+// received for the topic.  The subscription can specify an exact event URI to
+// match or it can specify a URI pattern to match multiple events for the same
+// handler.
+//
+// Options
+//
+// To request a pattern-based subscription set:
 //   options["match"] = "prefix" or "wildcard"
 func (c *Client) Subscribe(topic string, fn EventHandler, options wamp.Dict) error {
 	if options == nil {
@@ -253,19 +260,6 @@ func (c *Client) SubscriptionID(topic string) (subID wamp.ID, ok bool) {
 	sync := make(chan struct{})
 	c.actionChan <- func() {
 		subID, ok = c.topicSubID[topic]
-		close(sync)
-	}
-	<-sync
-	return
-}
-
-// RegistrationID returns the registration ID for the specified procedure.  If
-// the client is not registered for the procedure, then returns false for
-// second boolean return value.
-func (c *Client) RegistrationID(procedure string) (regID wamp.ID, ok bool) {
-	sync := make(chan struct{})
-	c.actionChan <- func() {
-		regID, ok = c.nameProcID[procedure]
 		close(sync)
 	}
 	<-sync
@@ -321,6 +315,8 @@ func (c *Client) Unsubscribe(topic string) error {
 }
 
 // Publish publishes an EVENT to all subscribed clients.
+//
+// Options
 //
 // To receive a PUBLISHED response set:
 //   options["acknowledge"] = true
@@ -395,12 +391,16 @@ type InvocationHandler func(context.Context, wamp.List, wamp.Dict, wamp.Dict) (r
 // procedure.  The InvocationHandler is set to be called for each procedure
 // call received.
 //
+// Options
+//
 // To request a pattern-based registration set:
 //   options["match"] = "prefix" or "wildcard"
 //
 // To request a shared registration pattern set:
 //   options["invoke"] = "single", "roundrobin", "random", "first", "last"
 //
+// To request that caller identification is disclosed to callees:
+//   options["disclose_caller"] = true
 func (c *Client) Register(procedure string, fn InvocationHandler, options wamp.Dict) error {
 	id := c.idGen.Next()
 	c.expectReply(id)
@@ -437,6 +437,19 @@ func (c *Client) Register(procedure string, fn InvocationHandler, options wamp.D
 		return unexpectedMsgError(msg, wamp.REGISTERED)
 	}
 	return nil
+}
+
+// RegistrationID returns the registration ID for the specified procedure.  If
+// the client is not registered for the procedure, then returns false for
+// second boolean return value.
+func (c *Client) RegistrationID(procedure string) (regID wamp.ID, ok bool) {
+	sync := make(chan struct{})
+	c.actionChan <- func() {
+		regID, ok = c.nameProcID[procedure]
+		close(sync)
+	}
+	<-sync
+	return
 }
 
 // Unregister removes the registration of a procedure from the router.
@@ -489,28 +502,6 @@ func (c *Client) Unregister(procedure string) error {
 	return nil
 }
 
-// RPCError is a wrapper for a WAMP ERROR message that is received as a result
-// of a CALL.  This allows the client application to type assert the error to a
-// RPCError and inspect the the ERROR message contents, as may be necessary to
-// process an error response from the callee.
-type RPCError struct {
-	Err       *wamp.Error
-	Procedure string
-}
-
-// Error implements the error interface, returning an error string.
-func (werr RPCError) Error() string {
-	e := fmt.Sprintf("error calling remote procedure '%s': %v", werr.Procedure,
-		werr.Err.Error)
-	if len(werr.Err.Arguments) != 0 {
-		e += fmt.Sprintf(": %v", werr.Err.Arguments)
-	}
-	if len(werr.Err.ArgumentsKw) != 0 {
-		e += fmt.Sprintf(": %v", werr.Err.ArgumentsKw)
-	}
-	return e
-}
-
 // Call calls the procedure corresponding to the given URI.
 //
 // If an ERROR message is received from the router, the error value returned
@@ -518,14 +509,19 @@ func (werr RPCError) Error() string {
 // message.  This may be necessary for the client application to process error
 // data from the RPC invocation.
 //
+// Call Canceling
+//
 // The provided Context can be used to cancel a call, or to set a deadline that
-// cancels the call when the deadline expires.  If the call is canceled before
-// a result is received, then a CANCEL message is sent to the router to cancel
-// the call according to the specified mode.
+// cancels the call when the deadline expires.  There is no separate Cancel()
+// API to do this.  If the call is canceled before a result is received, then a
+// CANCEL message is sent to the router to cancel the call according to the
+// specified mode.
 //
 // If cancelMode must be one of the following:
 //     "kill", "killnowait', "skip".
-// Setting to "" specifies using the default value: "killnowait"
+// Setting  to  ""  specifies  using  the  default  value:  "killnowait".   The
+// cancelMode is  an option  for a  CANCEL message, not  for the  CALL message,
+// which is why it is specified as a parameter to the Call() API.
 //
 // Cancellation behaves differently depending on the mode:
 //
@@ -543,6 +539,35 @@ func (werr RPCError) Error() string {
 // invocation or interrupt from the callee is discarded when received.
 //
 // If the callee does not support call canceling, then behavior is "skip".
+//
+// Call Timeout
+//
+// The nexus router also supports call timeout.  If a timeout is provided in
+// the options, and the callee supports call timeout, then the timeout value is
+// passed to the callee so that the invocation can be canceled by the callee
+// if the timeout is reached before a response is returned.  This is the
+// behavior implemented by the nexus client in the callee role.
+//
+// To request a remote call timeout, specify a timeout in milliseconds:
+//   options["timeout"] = 30000
+//
+// Progressive Call Results
+//
+// A caller can indicate its willingness to receive progressive results by
+// setting the "receive_progress" option.  If the callee supports progressive
+// calls, the dealer will forward this indication from the caller to the
+// callee.
+//
+// To indicate willingness to receive progressive results:
+//   options["receive_progress"] = true
+//
+// Caller Identification
+//
+// A caller may request the disclosure of its identity (its WAMP session ID) to
+// callees, if allowed by the dealer.
+//
+// To request that this caller's identity by disclosed:
+//   options["disclose_me"] = true
 func (c *Client) Call(ctx context.Context, procedure string, options wamp.Dict, args wamp.List, kwargs wamp.Dict, cancelMode string) (*wamp.Result, error) {
 	switch cancelMode {
 	case cancelModeKill, cancelModeKillNoWait, cancelModeSkip:
@@ -581,7 +606,31 @@ func (c *Client) Call(ctx context.Context, procedure string, options wamp.Dict, 
 	}
 }
 
-// Close closes the connection to the router.
+// RPCError is a wrapper for a WAMP ERROR message that is received as a result
+// of a CALL.  This allows the client application to type assert the error to a
+// RPCError and inspect the the ERROR message contents, as may be necessary to
+// process an error response from the callee.
+type RPCError struct {
+	Err       *wamp.Error
+	Procedure string
+}
+
+// Error implements the error interface, returning an error string for the
+// RPCError.
+func (werr RPCError) Error() string {
+	e := fmt.Sprintf("error calling remote procedure '%s': %v", werr.Procedure,
+		werr.Err.Error)
+	if len(werr.Err.Arguments) != 0 {
+		e += fmt.Sprintf(": %v", werr.Err.Arguments)
+	}
+	if len(werr.Err.ArgumentsKw) != 0 {
+		e += fmt.Sprintf(": %v", werr.Err.ArgumentsKw)
+	}
+	return e
+}
+
+// Close causes the client to leave the realm it has joined, and closes the
+// connection to the router.
 func (c *Client) Close() error {
 	if !atomic.CompareAndSwapInt32(&c.closed, 0, 1) {
 		return nil
@@ -837,7 +886,15 @@ func (c *Client) handleInvocation(msg *wamp.Invocation) {
 
 		// Create a kill switch so that invocation can be canceled.
 		var cancel context.CancelFunc
-		ctx, cancel := context.WithCancel(context.Background())
+		var ctx context.Context
+		timeout := wamp.OptionInt64(msg.Details, optTimeout)
+		if timeout > 0 {
+			// The caller specified a timeout, in milliseconds.
+			ctx, cancel = context.WithTimeout(context.Background(),
+				time.Millisecond*time.Duration(timeout))
+		} else {
+			ctx, cancel = context.WithCancel(context.Background())
+		}
 		c.invHandlerKill[msg.Request] = cancel
 		c.activeInvHandlers.Add(1)
 		go func() {
@@ -875,7 +932,7 @@ func (c *Client) handleInvocation(msg *wamp.Invocation) {
 				// Received an INTERRUPT message from the router.
 				// Note: handler is also just as likely to return on INTERRUPT.
 				result = &InvokeResult{Err: wamp.ErrCanceled}
-				c.log.Println("INVOCATION", msg.Request, "canceled by router")
+				c.log.Println("INVOCATION", msg.Request, "canceled")
 			}
 
 			if result.Err != "" {
@@ -973,7 +1030,7 @@ func (c *Client) waitForReply(id wamp.ID) (wamp.Message, error) {
 	select {
 	case msg = <-wait:
 	case <-time.After(c.responseTimeout):
-		err = fmt.Errorf("timeout while waiting for reply")
+		err = errors.New("timeout while waiting for reply")
 	}
 	c.actionChan <- func() {
 		delete(c.awaitingReply, id)
@@ -1017,7 +1074,7 @@ func (c *Client) waitForReplyWithCancel(ctx context.Context, id wamp.ID, mode, p
 		select {
 		case msg = <-wait:
 		case <-time.After(c.responseTimeout):
-			err = fmt.Errorf("timeout while waiting for reply")
+			err = errors.New("timeout while waiting for reply")
 		}
 	}
 	c.actionChan <- func() {

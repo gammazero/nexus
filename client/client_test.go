@@ -157,7 +157,7 @@ func TestClientJoinRealmWithCRAuth(t *testing.T) {
 func TestSubscribe(t *testing.T) {
 	defer leaktest.Check(t)()
 
-	// Connect to clients to the same server
+	// Connect two clients to the same server
 	sub, pub, r, err := connectedTestClients()
 	if err != nil {
 		t.Fatal("failed to connect test clients:", err)
@@ -216,7 +216,7 @@ func TestSubscribe(t *testing.T) {
 func TestRemoteProcedureCall(t *testing.T) {
 	defer leaktest.Check(t)()
 
-	// Connect to clients to the same server
+	// Connect two clients to the same server
 	callee, caller, r, err := connectedTestClients()
 	if err != nil {
 		t.Fatal("failed to connect test clients:", err)
@@ -269,7 +269,7 @@ func TestRemoteProcedureCall(t *testing.T) {
 func TestTimeoutCancelRemoteProcedureCall(t *testing.T) {
 	defer leaktest.Check(t)()
 
-	// Connect to clients to the same server
+	// Connect two clients to the same server
 	callee, caller, r, err := connectedTestClients()
 	if err != nil {
 		t.Fatal("failed to connect test clients:", err)
@@ -326,7 +326,7 @@ func TestTimeoutCancelRemoteProcedureCall(t *testing.T) {
 }
 
 func TestCancelRemoteProcedureCall(t *testing.T) {
-	// Connect to clients to the same server
+	// Connect two clients to the same server
 	callee, caller, r, err := connectedTestClients()
 	if err != nil {
 		t.Fatal("failed to connect test clients:", err)
@@ -364,6 +364,65 @@ func TestCancelRemoteProcedureCall(t *testing.T) {
 	select {
 	case err = <-errChan:
 	case <-time.After(time.Second):
+		t.Fatal("call should have been canceled")
+	}
+
+	rpcError, ok := err.(RPCError)
+	if !ok {
+		t.Fatal("expected RPCError type of error")
+	}
+	if rpcError.Err.Error != wamp.ErrCanceled {
+		t.Fatal("expected canceled error, got:", err)
+	}
+	if err = callee.Unregister(procName); err != nil {
+		t.Fatal("failed to unregister procedure:", err)
+	}
+
+	caller.Close()
+	callee.Close()
+	r.Close()
+}
+
+func TestTimeoutRemoteProcedureCall(t *testing.T) {
+	defer leaktest.Check(t)()
+
+	// Connect two clients to the same server
+	callee, caller, r, err := connectedTestClients()
+	if err != nil {
+		t.Fatal("failed to connect test clients:", err)
+	}
+
+	// Test registering a valid procedure.
+	handler := func(ctx context.Context, args wamp.List, kwargs, details wamp.Dict) *InvokeResult {
+		<-ctx.Done() // handler will block forever until canceled.
+		return &InvokeResult{Err: wamp.ErrCanceled}
+	}
+	procName := "myproc"
+	if err = callee.Register(procName, handler, nil); err != nil {
+		t.Fatal("failed to register procedure:", err)
+	}
+
+	errChan := make(chan error)
+	ctx := context.Background()
+	opts := wamp.Dict{optTimeout: 1000}
+	// Calling the procedure, should block.
+	go func() {
+		callArgs := wamp.List{73}
+		_, e := caller.Call(ctx, procName, opts, callArgs, nil, "killnowait")
+		errChan <- e
+	}()
+
+	// Make sure the call is blocked.
+	select {
+	case err = <-errChan:
+		t.Fatal("call should have been blocked")
+	case <-time.After(200 * time.Millisecond):
+	}
+
+	// Make sure the call is canceled.
+	select {
+	case err = <-errChan:
+	case <-time.After(2 * time.Second):
 		t.Fatal("call should have been canceled")
 	}
 
