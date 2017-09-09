@@ -22,8 +22,9 @@ import (
 const (
 	pubAcknowledge = "acknowledge"
 
-	optError = "error"
-	optMode  = "mode"
+	optError   = "error"
+	optMode    = "mode"
+	optTimeout = "timeout"
 
 	helloAuthmethods = "authmethods"
 	helloRoles       = "roles"
@@ -837,7 +838,15 @@ func (c *Client) handleInvocation(msg *wamp.Invocation) {
 
 		// Create a kill switch so that invocation can be canceled.
 		var cancel context.CancelFunc
-		ctx, cancel := context.WithCancel(context.Background())
+		var ctx context.Context
+		timeout := wamp.OptionInt64(msg.Details, optTimeout)
+		if timeout > 0 {
+			// The caller specified a timeout, in milliseconds.
+			ctx, cancel = context.WithTimeout(context.Background(),
+				time.Millisecond*time.Duration(timeout))
+		} else {
+			ctx, cancel = context.WithCancel(context.Background())
+		}
 		c.invHandlerKill[msg.Request] = cancel
 		c.activeInvHandlers.Add(1)
 		go func() {
@@ -875,7 +884,7 @@ func (c *Client) handleInvocation(msg *wamp.Invocation) {
 				// Received an INTERRUPT message from the router.
 				// Note: handler is also just as likely to return on INTERRUPT.
 				result = &InvokeResult{Err: wamp.ErrCanceled}
-				c.log.Println("INVOCATION", msg.Request, "canceled by router")
+				c.log.Println("INVOCATION", msg.Request, "canceled")
 			}
 
 			if result.Err != "" {
@@ -973,7 +982,7 @@ func (c *Client) waitForReply(id wamp.ID) (wamp.Message, error) {
 	select {
 	case msg = <-wait:
 	case <-time.After(c.responseTimeout):
-		err = fmt.Errorf("timeout while waiting for reply")
+		err = errors.New("timeout while waiting for reply")
 	}
 	c.actionChan <- func() {
 		delete(c.awaitingReply, id)
@@ -1017,7 +1026,7 @@ func (c *Client) waitForReplyWithCancel(ctx context.Context, id wamp.ID, mode, p
 		select {
 		case msg = <-wait:
 		case <-time.After(c.responseTimeout):
-			err = fmt.Errorf("timeout while waiting for reply")
+			err = errors.New("timeout while waiting for reply")
 		}
 	}
 	c.actionChan <- func() {
