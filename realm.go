@@ -24,8 +24,8 @@ type RealmConfig struct {
 // authentication and authorization.  WAMP messages are only routed within a
 // Realm.
 type realm struct {
-	broker Broker
-	dealer Dealer
+	broker *Broker
+	dealer *Dealer
 
 	authorizer Authorizer
 
@@ -57,7 +57,7 @@ type realm struct {
 
 // newRealm creates a new Realm with default broker, dealer, and authorizer
 // implementations.  The Realm has no authorizers unless anonymousAuth is true.
-func newRealm(config *RealmConfig, broker Broker, dealer Dealer, logger stdlog.StdLog, debug bool) (*realm, error) {
+func newRealm(config *RealmConfig, broker *Broker, dealer *Dealer, logger stdlog.StdLog, debug bool) (*realm, error) {
 	if !config.URI.ValidURI(config.StrictURI, "") {
 		return nil, fmt.Errorf(
 			"invalid realm URI %v (URI strict checking %v)", config.URI, config.StrictURI)

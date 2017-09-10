@@ -10,8 +10,8 @@ import (
 	"github.com/gammazero/nexus/wamp"
 )
 
-func newTestDealer() (*dealer, wamp.Peer) {
-	d := NewDealer(logger, false, true, debug).(*dealer)
+func newTestDealer() (*Dealer, wamp.Peer) {
+	d := NewDealer(logger, false, true, debug)
 	metaClient, rtr := transport.LinkedPeers(logger)
 	d.SetMetaPeer(rtr)
 	return d, metaClient
