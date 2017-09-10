@@ -10,10 +10,6 @@ import (
 	"github.com/gammazero/nexus/wamp"
 )
 
-// TODO: Implement the following:
-// - call timeout (need timeout goroutine)
-// - call trust levels
-
 const (
 	roleCallee = "callee"
 	roleCaller = "caller"
@@ -334,6 +330,7 @@ func (d *dealer) Yield(callee *Session, msg *wamp.Yield) {
 	}
 }
 
+// Error handles an invocation error returned by the callee.
 func (d *dealer) Error(msg *wamp.Error) {
 	if msg == nil {
 		panic("dealer.Error with nil message")
@@ -343,6 +340,7 @@ func (d *dealer) Error(msg *wamp.Error) {
 	}
 }
 
+// Remove a callee's registrations.
 func (d *dealer) RemoveSession(sess *Session) {
 	if sess == nil {
 		// No session specified, no session removed.
@@ -869,7 +867,7 @@ func (d *dealer) removeSession(callee *Session) {
 		}
 
 		// Publish wamp.registration.on_unregister meta event.  Fired when a
-		// callee session is removed from a subscription.
+		// callee session is removed from a registration.
 		d.metaPeer.Send(&wamp.Publish{
 			Request:   wamp.GlobalID(),
 			Topic:     wamp.MetaEventRegOnUnregister,
