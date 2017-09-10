@@ -59,25 +59,22 @@ https://github.com/gammazero/nexus/tree/master/examples
 Please read the [Contributing](https://github.com/gammazero/nexus/blob/master/CONTRIBUTING.md#contributing-to-nexus) guide if you are interested in becoming a contributor to this project.
 
 ## Status
-Initial stable release **nexus-1.0** planned: 05 September 2017
 
-Nexus is in active development, primarily to add support for additional features (e.g. RawSocket transport), examples, automated tests, and documentation.
+A stable release of nexus is available with support for most advanced profile features.  Nexus is in active development, to add remaining advanced profile features (e.g. RawSocket transport), examples, automated tests, and documentation.
 
 ### TODO
 
-#### Features to complete - priority order:
-- active call timeout (need handling by router)
+These features listed here are being added.  If there are are specific items needed, or if any changes in current functionality are needed, then please open an [issue](https://github.com/gammazero/nexus/issues).
+
+- more documentation (in progress)
+- advanced profile examples (in progress)
+- RawSocket transport (soon)
+- [CBOR](https://tools.ietf.org/html/rfc7049) Serialization (planned)
+- TLS config for `nexusd`
 - testament_meta_api
 - event history
 - call trust levels
 - publisher trust levels
-
-#### Items to complete:
-- documentation (in progress)
-- advanced profile examples (in progress)
-- RawSocket transport (planned)
-- [CBOR](https://tools.ietf.org/html/rfc7049) Serialization (planned)
-- TLS config for `nexusd`
 
 ## Advanced Profile Feature Support
 
