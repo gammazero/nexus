@@ -22,16 +22,8 @@ import (
 const (
 	pubAcknowledge = "acknowledge"
 
-	optError   = "error"
-	optMode    = "mode"
-	optTimeout = "timeout"
-
 	helloAuthmethods = "authmethods"
 	helloRoles       = "roles"
-
-	cancelModeKill       = "kill"
-	cancelModeKillNoWait = "killnowait"
-	cancelModeSkip       = "skip"
 )
 
 // ClientConfig configures a client with everything needed to begin a session
@@ -216,6 +208,8 @@ type EventHandler func(args wamp.List, kwargs wamp.Dict, details wamp.Dict)
 //
 // To request a pattern-based subscription set:
 //   options["match"] = "prefix" or "wildcard"
+//
+// NOTE: Use consts defined in wamp/options.go instead of raw strings.
 func (c *Client) Subscribe(topic string, fn EventHandler, options wamp.Dict) error {
 	if options == nil {
 		options = wamp.Dict{}
@@ -341,6 +335,8 @@ func (c *Client) Unsubscribe(topic string) error {
 //
 // To request that publisher's identity is disclosed to subscribers, set:
 //   options["disclose_me"] = true
+//
+// NOTE: Use consts defined in wamp/options.go instead of raw strings.
 func (c *Client) Publish(topic string, options wamp.Dict, args wamp.List, kwargs wamp.Dict) error {
 	if options == nil {
 		options = make(wamp.Dict)
@@ -401,6 +397,8 @@ type InvocationHandler func(context.Context, wamp.List, wamp.Dict, wamp.Dict) (r
 //
 // To request that caller identification is disclosed to callees:
 //   options["disclose_caller"] = true
+//
+// NOTE: Use consts defined in wamp/options.go instead of raw strings.
 func (c *Client) Register(procedure string, fn InvocationHandler, options wamp.Dict) error {
 	id := c.idGen.Next()
 	c.expectReply(id)
@@ -568,14 +566,16 @@ func (c *Client) Unregister(procedure string) error {
 //
 // To request that this caller's identity by disclosed:
 //   options["disclose_me"] = true
+//
+// NOTE: Use consts defined in wamp/options.go instead of raw strings.
 func (c *Client) Call(ctx context.Context, procedure string, options wamp.Dict, args wamp.List, kwargs wamp.Dict, cancelMode string) (*wamp.Result, error) {
 	switch cancelMode {
-	case cancelModeKill, cancelModeKillNoWait, cancelModeSkip:
+	case wamp.CancelModeKill, wamp.CancelModeKillNoWait, wamp.CancelModeSkip:
 	case "":
-		cancelMode = cancelModeKillNoWait
+		cancelMode = wamp.CancelModeKillNoWait
 	default:
 		return nil, fmt.Errorf("cancel mode not one of: '%s', '%s', '%s'",
-			cancelModeKill, cancelModeKillNoWait, cancelModeSkip)
+			wamp.CancelModeKill, wamp.CancelModeKillNoWait, wamp.CancelModeSkip)
 	}
 
 	id := c.idGen.Next()
@@ -754,7 +754,7 @@ func handleCRAuth(peer wamp.Peer, challenge *wamp.Challenge, details wamp.Dict, 
 	// If router sent back ABORT in response to client's authentication attempt
 	// return error.
 	if abort, ok := msg.(*wamp.Abort); ok {
-		authErr := wamp.OptionString(abort.Details, optError)
+		authErr := wamp.OptionString(abort.Details, wamp.OptError)
 		if authErr == "" {
 			authErr = "authentication failed"
 		}
@@ -887,7 +887,7 @@ func (c *Client) handleInvocation(msg *wamp.Invocation) {
 		// Create a kill switch so that invocation can be canceled.
 		var cancel context.CancelFunc
 		var ctx context.Context
-		timeout := wamp.OptionInt64(msg.Details, optTimeout)
+		timeout := wamp.OptionInt64(msg.Details, wamp.OptTimeout)
 		if timeout > 0 {
 			// The caller specified a timeout, in milliseconds.
 			ctx, cancel = context.WithTimeout(context.Background(),
@@ -983,7 +983,7 @@ func (c *Client) handleInterrupt(msg *wamp.Interrupt) {
 		// If the interrupt mode is "killnowait", then the router is not
 		// waiting for a response, so do not send one.  This is indicated by
 		// deleting the cancel for the invocation early.
-		if wamp.OptionString(msg.Options, optMode) == cancelModeKillNoWait {
+		if wamp.OptionString(msg.Options, wamp.OptMode) == wamp.CancelModeKillNoWait {
 			delete(c.invHandlerKill, msg.Request)
 		}
 		cancel()
@@ -1067,7 +1067,7 @@ func (c *Client) waitForReplyWithCancel(ctx context.Context, id wamp.ID, mode, p
 		c.log.Printf("Call to '%s' canceled (mode=%s)", procedure, mode)
 		c.peer.Send(&wamp.Cancel{
 			Request: id,
-			Options: wamp.SetOption(nil, optMode, mode),
+			Options: wamp.SetOption(nil, wamp.OptMode, mode),
 		})
 	}
 	if msg == nil {

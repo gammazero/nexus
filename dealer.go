@@ -18,17 +18,6 @@ const (
 	roleCallee = "callee"
 	roleCaller = "caller"
 
-	regMatchExact    = "exact"
-	regMatchPrefix   = "prefix"
-	regMatchWildcard = "wildcard"
-
-	optCancelMode          = "mode"
-	optRegMatch            = "match"
-	optRegDiscloseCaller   = "disclose_caller"
-	optCallDiscloseMe      = "disclose_me"
-	optCallReceiveProgress = "receive_progress"
-	optTimeout             = "timeout"
-
 	featureCallCanceling   = "call_canceling"
 	featureCallTimeout     = "call_timeout"
 	featureCallerIdent     = "caller_identification"
@@ -36,10 +25,6 @@ const (
 	featureProgCallResults = "progressive_call_results"
 	featureSharedReg       = "shared_registration"
 	featureRegMetaAPI      = "registration_meta_api"
-
-	cancelModeKill       = "kill"
-	cancelModeKillNoWait = "killnowait"
-	cancelModeSkip       = "skip"
 )
 
 // Role information for this broker.
@@ -256,7 +241,7 @@ func (d *dealer) Register(callee *Session, msg *wamp.Register) {
 	// Validate procedure URI.  For REGISTER, must be valid URI (either strict
 	// or loose), and all URI components must be non-empty other than for
 	// wildcard or prefix matched procedures.
-	match := wamp.OptionString(msg.Options, optRegMatch)
+	match := wamp.OptionString(msg.Options, wamp.OptMatch)
 	if !msg.Procedure.ValidURI(d.strictURI, match) {
 		errMsg := fmt.Sprintf(
 			"register for invalid procedure URI %v (URI strict checking %v)",
@@ -291,7 +276,7 @@ func (d *dealer) Register(callee *Session, msg *wamp.Register) {
 
 	// If callee requests disclosure of caller identity, but dealer does not
 	// allow, then send error as registration response.
-	discloseCaller := wamp.OptionFlag(msg.Options, optRegDiscloseCaller)
+	discloseCaller := wamp.OptionFlag(msg.Options, wamp.OptDiscloseCaller)
 	if !d.allowDisclose && discloseCaller {
 		callee.Send(&wamp.Error{
 			Type:    msg.MessageType(),
@@ -302,7 +287,7 @@ func (d *dealer) Register(callee *Session, msg *wamp.Register) {
 		return
 	}
 
-	invoke := wamp.OptionString(msg.Options, "invoke")
+	invoke := wamp.OptionString(msg.Options, wamp.OptInvoke)
 	d.actionChan <- func() {
 		d.register(callee, msg, match, invoke, discloseCaller, wampURI)
 	}
@@ -387,9 +372,9 @@ func (d *dealer) register(callee *Session, msg *wamp.Register, match, invokePoli
 	switch match {
 	default:
 		reg = d.procRegMap[msg.Procedure]
-	case regMatchPrefix:
+	case wamp.MatchPrefix:
 		reg = d.pfxProcRegMap[msg.Procedure]
-	case regMatchWildcard:
+	case wamp.MatchWildcard:
 		reg = d.wcProcRegMap[msg.Procedure]
 	}
 
@@ -413,9 +398,9 @@ func (d *dealer) register(callee *Session, msg *wamp.Register, match, invokePoli
 		switch match {
 		default:
 			d.procRegMap[msg.Procedure] = reg
-		case regMatchPrefix:
+		case wamp.MatchPrefix:
 			d.pfxProcRegMap[msg.Procedure] = reg
-		case regMatchWildcard:
+		case wamp.MatchWildcard:
 			d.wcProcRegMap[msg.Procedure] = reg
 		}
 
@@ -424,11 +409,11 @@ func (d *dealer) register(callee *Session, msg *wamp.Register, match, invokePoli
 			// created through a registration request for an URI which was
 			// previously without a registration.
 			details := wamp.Dict{
-				"id":      regID,
-				"created": created,
-				"uri":     msg.Procedure,
-				"match":   match,
-				"invoke":  invokePolicy,
+				"id":           regID,
+				"created":      created,
+				"uri":          msg.Procedure,
+				wamp.OptMatch:  match,
+				wamp.OptInvoke: invokePolicy,
 			}
 			d.metaPeer.Send(&wamp.Publish{
 				Request:   wamp.GlobalID(),
@@ -442,7 +427,7 @@ func (d *dealer) register(callee *Session, msg *wamp.Register, match, invokePoli
 
 		// Found an existing registration that has an invocation strategy that
 		// only allows a single callee on a the given registration.
-		if reg.policy == "" || reg.policy == "single" {
+		if reg.policy == "" || reg.policy == wamp.InvokeSingle {
 			d.log.Println("REGISTER for already registered procedure",
 				msg.Procedure, "from callee", callee)
 			callee.Send(&wamp.Error{
@@ -605,21 +590,21 @@ func (d *dealer) call(caller *Session, msg *wamp.Call) {
 	// policy.
 	if len(reg.callees) > 1 {
 		switch reg.policy {
-		case "first":
+		case wamp.InvokeFirst:
 			callee = reg.callees[0]
-		case "roundrobin":
+		case wamp.InvokeRoundRobin:
 			if reg.nextCallee >= len(reg.callees) {
 				reg.nextCallee = 0
 			}
 			callee = reg.callees[reg.nextCallee]
 			reg.nextCallee++
-		case "random":
+		case wamp.InvokeRandom:
 			callee = reg.callees[d.prng.Int63n(int64(len(reg.callees)))]
-		case "last":
+		case wamp.InvokeLast:
 			callee = reg.callees[len(reg.callees)-1]
 		default:
-			errMsg := fmt.Sprint("multiple callees registered for",
-				msg.Procedure, "with 'single' policy")
+			errMsg := fmt.Sprint("multiple callees registered for ",
+				msg.Procedure, " with '", wamp.InvokeSingle, "' policy")
 			// This is disallowed by the dealer, and is a programming error if
 			// it ever happened, so panic.
 			panic(errMsg)
@@ -634,11 +619,11 @@ func (d *dealer) call(caller *Session, msg *wamp.Call) {
 	//
 	// A timeout allows to automatically cancel a call after a specified time
 	// either at the Callee or at the Dealer.
-	timeout := wamp.OptionInt64(msg.Options, optTimeout)
+	timeout := wamp.OptionInt64(msg.Options, wamp.OptTimeout)
 	if timeout > 0 {
 		// Check that callee supports call_timeout.
 		if callee.HasFeature(roleCallee, featureCallTimeout) {
-			details[optTimeout] = timeout
+			details[wamp.OptTimeout] = timeout
 		}
 
 		// TODO: Start a goroutine to cancel the pending call on timeout.
@@ -656,7 +641,7 @@ func (d *dealer) call(caller *Session, msg *wamp.Call) {
 		// A Caller MAY request the disclosure of its identity (its WAMP
 		// session ID) to endpoints of a routed call.  This is indicated by the
 		// "disclose_me" flag in the message options.
-		if wamp.OptionFlag(msg.Options, optCallDiscloseMe) {
+		if wamp.OptionFlag(msg.Options, wamp.OptDiscloseMe) {
 			// Dealer MAY deny a Caller's request to disclose its identity.
 			if !d.allowDisclose {
 				caller.Send(&wamp.Error{
@@ -674,7 +659,7 @@ func (d *dealer) call(caller *Session, msg *wamp.Call) {
 
 	// A Caller indicates its willingness to receive progressive results by
 	// setting CALL.Options.receive_progress|bool := true
-	if wamp.OptionFlag(msg.Options, optCallReceiveProgress) {
+	if wamp.OptionFlag(msg.Options, wamp.OptReceiveProgress) {
 		// If the Callee supports progressive calls, the Dealer will
 		// forward the Caller's willingness to receive progressive
 		// results by setting.
@@ -746,8 +731,8 @@ func (d *dealer) cancel(caller *Session, msg *wamp.Cancel) {
 	invk.canceled = true
 
 	// Cancel mode should be one of: "skip", "kill", "killnowait"
-	mode := wamp.OptionString(msg.Options, optCancelMode)
-	if mode == cancelModeKillNoWait || mode == cancelModeKill {
+	mode := wamp.OptionString(msg.Options, wamp.OptMode)
+	if mode == wamp.CancelModeKillNoWait || mode == wamp.CancelModeKill {
 		// Check that callee supports call canceling to see if it is alright to
 		// send INTERRUPT to callee.
 		if !invk.callee.HasFeature(roleCallee, featureCallCanceling) {
@@ -766,12 +751,12 @@ func (d *dealer) cancel(caller *Session, msg *wamp.Cancel) {
 				// If mode is "kill" then let error from callee trigger the
 				// response to the caller.  This is how the caller waits for
 				// the callee to cancel the call.
-				if mode == cancelModeKill {
+				if mode == wamp.CancelModeKill {
 					return
 				}
 			}
 		}
-	} else if mode != cancelModeSkip {
+	} else if mode != wamp.CancelModeSkip {
 		d.log.Printf("!! Unrecognized cancel mode '%s', changing to 'skip'",
 			mode)
 	}
@@ -944,9 +929,9 @@ func (d *dealer) delCalleeReg(callee *Session, regID wamp.ID) (bool, error) {
 		switch reg.match {
 		default:
 			delete(d.procRegMap, reg.procedure)
-		case regMatchPrefix:
+		case wamp.MatchPrefix:
 			delete(d.pfxProcRegMap, reg.procedure)
-		case regMatchWildcard:
+		case wamp.MatchWildcard:
 			delete(d.wcProcRegMap, reg.procedure)
 		}
 		if d.debug {
@@ -978,9 +963,9 @@ func (d *dealer) RegList(msg *wamp.Invocation) wamp.Message {
 	}
 	<-sync
 	dict := wamp.Dict{
-		regMatchExact:    exactRegs,
-		regMatchPrefix:   pfxRegs,
-		regMatchWildcard: wcRegs,
+		wamp.MatchExact:    exactRegs,
+		wamp.MatchPrefix:   pfxRegs,
+		wamp.MatchWildcard: wcRegs,
 	}
 	return &wamp.Yield{
 		Request:   msg.Request,
@@ -996,7 +981,7 @@ func (d *dealer) RegLookup(msg *wamp.Invocation) wamp.Message {
 			var match string
 			if len(msg.Arguments) > 1 {
 				opts := msg.Arguments[1].(wamp.Dict)
-				match = wamp.OptionString(opts, optRegMatch)
+				match = wamp.OptionString(opts, wamp.OptMatch)
 			}
 			sync := make(chan wamp.ID)
 			d.actionChan <- func() {
@@ -1006,9 +991,9 @@ func (d *dealer) RegLookup(msg *wamp.Invocation) wamp.Message {
 				switch match {
 				default:
 					reg, ok = d.procRegMap[procedure]
-				case regMatchPrefix:
+				case wamp.MatchPrefix:
 					reg, ok = d.pfxProcRegMap[procedure]
-				case regMatchWildcard:
+				case wamp.MatchWildcard:
 					reg, ok = d.wcProcRegMap[procedure]
 				}
 				if ok {
@@ -1057,11 +1042,11 @@ func (d *dealer) RegGet(msg *wamp.Invocation) wamp.Message {
 			d.actionChan <- func() {
 				if reg, ok := d.registrations[regID]; ok {
 					dict = wamp.Dict{
-						"id":      regID,
-						"created": reg.created,
-						"uri":     reg.procedure,
-						"match":   reg.match,
-						"invoke":  reg.policy,
+						"id":           regID,
+						"created":      reg.created,
+						"uri":          reg.procedure,
+						wamp.OptMatch:  reg.match,
+						wamp.OptInvoke: reg.policy,
 					}
 				}
 				close(sync)

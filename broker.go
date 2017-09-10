@@ -8,16 +8,7 @@ import (
 	"github.com/gammazero/nexus/wamp"
 )
 
-// TODO: Implement the following:
-// - publisher trust levels
-// - event history
-// - testament_meta_api
-
 const (
-	pubAcknowledge   = "acknowledge"
-	subMatchPrefix   = "prefix"
-	subMatchWildcard = "wildcard"
-
 	roleSub = "subscriber"
 	rolePub = "publisher"
 
@@ -26,9 +17,6 @@ const (
 	featurePubExclusion         = "publisher_exclusion"
 	featurePubIdent             = "publisher_identification"
 	featureSubMetaAPI           = "subscription_meta_api"
-
-	optSubMatch      = "match"
-	optPubDiscloseMe = "disclose_me"
 
 	detailTopic = "topic"
 )
@@ -157,7 +145,7 @@ func (b *broker) Publish(pub *Session, msg *wamp.Publish) {
 	// Validate URI.  For PUBLISH, must be valid URI (either strict or loose),
 	// and all URI components must be non-empty.
 	if !msg.Topic.ValidURI(b.strictURI, "") {
-		if pubAck, _ := msg.Options[pubAcknowledge].(bool); !pubAck {
+		if pubAck, _ := msg.Options[wamp.OptAcknowledge].(bool); !pubAck {
 			return
 		}
 		errMsg := fmt.Sprintf(
@@ -173,7 +161,7 @@ func (b *broker) Publish(pub *Session, msg *wamp.Publish) {
 	}
 
 	excludePub := true
-	if exclude, ok := msg.Options["exclude_me"].(bool); ok {
+	if exclude, ok := msg.Options[wamp.OptExcludeMe].(bool); ok {
 		excludePub = exclude
 	}
 
@@ -182,7 +170,7 @@ func (b *broker) Publish(pub *Session, msg *wamp.Publish) {
 	// do so when the Broker configuration (for the publication topic) is
 	// set up to do so.  TODO: Currently no broker config for this.
 	var disclose bool
-	if wamp.OptionFlag(msg.Options, optPubDiscloseMe) {
+	if wamp.OptionFlag(msg.Options, wamp.OptDiscloseMe) {
 		// Broker MAY deny a publisher's request to disclose its identity.
 		if !b.allowDisclose {
 			pub.Send(&wamp.Error{
@@ -200,7 +188,7 @@ func (b *broker) Publish(pub *Session, msg *wamp.Publish) {
 	}
 
 	// Send Published message if acknowledge is present and true.
-	if pubAck, _ := msg.Options[pubAcknowledge].(bool); pubAck {
+	if pubAck, _ := msg.Options[wamp.OptAcknowledge].(bool); pubAck {
 		pub.Send(&wamp.Published{Request: msg.Request, Publication: pubID})
 	}
 }
@@ -214,7 +202,7 @@ func (b *broker) Subscribe(sub *Session, msg *wamp.Subscribe) {
 	// loose), and all URI components must be non-empty for normal
 	// subscriptions, may be empty for wildcard subscriptions and must be
 	// non-empty for all but the last component for prefix subscriptions.
-	match := wamp.OptionString(msg.Options, optSubMatch)
+	match := wamp.OptionString(msg.Options, wamp.OptMatch)
 	if !msg.Topic.ValidURI(b.strictURI, match) {
 		errMsg := fmt.Sprintf(
 			"subscribe for invalid topic URI %v (URI strict checking %v)",
@@ -291,7 +279,7 @@ func (b *broker) subscribe(sub *Session, msg *wamp.Subscribe, match string) {
 	var subscriptions map[wamp.ID]wamp.URI
 	var ok bool
 	switch match {
-	case subMatchPrefix:
+	case wamp.MatchPrefix:
 		// Subscribe to any topic that matches by the given prefix URI
 		idSub, ok = b.pfxTopicSubscribers[msg.Topic]
 		if !ok {
@@ -299,7 +287,7 @@ func (b *broker) subscribe(sub *Session, msg *wamp.Subscribe, match string) {
 			b.pfxTopicSubscribers[msg.Topic] = idSub
 		}
 		subscriptions = b.pfxSubscriptions
-	case subMatchWildcard:
+	case wamp.MatchWildcard:
 		// Subscribe to any topic that matches by the given wildcard URI.
 		idSub, ok = b.wcTopicSubscribers[msg.Topic]
 		if !ok {
@@ -576,10 +564,10 @@ func (b *broker) pubSubCreateMeta(subTopic wamp.URI, subSessID, subID wamp.ID, m
 				details[detailTopic] = wamp.MetaEventSubOnCreate
 			}
 			subDetails := wamp.Dict{
-				"id":      subID,
-				"created": created,
-				"uri":     subTopic,
-				"match":   match,
+				"id":          subID,
+				"created":     created,
+				"uri":         subTopic,
+				wamp.OptMatch: match,
 			}
 			sub.Send(&wamp.Event{
 				Publication:  pubID,
@@ -596,9 +584,7 @@ func (b *broker) pubSubCreateMeta(subTopic wamp.URI, subSessID, subID wamp.ID, m
 func msgBlackWhiteLists(msg *wamp.Publish) ([]wamp.ID, []wamp.ID, map[string][]string, map[string][]string) {
 
 	const (
-		blacklistKey    = "exclude"
 		blacklistPrefix = "exclude_"
-		whitelistKey    = "eligible"
 		whitelistPrefix = "eligible_"
 	)
 
@@ -607,7 +593,7 @@ func msgBlackWhiteLists(msg *wamp.Publish) ([]wamp.ID, []wamp.ID, map[string][]s
 	}
 
 	var blIDs []wamp.ID
-	if blacklistFilter, ok := msg.Options[blacklistKey]; ok {
+	if blacklistFilter, ok := msg.Options[wamp.BlacklistKey]; ok {
 		if blacklist, ok := wamp.AsList(blacklistFilter); ok {
 			for i := range blacklist {
 				if blVal, ok := wamp.AsID(blacklist[i]); ok {
@@ -618,7 +604,7 @@ func msgBlackWhiteLists(msg *wamp.Publish) ([]wamp.ID, []wamp.ID, map[string][]s
 	}
 
 	var wlIDs []wamp.ID
-	if whitelistFilter, ok := msg.Options[whitelistKey]; ok {
+	if whitelistFilter, ok := msg.Options[wamp.WhitelistKey]; ok {
 		if whitelist, ok := wamp.AsList(whitelistFilter); ok {
 			for i := range whitelist {
 				if wlID, ok := wamp.AsID(whitelist[i]); ok {
