@@ -26,7 +26,7 @@ func (p *testPeer) Close()                    { return }
 
 func TestBasicSubscribe(t *testing.T) {
 	// Test subscribing to a topic.
-	broker := NewBroker(logger, false, true, debug).(*broker)
+	broker := NewBroker(logger, false, true, debug)
 	subscriber := newTestPeer()
 	sess := &Session{Peer: subscriber}
 	testTopic := wamp.URI("nexus.test.topic")
@@ -112,7 +112,7 @@ func TestBasicSubscribe(t *testing.T) {
 
 func TestUnsubscribe(t *testing.T) {
 	// Subscribe to topic
-	broker := NewBroker(logger, false, true, debug).(*broker)
+	broker := NewBroker(logger, false, true, debug)
 	subscriber := newTestPeer()
 	sess := &Session{Peer: subscriber}
 	testTopic := wamp.URI("nexus.test.topic")
@@ -146,7 +146,7 @@ func TestUnsubscribe(t *testing.T) {
 
 func TestRemove(t *testing.T) {
 	// Subscribe to topic
-	broker := NewBroker(logger, false, true, debug).(*broker)
+	broker := NewBroker(logger, false, true, debug)
 	subscriber := newTestPeer()
 	sess := &Session{Peer: subscriber}
 	testTopic := wamp.URI("nexus.test.topic")
@@ -188,7 +188,7 @@ func TestRemove(t *testing.T) {
 }
 
 func TestBasicPubSub(t *testing.T) {
-	broker := NewBroker(logger, false, true, debug).(*broker)
+	broker := NewBroker(logger, false, true, debug)
 	subscriber := newTestPeer()
 	sess := &Session{Peer: subscriber}
 	testTopic := wamp.URI("nexus.test.topic")
@@ -227,7 +227,7 @@ func TestBasicPubSub(t *testing.T) {
 
 func TestPrefxPatternBasedSubscription(t *testing.T) {
 	// Test match=prefix
-	broker := NewBroker(logger, false, true, debug).(*broker)
+	broker := NewBroker(logger, false, true, debug)
 	subscriber := newTestPeer()
 	sess := &Session{Peer: subscriber}
 	testTopic := wamp.URI("nexus.test.topic")
@@ -287,7 +287,7 @@ func TestPrefxPatternBasedSubscription(t *testing.T) {
 
 func TestWildcardPatternBasedSubscription(t *testing.T) {
 	// Test match=prefix
-	broker := NewBroker(logger, false, true, debug).(*broker)
+	broker := NewBroker(logger, false, true, debug)
 	subscriber := newTestPeer()
 	sess := &Session{Peer: subscriber}
 	testTopic := wamp.URI("nexus.test.topic")
@@ -346,7 +346,7 @@ func TestWildcardPatternBasedSubscription(t *testing.T) {
 }
 
 func TestSubscriberBlackwhiteListing(t *testing.T) {
-	broker := NewBroker(logger, false, true, debug).(*broker)
+	broker := NewBroker(logger, false, true, debug)
 	subscriber := newTestPeer()
 	details := wamp.Dict{
 		"authid":   "jdoe",
@@ -457,7 +457,7 @@ func TestSubscriberBlackwhiteListing(t *testing.T) {
 }
 
 func TestPublisherExclusion(t *testing.T) {
-	broker := NewBroker(logger, false, true, debug).(*broker)
+	broker := NewBroker(logger, false, true, debug)
 	subscriber := newTestPeer()
 	sess := &Session{Peer: subscriber}
 	testTopic := wamp.URI("nexus.test.topic")
@@ -531,7 +531,7 @@ func TestPublisherExclusion(t *testing.T) {
 }
 
 func TestPublisherIdentification(t *testing.T) {
-	broker := NewBroker(logger, false, true, debug).(*broker)
+	broker := NewBroker(logger, false, true, debug)
 	subscriber := newTestPeer()
 
 	details := wamp.Dict{

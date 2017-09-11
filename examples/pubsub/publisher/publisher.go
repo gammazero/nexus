@@ -37,6 +37,14 @@ func main() {
 		logger.Fatal("subscribe error:", err)
 	}
 
+	// Publish events only to sessions 42, 1138, 1701.
+	args = wamp.List{"for your eyes only"}
+	opts := wamp.Dict{wamp.WhitelistKey: wamp.List{42, 1138, 1701}}
+	err = publisher.Publish(exampleTopic, opts, args, nil)
+	if err != nil {
+		logger.Fatal("subscribe error:", err)
+	}
+
 	args = wamp.List{"testing 1"}
 	err = publisher.Publish(exampleTopic, nil, args, nil)
 	if err != nil {

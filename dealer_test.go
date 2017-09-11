@@ -10,8 +10,8 @@ import (
 	"github.com/gammazero/nexus/wamp"
 )
 
-func newTestDealer() (*dealer, wamp.Peer) {
-	d := NewDealer(logger, false, true, debug).(*dealer)
+func newTestDealer() (*Dealer, wamp.Peer) {
+	d := NewDealer(logger, false, true, debug)
 	metaClient, rtr := transport.LinkedPeers(logger)
 	d.SetMetaPeer(rtr)
 	return d, metaClient
@@ -959,7 +959,7 @@ func TestPatternBasedRegistration(t *testing.T) {
 		&wamp.Register{
 			Request:   123,
 			Procedure: testProcedureWC,
-			Options:   wamp.Dict{optRegMatch: regMatchWildcard},
+			Options:   wamp.Dict{"match": "wildcard"},
 		})
 	rsp := <-callee.Recv()
 	_, ok := rsp.(*wamp.Registered)
@@ -1062,7 +1062,7 @@ func TestCallerIdentification(t *testing.T) {
 		&wamp.Register{
 			Request:   123,
 			Procedure: testProcedure,
-			Options:   wamp.Dict{optRegDiscloseCaller: true},
+			Options:   wamp.Dict{"disclose_caller": true},
 		})
 	rsp := <-callee.Recv()
 	_, ok := rsp.(*wamp.Registered)

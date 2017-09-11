@@ -404,11 +404,11 @@ func TestTimeoutRemoteProcedureCall(t *testing.T) {
 
 	errChan := make(chan error)
 	ctx := context.Background()
-	opts := wamp.Dict{optTimeout: 1000}
+	opts := wamp.Dict{wamp.OptTimeout: 1000}
 	// Calling the procedure, should block.
 	go func() {
 		callArgs := wamp.List{73}
-		_, e := caller.Call(ctx, procName, opts, callArgs, nil, "killnowait")
+		_, e := caller.Call(ctx, procName, opts, callArgs, nil, wamp.CancelModeKillNoWait)
 		errChan <- e
 	}()
 
