@@ -345,40 +345,9 @@ func (r *realm) handleInboundMessages(sess *Session) bool {
 		}
 
 		// N.B. meta session is always authorized
-		if sess != r.metaSess {
-			if isAuthz, err := r.authorizer.Authorize(sess, msg); !isAuthz {
-				errMsg := &wamp.Error{Type: msg.MessageType()}
-				// Get the Request from request types of messages.
-				switch msg := msg.(type) {
-				case *wamp.Publish:
-					errMsg.Request = msg.Request
-				case *wamp.Subscribe:
-					errMsg.Request = msg.Request
-				case *wamp.Unsubscribe:
-					errMsg.Request = msg.Request
-				case *wamp.Register:
-					errMsg.Request = msg.Request
-				case *wamp.Unregister:
-					errMsg.Request = msg.Request
-				case *wamp.Call:
-					errMsg.Request = msg.Request
-				case *wamp.Cancel:
-					errMsg.Request = msg.Request
-				case *wamp.Yield:
-					errMsg.Request = msg.Request
-				}
-				if err != nil {
-					// Error trying to authorize.
-					errMsg.Error = wamp.ErrAuthorizationFailed
-					r.log.Println("Client", sess, "authorization failed:", err)
-				} else {
-					// Session not authorized.
-					errMsg.Error = wamp.ErrNotAuthorized
-					r.log.Println("Client", sess, msg.MessageType(), "UNAUTHORIZED")
-				}
-				sess.Send(errMsg)
-				continue
-			}
+		if sess != r.metaSess && !r.authzMessage(sess, msg) {
+			// Not authorized; error response send; do not process message.
+			continue
 		}
 
 		switch msg := msg.(type) {
@@ -427,6 +396,47 @@ func (r *realm) handleInboundMessages(sess *Session) bool {
 			r.log.Println("Unhandled", msg.MessageType(), "from session", sess)
 		}
 	}
+}
+
+// authzMessage checks if the session is authroized to send the message.  If
+// authorization fails or if the session is not authorized, then an error
+// response is returned to the client, and this method returns false.
+func (r *realm) authzMessage(sess *Session, msg wamp.Message) bool {
+	isAuthz, err := r.authorizer.Authorize(sess, msg)
+	if !isAuthz {
+		errRsp := &wamp.Error{Type: msg.MessageType()}
+		// Get the Request from request types of messages.
+		switch msg := msg.(type) {
+		case *wamp.Publish:
+			errRsp.Request = msg.Request
+		case *wamp.Subscribe:
+			errRsp.Request = msg.Request
+		case *wamp.Unsubscribe:
+			errRsp.Request = msg.Request
+		case *wamp.Register:
+			errRsp.Request = msg.Request
+		case *wamp.Unregister:
+			errRsp.Request = msg.Request
+		case *wamp.Call:
+			errRsp.Request = msg.Request
+		case *wamp.Cancel:
+			errRsp.Request = msg.Request
+		case *wamp.Yield:
+			errRsp.Request = msg.Request
+		}
+		if err != nil {
+			// Error trying to authorize.  Include error message.
+			errRsp.Error = wamp.ErrAuthorizationFailed
+			r.log.Println("Client", sess, "authorization failed:", err)
+		} else {
+			// Session not authorized.
+			errRsp.Error = wamp.ErrNotAuthorized
+			r.log.Println("Client", sess, msg.MessageType(), "not authorized")
+		}
+		sess.Send(errRsp)
+		return false
+	}
+	return true
 }
 
 // authClient authenticates the client according to the authmethods in the
