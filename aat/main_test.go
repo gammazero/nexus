@@ -43,22 +43,21 @@ var (
 
 type testAuthz struct{}
 
-func (a *testAuthz) Authorize(sess *nexus.Session, msg wamp.Message) (bool, error) {
+func (a *testAuthz) Authorize(sess *nexus.Session, msg wamp.Message) (bool, string, error) {
 	m, ok := msg.(*wamp.Subscribe)
 	if !ok {
 		if callMsg, ok := msg.(*wamp.Call); ok {
 			if callMsg.Procedure == wamp.URI("need.ldap.auth") {
-				// Cannot contact LDAP server
-				return false, nil
+				return false, "Cannot contact LDAP server", nil
 			}
 		}
-		return true, nil
+		return true, "", nil
 	}
 	if m.Topic == "nexus.interceptor" {
 		m.Topic = "nexus.interceptor.foobar.baz"
 	}
 	wamp.SetOption(sess.Details, "foobar", "baz")
-	return true, nil
+	return true, "", nil
 }
 
 func TestMain(m *testing.M) {
