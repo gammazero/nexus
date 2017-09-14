@@ -135,7 +135,7 @@ func TestAuthz(t *testing.T) {
 		t.Fatal("Expected error")
 	}
 	if !strings.HasSuffix(err.Error(), "wamp.error.not_authorized: Cannot contact LDAP server") {
-		t.Fatal("Did not get expected error message with reason")
+		t.Fatal("Did not get expected error message with reason, got:", err)
 	}
 
 	subscriber.Close()
