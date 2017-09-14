@@ -20,8 +20,6 @@ import (
 )
 
 const (
-	pubAcknowledge = "acknowledge"
-
 	helloAuthmethods = "authmethods"
 	helloRoles       = "roles"
 )
@@ -343,7 +341,7 @@ func (c *Client) Publish(topic string, options wamp.Dict, args wamp.List, kwargs
 	}
 
 	// Check if the client is asking for a PUBLISHED response.
-	pubAck, _ := options[pubAcknowledge].(bool)
+	pubAck, _ := options[wamp.OptAcknowledge].(bool)
 
 	id := c.idGen.Next()
 	if pubAck {
@@ -371,7 +369,7 @@ func (c *Client) Publish(topic string, options wamp.Dict, args wamp.List, kwargs
 	case *wamp.Error:
 		return fmt.Errorf("error waiting for published message: %v", msg.Error)
 	default:
-		return unexpectedMsgError(msg, wamp.UNREGISTERED)
+		return unexpectedMsgError(msg, wamp.PUBLISHED)
 	}
 	return nil
 }
@@ -826,6 +824,8 @@ func (c *Client) receiveFromRouter() {
 		case *wamp.Unregistered:
 			c.signalReply(msg, msg.Request)
 		case *wamp.Result:
+			c.signalReply(msg, msg.Request)
+		case *wamp.Published:
 			c.signalReply(msg, msg.Request)
 		case *wamp.Error:
 			c.signalReply(msg, msg.Request)

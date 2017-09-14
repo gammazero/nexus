@@ -128,6 +128,13 @@ func TestAuthz(t *testing.T) {
 		t.Fatal("did not get published event")
 	}
 
+	// Have caller call a procedure that will fail authz.
+	_, err = caller.Call(ctx, "need.ldap.auth",
+		wamp.Dict{wamp.OptAcknowledge: true}, nil, nil, "")
+	if err == nil {
+		t.Fatal("Expected error")
+	}
+
 	subscriber.Close()
 	caller.Close()
 }
