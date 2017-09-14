@@ -766,7 +766,11 @@ func wampErrorString(werr *wamp.Error) string {
 		// Append ": arg1, arg2, ..., argN"
 		args := make([]string, len(werr.Arguments))
 		for i := range werr.Arguments {
-			args[i] = fmt.Sprint(werr.Arguments[i])
+			s, ok := wamp.AsString(werr.Arguments[i])
+			if !ok {
+				s = fmt.Sprint(werr.Arguments[i])
+			}
+			args[i] = s
 		}
 		e += fmt.Sprintf(": %s", strings.Join(args, ", "))
 	}
@@ -775,7 +779,15 @@ func wampErrorString(werr *wamp.Error) string {
 		kws := make([]string, len(werr.ArgumentsKw))
 		var i int
 		for k, v := range werr.ArgumentsKw {
-			kws[i] = fmt.Sprint(k, "=", v)
+			ks, ok := wamp.AsString(k)
+			if !ok {
+				ks = fmt.Sprint(k)
+			}
+			vs, ok := wamp.AsString(v)
+			if !ok {
+				vs = fmt.Sprint(v)
+			}
+			kws[i] = fmt.Sprint(ks, "=", vs)
 			i++
 		}
 		e += fmt.Sprintf(": %s", strings.Join(kws, ", "))

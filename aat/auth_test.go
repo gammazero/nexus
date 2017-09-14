@@ -76,12 +76,14 @@ func TestAuthz(t *testing.T) {
 	if err != nil {
 		t.Fatal("Failed to connect client:", err)
 	}
+	defer subscriber.Close()
 
 	// Connect caller.
 	caller, err := connectClientCfg(cfg)
 	if err != nil {
 		t.Fatal("Failed to connect client:", err)
 	}
+	defer caller.Close()
 
 	// Check that subscriber does not have special info provided by authorizer.
 	ctx := context.Background()
@@ -137,9 +139,6 @@ func TestAuthz(t *testing.T) {
 	if !strings.HasSuffix(err.Error(), "wamp.error.not_authorized: Cannot contact LDAP server") {
 		t.Fatal("Did not get expected error message with reason, got:", err)
 	}
-
-	subscriber.Close()
-	caller.Close()
 }
 
 func testAuthFunc(d wamp.Dict, c wamp.Dict) (string, wamp.Dict) {
