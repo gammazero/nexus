@@ -237,8 +237,8 @@ func (c *Client) Subscribe(topic string, fn EventHandler, options wamp.Dict) err
 		}
 		<-sync
 	case *wamp.Error:
-		return fmt.Errorf("error subscribing to topic '%v': %v", topic,
-			msg.Error)
+		return fmt.Errorf("error subscribing to topic '%v': %s", topic,
+			wampErrorString(msg))
 	default:
 		return unexpectedMsgError(msg, wamp.SUBSCRIBED)
 	}
@@ -301,7 +301,8 @@ func (c *Client) Unsubscribe(topic string) error {
 		// Already deleted the event handler for the topic.
 		return nil
 	case *wamp.Error:
-		return fmt.Errorf("Error unsubscribing to '%s': %v", topic, msg.Error)
+		return fmt.Errorf("Error unsubscribing to '%s': %s", topic,
+			wampErrorString(msg))
 	}
 	return unexpectedMsgError(msg, wamp.UNSUBSCRIBED)
 }
@@ -367,7 +368,8 @@ func (c *Client) Publish(topic string, options wamp.Dict, args wamp.List, kwargs
 	switch msg := msg.(type) {
 	case *wamp.Published:
 	case *wamp.Error:
-		return fmt.Errorf("error waiting for published message: %v", msg.Error)
+		return fmt.Errorf("error waiting for published message: %s",
+			wampErrorString(msg))
 	default:
 		return unexpectedMsgError(msg, wamp.PUBLISHED)
 	}
@@ -427,8 +429,8 @@ func (c *Client) Register(procedure string, fn InvocationHandler, options wamp.D
 				msg.Registration)
 		}
 	case *wamp.Error:
-		return fmt.Errorf("Error registering procedure '%v': %v", procedure,
-			msg.Error)
+		return fmt.Errorf("Error registering procedure '%v': %s", procedure,
+			wampErrorString(msg))
 	default:
 		return unexpectedMsgError(msg, wamp.REGISTERED)
 	}
@@ -491,7 +493,7 @@ func (c *Client) Unregister(procedure string) error {
 		// Already deleted the invocation handler for the procedure.
 	case *wamp.Error:
 		return fmt.Errorf("error unregistering procedure '%s': %v", procedure,
-			msg.Error)
+			wampErrorString(msg))
 	default:
 		return unexpectedMsgError(msg, wamp.UNREGISTERED)
 	}
@@ -615,16 +617,9 @@ type RPCError struct {
 
 // Error implements the error interface, returning an error string for the
 // RPCError.
-func (werr RPCError) Error() string {
-	e := fmt.Sprintf("error calling remote procedure '%s': %v", werr.Procedure,
-		werr.Err.Error)
-	if len(werr.Err.Arguments) != 0 {
-		e += fmt.Sprintf(": %v", werr.Err.Arguments)
-	}
-	if len(werr.Err.ArgumentsKw) != 0 {
-		e += fmt.Sprintf(": %v", werr.Err.ArgumentsKw)
-	}
-	return e
+func (rpce RPCError) Error() string {
+	return fmt.Sprintf("error calling remote procedure '%s': %s",
+		rpce.Procedure, wampErrorString(rpce.Err))
 }
 
 // Close causes the client to leave the realm it has joined, and closes the
@@ -761,6 +756,43 @@ func handleCRAuth(peer wamp.Peer, challenge *wamp.Challenge, details wamp.Dict, 
 
 	// Return the router's response to AUTHENTICATE, this should be WELCOME.
 	return msg, nil
+}
+
+// wampErrorString creates a message string that combines the Error, Arguments,
+// and the ArgumentsKw fields from a wamp.Error message.
+func wampErrorString(werr *wamp.Error) string {
+	e := fmt.Sprintf("%v", werr.Error)
+	if len(werr.Arguments) != 0 {
+		// Append ": arg1, arg2, ..., argN"
+		args := make([]string, len(werr.Arguments))
+		for i := range werr.Arguments {
+			s, ok := wamp.AsString(werr.Arguments[i])
+			if !ok {
+				s = fmt.Sprint(werr.Arguments[i])
+			}
+			args[i] = s
+		}
+		e += fmt.Sprintf(": %s", strings.Join(args, ", "))
+	}
+	if len(werr.ArgumentsKw) != 0 {
+		// Append ": k1=v1, k2=v2, ..., kN=vN"
+		kws := make([]string, len(werr.ArgumentsKw))
+		var i int
+		for k, v := range werr.ArgumentsKw {
+			ks, ok := wamp.AsString(k)
+			if !ok {
+				ks = fmt.Sprint(k)
+			}
+			vs, ok := wamp.AsString(v)
+			if !ok {
+				vs = fmt.Sprint(v)
+			}
+			kws[i] = fmt.Sprint(ks, "=", vs)
+			i++
+		}
+		e += fmt.Sprintf(": %s", strings.Join(kws, ", "))
+	}
+	return e
 }
 
 // unexpectedMsgError creates an error with information about the unexpected

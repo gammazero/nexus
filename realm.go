@@ -427,9 +427,12 @@ func (r *realm) authzMessage(sess *Session, msg wamp.Message) bool {
 		if err != nil {
 			// Error trying to authorize.  Include error message.
 			errRsp.Error = wamp.ErrAuthorizationFailed
+			errRsp.Arguments = wamp.List{err.Error()}
 			r.log.Println("Client", sess, "authorization failed:", err)
 		} else {
-			// Session not authorized.
+			// Session not authorized.  The inability to return a message is
+			// intentional, so as not to encourage returning information that
+			// could disclose any clues about authorization to an attacker.
 			errRsp.Error = wamp.ErrNotAuthorized
 			r.log.Println("Client", sess, msg.MessageType(), "not authorized")
 		}

@@ -7,6 +7,7 @@ import "github.com/gammazero/nexus/wamp"
 type Authorizer interface {
 	// Authorize returns true if the request is authorized or false if not.  An
 	// error is returned if there is a failure to determine authorization.
+	// This error is included in the ERROR response to the client.
 	//
 	// Since the Authorizer accesses both the session and the message through a
 	// pointer, the authorizer can alter the content of both the session and

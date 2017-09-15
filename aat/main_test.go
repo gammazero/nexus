@@ -1,6 +1,7 @@
 package aat
 
 import (
+	"errors"
 	"flag"
 	"fmt"
 	"log"
@@ -48,8 +49,7 @@ func (a *testAuthz) Authorize(sess *nexus.Session, msg wamp.Message) (bool, erro
 	if !ok {
 		if callMsg, ok := msg.(*wamp.Call); ok {
 			if callMsg.Procedure == wamp.URI("need.ldap.auth") {
-				// Cannot contact LDAP server
-				return false, nil
+				return false, errors.New("Cannot contact LDAP server")
 			}
 		}
 		return true, nil
