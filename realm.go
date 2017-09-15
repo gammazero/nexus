@@ -402,7 +402,7 @@ func (r *realm) handleInboundMessages(sess *Session) bool {
 // authorization fails or if the session is not authorized, then an error
 // response is returned to the client, and this method returns false.
 func (r *realm) authzMessage(sess *Session, msg wamp.Message) bool {
-	isAuthz, reason, err := r.authorizer.Authorize(sess, msg)
+	isAuthz, err := r.authorizer.Authorize(sess, msg)
 	if !isAuthz {
 		errRsp := &wamp.Error{Type: msg.MessageType()}
 		// Get the Request from request types of messages.
@@ -427,15 +427,12 @@ func (r *realm) authzMessage(sess *Session, msg wamp.Message) bool {
 		if err != nil {
 			// Error trying to authorize.  Include error message.
 			errRsp.Error = wamp.ErrAuthorizationFailed
+			errRsp.Arguments = wamp.List{err.Error()}
 			r.log.Println("Client", sess, "authorization failed:", err)
 		} else {
 			// Session not authorized.
 			errRsp.Error = wamp.ErrNotAuthorized
-			r.log.Println("Client", sess, msg.MessageType(), "not authorized:",
-				reason)
-		}
-		if reason != "" {
-			errRsp.Arguments = wamp.List{reason}
+			r.log.Println("Client", sess, msg.MessageType(), "not authorized")
 		}
 		sess.Send(errRsp)
 		return false
