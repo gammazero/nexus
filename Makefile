@@ -12,6 +12,7 @@ test:
 	go test -race ./...
 	go test -race ./aat -websocket
 	go test ./aat -websocket -msgpack
+	go test -race ./aat -rawsocketunix
 
 service: $(SERVICE_DIR)/nexusd
 
