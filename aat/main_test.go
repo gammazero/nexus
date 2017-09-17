@@ -30,16 +30,21 @@ var (
 	rtrLogger stdlog.StdLog
 
 	serverURL string
-	port      int
+	rsAddr    net.Addr
 
 	err error
 
-	// Creates websocket client if true.  Otherwise, create embedded client
-	// that only uses channels to communicate with router.
+	// Creates websocket or rawsocket client.  If note either of those, create
+	// embedded client that only uses channels to communicate with router.
 	websocketClient bool
+	rawsocketTCP    bool
+	rawsocketUnix   bool
 
 	// Use msgpack serialization with websockets if true.  Otherwise, use JSON.
 	msgPack bool
+
+	// Use JSON serialization with rawsockets if true.  Otherwise, use msgpack.
+	jsonEnc bool
 )
 
 type testAuthz struct{}
@@ -65,11 +70,20 @@ func TestMain(m *testing.M) {
 	// ----- Setup environment -----
 	flag.BoolVar(&websocketClient, "websocket", false,
 		"use websocket to connect clients to router")
+	flag.BoolVar(&rawsocketUnix, "rawsocketunix", false,
+		"use Unix raw socket to connect clients to router")
+	flag.BoolVar(&rawsocketTCP, "rawsockettcp", false,
+		"use TCP raw socket to connect clients to router")
 	flag.BoolVar(&msgPack, "msgpack", false,
-		"use msgpack serialization with websockets")
+		"use msgpack serialization with websockets (otherwise json)")
+	flag.BoolVar(&jsonEnc, "json", false,
+		"use JSON serialization with rawsockets (otherwise msgpack)")
 	flag.Parse()
+
 	if websocketClient {
 		fmt.Println("===== USING WEBSOCKET CLIENT =====")
+	} else if rawsocketTCP || rawsocketUnix {
+		fmt.Println("===== USING RAWSOCKET CLIENT =====")
 	} else {
 		fmt.Println("===== USING LOCAL CLIENT =====")
 	}
@@ -111,6 +125,7 @@ func TestMain(m *testing.M) {
 	}
 
 	var listener *net.TCPListener
+	var rs *nexus.RawSocketServer
 	if websocketClient {
 		s := nexus.NewWebsocketServer(nxr)
 		server := &http.Server{
@@ -123,10 +138,27 @@ func TestMain(m *testing.M) {
 			cliLogger.Println("Server cannot listen:", err)
 		}
 		go server.Serve(listener)
-		port = listener.Addr().(*net.TCPAddr).Port
+		port := listener.Addr().(*net.TCPAddr).Port
 		serverURL = fmt.Sprintf("ws://127.0.0.1:%d/", port)
 
-		rtrLogger.Println("Server listening on", serverURL)
+		rtrLogger.Println("WebSocket server listening on", serverURL)
+	} else if rawsocketTCP || rawsocketUnix {
+		if rawsocketUnix {
+			// Create Unix raw socket
+			rs, err = nexus.NewRawSocketServer(nxr, "unix",
+				"/tmp/nexustest_sock", 0)
+		} else {
+			// Create TCP raw socket
+			rs, err = nexus.NewRawSocketServer(nxr, "tcp", "127.0.0.1:", 0)
+		}
+		if err != nil {
+			fmt.Fprintln(os.Stderr, "Failed to create rawsocket server:", err)
+			os.Exit(1)
+		}
+
+		go rs.Serve(false)
+		rsAddr = rs.Addr()
+		rtrLogger.Println("RawSocket server listening on", rsAddr)
 	}
 
 	// Connect and disconnect so that router is started before running tests.
@@ -163,6 +195,9 @@ func TestMain(m *testing.M) {
 	if websocketClient {
 		listener.Close()
 	}
+	if rawsocketTCP || rawsocketUnix {
+		rs.Close()
+	}
 	nxr.Close()
 	os.Exit(rc)
 }
@@ -179,6 +214,16 @@ func connectClientCfg(cfg client.ClientConfig) (*client.Client, error) {
 		} else {
 			cli, err = client.NewWebsocketClient(
 				serverURL, client.JSON, nil, nil, cfg, cliLogger)
+		}
+	} else if rawsocketTCP || rawsocketUnix {
+		// Use larger response timeout for very slow test systems.
+		cfg.ResponseTimeout = time.Second
+		if jsonEnc {
+			cli, err = client.NewRawSocketClient(rsAddr.Network(),
+				rsAddr.String(), client.JSON, cfg, cliLogger, 0)
+		} else {
+			cli, err = client.NewRawSocketClient(rsAddr.Network(),
+				rsAddr.String(), client.MSGPACK, cfg, cliLogger, 0)
 		}
 	} else {
 		cli, err = client.NewLocalClient(nxr, cfg, cliLogger)
