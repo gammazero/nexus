@@ -44,13 +44,8 @@ const (
 
 type DialFunc func(network, addr string) (net.Conn, error)
 
-// ConnectWebsockerPeer creates a new websockerPeer with the specified config,
+// ConnectWebsocketPeer creates a new websocketPeer with the specified config,
 // and connects it to the websocket server at the specified URL.
-//
-// A positive queueSize value specifies the maximum number of messages that can
-// be queued waiting to be written to the websocker.  Once the queue has
-// reached this limit, the WAMP router will drop messages in order to not
-// block.  A value of < 1 uses the default size.
 func ConnectWebsocketPeer(url string, serialization serialize.Serialization, tlsConfig *tls.Config, dial DialFunc, logger stdlog.StdLog) (wamp.Peer, error) {
 	var (
 		protocol    string
@@ -84,7 +79,7 @@ func ConnectWebsocketPeer(url string, serialization serialize.Serialization, tls
 	return NewWebsocketPeer(conn, serializer, payloadType, logger), nil
 }
 
-// NewWebsockerPeer creates a websocket peer from an existing websocket
+// NewWebsocketPeer creates a websocket peer from an existing websocket
 // connection.  This is used for handling clients connecting to the WAMP
 // router.
 func NewWebsocketPeer(conn *websocket.Conn, serializer serialize.Serializer, payloadType int, logger stdlog.StdLog) wamp.Peer {
@@ -95,12 +90,12 @@ func NewWebsocketPeer(conn *websocket.Conn, serializer serialize.Serializer, pay
 		closed:       make(chan struct{}),
 		wsWriterDone: make(chan struct{}),
 
-		// The router will read from this channen and immediately dispatch the
+		// The router will read from this channel and immediately dispatch the
 		// message to the broker or dealer.  Therefore this channel can be
 		// unbuffered.
 		rd: make(chan wamp.Message),
 
-		// The channel for messages being written to the websocket sould be
+		// The channel for messages being written to the websocket should be
 		// large enough to prevent blocking while waiting for a slow websocket
 		// to send messages.  For this reason it may be necessary for these
 		// messages to be put into an outbound queue that can grow.
@@ -128,7 +123,7 @@ func (w *websocketPeer) Send(msg wamp.Message) error {
 	return nil
 }
 
-// Close closes the websocker peer.  This closes the local send channel, and
+// Close closes the websocket peer.  This closes the local send channel, and
 // sends a close control message to the websocket to tell the other side to
 // close.
 //
