@@ -1,8 +1,7 @@
 package main
 
 import (
-	"errors"
-	"flag"
+	"fmt"
 	"log"
 	"os"
 	"os/signal"
@@ -13,35 +12,15 @@ import (
 
 const exampleTopic = "example.hello"
 
-func newClient(clientType string, logger *log.Logger) (*client.Client, error) {
+func main() {
 	cfg := client.ClientConfig{
 		Realm: "nexus.examples",
 	}
+	logger := log.New(os.Stdout, "", 0)
 
-	switch clientType {
-	case "websocket":
-		return client.NewWebsocketClient(
-			"ws://localhost:8000/", client.JSON, nil, nil, cfg, logger)
-	case "rawtcp":
-		return client.NewRawSocketClient(
-			"tcp", "127.0.0.1:8001", client.MSGPACK, cfg, logger, 0)
-	case "rawunix":
-		return client.NewRawSocketClient(
-			"unix", "/tmp/exmpl_nexus_sock", client.MSGPACK, cfg, logger, 0)
-	default:
-		return nil, errors.New(
-			"invalid type, must one of: websocket, rawtcp, rawunix")
-	}
-}
-
-func main() {
-	var clientType string
-	flag.StringVar(&clientType, "type", "websocket", "Socket type, one of: websocket, rawtcp, rawunix")
-	flag.Parse()
-
-	logger := log.New(os.Stdout, "SUBSCRIBER> ", 0)
 	// Connect subscriber session.
-	subscriber, err := newClient(clientType, logger)
+	subscriber, err := client.NewWebsocketClient("ws://localhost:8000/",
+		client.JSON, nil, nil, cfg, logger)
 	if err != nil {
 		logger.Fatal(err)
 	}
@@ -49,10 +28,10 @@ func main() {
 
 	// Define function to handle events received.
 	evtHandler := func(args wamp.List, kwargs wamp.Dict, details wamp.Dict) {
-		logger.Println("Received", exampleTopic, "event")
+		fmt.Println("Received", exampleTopic, "event")
 		if len(args) != 0 {
 			m, _ := wamp.AsString(args[0])
-			logger.Println("  Event Message:", m)
+			fmt.Println("  Event Message:", m)
 		}
 	}
 

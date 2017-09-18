@@ -4,7 +4,6 @@ import (
 	"context"
 	"errors"
 	"flag"
-	"fmt"
 	"log"
 	"os"
 	"os/signal"
@@ -36,20 +35,12 @@ func newClient(clientType string, logger *log.Logger) (*client.Client, error) {
 	}
 }
 
-func usage() {
-	fmt.Fprintf(os.Stderr, "usage: %s [-type=websocket -type=rawtcp -type=rawunix]\n", os.Args[0])
-}
-
 func main() {
 	var clientType string
-	fs := flag.NewFlagSet("subscriber", flag.ExitOnError)
-	fs.StringVar(&clientType, "type", "websocket", "Transport type, one of: websocket, rawtcp, rawunix")
-	fs.Usage = usage
-	if err := fs.Parse(os.Args[1:]); err != nil {
-		os.Exit(1)
-	}
+	flag.StringVar(&clientType, "type", "websocket", "Socket type, one of: websocket, rawtcp, rawunix")
+	flag.Parse()
 
-	logger := log.New(os.Stdout, "CALLEE> ", log.LstdFlags)
+	logger := log.New(os.Stdout, "CALLEE> ", 0)
 	// Connect callee session.
 	callee, err := newClient(clientType, logger)
 	if err != nil {
@@ -62,13 +53,11 @@ func main() {
 	if err = callee.Register(procName, sum, nil); err != nil {
 		logger.Fatal("Failed to register procedure:", err)
 	}
-	fmt.Println("Registered procedure", procName, "with router")
-
-	// Wait for CTRL-c while handling remote procedure calls.
-	sigChan := make(chan os.Signal, 1)
-	signal.Notify(sigChan, os.Interrupt)
+	logger.Println("Registered procedure", procName, "with router")
 
 	// Wait for CTRL-c or client close while handling remote procedure calls.
+	sigChan := make(chan os.Signal, 1)
+	signal.Notify(sigChan, os.Interrupt)
 	select {
 	case <-sigChan:
 	case <-callee.Done():
@@ -82,7 +71,7 @@ func main() {
 }
 
 func sum(ctx context.Context, args wamp.List, kwargs, details wamp.Dict) *client.InvokeResult {
-	fmt.Println("Calculating sum")
+	log.Println("Calculating sum")
 	var sum int64
 	for i := range args {
 		n, ok := wamp.AsInt64(args[i])

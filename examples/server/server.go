@@ -52,10 +52,6 @@ func main() {
 	}
 	log.Println("RawSocket unix server listening on", rssUnix.Addr())
 
-	// Create a signal handler that signals the shutdown channel.
-	shutdown := make(chan os.Signal, 1)
-	signal.Notify(shutdown, os.Interrupt)
-
 	// Run the servers in separate goroutines, since each Serve() method does
 	// not return until each server is closed.
 	go wss.Serve()
@@ -63,6 +59,8 @@ func main() {
 	go rssUnix.Serve(false)
 
 	// Wait for SIGINT (CTRL-c), then close servers and exit.
+	shutdown := make(chan os.Signal, 1)
+	signal.Notify(shutdown, os.Interrupt)
 	<-shutdown
 	wss.Close()
 	rssTCP.Close()

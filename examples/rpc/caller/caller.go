@@ -4,7 +4,6 @@ import (
 	"context"
 	"errors"
 	"flag"
-	"fmt"
 	"log"
 	"os"
 
@@ -33,20 +32,12 @@ func newClient(clientType string, logger *log.Logger) (*client.Client, error) {
 	}
 }
 
-func usage() {
-	fmt.Fprintf(os.Stderr, "usage: %s [-type=websocket -type=rawtcp -type=rawunix]\n", os.Args[0])
-}
-
 func main() {
 	var clientType string
-	fs := flag.NewFlagSet("subscriber", flag.ExitOnError)
-	fs.StringVar(&clientType, "type", "websocket", "Transport type, one of: websocket, rawtcp, rawunix")
-	fs.Usage = usage
-	if err := fs.Parse(os.Args[1:]); err != nil {
-		os.Exit(1)
-	}
+	flag.StringVar(&clientType, "type", "websocket", "Socket type, one of: websocket, rawtcp, rawunix")
+	flag.Parse()
 
-	logger := log.New(os.Stderr, "CALLER> ", log.LstdFlags)
+	logger := log.New(os.Stderr, "CALLER> ", 0)
 
 	// Connect caller session.
 	caller, err := newClient(clientType, logger)
@@ -61,11 +52,11 @@ func main() {
 	// Test calling the procedure.
 	callArgs := wamp.List{1, 2, 3, 4, 5, 6, 7, 8, 9, 10}
 	ctx := context.Background()
-	fmt.Println("Call remote procedure to sum numbers 1-10")
+	logger.Println("Call remote procedure to sum numbers 1-10")
 	result, err := caller.Call(ctx, procName, nil, callArgs, nil, "")
 	if err != nil {
 		logger.Println("failed to call procedure:", err)
 	}
 	sum, _ := wamp.AsInt64(result.Arguments[0])
-	fmt.Println("Result is:", sum)
+	logger.Println("Result is:", sum)
 }
