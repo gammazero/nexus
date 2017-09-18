@@ -1,7 +1,6 @@
 package nexus
 
 import (
-	"fmt"
 	"testing"
 
 	"github.com/fortytw2/leaktest"
@@ -47,8 +46,8 @@ func TestWSHandshakeJSON(t *testing.T) {
 	s, logger := newTestWebsocketServer(t)
 	defer s.Close()
 
-	client, err := transport.ConnectWebsocketPeer(
-		fmt.Sprintf("ws://%s/", s.Addr()), serialize.JSON, nil, nil, logger)
+	client, err := transport.ConnectWebsocketPeer(s.URL(), serialize.JSON,
+		nil, nil, logger)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -70,8 +69,8 @@ func TestWSHandshakeMsgpack(t *testing.T) {
 	s, logger := newTestWebsocketServer(t)
 	defer s.Close()
 
-	client, err := transport.ConnectWebsocketPeer(
-		fmt.Sprintf("ws://%s/", s.Addr()), serialize.MSGPACK, nil, nil, logger)
+	client, err := transport.ConnectWebsocketPeer(s.URL(), serialize.MSGPACK,
+		nil, nil, logger)
 	if err != nil {
 		t.Fatal(err)
 	}
