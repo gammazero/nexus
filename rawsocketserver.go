@@ -47,7 +47,7 @@ func NewRawSocketServer(r Router, network, address string, recvLimit int) (*RawS
 }
 
 // Serve continues to accept new client connections until the server is closed.
-func (s *RawSocketServer) Serve(keepalive bool) {
+func (s *RawSocketServer) Serve(keepalive bool) error {
 	go func(listener net.Listener) {
 		<-s.stop
 		listener.Close()
@@ -57,7 +57,7 @@ func (s *RawSocketServer) Serve(keepalive bool) {
 		conn, err := s.listener.Accept()
 		if err != nil {
 			s.listener.Close()
-			return
+			return err
 		}
 		if tcpConn, ok := conn.(*net.TCPConn); ok && keepalive {
 			tcpConn.SetKeepAlive(true)

@@ -70,23 +70,36 @@ func (s *WebsocketServer) Addr() net.Addr { return s.addr }
 
 func (s *WebsocketServer) URL() string { return s.url }
 
-func (s *WebsocketServer) Serve() {
+func (s *WebsocketServer) Serve() error {
 	// Run service on configured port.
 	server := &http.Server{
 		Handler: s,
 		Addr:    s.addr.String(),
 	}
-	server.Serve(s.listener)
+	return server.Serve(s.listener)
 }
 
-func (s *WebsocketServer) ServeTLS(tlsConfig *tls.Config, certFile, keyFile string) {
+func (s *WebsocketServer) ServeTLS(tlsConfig *tls.Config, certFile, keyFile string) error {
 	// Run service on configured port.
 	server := &http.Server{
 		Handler:   s,
 		Addr:      s.addr.String(),
 		TLSConfig: tlsConfig,
 	}
-	server.ServeTLS(s.listener, certFile, keyFile)
+
+	// With Go 1.9 everything below can be replaces with this:
+	//server.ServeTLS(s.listener, certFile, keyFile)
+
+	configHasCert := len(tlsConfig.Certificates) > 0 || tlsConfig.GetCertificate != nil
+	if !configHasCert || certFile != "" || keyFile != "" {
+		var err error
+		tlsConfig.Certificates = make([]tls.Certificate, 1)
+		tlsConfig.Certificates[0], err = tls.LoadX509KeyPair(certFile, keyFile)
+		if err != nil {
+			return err
+		}
+	}
+	return server.Serve(s.listener)
 }
 
 func (s *WebsocketServer) Close() {
