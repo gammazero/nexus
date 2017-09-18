@@ -2,9 +2,6 @@ package nexus
 
 import (
 	"net"
-	"os"
-	"os/signal"
-	"syscall"
 	"time"
 
 	"github.com/gammazero/nexus/stdlog"
@@ -14,7 +11,7 @@ import (
 
 // RawSocketServer handles socket connections.
 type RawSocketServer struct {
-	Router
+	router Router
 
 	listener net.Listener
 	addr     net.Addr
@@ -22,18 +19,17 @@ type RawSocketServer struct {
 	serializer serialize.Serializer
 	log        stdlog.StdLog
 	recvLimit  int
-	stop       chan os.Signal
+	stop       chan struct{}
 }
 
 // NewRawSocketServer takes a router instance and creates a new socket server.
 func NewRawSocketServer(r Router, network, address string, recvLimit int) (*RawSocketServer, error) {
 	s := &RawSocketServer{
-		Router:    r,
+		router:    r,
 		log:       r.Logger(),
 		recvLimit: recvLimit,
-		stop:      make(chan os.Signal, 1),
+		stop:      make(chan struct{}, 1),
 	}
-	signal.Notify(s.stop, syscall.SIGINT)
 
 	l, err := net.Listen(network, address)
 	if err != nil {
@@ -74,7 +70,7 @@ func (s *RawSocketServer) Serve(keepalive bool) {
 
 // Close stops the server from accepting connections, and causes Serve to exit.
 func (s *RawSocketServer) Close() {
-	s.stop <- nil
+	close(s.stop)
 }
 
 // Addr returns the net.Addr that the server is listening on.
@@ -89,7 +85,7 @@ func (s *RawSocketServer) handleRawSocket(conn net.Conn) {
 		return
 	}
 
-	if err := s.Router.Attach(peer); err != nil {
+	if err := s.router.Attach(peer); err != nil {
 		s.log.Println("Error attaching to router:", err)
 	}
 }

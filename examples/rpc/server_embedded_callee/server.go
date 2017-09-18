@@ -4,8 +4,8 @@ import (
 	"context"
 	"fmt"
 	"log"
-	"net/http"
 	"os"
+	"os/signal"
 
 	"github.com/gammazero/nexus"
 	"github.com/gammazero/nexus/client"
@@ -47,14 +47,23 @@ func main() {
 	}
 	logger.Println("Registered procedure", procName, "with router")
 
-	// Run server.
-	s := nexus.NewWebsocketServer(nxr)
-	server := &http.Server{
-		Handler: s,
-		Addr:    ":8000",
+	// Create server.
+	wss, err := nexus.NewWebsocketServer(nxr, "127.0.0.1:8000")
+	if err != nil {
+		log.Fatal(err)
 	}
-	log.Println("Server listening on port 8000")
-	log.Fatal(server.ListenAndServe())
+	log.Println("Websocket server listening on", wss.URL())
+
+	// Create a signal handler that signals the shutdown channel.
+	shutdown := make(chan os.Signal, 1)
+	signal.Notify(shutdown, os.Interrupt)
+
+	// Run server.
+	go wss.Serve()
+
+	// Wait for SIGINT (CTRL-c), then close server and exit.
+	<-shutdown
+	wss.Close()
 }
 
 func sum(ctx context.Context, args wamp.List, kwargs, details wamp.Dict) *client.InvokeResult {

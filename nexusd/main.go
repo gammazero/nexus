@@ -8,9 +8,9 @@ import (
 	"flag"
 	"fmt"
 	"log"
-	"net/http"
 	"os"
 	"os/signal"
+	"sync"
 	"time"
 
 	"github.com/gammazero/nexus"
@@ -54,38 +54,101 @@ func main() {
 		os.Exit(1)
 	}
 
-	// Create a new websocket server with the router.
-	s := nexus.NewWebsocketServer(r)
+	var wss *nexus.WebsocketServer
+	var rssTCP, rssUnix *nexus.RawSocketServer
+	if conf.WebSocket.Address != "" {
+		// Create a new websocket server with the router.
+		wss, err = nexus.NewWebsocketServer(r, conf.WebSocket.Address)
+		if err != nil {
+			fmt.Fprintln(os.Stderr, err)
+			os.Exit(1)
+		}
+		fmt.Println("Listening for websocket connections on", wss.URL())
+	}
+	if conf.RawSocket.TCPAddress != "" {
+		// Create a new websocket server with the router.
+		rssTCP, err = nexus.NewRawSocketServer(
+			r, "tcp", conf.RawSocket.TCPAddress, conf.RawSocket.MaxMsgLen)
+		if err != nil {
+			fmt.Fprintln(os.Stderr, err)
+			os.Exit(1)
+		}
+		fmt.Println("Listening for rawsocket connections on", rssTCP.Addr())
+	}
+	if conf.RawSocket.UnixAddress != "" {
+		// Create a new websocket server with the router.
+		rssUnix, err = nexus.NewRawSocketServer(
+			r, "unix", conf.RawSocket.UnixAddress, conf.RawSocket.MaxMsgLen)
+		if err != nil {
+			fmt.Fprintln(os.Stderr, err)
+			os.Exit(1)
+		}
+		fmt.Println("Listening for rawsocket connections on", rssUnix.Addr())
+	}
+	if wss == nil && rssTCP == nil && rssUnix == nil {
+		fmt.Fprintln(os.Stderr, "No servers configured")
+		os.Exit(1)
+	}
 
 	shutdown := make(chan os.Signal, 1)
 	signal.Notify(shutdown, os.Interrupt)
+	var waitServers sync.WaitGroup
 
-	go func() {
-		// Shutdown server is SIGINT received.
-		<-shutdown
-		fmt.Println("Shutting down router...")
-
-		// If process does not exit in a few seconds, exit with error.
-		exitChan := make(chan struct{})
+	if wss != nil {
+		waitServers.Add(1)
 		go func() {
-			select {
-			case <-time.After(5 * time.Second):
-				fmt.Fprintln(os.Stderr, "Router took too long to stop")
-				os.Exit(1)
-			case <-exitChan:
+			if conf.WebSocket.CertFile != "" && conf.WebSocket.KeyFile != "" {
+				// Config has cert_file and key_file, so do TLS.
+				wss.ServeTLS(nil, conf.WebSocket.CertFile,
+					conf.WebSocket.KeyFile)
+			} else {
+				wss.Serve()
 			}
+			waitServers.Done()
 		}()
+	}
+	if rssTCP != nil {
+		waitServers.Add(1)
+		go func() {
+			rssTCP.Serve(conf.RawSocket.TCPKeepAlive)
+			waitServers.Done()
+		}()
+	}
+	if rssUnix != nil {
+		waitServers.Add(1)
+		go func() {
+			rssUnix.Serve(false)
+			waitServers.Done()
+		}()
+	}
 
-		s.Close()
-		close(exitChan)
-		os.Exit(0)
+	// Shutdown server is SIGINT received.
+	<-shutdown
+
+	// If process does not exit in a few seconds, exit with error.
+	exitChan := make(chan struct{})
+	go func() {
+		select {
+		case <-time.After(5 * time.Second):
+			fmt.Fprintln(os.Stderr, "Router took too long to stop")
+			os.Exit(1)
+		case <-exitChan:
+		}
 	}()
 
-	// Run service on configured port.
-	server := &http.Server{
-		Handler: s,
-		Addr:    fmt.Sprintf(":%d", conf.Port),
+	fmt.Println("Shutting down router...")
+	if wss != nil {
+		wss.Close()
 	}
-	fmt.Println("Router starting on port", conf.Port)
-	log.Fatalln(server.ListenAndServe())
+	if rssTCP != nil {
+		rssTCP.Close()
+	}
+	if rssUnix != nil {
+		rssUnix.Close()
+	}
+
+	waitServers.Wait()
+	r.Close()
+	close(exitChan)
+	os.Exit(0)
 }

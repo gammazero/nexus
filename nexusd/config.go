@@ -9,7 +9,19 @@ import (
 )
 
 type Config struct {
-	Port    int
+	WebSocket struct {
+		Address  string `json:"address"`
+		CertFile string `json:"cert_file"`
+		KeyFile  string `json:"key_file"`
+	}
+
+	RawSocket struct {
+		TCPAddress   string `json:"tcp_address"`
+		TCPKeepAlive bool   `json:"tcp_keepalive"`
+		UnixAddress  string `json:"unix_address"`
+		MaxMsgLen    int    `json:"max_msg_len"`
+	}
+
 	LogPath string `json:"log_path"`
 	Router  nexus.RouterConfig
 }

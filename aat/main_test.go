@@ -6,7 +6,6 @@ import (
 	"fmt"
 	"log"
 	"net"
-	"net/http"
 	"os"
 	"testing"
 	"time"
@@ -124,40 +123,33 @@ func TestMain(m *testing.M) {
 		panic(err)
 	}
 
-	var listener *net.TCPListener
-	var rs *nexus.RawSocketServer
+	var wss *nexus.WebsocketServer
+	var rss *nexus.RawSocketServer
 	if websocketClient {
-		s := nexus.NewWebsocketServer(nxr)
-		server := &http.Server{
-			Handler: s,
-		}
-
-		addr := net.TCPAddr{IP: net.ParseIP("127.0.0.1")}
-		listener, err = net.ListenTCP("tcp", &addr)
+		wss, err = nexus.NewWebsocketServer(nxr, "127.0.0.1:")
 		if err != nil {
-			cliLogger.Println("Server cannot listen:", err)
+			fmt.Fprintln(os.Stderr, "Failed to create websocket server:", err)
+			os.Exit(1)
 		}
-		go server.Serve(listener)
-		port := listener.Addr().(*net.TCPAddr).Port
-		serverURL = fmt.Sprintf("ws://127.0.0.1:%d/", port)
-
+		go wss.Serve()
+		serverURL = wss.URL()
 		rtrLogger.Println("WebSocket server listening on", serverURL)
 	} else if rawsocketTCP || rawsocketUnix {
 		if rawsocketUnix {
 			// Create Unix raw socket
-			rs, err = nexus.NewRawSocketServer(nxr, "unix",
+			rss, err = nexus.NewRawSocketServer(nxr, "unix",
 				"/tmp/nexustest_sock", 0)
 		} else {
 			// Create TCP raw socket
-			rs, err = nexus.NewRawSocketServer(nxr, "tcp", "127.0.0.1:", 0)
+			rss, err = nexus.NewRawSocketServer(nxr, "tcp", "127.0.0.1:", 0)
 		}
 		if err != nil {
 			fmt.Fprintln(os.Stderr, "Failed to create rawsocket server:", err)
 			os.Exit(1)
 		}
 
-		go rs.Serve(false)
-		rsAddr = rs.Addr()
+		go rss.Serve(false)
+		rsAddr = rss.Addr()
 		rtrLogger.Println("RawSocket server listening on", rsAddr)
 	}
 
@@ -192,11 +184,11 @@ func TestMain(m *testing.M) {
 	rc := m.Run()
 
 	// Shutdown router and clienup environment.
-	if websocketClient {
-		listener.Close()
+	if wss != nil {
+		wss.Close()
 	}
-	if rawsocketTCP || rawsocketUnix {
-		rs.Close()
+	if rss != nil {
+		rss.Close()
 	}
 	nxr.Close()
 	os.Exit(rc)

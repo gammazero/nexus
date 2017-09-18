@@ -2,9 +2,6 @@ package nexus
 
 import (
 	"fmt"
-	"io"
-	"net"
-	"net/http"
 	"testing"
 
 	"github.com/fortytw2/leaktest"
@@ -28,37 +25,30 @@ var (
 	}
 )
 
-func newTestWebsocketServer(t *testing.T) (int, io.Closer, stdlog.StdLog) {
+func newTestWebsocketServer(t *testing.T) (*WebsocketServer, stdlog.StdLog) {
 	r, err := NewRouter(routerConfig, nil)
 	if err != nil {
 		t.Fatal(err)
 	}
 
-	s := NewWebsocketServer(r)
-	server := &http.Server{
-		Handler: s,
-	}
-
-	var addr net.TCPAddr
-	l, err := net.ListenTCP("tcp", &addr)
+	s, err := NewWebsocketServer(r, "127.0.0.1:")
 	if err != nil {
 		t.Fatal(err)
 	}
 	go func() {
-		server.Serve(l)
+		s.Serve()
 		r.Close()
 	}()
-	return l.Addr().(*net.TCPAddr).Port, l, r.Logger()
+	return s, r.Logger()
 }
 
 func TestWSHandshakeJSON(t *testing.T) {
 	defer leaktest.Check(t)()
-	port, closer, logger := newTestWebsocketServer(t)
-
-	defer closer.Close()
+	s, logger := newTestWebsocketServer(t)
+	defer s.Close()
 
 	client, err := transport.ConnectWebsocketPeer(
-		fmt.Sprintf("ws://localhost:%d/", port), serialize.JSON, nil, nil, logger)
+		fmt.Sprintf("ws://%s/", s.Addr()), serialize.JSON, nil, nil, logger)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -77,11 +67,11 @@ func TestWSHandshakeJSON(t *testing.T) {
 
 func TestWSHandshakeMsgpack(t *testing.T) {
 	defer leaktest.Check(t)()
-	port, closer, logger := newTestWebsocketServer(t)
-	defer closer.Close()
+	s, logger := newTestWebsocketServer(t)
+	defer s.Close()
 
 	client, err := transport.ConnectWebsocketPeer(
-		fmt.Sprintf("ws://localhost:%d/", port), serialize.MSGPACK, nil, nil, logger)
+		fmt.Sprintf("ws://%s/", s.Addr()), serialize.MSGPACK, nil, nil, logger)
 	if err != nil {
 		t.Fatal(err)
 	}
