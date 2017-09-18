@@ -66,10 +66,13 @@ func NewWebsocketServer(r Router, address string) (*WebsocketServer, error) {
 	return s, nil
 }
 
+// Addr returns the net.Addr that the server is listening on.
 func (s *WebsocketServer) Addr() net.Addr { return s.addr }
 
+// URL returns a URL that a client can use to connect to the websocket server.
 func (s *WebsocketServer) URL() string { return s.url }
 
+// Serve accepts incoming connections.
 func (s *WebsocketServer) Serve() error {
 	// Run service on configured port.
 	server := &http.Server{
@@ -79,6 +82,7 @@ func (s *WebsocketServer) Serve() error {
 	return server.Serve(s.listener)
 }
 
+// ServeTLS accepts incoming connections and establishes a TLS session.
 func (s *WebsocketServer) ServeTLS(tlsConfig *tls.Config, certFile, keyFile string) error {
 	// Run service on configured port.
 	server := &http.Server{
@@ -102,6 +106,7 @@ func (s *WebsocketServer) ServeTLS(tlsConfig *tls.Config, certFile, keyFile stri
 	return server.Serve(s.listener)
 }
 
+// Close stops the server from accepting connections, and causes Serve to exit.
 func (s *WebsocketServer) Close() {
 	s.listener.Close()
 }

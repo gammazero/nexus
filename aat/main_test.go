@@ -33,7 +33,7 @@ var (
 
 	err error
 
-	// Creates websocket or rawsocket client.  If note either of those, create
+	// Creates websocket or rawsocket client.  If not either of those, create
 	// embedded client that only uses channels to communicate with router.
 	websocketClient bool
 	rawsocketTCP    bool

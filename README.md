@@ -31,7 +31,7 @@ Nexus is a software package that provides a WAMP router library, client library,
 - **Concurrent Asynchronous I/O** Nexus supports large numbers of clients concurrently sending and receiving messages, and never blocks on I/O, even if a client becomes unresponsive.  See [Router Concurrency](https://github.com/gammazero/nexus/wiki/Router-Concurrency) for details.
 - **WAMP Advanced Profile Features**  This project implements most of the advanced profile features in WAMP v2.  See [current feature support](https://github.com/gammazero/nexus#advanced-profile-feature-support) provided by nexus.  Nexus also offers extended functionality for retrieving session information and for message filtering, giving clients more ability to decide where to send messages.
 - **Flexibility** Multiple transports and serialization options are supported, and more are being developed to maximize interoperability.  Currently nexus provides websocket, rawsocket, and local (in-process) transports.  [JSON](https://en.wikipedia.org/wiki/JSON) and [MessagePack](http://msgpack.org/index.html) serialization is available over websockets and rawsockets.
-- **Security** TLS over websockets is included with the [Gorilla WebSocket](https://github.com/gorilla/websocket) package that nexus uses as its websocket implementation.  The nexus router library provides interfaces for integration of client authentication and authorization logic.
+- **Security** TLS is available over websockets, and the websocket server API allows for specification of TLS configuration.  The nexus router library also provides interfaces for integration of client authentication and authorization logic.
 
 ## Quick Start
 
