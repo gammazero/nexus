@@ -227,7 +227,7 @@ MsgLoop:
 			_, err = io.ReadFull(rs.conn, buf)
 			if err != nil {
 				rs.log.Println("Error reading message:", err)
-				rs.Close()
+				rs.conn.Close()
 				return
 			}
 			msg, err = rs.serializer.Deserialize(buf)
