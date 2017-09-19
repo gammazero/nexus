@@ -14,6 +14,12 @@ import (
 	"github.com/gammazero/nexus/wamp"
 )
 
+const (
+	wsAddr   = "127.0.0.1:8000"
+	tcpAddr  = "127.0.0.1:8001"
+	unixAddr = "/tmp/exmpl_nexus_sock"
+)
+
 func main() {
 	// Create router instance.
 	routerConfig := &nexus.RouterConfig{
@@ -31,38 +37,36 @@ func main() {
 	}
 	defer nxr.Close()
 
+	// Create websocket and rawsocket servers.
+	wss := nexus.NewWebsocketServer(nxr)
+	rss := nexus.NewRawSocketServer(nxr, 0, false)
+
 	// Run websocket server.
-	wss, err := nexus.NewWebsocketServer(nxr, "127.0.0.1:8000")
+	wsCloser, err := wss.ListenAndServe(wsAddr)
 	if err != nil {
 		log.Fatal(err)
 	}
-	log.Println("Websocket server listening on", wss.URL())
+	log.Printf("Websocket server listening on ws://%s/", wsAddr)
 
-	// Run rawsocket TCP server.
-	rssTCP, err := nexus.NewRawSocketServer(nxr, "tcp", "127.0.0.1:8001", 0)
+	// Run TCP rawsocket server.
+	tcpCloser, err := rss.ListenAndServe("tcp", tcpAddr)
 	if err != nil {
 		log.Fatal(err)
 	}
-	log.Println("RawSocet TCP server listening on", rssTCP.Addr())
+	log.Println("RawSocet TCP server listening on", tcpAddr)
 
-	// Run rawsocket unix server.
-	rssUnix, err := nexus.NewRawSocketServer(nxr, "unix", "/tmp/exmpl_nexus_sock", 0)
+	// Run unix rawsocket server.
+	unixCloser, err := rss.ListenAndServe("unix", unixAddr)
 	if err != nil {
 		log.Fatal(err)
 	}
-	log.Println("RawSocket unix server listening on", rssUnix.Addr())
-
-	// Run the servers in separate goroutines, since each Serve() method does
-	// not return until each server is closed.
-	go wss.Serve()
-	go rssTCP.Serve(true)
-	go rssUnix.Serve(false)
+	log.Println("RawSocket unix server listening on", unixAddr)
 
 	// Wait for SIGINT (CTRL-c), then close servers and exit.
 	shutdown := make(chan os.Signal, 1)
 	signal.Notify(shutdown, os.Interrupt)
 	<-shutdown
-	wss.Close()
-	rssTCP.Close()
-	rssUnix.Close()
+	wsCloser.Close()
+	tcpCloser.Close()
+	unixCloser.Close()
 }

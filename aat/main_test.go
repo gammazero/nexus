@@ -4,8 +4,8 @@ import (
 	"errors"
 	"flag"
 	"fmt"
+	"io"
 	"log"
-	"net"
 	"os"
 	"testing"
 	"time"
@@ -21,6 +21,9 @@ import (
 const (
 	testRealm     = "nexus.test.realm"
 	testAuthRealm = "nexus.test.auth"
+
+	tcpAddr  = "127.0.0.1:8282"
+	unixAddr = "/tmp/nexustest_sock"
 )
 
 var (
@@ -29,7 +32,8 @@ var (
 	rtrLogger stdlog.StdLog
 
 	serverURL string
-	rsAddr    net.Addr
+	rsNet     string
+	rsAddr    string
 
 	err error
 
@@ -123,34 +127,35 @@ func TestMain(m *testing.M) {
 		panic(err)
 	}
 
-	var wss *nexus.WebsocketServer
-	var rss *nexus.RawSocketServer
+	var wsCloser, tcpCloser, unixCloser io.Closer
 	if websocketClient {
-		wss, err = nexus.NewWebsocketServer(nxr, "127.0.0.1:")
+		wss := nexus.NewWebsocketServer(nxr)
+		wsCloser, err = wss.ListenAndServe(tcpAddr)
 		if err != nil {
-			fmt.Fprintln(os.Stderr, "Failed to create websocket server:", err)
+			fmt.Fprintln(os.Stderr, "Failed to start websocket server:", err)
 			os.Exit(1)
 		}
-		go wss.Serve()
-		serverURL = wss.URL()
+		serverURL = fmt.Sprintf("ws://%s/", tcpAddr)
 		rtrLogger.Println("WebSocket server listening on", serverURL)
 	} else if rawsocketTCP || rawsocketUnix {
+		rss := nexus.NewRawSocketServer(nxr, 0, false)
 		if rawsocketUnix {
 			// Create Unix raw socket
-			rss, err = nexus.NewRawSocketServer(nxr, "unix",
-				"/tmp/nexustest_sock", 0)
+			unixCloser, err = rss.ListenAndServe("unix", unixAddr)
+			rtrLogger.Println("RawSocket server listening on", unixAddr)
+			rsNet = "unix"
+			rsAddr = unixAddr
 		} else {
 			// Create TCP raw socket
-			rss, err = nexus.NewRawSocketServer(nxr, "tcp", "127.0.0.1:", 0)
+			tcpCloser, err = rss.ListenAndServe("tcp", tcpAddr)
+			rtrLogger.Println("RawSocket server listening on", tcpAddr)
+			rsNet = "tcp"
+			rsAddr = tcpAddr
 		}
 		if err != nil {
-			fmt.Fprintln(os.Stderr, "Failed to create rawsocket server:", err)
+			fmt.Fprintln(os.Stderr, "Failed to start rawsocket server:", err)
 			os.Exit(1)
 		}
-
-		go rss.Serve(false)
-		rsAddr = rss.Addr()
-		rtrLogger.Println("RawSocket server listening on", rsAddr)
 	}
 
 	// Connect and disconnect so that router is started before running tests.
@@ -184,12 +189,14 @@ func TestMain(m *testing.M) {
 	rc := m.Run()
 
 	// Shutdown router and clienup environment.
-	if wss != nil {
-		wss.Close()
+	if wsCloser != nil {
+		wsCloser.Close()
+	} else if tcpCloser != nil {
+		tcpCloser.Close()
+	} else if unixCloser != nil {
+		unixCloser.Close()
 	}
-	if rss != nil {
-		rss.Close()
-	}
+
 	nxr.Close()
 	os.Exit(rc)
 }
@@ -211,11 +218,11 @@ func connectClientCfg(cfg client.ClientConfig) (*client.Client, error) {
 		// Use larger response timeout for very slow test systems.
 		cfg.ResponseTimeout = time.Second
 		if jsonEnc {
-			cli, err = client.NewRawSocketClient(rsAddr.Network(),
-				rsAddr.String(), client.JSON, cfg, cliLogger, 0)
+			cli, err = client.NewRawSocketClient(rsNet, rsAddr, client.JSON,
+				cfg, cliLogger, 0)
 		} else {
-			cli, err = client.NewRawSocketClient(rsAddr.Network(),
-				rsAddr.String(), client.MSGPACK, cfg, cliLogger, 0)
+			cli, err = client.NewRawSocketClient(rsNet, rsAddr, client.MSGPACK,
+				cfg, cliLogger, 0)
 		}
 	} else {
 		cli, err = client.NewLocalClient(nxr, cfg, cliLogger)

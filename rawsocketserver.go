@@ -1,6 +1,7 @@
 package nexus
 
 import (
+	"io"
 	"net"
 	"time"
 
@@ -13,69 +14,47 @@ import (
 type RawSocketServer struct {
 	router Router
 
-	listener net.Listener
-	addr     net.Addr
-
 	serializer serialize.Serializer
 	log        stdlog.StdLog
 	recvLimit  int
-	stop       chan struct{}
+	keepalive  bool
 }
 
 // NewRawSocketServer takes a router instance and creates a new socket server.
-func NewRawSocketServer(r Router, network, address string, recvLimit int) (*RawSocketServer, error) {
-	s := &RawSocketServer{
+func NewRawSocketServer(r Router, recvLimit int, keepalive bool) *RawSocketServer {
+	return &RawSocketServer{
 		router:    r,
 		log:       r.Logger(),
 		recvLimit: recvLimit,
-		stop:      make(chan struct{}, 1),
+		keepalive: keepalive,
 	}
+}
 
+// ListenAndServe listens on the specified endpoint and starts a goroutine that
+// accept new client connections until the returned io.closer is closed.
+func (s *RawSocketServer) ListenAndServe(network, address string) (io.Closer, error) {
 	l, err := net.Listen(network, address)
 	if err != nil {
 		s.log.Print(err)
 		return nil, err
 	}
-	s.listener = l
-	if tcpListener, ok := l.(*net.TCPListener); ok {
-		s.addr = tcpListener.Addr()
-	} else if unixListener, ok := l.(*net.UnixListener); ok {
-		s.addr = unixListener.Addr()
-	}
-
-	return s, nil
-}
-
-// Serve continues to accept new client connections until the server is closed.
-func (s *RawSocketServer) Serve(keepalive bool) error {
-	go func(listener net.Listener) {
-		<-s.stop
-		listener.Close()
-	}(s.listener)
-
-	for {
-		conn, err := s.listener.Accept()
-		if err != nil {
-			s.listener.Close()
-			return err
+	go func() {
+		for {
+			conn, err := l.Accept()
+			if err != nil {
+				// Error normal when listener closed, do not log.
+				l.Close()
+				return
+			}
+			if tcpConn, ok := conn.(*net.TCPConn); ok && s.keepalive {
+				tcpConn.SetKeepAlive(true)
+				tcpConn.SetKeepAlivePeriod(3 * time.Minute)
+			}
+			go s.handleRawSocket(conn)
 		}
-		if tcpConn, ok := conn.(*net.TCPConn); ok && keepalive {
-			tcpConn.SetKeepAlive(true)
-			tcpConn.SetKeepAlivePeriod(3 * time.Minute)
-		}
+	}()
 
-		go s.handleRawSocket(conn)
-	}
-}
-
-// Close stops the server from accepting connections, and causes Serve to exit.
-func (s *RawSocketServer) Close() {
-	close(s.stop)
-}
-
-// Addr returns the net.Addr that the server is listening on.
-func (s *RawSocketServer) Addr() net.Addr {
-	return s.addr
+	return l, nil
 }
 
 func (s *RawSocketServer) handleRawSocket(conn net.Conn) {

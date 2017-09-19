@@ -7,10 +7,10 @@ package main
 import (
 	"flag"
 	"fmt"
+	"io"
 	"log"
 	"os"
 	"os/signal"
-	"sync"
 	"time"
 
 	"github.com/gammazero/nexus"
@@ -54,75 +54,58 @@ func main() {
 		os.Exit(1)
 	}
 
-	var wss *nexus.WebsocketServer
-	var rssTCP, rssUnix *nexus.RawSocketServer
+	// Create and run servers.
+	var wsCloser, tcpCloser, unixCloser io.Closer
 	if conf.WebSocket.Address != "" {
 		// Create a new websocket server with the router.
-		wss, err = nexus.NewWebsocketServer(r, conf.WebSocket.Address)
+		wss := nexus.NewWebsocketServer(r)
+		if conf.WebSocket.CertFile == "" || conf.WebSocket.KeyFile == "" {
+			wsCloser, err = wss.ListenAndServe(conf.WebSocket.Address)
+		} else {
+			// Config has cert_file and key_file, so do TLS.
+			wsCloser, err = wss.ListenAndServeTLS(conf.WebSocket.Address, nil,
+				conf.WebSocket.CertFile, conf.WebSocket.KeyFile)
+		}
 		if err != nil {
 			fmt.Fprintln(os.Stderr, err)
 			os.Exit(1)
 		}
-		fmt.Println("Listening for websocket connections on", wss.URL())
+		fmt.Printf("Listening for websocket connections on ws://%s/\n",
+			conf.WebSocket.Address)
 	}
-	if conf.RawSocket.TCPAddress != "" {
-		// Create a new websocket server with the router.
-		rssTCP, err = nexus.NewRawSocketServer(
-			r, "tcp", conf.RawSocket.TCPAddress, conf.RawSocket.MaxMsgLen)
-		if err != nil {
-			fmt.Fprintln(os.Stderr, err)
-			os.Exit(1)
+	if conf.RawSocket.TCPAddress != "" || conf.RawSocket.UnixAddress != "" {
+		// Create a new rawsocket server with the router.
+		rss := nexus.NewRawSocketServer(r, conf.RawSocket.MaxMsgLen,
+			conf.RawSocket.TCPKeepAlive)
+		if conf.RawSocket.TCPAddress != "" {
+			// Run rawsocket TCP server.
+			tcpCloser, err = rss.ListenAndServe("tcp", conf.RawSocket.TCPAddress)
+			if err != nil {
+				fmt.Fprintln(os.Stderr, err)
+				os.Exit(1)
+			}
+			fmt.Println("Listening for rawsocket connections on",
+				conf.RawSocket.TCPAddress)
 		}
-		fmt.Println("Listening for rawsocket connections on", rssTCP.Addr())
-	}
-	if conf.RawSocket.UnixAddress != "" {
-		// Create a new websocket server with the router.
-		rssUnix, err = nexus.NewRawSocketServer(
-			r, "unix", conf.RawSocket.UnixAddress, conf.RawSocket.MaxMsgLen)
-		if err != nil {
-			fmt.Fprintln(os.Stderr, err)
-			os.Exit(1)
+		if conf.RawSocket.UnixAddress != "" {
+			// Run rawsocket Unix server.
+			tcpCloser, err = rss.ListenAndServe("unix", conf.RawSocket.UnixAddress)
+			if err != nil {
+				fmt.Fprintln(os.Stderr, err)
+				os.Exit(1)
+			}
+			fmt.Println("Listening for rawsocket connections on",
+				conf.RawSocket.UnixAddress)
 		}
-		fmt.Println("Listening for rawsocket connections on", rssUnix.Addr())
 	}
-	if wss == nil && rssTCP == nil && rssUnix == nil {
+	if wsCloser == nil && tcpCloser == nil && unixCloser == nil {
 		fmt.Fprintln(os.Stderr, "No servers configured")
 		os.Exit(1)
 	}
 
+	// Shutdown server if SIGINT (CTRL-c) received.
 	shutdown := make(chan os.Signal, 1)
 	signal.Notify(shutdown, os.Interrupt)
-	var waitServers sync.WaitGroup
-
-	if wss != nil {
-		waitServers.Add(1)
-		go func() {
-			if conf.WebSocket.CertFile != "" && conf.WebSocket.KeyFile != "" {
-				// Config has cert_file and key_file, so do TLS.
-				wss.ServeTLS(nil, conf.WebSocket.CertFile,
-					conf.WebSocket.KeyFile)
-			} else {
-				wss.Serve()
-			}
-			waitServers.Done()
-		}()
-	}
-	if rssTCP != nil {
-		waitServers.Add(1)
-		go func() {
-			rssTCP.Serve(conf.RawSocket.TCPKeepAlive)
-			waitServers.Done()
-		}()
-	}
-	if rssUnix != nil {
-		waitServers.Add(1)
-		go func() {
-			rssUnix.Serve(false)
-			waitServers.Done()
-		}()
-	}
-
-	// Shutdown server is SIGINT received.
 	<-shutdown
 
 	// If process does not exit in a few seconds, exit with error.
@@ -137,18 +120,16 @@ func main() {
 	}()
 
 	fmt.Println("Shutting down router...")
-	if wss != nil {
-		wss.Close()
+	if wsCloser != nil {
+		wsCloser.Close()
 	}
-	if rssTCP != nil {
-		rssTCP.Close()
+	if tcpCloser != nil {
+		tcpCloser.Close()
 	}
-	if rssUnix != nil {
-		rssUnix.Close()
+	if unixCloser != nil {
+		unixCloser.Close()
 	}
 
-	waitServers.Wait()
 	r.Close()
 	close(exitChan)
-	os.Exit(0)
 }

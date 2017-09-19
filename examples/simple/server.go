@@ -13,6 +13,8 @@ import (
 	"github.com/gammazero/nexus/wamp"
 )
 
+const address = "127.0.0.1:8000"
+
 func main() {
 	// Create router instance.
 	routerConfig := &nexus.RouterConfig{
@@ -29,19 +31,16 @@ func main() {
 	}
 	defer nxr.Close()
 
-	// Create websocket server.
-	wss, err := nexus.NewWebsocketServer(nxr, "127.0.0.1:8000")
+	// Create and run server.
+	closer, err := nexus.NewWebsocketServer(nxr).ListenAndServe(address)
 	if err != nil {
 		log.Fatal(err)
 	}
-	log.Println("Websocket server listening on", wss.URL())
-
-	// Run server in separate goroutine. Serve() returns when server is closed.
-	go wss.Serve()
+	log.Printf("Websocket server listening on ws://%s/", address)
 
 	// Wait for SIGINT (CTRL-c), then close server and exit.
 	shutdown := make(chan os.Signal, 1)
 	signal.Notify(shutdown, os.Interrupt)
 	<-shutdown
-	wss.Close()
+	closer.Close()
 }

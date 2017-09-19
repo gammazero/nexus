@@ -4,6 +4,7 @@ import (
 	"crypto/tls"
 	"errors"
 	"fmt"
+	"io"
 	"net"
 	"net/http"
 
@@ -32,83 +33,102 @@ type WebsocketServer struct {
 	// Serializer for binary frames.  Defaults to MessagePackSerializer.
 	BinarySerializer serialize.Serializer
 
-	router    Router
-	listener  net.Listener
-	addr      net.Addr
-	url       string
+	router Router
+
 	protocols map[string]protocol
 	log       stdlog.StdLog
 }
 
 // NewWebsocketServer takes a router instance and creates a new websocket
-// server.
-func NewWebsocketServer(r Router, address string) (*WebsocketServer, error) {
+// server.  To run the websocket server, call one of the server's
+// ListenAndServer methods:
+//
+//     s := NewWebsocketServer(r)
+//     closer, err := s.ListenAndServer(address)
+//
+// Or, use the various ListenAndServer provided by net/http.  This works
+// because WebsocketServer implements the http.Handler interface:
+//
+//     s := NewWebsocketServer(r)
+//     server := &http.Server{
+//         Handler: s,
+//         Addr:    address,
+//     }
+//     server.ListenAndServe()
+func NewWebsocketServer(r Router) *WebsocketServer {
 	s := &WebsocketServer{
 		router:    r,
 		protocols: map[string]protocol{},
 		log:       r.Logger(),
 	}
-
 	s.Upgrader = &websocket.Upgrader{}
 	s.addProtocol(jsonWebsocketProtocol, websocket.TextMessage,
 		&serialize.JSONSerializer{})
 	s.addProtocol(msgpackWebsocketProtocol, websocket.BinaryMessage,
 		&serialize.MessagePackSerializer{})
 
+	return s
+}
+
+// ListenAndServe listens on the specified TCP address and starts a goroutine
+// that accept new client connections until the returned io.closer is closed.
+func (s *WebsocketServer) ListenAndServe(address string) (io.Closer, error) {
 	l, err := net.Listen("tcp", address)
 	if err != nil {
 		s.log.Print(err)
 		return nil, err
 	}
-	s.listener = l
-	s.addr = l.(*net.TCPListener).Addr()
-	s.url = fmt.Sprintf("ws://%s/", s.addr)
-	return s, nil
-}
+	addr := l.(*net.TCPListener).Addr()
 
-// Addr returns the net.Addr that the server is listening on.
-func (s *WebsocketServer) Addr() net.Addr { return s.addr }
-
-// URL returns a URL that a client can use to connect to the websocket server.
-func (s *WebsocketServer) URL() string { return s.url }
-
-// Serve accepts incoming connections.
-func (s *WebsocketServer) Serve() error {
 	// Run service on configured port.
 	server := &http.Server{
 		Handler: s,
-		Addr:    s.addr.String(),
+		Addr:    addr.String(),
 	}
-	return server.Serve(s.listener)
+	go server.Serve(l)
+	return l, nil
 }
 
-// ServeTLS accepts incoming connections and establishes a TLS session.
-func (s *WebsocketServer) ServeTLS(tlsConfig *tls.Config, certFile, keyFile string) error {
-	// Run service on configured port.
-	server := &http.Server{
-		Handler:   s,
-		Addr:      s.addr.String(),
-		TLSConfig: tlsConfig,
+// ListenAndServeTLS listens on the specified TCP address and starts a
+// goroutine that accept new TLS client connections until the returned
+// io.closer is closed.
+func (s *WebsocketServer) ListenAndServeTLS(address string, tlsConfig *tls.Config, certFile, keyFile string) (io.Closer, error) {
+	l, err := net.Listen("tcp", address)
+	if err != nil {
+		s.log.Print(err)
+		return nil, err
+	}
+	addr := l.(*net.TCPListener).Addr()
+
+	// With Go 1.9, all code below, until return, can be replaced with this:
+	//go server.ServeTLS(l, certFile, keyFile)
+
+	var hasCert bool
+	if tlsConfig == nil {
+		tlsConfig = &tls.Config{}
+		hasCert = false
+	} else if len(tlsConfig.Certificates) > 0 || tlsConfig.GetCertificate != nil {
+		hasCert = true
 	}
 
-	// With Go 1.9 everything below can be replaces with this:
-	//server.ServeTLS(s.listener, certFile, keyFile)
-
-	configHasCert := len(tlsConfig.Certificates) > 0 || tlsConfig.GetCertificate != nil
-	if !configHasCert || certFile != "" || keyFile != "" {
+	if !hasCert || certFile != "" || keyFile != "" {
 		var err error
 		tlsConfig.Certificates = make([]tls.Certificate, 1)
 		tlsConfig.Certificates[0], err = tls.LoadX509KeyPair(certFile, keyFile)
 		if err != nil {
-			return err
+			return nil, fmt.Errorf("error loading X509 key pair: %s", err)
 		}
 	}
-	return server.Serve(s.listener)
-}
 
-// Close stops the server from accepting connections, and causes Serve to exit.
-func (s *WebsocketServer) Close() {
-	s.listener.Close()
+	// Run service on configured port.
+	server := &http.Server{
+		Handler:   s,
+		Addr:      addr.String(),
+		TLSConfig: tlsConfig,
+	}
+	go server.Serve(l)
+
+	return l, nil
 }
 
 // ServeHTTP handles HTTP connections.

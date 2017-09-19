@@ -4,37 +4,29 @@ import (
 	"testing"
 
 	"github.com/fortytw2/leaktest"
-	"github.com/gammazero/nexus/stdlog"
 	"github.com/gammazero/nexus/transport"
 	"github.com/gammazero/nexus/transport/serialize"
 	"github.com/gammazero/nexus/wamp"
 )
 
-func newTestRawSocketServer(t *testing.T) (*RawSocketServer, stdlog.StdLog) {
+const tcpAddr = "127.0.0.1:8181"
+
+func TestRSHandshakeJSON(t *testing.T) {
+	defer leaktest.Check(t)()
+
 	r, err := NewRouter(routerConfig, nil)
 	if err != nil {
 		t.Fatal(err)
 	}
-
-	s, err := NewRawSocketServer(r, "tcp", ":8181", 0)
+	defer r.Close()
+	clsr, err := NewRawSocketServer(r, 0, false).ListenAndServe("tcp", tcpAddr)
 	if err != nil {
 		t.Fatal(err)
 	}
-	go func() {
-		s.Serve(false)
-		r.Close()
-	}()
+	defer clsr.Close()
 
-	return s, r.Logger()
-}
-
-func TestRSHandshakeJSON(t *testing.T) {
-	defer leaktest.Check(t)()
-	s, lgr := newTestRawSocketServer(t)
-	defer s.Close()
-
-	client, err := transport.ConnectRawSocketPeer(s.Addr().Network(),
-		s.Addr().String(), serialize.JSON, lgr, 0)
+	client, err := transport.ConnectRawSocketPeer("tcp", tcpAddr,
+		serialize.JSON, r.Logger(), 0)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -53,11 +45,20 @@ func TestRSHandshakeJSON(t *testing.T) {
 
 func TestRSHandshakeMsgpack(t *testing.T) {
 	defer leaktest.Check(t)()
-	s, lgr := newTestRawSocketServer(t)
-	defer s.Close()
 
-	client, err := transport.ConnectRawSocketPeer(s.Addr().Network(),
-		s.Addr().String(), serialize.MSGPACK, lgr, 0)
+	r, err := NewRouter(routerConfig, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer r.Close()
+	clsr, err := NewRawSocketServer(r, 0, false).ListenAndServe("tcp", tcpAddr)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer clsr.Close()
+
+	client, err := transport.ConnectRawSocketPeer("tcp", tcpAddr,
+		serialize.MSGPACK, r.Logger(), 0)
 	if err != nil {
 		t.Fatal(err)
 	}
