@@ -41,13 +41,13 @@ type WebsocketServer struct {
 
 // NewWebsocketServer takes a router instance and creates a new websocket
 // server.  To run the websocket server, call one of the server's
-// ListenAndServer methods:
+// ListenAndServe methods:
 //
 //     s := NewWebsocketServer(r)
-//     closer, err := s.ListenAndServer(address)
+//     closer, err := s.ListenAndServe(address)
 //
-// Or, use the various ListenAndServer provided by net/http.  This works
-// because WebsocketServer implements the http.Handler interface:
+// Or, use the various ListenAndServe functions provided by net/http.  This
+// works because WebsocketServer implements the http.Handler interface:
 //
 //     s := NewWebsocketServer(r)
 //     server := &http.Server{
