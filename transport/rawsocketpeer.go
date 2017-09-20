@@ -165,6 +165,7 @@ func (rs *rawSocketPeer) sendHandler() {
 		b, err := rs.serializer.Serialize(msg)
 		if err != nil {
 			rs.log.Print(err)
+			continue
 		}
 		if len(b) > rs.sendLimit {
 			rs.log.Println("Message size", len(b), "exceeds limit of",
