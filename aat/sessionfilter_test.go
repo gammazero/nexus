@@ -11,8 +11,9 @@ import (
 func TestWhitelistAttribute(t *testing.T) {
 	// Setup subscriber1
 	cfg := client.ClientConfig{
-		Realm:        testRealm,
-		HelloDetails: wamp.Dict{"org_id": "zcorp"},
+		Realm:           testRealm,
+		HelloDetails:    wamp.Dict{"org_id": "zcorp"},
+		ResponseTimeout: time.Second,
 	}
 	subscriber1, err := connectClientCfg(cfg)
 	if err != nil {
@@ -119,8 +120,9 @@ func TestWhitelistAttribute(t *testing.T) {
 func TestBlacklistAttribute(t *testing.T) {
 	// Setup subscriber1
 	cfg := client.ClientConfig{
-		Realm:        testRealm,
-		HelloDetails: wamp.Dict{"org_id": "zcorp"},
+		Realm:           testRealm,
+		HelloDetails:    wamp.Dict{"org_id": "zcorp"},
+		ResponseTimeout: time.Second,
 	}
 	subscriber1, err := connectClientCfg(cfg)
 	if err != nil {

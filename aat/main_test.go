@@ -184,7 +184,8 @@ func TestMain(m *testing.M) {
 		os.Exit(1)
 	}
 	cfg := client.ClientConfig{
-		Realm: testAuthRealm,
+		Realm:           testAuthRealm,
+		ResponseTimeout: time.Second,
 	}
 	cli, err = connectClientCfg(cfg)
 	if err != nil {
@@ -223,12 +224,10 @@ func connectClientCfg(cfg client.ClientConfig) (*client.Client, error) {
 	switch sockType {
 	case "web":
 		// Use larger response timeout for very slow test systems.
-		cfg.ResponseTimeout = time.Second
 		cli, err = client.NewWebsocketClient(
 			serverURL, serialization, nil, nil, cfg, cliLogger)
 	case "tcp", "unix":
 		// Use larger response timeout for very slow test systems.
-		cfg.ResponseTimeout = time.Second
 		cli, err = client.NewRawSocketClient(sockType, rsAddr, serialization,
 			cfg, cliLogger, 0)
 	default:
@@ -247,7 +246,8 @@ func connectClientCfg(cfg client.ClientConfig) (*client.Client, error) {
 
 func connectClient() (*client.Client, error) {
 	cfg := client.ClientConfig{
-		Realm: testRealm,
+		Realm:           testRealm,
+		ResponseTimeout: time.Second,
 	}
 	cli, err := connectClientCfg(cfg)
 	if err != nil {
