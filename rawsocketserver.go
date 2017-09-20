@@ -45,7 +45,10 @@ func (s *RawSocketServer) ListenAndServe(network, address string) (io.Closer, er
 				return
 			}
 			if tcpConn, ok := conn.(*net.TCPConn); ok && s.keepalive != 0 {
+				tcpConn.SetKeepAlive(true)
 				tcpConn.SetKeepAlivePeriod(s.keepalive)
+			} else {
+				tcpConn.SetKeepAlive(false)
 			}
 			go s.handleRawSocket(conn)
 		}
