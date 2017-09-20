@@ -129,7 +129,7 @@ func main() {
 	go func() {
 		select {
 		case <-time.After(5 * time.Second):
-			logger.Print(os.Stderr, "Router took too long to stop")
+			logger.Print("Router took too long to stop")
 			os.Exit(1)
 		case <-exitChan:
 		}
