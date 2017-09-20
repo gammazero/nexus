@@ -1,15 +1,15 @@
 {
     "websocket": {
-		"address": ":8080",
-		"cert_file": "",
-		"key_file": ""
-	},
-	"rawsocket": {
-		"tcp_address": "",
-		"tcp_keepalive": true,
-		"unix_address": "",
-		"max_msg_len": 0
-	},
+        "address": ":8080",
+        "cert_file": "",
+        "key_file": ""
+    },
+    "rawsocket": {
+        "tcp_address": "",
+        "tcp_keepalive": true,
+        "unix_address": "",
+        "max_msg_len": 0
+    },
     "log_path": "./nexusd.log",
     "router": {
         "realms": [
@@ -23,4 +23,3 @@
         "debug": false
     }
 }
-

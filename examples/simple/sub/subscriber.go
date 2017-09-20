@@ -1,7 +1,6 @@
 package main
 
 import (
-	"fmt"
 	"log"
 	"os"
 	"os/signal"
@@ -28,10 +27,10 @@ func main() {
 
 	// Define function to handle events received.
 	evtHandler := func(args wamp.List, kwargs wamp.Dict, details wamp.Dict) {
-		fmt.Println("Received", exampleTopic, "event")
+		logger.Println("Received", exampleTopic, "event")
 		if len(args) != 0 {
 			m, _ := wamp.AsString(args[0])
-			fmt.Println("  Event Message:", m)
+			logger.Println("  Event Message:", m)
 		}
 	}
 

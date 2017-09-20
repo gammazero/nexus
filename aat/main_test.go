@@ -15,6 +15,7 @@ import (
 	"github.com/gammazero/nexus/auth"
 	"github.com/gammazero/nexus/client"
 	"github.com/gammazero/nexus/stdlog"
+	"github.com/gammazero/nexus/transport/serialize"
 	"github.com/gammazero/nexus/wamp"
 )
 
@@ -32,22 +33,15 @@ var (
 	rtrLogger stdlog.StdLog
 
 	serverURL string
-	rsNet     string
 	rsAddr    string
 
 	err error
 
-	// Creates websocket or rawsocket client.  If not either of those, create
-	// embedded client that only uses channels to communicate with router.
-	websocketClient bool
-	rawsocketTCP    bool
-	rawsocketUnix   bool
-
-	// Use msgpack serialization with websockets if true.  Otherwise, use JSON.
-	msgPack bool
-
-	// Use JSON serialization with rawsockets if true.  Otherwise, use msgpack.
-	jsonEnc bool
+	// sockType is set to "web", "tcp", "unix", "".  Empty means use local
+	// connection to connect client to router.
+	sockType string
+	// serType is set to "json" or "msgpack".  Ignored if sockType is "".
+	serType string
 )
 
 type testAuthz struct{}
@@ -71,25 +65,47 @@ func (a *testAuthz) Authorize(sess *nexus.Session, msg wamp.Message) (bool, erro
 
 func TestMain(m *testing.M) {
 	// ----- Setup environment -----
-	flag.BoolVar(&websocketClient, "websocket", false,
-		"use websocket to connect clients to router")
-	flag.BoolVar(&rawsocketUnix, "rawsocketunix", false,
-		"use Unix raw socket to connect clients to router")
-	flag.BoolVar(&rawsocketTCP, "rawsockettcp", false,
-		"use TCP raw socket to connect clients to router")
-	flag.BoolVar(&msgPack, "msgpack", false,
-		"use msgpack serialization with websockets (otherwise json)")
-	flag.BoolVar(&jsonEnc, "json", false,
-		"use JSON serialization with rawsockets (otherwise msgpack)")
+	flag.StringVar(&sockType, "socket", "",
+		"-socket=[web, tcp, unix] or none for local (in-process)")
+	flag.StringVar(&serType, "serialize", "",
+		"-serialize[json, msgpack] or none for socket default")
 	flag.Parse()
 
-	if websocketClient {
-		fmt.Println("===== USING WEBSOCKET CLIENT =====")
-	} else if rawsocketTCP || rawsocketUnix {
-		fmt.Println("===== USING RAWSOCKET CLIENT =====")
-	} else {
-		fmt.Println("===== USING LOCAL CLIENT =====")
+	if serType != "" && serType != "json" && serType != "msgpack" {
+		fmt.Fprintln(os.Stderr, "invalid serialize value")
+		flag.Usage()
+		os.Exit(1)
 	}
+
+	var sockDesc string
+	switch sockType {
+	case "web":
+		sockDesc = "WEBSOCKETS"
+		if serType == "" {
+			serType = "json"
+		}
+	case "tcp":
+		sockDesc = "TCP RAWSOCKETS"
+		if serType == "" {
+			serType = "msgpack"
+		}
+	case "unix":
+		sockDesc = "UNIX RAWSOCKETS"
+		if serType == "" {
+			serType = "msgpack"
+		}
+	case "":
+		sockDesc = "LOCAL CONNECTIONS"
+		serType = ""
+	default:
+		fmt.Fprintln(os.Stderr, "invalid socket value")
+		flag.Usage()
+		os.Exit(1)
+	}
+	if serType != "" {
+		sockDesc = fmt.Sprint(sockDesc, " with ", serType, " serialization")
+	}
+	fmt.Println("===== CLIENT USING", sockDesc, "=====")
 
 	// Create separate logger for client and router.
 	cliLogger = log.New(os.Stdout, "CLIENT> ", log.LstdFlags)
@@ -127,35 +143,31 @@ func TestMain(m *testing.M) {
 		panic(err)
 	}
 
-	var wsCloser, tcpCloser, unixCloser io.Closer
-	if websocketClient {
+	var closer io.Closer
+	switch sockType {
+	case "web":
 		wss := nexus.NewWebsocketServer(nxr)
-		wsCloser, err = wss.ListenAndServe(tcpAddr)
+		closer, err = wss.ListenAndServe(tcpAddr)
 		if err != nil {
 			fmt.Fprintln(os.Stderr, "Failed to start websocket server:", err)
 			os.Exit(1)
 		}
 		serverURL = fmt.Sprintf("ws://%s/", tcpAddr)
 		rtrLogger.Println("WebSocket server listening on", serverURL)
-	} else if rawsocketTCP || rawsocketUnix {
-		rss := nexus.NewRawSocketServer(nxr, 0, false)
-		if rawsocketUnix {
-			// Create Unix raw socket
-			unixCloser, err = rss.ListenAndServe("unix", unixAddr)
-			rtrLogger.Println("RawSocket server listening on", unixAddr)
-			rsNet = "unix"
+	case "tcp", "unix":
+		if sockType == "unix" {
 			rsAddr = unixAddr
 		} else {
-			// Create TCP raw socket
-			tcpCloser, err = rss.ListenAndServe("tcp", tcpAddr)
-			rtrLogger.Println("RawSocket server listening on", tcpAddr)
-			rsNet = "tcp"
 			rsAddr = tcpAddr
 		}
+		// Createraw socket server.
+		rss := nexus.NewRawSocketServer(nxr, 0, false)
+		closer, err = rss.ListenAndServe(sockType, rsAddr)
 		if err != nil {
 			fmt.Fprintln(os.Stderr, "Failed to start rawsocket server:", err)
 			os.Exit(1)
 		}
+		rtrLogger.Println("RawSocket server listening on", rsAddr)
 	}
 
 	// Connect and disconnect so that router is started before running tests.
@@ -189,14 +201,9 @@ func TestMain(m *testing.M) {
 	rc := m.Run()
 
 	// Shutdown router and clienup environment.
-	if wsCloser != nil {
-		wsCloser.Close()
-	} else if tcpCloser != nil {
-		tcpCloser.Close()
-	} else if unixCloser != nil {
-		unixCloser.Close()
+	if closer != nil {
+		closer.Close()
 	}
-
 	nxr.Close()
 	os.Exit(rc)
 }
@@ -204,27 +211,27 @@ func TestMain(m *testing.M) {
 func connectClientCfg(cfg client.ClientConfig) (*client.Client, error) {
 	var cli *client.Client
 	var err error
-	if websocketClient {
+	var serialization serialize.Serialization
+
+	switch serType {
+	case "json":
+		serialization = serialize.JSON
+	case "msgpack":
+		serialization = serialize.MSGPACK
+	}
+
+	switch sockType {
+	case "web":
 		// Use larger response timeout for very slow test systems.
 		cfg.ResponseTimeout = time.Second
-		if msgPack {
-			cli, err = client.NewWebsocketClient(
-				serverURL, client.MSGPACK, nil, nil, cfg, cliLogger)
-		} else {
-			cli, err = client.NewWebsocketClient(
-				serverURL, client.JSON, nil, nil, cfg, cliLogger)
-		}
-	} else if rawsocketTCP || rawsocketUnix {
+		cli, err = client.NewWebsocketClient(
+			serverURL, serialization, nil, nil, cfg, cliLogger)
+	case "tcp", "unix":
 		// Use larger response timeout for very slow test systems.
 		cfg.ResponseTimeout = time.Second
-		if jsonEnc {
-			cli, err = client.NewRawSocketClient(rsNet, rsAddr, client.JSON,
-				cfg, cliLogger, 0)
-		} else {
-			cli, err = client.NewRawSocketClient(rsNet, rsAddr, client.MSGPACK,
-				cfg, cliLogger, 0)
-		}
-	} else {
+		cli, err = client.NewRawSocketClient(sockType, rsAddr, serialization,
+			cfg, cliLogger, 0)
+	default:
 		cli, err = client.NewLocalClient(nxr, cfg, cliLogger)
 	}
 

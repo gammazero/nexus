@@ -50,28 +50,34 @@ func main() {
 	// Create router and realms from config.
 	r, err := nexus.NewRouter(&conf.Router, logger)
 	if err != nil {
-		fmt.Fprintln(os.Stderr, err)
+		logger.Print(err)
 		os.Exit(1)
 	}
 
 	// Create and run servers.
-	var wsCloser, tcpCloser, unixCloser io.Closer
+	var closers []io.Closer
 	if conf.WebSocket.Address != "" {
 		// Create a new websocket server with the router.
 		wss := nexus.NewWebsocketServer(r)
+		var closer io.Closer
 		if conf.WebSocket.CertFile == "" || conf.WebSocket.KeyFile == "" {
-			wsCloser, err = wss.ListenAndServe(conf.WebSocket.Address)
+			closer, err = wss.ListenAndServe(conf.WebSocket.Address)
 		} else {
 			// Config has cert_file and key_file, so do TLS.
-			wsCloser, err = wss.ListenAndServeTLS(conf.WebSocket.Address, nil,
+			closer, err = wss.ListenAndServeTLS(conf.WebSocket.Address, nil,
 				conf.WebSocket.CertFile, conf.WebSocket.KeyFile)
 		}
 		if err != nil {
-			fmt.Fprintln(os.Stderr, err)
+			logger.Print(err)
 			os.Exit(1)
 		}
-		fmt.Printf("Listening for websocket connections on ws://%s/\n",
-			conf.WebSocket.Address)
+		closers = append(closers, closer)
+		logMsg := fmt.Sprintf("Listening for websocket connections on ws://%s/", conf.WebSocket.Address)
+		logger.Printf(logMsg)
+		if conf.LogPath != "" {
+			// Print to console if not already.
+			fmt.Println(logMsg)
+		}
 	}
 	if conf.RawSocket.TCPAddress != "" || conf.RawSocket.UnixAddress != "" {
 		// Create a new rawsocket server with the router.
@@ -79,27 +85,37 @@ func main() {
 			conf.RawSocket.TCPKeepAlive)
 		if conf.RawSocket.TCPAddress != "" {
 			// Run rawsocket TCP server.
-			tcpCloser, err = rss.ListenAndServe("tcp", conf.RawSocket.TCPAddress)
+			closer, err := rss.ListenAndServe("tcp", conf.RawSocket.TCPAddress)
 			if err != nil {
-				fmt.Fprintln(os.Stderr, err)
+				logger.Print(err)
 				os.Exit(1)
 			}
-			fmt.Println("Listening for rawsocket connections on",
-				conf.RawSocket.TCPAddress)
+			closers = append(closers, closer)
+			logMsg := "Listening for TCP socket connections on " + conf.RawSocket.TCPAddress
+			logger.Println(logMsg)
+			if conf.LogPath != "" {
+				// Print to console if not already.
+				fmt.Println(logMsg)
+			}
 		}
 		if conf.RawSocket.UnixAddress != "" {
 			// Run rawsocket Unix server.
-			tcpCloser, err = rss.ListenAndServe("unix", conf.RawSocket.UnixAddress)
+			closer, err := rss.ListenAndServe("unix", conf.RawSocket.UnixAddress)
 			if err != nil {
-				fmt.Fprintln(os.Stderr, err)
+				logger.Print(err)
 				os.Exit(1)
 			}
-			fmt.Println("Listening for rawsocket connections on",
-				conf.RawSocket.UnixAddress)
+			closers = append(closers, closer)
+			logMsg := "Listening for Unix socket connections on " + conf.RawSocket.UnixAddress
+			logger.Println(logMsg)
+			if conf.LogPath != "" {
+				// Print to console if not already.
+				fmt.Println(logMsg)
+			}
 		}
 	}
-	if wsCloser == nil && tcpCloser == nil && unixCloser == nil {
-		fmt.Fprintln(os.Stderr, "No servers configured")
+	if len(closers) == 0 {
+		logger.Print("No servers configured")
 		os.Exit(1)
 	}
 
@@ -113,23 +129,21 @@ func main() {
 	go func() {
 		select {
 		case <-time.After(5 * time.Second):
-			fmt.Fprintln(os.Stderr, "Router took too long to stop")
+			logger.Print(os.Stderr, "Router took too long to stop")
 			os.Exit(1)
 		case <-exitChan:
 		}
 	}()
 
-	fmt.Println("Shutting down router...")
-	if wsCloser != nil {
-		wsCloser.Close()
+	logMsg := "Shutting down router..."
+	logger.Print(logMsg)
+	if conf.LogPath != "" {
+		// Print to console if not already.
+		fmt.Println(logMsg)
 	}
-	if tcpCloser != nil {
-		tcpCloser.Close()
+	for i := range closers {
+		closers[i].Close()
 	}
-	if unixCloser != nil {
-		unixCloser.Close()
-	}
-
 	r.Close()
 	close(exitChan)
 }
