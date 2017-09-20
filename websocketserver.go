@@ -82,7 +82,7 @@ func (s *WebsocketServer) ListenAndServe(address string) (io.Closer, error) {
 	// Run service on configured port.
 	server := &http.Server{
 		Handler: s,
-		Addr:    l.(*net.TCPListener).Addr().String(),
+		Addr:    l.Addr().String(),
 	}
 	go server.Serve(l)
 	return l, nil
@@ -121,7 +121,7 @@ func (s *WebsocketServer) ListenAndServeTLS(address string, tlsConfig *tls.Confi
 	// Run service on configured port.
 	server := &http.Server{
 		Handler:   s,
-		Addr:      l.(*net.TCPListener).Addr().String(),
+		Addr:      l.Addr().String(),
 		TLSConfig: tlsConfig,
 	}
 	go server.Serve(l)
