@@ -13,5 +13,5 @@ before_script:
 
 script:
   - go test -v -race ./...
-  - go test -v -race ./aat -websocket
-  - go test -v ./aat -websocket -msgpack
+  - go test -v -race ./aat -socket=web
+  - go test -v ./aat -socket=web -serialize=msgpack

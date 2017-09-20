@@ -10,8 +10,9 @@ vet:
 test:
 	go get github.com/fortytw2/leaktest
 	go test -race ./...
-	go test -race ./aat -websocket
-	go test ./aat -websocket -msgpack
+	go test -race ./aat -socket=web
+	go test ./aat -socket=web -serialize=msgpack
+	go test -race ./aat -socket=unix
 
 service: $(SERVICE_DIR)/nexusd
 

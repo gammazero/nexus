@@ -7,8 +7,8 @@ package main
 import (
 	"flag"
 	"fmt"
+	"io"
 	"log"
-	"net/http"
 	"os"
 	"os/signal"
 	"time"
@@ -50,42 +50,83 @@ func main() {
 	// Create router and realms from config.
 	r, err := nexus.NewRouter(&conf.Router, logger)
 	if err != nil {
-		fmt.Fprintln(os.Stderr, err)
+		logger.Print(err)
 		os.Exit(1)
 	}
 
-	// Create a new websocket server with the router.
-	s := nexus.NewWebsocketServer(r)
+	// Create and run servers.
+	var closers []io.Closer
+	if conf.WebSocket.Address != "" {
+		// Create a new websocket server with the router.
+		wss := nexus.NewWebsocketServer(r)
+		var closer io.Closer
+		if conf.WebSocket.CertFile == "" || conf.WebSocket.KeyFile == "" {
+			closer, err = wss.ListenAndServe(conf.WebSocket.Address)
+		} else {
+			// Config has cert_file and key_file, so do TLS.
+			closer, err = wss.ListenAndServeTLS(conf.WebSocket.Address, nil,
+				conf.WebSocket.CertFile, conf.WebSocket.KeyFile)
+		}
+		if err != nil {
+			logger.Print(err)
+			os.Exit(1)
+		}
+		closers = append(closers, closer)
+		logger.Printf("Listening for websocket connections on ws://%s/",
+			conf.WebSocket.Address)
+	}
+	if conf.RawSocket.TCPAddress != "" || conf.RawSocket.UnixAddress != "" {
+		// Create a new rawsocket server with the router.
+		rss := nexus.NewRawSocketServer(r, conf.RawSocket.MaxMsgLen,
+			conf.RawSocket.TCPKeepAliveInterval)
+		if conf.RawSocket.TCPAddress != "" {
+			// Run rawsocket TCP server.
+			closer, err := rss.ListenAndServe("tcp", conf.RawSocket.TCPAddress)
+			if err != nil {
+				logger.Print(err)
+				os.Exit(1)
+			}
+			closers = append(closers, closer)
+			logger.Println("Listening for TCP socket connections on",
+				conf.RawSocket.TCPAddress)
+		}
+		if conf.RawSocket.UnixAddress != "" {
+			// Run rawsocket Unix server.
+			closer, err := rss.ListenAndServe("unix", conf.RawSocket.UnixAddress)
+			if err != nil {
+				logger.Print(err)
+				os.Exit(1)
+			}
+			closers = append(closers, closer)
+			logger.Println("Listening for Unix socket connections on",
+				conf.RawSocket.UnixAddress)
+		}
+	}
+	if len(closers) == 0 {
+		logger.Print("No servers configured")
+		os.Exit(1)
+	}
 
+	// Shutdown server if SIGINT (CTRL-c) received.
 	shutdown := make(chan os.Signal, 1)
 	signal.Notify(shutdown, os.Interrupt)
+	<-shutdown
 
+	// If process does not exit in a few seconds, exit with error.
+	exitChan := make(chan struct{})
 	go func() {
-		// Shutdown server is SIGINT received.
-		<-shutdown
-		fmt.Println("Shutting down router...")
-
-		// If process does not exit in a few seconds, exit with error.
-		exitChan := make(chan struct{})
-		go func() {
-			select {
-			case <-time.After(5 * time.Second):
-				fmt.Fprintln(os.Stderr, "Router took too long to stop")
-				os.Exit(1)
-			case <-exitChan:
-			}
-		}()
-
-		s.Close()
-		close(exitChan)
-		os.Exit(0)
+		select {
+		case <-time.After(5 * time.Second):
+			logger.Print("Router took too long to stop")
+			os.Exit(1)
+		case <-exitChan:
+		}
 	}()
 
-	// Run service on configured port.
-	server := &http.Server{
-		Handler: s,
-		Addr:    fmt.Sprintf(":%d", conf.Port),
+	logger.Print("Shutting down router...")
+	for i := range closers {
+		closers[i].Close()
 	}
-	fmt.Println("Router starting on port", conf.Port)
-	log.Fatalln(server.ListenAndServe())
+	r.Close()
+	close(exitChan)
 }

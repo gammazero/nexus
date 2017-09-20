@@ -1,8 +1,11 @@
 package nexus
 
 import (
+	"crypto/tls"
 	"errors"
 	"fmt"
+	"io"
+	"net"
 	"net/http"
 
 	"github.com/gammazero/nexus/stdlog"
@@ -23,7 +26,6 @@ type protocol struct {
 
 // WebsocketServer handles websocket connections.
 type WebsocketServer struct {
-	Router
 	Upgrader *websocket.Upgrader
 
 	// Serializer for text frames.  Defaults to JSONSerializer.
@@ -31,40 +33,100 @@ type WebsocketServer struct {
 	// Serializer for binary frames.  Defaults to MessagePackSerializer.
 	BinarySerializer serialize.Serializer
 
-	protocols map[string]protocol
+	router Router
 
-	log stdlog.StdLog
+	protocols map[string]protocol
+	log       stdlog.StdLog
 }
 
 // NewWebsocketServer takes a router instance and creates a new websocket
-// server.
+// server.  To run the websocket server, call one of the server's
+// ListenAndServe methods:
+//
+//     s := NewWebsocketServer(r)
+//     closer, err := s.ListenAndServe(address)
+//
+// Or, use the various ListenAndServe functions provided by net/http.  This
+// works because WebsocketServer implements the http.Handler interface:
+//
+//     s := NewWebsocketServer(r)
+//     server := &http.Server{
+//         Handler: s,
+//         Addr:    address,
+//     }
+//     server.ListenAndServe()
 func NewWebsocketServer(r Router) *WebsocketServer {
 	s := &WebsocketServer{
-		Router:    r,
+		router:    r,
 		protocols: map[string]protocol{},
 		log:       r.Logger(),
 	}
-
 	s.Upgrader = &websocket.Upgrader{}
-	s.AddProtocol(jsonWebsocketProtocol, websocket.TextMessage,
+	s.addProtocol(jsonWebsocketProtocol, websocket.TextMessage,
 		&serialize.JSONSerializer{})
-	s.AddProtocol(msgpackWebsocketProtocol, websocket.BinaryMessage,
+	s.addProtocol(msgpackWebsocketProtocol, websocket.BinaryMessage,
 		&serialize.MessagePackSerializer{})
+
 	return s
 }
 
-// AddProtocol registers a serializer for protocol and payload type.
-func (s *WebsocketServer) AddProtocol(proto string, payloadType int, serializer serialize.Serializer) error {
-	s.log.Println("AddProtocol:", proto)
-	if payloadType != websocket.TextMessage && payloadType != websocket.BinaryMessage {
-		return fmt.Errorf("invalid payload type: %d", payloadType)
+// ListenAndServe listens on the specified TCP address and starts a goroutine
+// that accept new client connections until the returned io.closer is closed.
+func (s *WebsocketServer) ListenAndServe(address string) (io.Closer, error) {
+	l, err := net.Listen("tcp", address)
+	if err != nil {
+		s.log.Print(err)
+		return nil, err
 	}
-	if _, ok := s.protocols[proto]; ok {
-		return errors.New("protocol already registered: " + proto)
+
+	// Run service on configured port.
+	server := &http.Server{
+		Handler: s,
+		Addr:    l.Addr().String(),
 	}
-	s.protocols[proto] = protocol{payloadType, serializer}
-	s.Upgrader.Subprotocols = append(s.Upgrader.Subprotocols, proto)
-	return nil
+	go server.Serve(l)
+	return l, nil
+}
+
+// ListenAndServeTLS listens on the specified TCP address and starts a
+// goroutine that accept new TLS client connections until the returned
+// io.closer is closed.
+func (s *WebsocketServer) ListenAndServeTLS(address string, tlsConfig *tls.Config, certFile, keyFile string) (io.Closer, error) {
+	l, err := net.Listen("tcp", address)
+	if err != nil {
+		s.log.Print(err)
+		return nil, err
+	}
+
+	// With Go 1.9, all code below, until return, can be replaced with this:
+	//go server.ServeTLS(l, certFile, keyFile)
+
+	var hasCert bool
+	if tlsConfig == nil {
+		tlsConfig = &tls.Config{}
+		hasCert = false
+	} else if len(tlsConfig.Certificates) > 0 || tlsConfig.GetCertificate != nil {
+		hasCert = true
+	}
+
+	if !hasCert || certFile != "" || keyFile != "" {
+		var err error
+		tlsConfig.Certificates = make([]tls.Certificate, 1)
+		tlsConfig.Certificates[0], err = tls.LoadX509KeyPair(certFile, keyFile)
+		if err != nil {
+			return nil, fmt.Errorf("error loading X509 key pair: %s", err)
+		}
+	}
+
+	// Run service on configured port.
+	server := &http.Server{
+		Handler:   s,
+		Addr:      l.Addr().String(),
+		TLSConfig: tlsConfig,
+	}
+	go server.Serve(l)
+
+	return l, nil
 }
 
 // ServeHTTP handles HTTP connections.
@@ -76,6 +138,19 @@ func (s *WebsocketServer) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	s.handleWebsocket(conn)
+}
+
+// addProtocol registers a serializer for protocol and payload type.
+func (s *WebsocketServer) addProtocol(proto string, payloadType int, serializer serialize.Serializer) error {
+	if payloadType != websocket.TextMessage && payloadType != websocket.BinaryMessage {
+		return fmt.Errorf("invalid payload type: %d", payloadType)
+	}
+	if _, ok := s.protocols[proto]; ok {
+		return errors.New("protocol already registered: " + proto)
+	}
+	s.protocols[proto] = protocol{payloadType, serializer}
+	s.Upgrader.Subprotocols = append(s.Upgrader.Subprotocols, proto)
+	return nil
 }
 
 func (s *WebsocketServer) handleWebsocket(conn *websocket.Conn) {
@@ -104,7 +179,7 @@ func (s *WebsocketServer) handleWebsocket(conn *websocket.Conn) {
 	// Create a websocket peer from the websocket connection and attach the
 	// peer to the router.
 	peer := transport.NewWebsocketPeer(conn, serializer, payloadType, s.log)
-	if err := s.Router.Attach(peer); err != nil {
+	if err := s.router.Attach(peer); err != nil {
 		s.log.Println("Error attaching to router:", err)
 	}
 }

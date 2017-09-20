@@ -4,13 +4,15 @@ import (
 	"context"
 	"fmt"
 	"log"
-	"net/http"
 	"os"
+	"os/signal"
 
 	"github.com/gammazero/nexus"
 	"github.com/gammazero/nexus/client"
 	"github.com/gammazero/nexus/wamp"
 )
+
+const wsAddr = "127.0.0.1:8000"
 
 func main() {
 	// Create router instance.
@@ -47,14 +49,18 @@ func main() {
 	}
 	logger.Println("Registered procedure", procName, "with router")
 
-	// Run server.
-	s := nexus.NewWebsocketServer(nxr)
-	server := &http.Server{
-		Handler: s,
-		Addr:    ":8000",
+	// Create and run websocket server.
+	closer, err := nexus.NewWebsocketServer(nxr).ListenAndServe(wsAddr)
+	if err != nil {
+		log.Fatal(err)
 	}
-	log.Println("Server listening on port 8000")
-	log.Fatal(server.ListenAndServe())
+	log.Printf("Websocket server listening on ws://%s/", wsAddr)
+
+	// Wait for SIGINT (CTRL-c), then close server and exit.
+	shutdown := make(chan os.Signal, 1)
+	signal.Notify(shutdown, os.Interrupt)
+	<-shutdown
+	closer.Close()
 }
 
 func sum(ctx context.Context, args wamp.List, kwargs, details wamp.Dict) *client.InvokeResult {

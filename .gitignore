@@ -1,4 +1,6 @@
 *~
+*.log
+nexusd/nexusd
 
 # Binaries for programs and plugins
 *.exe

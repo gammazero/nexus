@@ -1,6 +1,7 @@
 package main
 
 import (
+	"context"
 	"errors"
 	"flag"
 	"log"
@@ -39,42 +40,44 @@ func main() {
 	flag.StringVar(&clientType, "type", "websocket", "Socket type, one of: websocket, rawtcp, rawunix")
 	flag.Parse()
 
-	logger := log.New(os.Stdout, "SUBSCRIBER> ", 0)
-	// Connect subscriber session.
-	subscriber, err := newClient(clientType, logger)
+	logger := log.New(os.Stdout, "CALLEE> ", 0)
+	// Connect callee session.
+	callee, err := newClient(clientType, logger)
 	if err != nil {
 		logger.Fatal(err)
 	}
-	defer subscriber.Close()
+	defer callee.Close()
 
-	// Define function to handle events received.
-	evtHandler := func(args wamp.List, kwargs wamp.Dict, details wamp.Dict) {
-		logger.Println("Received", exampleTopic, "event")
-		if len(args) != 0 {
-			m, _ := wamp.AsString(args[0])
-			logger.Println("  Event Message:", m)
-		}
+	// Register procedure "sum"
+	procName := "sum"
+	if err = callee.Register(procName, sum, nil); err != nil {
+		logger.Fatal("Failed to register procedure:", err)
 	}
+	logger.Println("Registered procedure", procName, "with router")
 
-	// Subscribe to topic.
-	err = subscriber.Subscribe(exampleTopic, evtHandler, nil)
-	if err != nil {
-		logger.Fatal("subscribe error:", err)
-	}
-	logger.Println("Subscribed to", exampleTopic)
-
-	// Wait for CTRL-c or client close while handling events.
+	// Wait for CTRL-c or client close while handling remote procedure calls.
 	sigChan := make(chan os.Signal, 1)
 	signal.Notify(sigChan, os.Interrupt)
 	select {
 	case <-sigChan:
-	case <-subscriber.Done():
+	case <-callee.Done():
 		logger.Print("Router gone, exiting")
 		return // router gone, just exit
 	}
 
-	// Unsubscribe from topic.
-	if err = subscriber.Unsubscribe(exampleTopic); err != nil {
-		logger.Println("Failed to unsubscribe:", err)
+	if err = callee.Unregister(procName); err != nil {
+		logger.Println("Failed to unregister procedure:", err)
 	}
+}
+
+func sum(ctx context.Context, args wamp.List, kwargs, details wamp.Dict) *client.InvokeResult {
+	log.Println("Calculating sum")
+	var sum int64
+	for i := range args {
+		n, ok := wamp.AsInt64(args[i])
+		if ok {
+			sum += n
+		}
+	}
+	return &client.InvokeResult{Args: wamp.List{sum}}
 }

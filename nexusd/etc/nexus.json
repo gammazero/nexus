@@ -1,6 +1,16 @@
 {
-    "port": 8080,
-    "log_path": "./nexusd.log",
+    "websocket": {
+        "address": ":8080",
+        "cert_file": "",
+        "key_file": ""
+    },
+    "rawsocket": {
+        "tcp_address": "",
+        "tcp_keepalive_interval": "180s",
+        "unix_address": "",
+        "max_msg_len": 0
+    },
+    "log_path": "",
     "router": {
         "realms": [
             {
@@ -13,4 +23,3 @@
         "debug": false
     }
 }
-

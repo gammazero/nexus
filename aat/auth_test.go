@@ -24,6 +24,7 @@ func TestJoinRealmWithCRAuth(t *testing.T) {
 		AuthHandlers: map[string]client.AuthFunc{
 			"testauth": testAuthFunc,
 		},
+		ResponseTimeout: time.Second,
 	}
 
 	cli, err := connectClientCfg(cfg)
@@ -50,6 +51,7 @@ func TestJoinRealmWithCRAuthBad(t *testing.T) {
 		AuthHandlers: map[string]client.AuthFunc{
 			"testauth": testAuthFunc,
 		},
+		ResponseTimeout: time.Second,
 	}
 
 	cli, err := connectClientCfg(cfg)
@@ -68,7 +70,8 @@ func TestAuthz(t *testing.T) {
 	defer leaktest.Check(t)()
 
 	cfg := client.ClientConfig{
-		Realm: testAuthRealm,
+		Realm:           testAuthRealm,
+		ResponseTimeout: time.Second,
 	}
 
 	// Connect subscriber session.
