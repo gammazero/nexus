@@ -72,16 +72,13 @@ func main() {
 			os.Exit(1)
 		}
 		closers = append(closers, closer)
-		logger.Printf("Listening for websocket connections on ws://%s/", conf.WebSocket.Address)
+		logger.Printf("Listening for websocket connections on ws://%s/",
+			conf.WebSocket.Address)
 	}
 	if conf.RawSocket.TCPAddress != "" || conf.RawSocket.UnixAddress != "" {
-		var keepAliveInterval time.Duration
-		if conf.RawSocket.TCPKeepAliveInterval != nil {
-			keepAliveInterval = *conf.RawSocket.TCPKeepAliveInterval
-		}
 		// Create a new rawsocket server with the router.
 		rss := nexus.NewRawSocketServer(r, conf.RawSocket.MaxMsgLen,
-			keepAliveInterval)
+			conf.RawSocket.TCPKeepAliveInterval)
 		if conf.RawSocket.TCPAddress != "" {
 			// Run rawsocket TCP server.
 			closer, err := rss.ListenAndServe("tcp", conf.RawSocket.TCPAddress)
