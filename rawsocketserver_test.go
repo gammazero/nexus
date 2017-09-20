@@ -19,7 +19,7 @@ func TestRSHandshakeJSON(t *testing.T) {
 		t.Fatal(err)
 	}
 	defer r.Close()
-	clsr, err := NewRawSocketServer(r, 0, false).ListenAndServe("tcp", tcpAddr)
+	clsr, err := NewRawSocketServer(r, 0, 0).ListenAndServe("tcp", tcpAddr)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -51,7 +51,7 @@ func TestRSHandshakeMsgpack(t *testing.T) {
 		t.Fatal(err)
 	}
 	defer r.Close()
-	clsr, err := NewRawSocketServer(r, 0, false).ListenAndServe("tcp", tcpAddr)
+	clsr, err := NewRawSocketServer(r, 0, 0).ListenAndServe("tcp", tcpAddr)
 	if err != nil {
 		t.Fatal(err)
 	}

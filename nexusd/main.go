@@ -72,17 +72,16 @@ func main() {
 			os.Exit(1)
 		}
 		closers = append(closers, closer)
-		logMsg := fmt.Sprintf("Listening for websocket connections on ws://%s/", conf.WebSocket.Address)
-		logger.Printf(logMsg)
-		if conf.LogPath != "" {
-			// Print to console if not already.
-			fmt.Println(logMsg)
-		}
+		logger.Printf("Listening for websocket connections on ws://%s/", conf.WebSocket.Address)
 	}
 	if conf.RawSocket.TCPAddress != "" || conf.RawSocket.UnixAddress != "" {
+		var keepAliveInterval time.Duration
+		if conf.RawSocket.TCPKeepAliveInterval != nil {
+			keepAliveInterval = *conf.RawSocket.TCPKeepAliveInterval
+		}
 		// Create a new rawsocket server with the router.
 		rss := nexus.NewRawSocketServer(r, conf.RawSocket.MaxMsgLen,
-			conf.RawSocket.TCPKeepAlive)
+			keepAliveInterval)
 		if conf.RawSocket.TCPAddress != "" {
 			// Run rawsocket TCP server.
 			closer, err := rss.ListenAndServe("tcp", conf.RawSocket.TCPAddress)
@@ -91,12 +90,8 @@ func main() {
 				os.Exit(1)
 			}
 			closers = append(closers, closer)
-			logMsg := "Listening for TCP socket connections on " + conf.RawSocket.TCPAddress
-			logger.Println(logMsg)
-			if conf.LogPath != "" {
-				// Print to console if not already.
-				fmt.Println(logMsg)
-			}
+			logger.Println("Listening for TCP socket connections on",
+				conf.RawSocket.TCPAddress)
 		}
 		if conf.RawSocket.UnixAddress != "" {
 			// Run rawsocket Unix server.
@@ -106,12 +101,8 @@ func main() {
 				os.Exit(1)
 			}
 			closers = append(closers, closer)
-			logMsg := "Listening for Unix socket connections on " + conf.RawSocket.UnixAddress
-			logger.Println(logMsg)
-			if conf.LogPath != "" {
-				// Print to console if not already.
-				fmt.Println(logMsg)
-			}
+			logger.Println("Listening for Unix socket connections on",
+				conf.RawSocket.UnixAddress)
 		}
 	}
 	if len(closers) == 0 {
@@ -135,12 +126,7 @@ func main() {
 		}
 	}()
 
-	logMsg := "Shutting down router..."
-	logger.Print(logMsg)
-	if conf.LogPath != "" {
-		// Print to console if not already.
-		fmt.Println(logMsg)
-	}
+	logger.Print("Shutting down router...")
 	for i := range closers {
 		closers[i].Close()
 	}

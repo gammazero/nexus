@@ -39,7 +39,7 @@ func main() {
 
 	// Create websocket and rawsocket servers.
 	wss := nexus.NewWebsocketServer(nxr)
-	rss := nexus.NewRawSocketServer(nxr, 0, false)
+	rss := nexus.NewRawSocketServer(nxr, 0, 0)
 
 	// Run websocket server.
 	wsCloser, err := wss.ListenAndServe(wsAddr)

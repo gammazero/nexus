@@ -161,7 +161,7 @@ func TestMain(m *testing.M) {
 			rsAddr = tcpAddr
 		}
 		// Createraw socket server.
-		rss := nexus.NewRawSocketServer(nxr, 0, false)
+		rss := nexus.NewRawSocketServer(nxr, 0, 0)
 		closer, err = rss.ListenAndServe(sockType, rsAddr)
 		if err != nil {
 			fmt.Fprintln(os.Stderr, "Failed to start rawsocket server:", err)

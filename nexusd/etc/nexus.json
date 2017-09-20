@@ -6,11 +6,11 @@
     },
     "rawsocket": {
         "tcp_address": "",
-        "tcp_keepalive": true,
+        "tcp_keepalive_interval": "180s",
         "unix_address": "",
         "max_msg_len": 0
     },
-    "log_path": "./nexusd.log",
+    "log_path": "",
     "router": {
         "realms": [
             {

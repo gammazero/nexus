@@ -78,12 +78,11 @@ func (s *WebsocketServer) ListenAndServe(address string) (io.Closer, error) {
 		s.log.Print(err)
 		return nil, err
 	}
-	addr := l.(*net.TCPListener).Addr()
 
 	// Run service on configured port.
 	server := &http.Server{
 		Handler: s,
-		Addr:    addr.String(),
+		Addr:    l.(*net.TCPListener).Addr().String(),
 	}
 	go server.Serve(l)
 	return l, nil
@@ -98,7 +97,6 @@ func (s *WebsocketServer) ListenAndServeTLS(address string, tlsConfig *tls.Confi
 		s.log.Print(err)
 		return nil, err
 	}
-	addr := l.(*net.TCPListener).Addr()
 
 	// With Go 1.9, all code below, until return, can be replaced with this:
 	//go server.ServeTLS(l, certFile, keyFile)
@@ -123,7 +121,7 @@ func (s *WebsocketServer) ListenAndServeTLS(address string, tlsConfig *tls.Confi
 	// Run service on configured port.
 	server := &http.Server{
 		Handler:   s,
-		Addr:      addr.String(),
+		Addr:      l.(*net.TCPListener).Addr().String(),
 		TLSConfig: tlsConfig,
 	}
 	go server.Serve(l)

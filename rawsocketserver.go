@@ -7,21 +7,19 @@ import (
 
 	"github.com/gammazero/nexus/stdlog"
 	"github.com/gammazero/nexus/transport"
-	"github.com/gammazero/nexus/transport/serialize"
 )
 
 // RawSocketServer handles socket connections.
 type RawSocketServer struct {
 	router Router
 
-	serializer serialize.Serializer
-	log        stdlog.StdLog
-	recvLimit  int
-	keepalive  bool
+	log       stdlog.StdLog
+	recvLimit int
+	keepalive time.Duration
 }
 
 // NewRawSocketServer takes a router instance and creates a new socket server.
-func NewRawSocketServer(r Router, recvLimit int, keepalive bool) *RawSocketServer {
+func NewRawSocketServer(r Router, recvLimit int, keepalive time.Duration) *RawSocketServer {
 	return &RawSocketServer{
 		router:    r,
 		log:       r.Logger(),
@@ -46,9 +44,8 @@ func (s *RawSocketServer) ListenAndServe(network, address string) (io.Closer, er
 				l.Close()
 				return
 			}
-			if tcpConn, ok := conn.(*net.TCPConn); ok && s.keepalive {
-				tcpConn.SetKeepAlive(true)
-				tcpConn.SetKeepAlivePeriod(3 * time.Minute)
+			if tcpConn, ok := conn.(*net.TCPConn); ok && s.keepalive != 0 {
+				tcpConn.SetKeepAlivePeriod(s.keepalive)
 			}
 			go s.handleRawSocket(conn)
 		}

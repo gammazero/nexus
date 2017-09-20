@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"io/ioutil"
 	"log"
+	"time"
 
 	"github.com/gammazero/nexus"
 )
@@ -22,8 +23,8 @@ type Config struct {
 	RawSocket struct {
 		// String form of address (example, "192.0.2.1:25", "[2001:db8::1]:80")
 		TCPAddress string `json:"tcp_address"`
-		// True to enable TCP keepalive
-		TCPKeepAlive bool `json:"tcp_keepalive"`
+		// Enable TCP keepalive with this interval.
+		TCPKeepAliveInterval *time.Duration `json:"tcp_keepalive_interval"`
 		// Path to Unix domain socket.
 		UnixAddress string `json:"unix_address"`
 		// Maximum message length server can receive. Default = 16M.
