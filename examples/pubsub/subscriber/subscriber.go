@@ -51,8 +51,7 @@ func main() {
 	evtHandler := func(args wamp.List, kwargs wamp.Dict, details wamp.Dict) {
 		logger.Println("Received", exampleTopic, "event")
 		if len(args) != 0 {
-			m, _ := wamp.AsString(args[0])
-			logger.Println("  Event Message:", m)
+			logger.Println("  Event Message:", args[0])
 		}
 	}
 
