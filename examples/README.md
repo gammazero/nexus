@@ -10,19 +10,30 @@ The simple examples can be run from the `examples` directory by running:
 2. Run the subscriber with `go run simple/sub/subscriber.go`
 3. Run the publisher with `go run simple/pub/publisher.go`
 
+## Example Server and Clients
+
+The example server, in the `server` directory, runs a websocket, tcp raw socket, and unix raw socket transport at the same time.  This allows different clients to connect using any combination of socket types and serialization schemes, to communicate with each other.
+
+The example clients are located in the following locations:
+
+- `pubsub/subscriber/`
+- `pubsub/publisher/`
+- `rpc/callee/`
+- `rpc/caller/`
+
+To connect a client using different types of transport, specify `-socket=web`, `-socket=tcp`, or `-socket=unix`.  If no socket type is specified, then the default is `web` and the client uses a websocket transport.
+
+To choose the type of serialization for the client to use, specify `-serialize=json` or `-serialize=msgpack`.  If no serialization is specified, then the default for the socket type is used.  That is `json` for websocket and `msgpack` for tcp or unix raw socket.
+
 ## RPC Example
 
-The RPC example provides a callee client as both an external and internal client.  An internal client is one that is embedded in the same process as the WAMP router.
+The RPC example provides a callee client as both an external and internal client.  An internal client is one that is embedded in the same process as the WAMP router, and does not require a socket or serialization.
 
 ### Caller and Callee Both External Clients
 
 1. Run the server with `go run server/server.go`
 2. Run the callee with `go run rpc/callee/callee.go`
 3. Run the caller with `go run rpc/caller/caller.go`
-
-The server runs a websocket, raw tcp socket, and raw unix socket transport at the same time.
-
-To connect a client to the different types of transport, specify `-type=websocket`, `-type=rawtcp`, `-type=rawunix`.  If no type is specified, then the client uses a websocket transport.
 
 ### Server with Internal Callee and External Caller.
 
@@ -41,4 +52,15 @@ The pub/sub example provides a subscriber client and a publisher client that con
 2. Run the subscriber with `go run pubsub/subscriber/subscriber.go`
 3. Run the publisher with `go run pubsub/publisher/publisher.go`
 
-To connect a client to the different types of transport, specify `-type=websocket`, `-type=rawtcp`, `-type=rawunix`.  If no type is specified, then the client uses a websocket transport.
+## Multiple Transport Example
+
+A nexus router is capable of routing messages between clients running with different transports and serializations.  To see this, you can run the sample nexus server and then connect clients that use different combinations of websockets and raw sockets, and JSON and MsgPack serialization.
+
+### Run Websocket Subscriber with TCP and Unix Raw Socket Publishers
+
+1. Run the server with `go run server/server.go`
+2. Run the subscriber with `go run pubsub/subscriber/subscriber.go`
+3. Run a publisher with `go run pubsub/publisher/publisher.go -socket=tcp`
+4. Run a publisher with `go run pubsub/publisher/publisher.go -socket=unix`
+
+Try different combinations socket type and serialization with multiple clients.

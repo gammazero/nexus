@@ -14,14 +14,20 @@ type MessagePackSerializer struct{}
 // Serialize encodes a Message into a msgpack payload.
 func (s *MessagePackSerializer) Serialize(msg wamp.Message) ([]byte, error) {
 	var b []byte
-	return b, codec.NewEncoderBytes(&b, new(codec.MsgpackHandle)).Encode(
+	mph := &codec.MsgpackHandle{
+		RawToString: true,
+	}
+	return b, codec.NewEncoderBytes(&b, mph).Encode(
 		msgToList(msg))
 }
 
 // Deserialize decodes a msgpack payload into a Message.
 func (s *MessagePackSerializer) Deserialize(data []byte) (wamp.Message, error) {
 	var v []interface{}
-	err := codec.NewDecoderBytes(data, new(codec.MsgpackHandle)).Decode(&v)
+	mph := &codec.MsgpackHandle{
+		RawToString: true,
+	}
+	err := codec.NewDecoderBytes(data, mph).Decode(&v)
 	if err != nil {
 		return nil, err
 	}

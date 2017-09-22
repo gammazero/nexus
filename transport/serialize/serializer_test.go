@@ -228,3 +228,63 @@ func TestMsgToList(t *testing.T) {
 		t.Error(err.Error())
 	}
 }
+
+func TestMsgPackToJSON(t *testing.T) {
+	arg := "this is a test"
+	pub := &wamp.Publish{
+		Request:   123,
+		Topic:     "msgpack.to.json",
+		Arguments: wamp.List{arg},
+	}
+	ms := &MessagePackSerializer{}
+	b, err := ms.Serialize(pub)
+	if err != nil {
+		t.Fatal("Serialization error: ", err)
+	}
+	if len(b) == 0 {
+		t.Fatal("no serialized data")
+	}
+	msg, err := ms.Deserialize(b)
+	if err != nil {
+		t.Fatal("desrialization error: ", err)
+	}
+	p2 := msg.(*wamp.Publish)
+	event := &wamp.Event{
+		Subscription: 987,
+		Publication:  p2.Request,
+		Details:      wamp.Dict{"hello": "world"},
+		Arguments:    p2.Arguments,
+	}
+
+	js := &JSONSerializer{}
+	b, err = js.Serialize(event)
+	if err != nil {
+		t.Fatal("JSON serialization error: ", err)
+	}
+	if len(b) == 0 {
+		t.Fatal("no serialized data")
+	}
+	msg, err = js.Deserialize(b)
+	if err != nil {
+		t.Fatal("JSON desrialization error: ", err)
+	}
+	if msg.MessageType() != wamp.EVENT {
+		t.Fatal("JSON desrialization to wrong message type: ", msg.MessageType())
+	}
+	e2 := msg.(*wamp.Event)
+	fmt.Printf("Before:\n%+v\n", event)
+	fmt.Printf("After:\n%+v\n", e2)
+	if e2.Subscription != wamp.ID(987) {
+		t.Fatal("JSON deserialization error: wrong subscription ID")
+	}
+	if e2.Publication != wamp.ID(123) {
+		t.Fatal("JSON deserialization error: wrong publication ID")
+	}
+	if len(e2.Arguments) != 1 {
+		t.Fatal("JSON deserialization error: wrong number of arguments")
+	}
+	a, _ := wamp.AsString(e2.Arguments[0])
+	if string(a) != arg {
+		t.Fatal("JSON deserialize error: did not get argument, got:", e2.Arguments[0])
+	}
+}
