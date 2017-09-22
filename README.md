@@ -10,7 +10,7 @@
 
 ## Full Documentation
 
-See the [Wiki](https://github.com/gammazero/nexus/wiki) for full documentation, examples, and operational details.
+See the [**nexus project Wiki**](https://github.com/gammazero/nexus/wiki) for full documentation, examples, and operational details.
 
 For the API: [![GoDoc](https://godoc.org/github.com/gammazero/nexus?status.svg)](https://godoc.org/github.com/gammazero/nexus)
 
@@ -66,6 +66,8 @@ A stable release of nexus is available with support for most advanced profile fe
 
 These features listed here are being added.  If there are are specific items needed, or if any changes in current functionality are needed, then please open an [issue](https://github.com/gammazero/nexus/issues).
 
+- TLS for RawSocket transport
+- stress tests and benchmarks
 - more documentation (in progress)
 - advanced profile examples (in progress)
 - [CBOR](https://tools.ietf.org/html/rfc7049) Serialization (planned)
