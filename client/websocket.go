@@ -14,9 +14,8 @@ const (
 )
 
 // NewWebsocketClient creates a new websocket client connected to the specified
-// URL and using the specified serialization.
-//
-// JoinRealm must be called before other client functions.
+// URL and using the specified serialization.  The new client joins the realm
+// specified in the ClientConfig.
 func NewWebsocketClient(url string, serialization serialize.Serialization, tlscfg *tls.Config, dial transport.DialFunc, cfg ClientConfig, logger stdlog.StdLog) (*Client, error) {
 	p, err := transport.ConnectWebsocketPeer(url, serialization, tlscfg, dial,
 		logger)

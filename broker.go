@@ -208,7 +208,10 @@ func (b *Broker) Unsubscribe(sub *Session, msg *wamp.Unsubscribe) {
 	}
 }
 
-// RemoveSession removes all subscriptions of the subscriber.
+// RemoveSession removes all subscriptions of the subscriber.  This is called
+// when a client leaves the realm by sending a GOODBYE message or by
+// disconnecting from the router.  If there are any subscriptions for this
+// session a wamp.subscription.on_delete meta event is published for each.
 func (b *Broker) RemoveSession(sess *Session) {
 	if sess == nil {
 		return
@@ -218,7 +221,7 @@ func (b *Broker) RemoveSession(sess *Session) {
 	}
 }
 
-// Close stops the broker letting already queued actions finish.
+// Close stops the broker, letting already queued actions finish.
 func (b *Broker) Close() {
 	close(b.actionChan)
 }

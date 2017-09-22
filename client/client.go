@@ -125,9 +125,8 @@ type Client struct {
 // when clients are used for different purposes.
 //
 // NOTE: This method is provided for clients that use a Peer implementation not
-// provided with the nexus package.  Generally, clients are created using the
-// transport.LinkedPeers(), transport.ConnectWebsocketPeer(), or
-// transport.ConnectRawSocketPeer() functions.
+// provided with the nexus package.  Generally, clients are created using
+// NewWebsocketClient(), NewRawSocketClient(), or NewLocalClient().
 func NewClient(p wamp.Peer, cfg ClientConfig, logger stdlog.StdLog) (*Client, error) {
 	if cfg.ResponseTimeout == 0 {
 		cfg.ResponseTimeout = defaultResponseTimeout

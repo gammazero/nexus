@@ -11,13 +11,21 @@ import (
 	"github.com/gammazero/nexus/wamp"
 )
 
+// RealmConfig configures a single realm in the router.  The router
+// configuration may specify a list of realms to configure.
 type RealmConfig struct {
-	URI            wamp.URI
-	StrictURI      bool `json:"strict_uri"`
-	AnonymousAuth  bool `json:"anonymous_auth"`
-	AllowDisclose  bool `json:"allow_disclose"`
+	// URI that identifies the realm.
+	URI wamp.URI
+	// Enforce strict URI format validation.
+	StrictURI bool `json:"strict_uri"`
+	// Allow anonymous authentication.  Does not require any Authenticators.
+	AnonymousAuth bool `json:"anonymous_auth"`
+	// Allow publisher and caller identity disclosure when requested.
+	AllowDisclose bool `json:"allow_disclose"`
+	// Map of authentication methods to Authenticator interfaces.
 	Authenticators map[string]auth.Authenticator
-	Authorizer     Authorizer
+	// Authroizer called for each message.
+	Authorizer Authorizer
 }
 
 // A Realm is a WAMP routing and administrative domain, optionally protected by
@@ -55,8 +63,7 @@ type realm struct {
 	debug bool
 }
 
-// newRealm creates a new Realm with default broker, dealer, and authorizer
-// implementations.  The Realm has no authorizers unless anonymousAuth is true.
+// newRealm creates a new realm with the given RealmConfig, broker and dealer.
 func newRealm(config *RealmConfig, broker *Broker, dealer *Dealer, logger stdlog.StdLog, debug bool) (*realm, error) {
 	if !config.URI.ValidURI(config.StrictURI, "") {
 		return nil, fmt.Errorf(

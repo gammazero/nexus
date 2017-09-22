@@ -285,7 +285,10 @@ func (d *Dealer) Error(msg *wamp.Error) {
 	}
 }
 
-// Remove a callee's registrations.
+// Remove a callee's registrations.  This is called when a client leaves the
+// realm by sending a GOODBYE message or by disconnecting from the router.  If
+// there are any registrations for this session wamp.registration.on_unregister
+// and wamp.registration.on_delete meta events are published for each.
 func (d *Dealer) RemoveSession(sess *Session) {
 	if sess == nil {
 		// No session specified, no session removed.
@@ -296,7 +299,7 @@ func (d *Dealer) RemoveSession(sess *Session) {
 	}
 }
 
-// Close stops the dealer letting already queued actions finish.
+// Close stops the dealer, letting already queued actions finish.
 func (d *Dealer) Close() {
 	close(d.actionChan)
 }

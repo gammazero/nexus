@@ -21,8 +21,12 @@ type RouterConfig struct {
 	RealmConfigs []*RealmConfig `json:"realms"`
 
 	// RealmTemplate, if defined, is used by the router to create new realms
-	// when a client joins a realm that does not yet exist.  If RealmTemplate
-	// is nil (the default), then clients must join existing realms.
+	// when a client requests to join a realm that does not yet exist.  If
+	// RealmTemplate is nil (the default), then clients must join existing
+	// realms.
+	//
+	// Caution, enabling a realm template that allows anonymous authentication
+	// allows unauthenticated clients to create new realms.
 	RealmTemplate *RealmConfig `json:"realm_template"`
 
 	// Enable debug logging for router, realm, broker, dealer
@@ -55,13 +59,7 @@ type router struct {
 	debug bool
 }
 
-// NewRouter creates a WAMP router.
-//
-// If authRealm is true, realms that do not exist are automatically created on
-// client HELLO.  Caution, enabling this allows unauthenticated clients to
-// create new realms.
-//
-// The strictURI parameter enables strict URI validation.
+// NewRouter creates a WAMP router instance.
 func NewRouter(config *RouterConfig, logger stdlog.StdLog) (Router, error) {
 	if len(config.RealmConfigs) == 0 && config.RealmTemplate == nil {
 		return nil, fmt.Errorf("invalid router config. Must define either realms or realmsTemplate, or both")
@@ -293,9 +291,8 @@ func (r *router) Close() {
 	r.log.Println("Router stopped")
 }
 
-// addRealm creates a new Realm and adds that to the router.
-//
-// At least one realm is needed, unless automatic realm creation is enabled.
+// addRealm creates a new Realm and adds that to the router.  At least one
+// realm is needed, unless automatic realm creation is enabled.
 func (r *router) addRealm(config *RealmConfig) (*realm, error) {
 	if _, ok := r.realms[config.URI]; ok {
 		return nil, errors.New("realm already exists: " + string(config.URI))
