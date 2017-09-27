@@ -1,6 +1,7 @@
 package transport
 
 import (
+	"crypto/tls"
 	"errors"
 	"fmt"
 	"io"
@@ -51,17 +52,49 @@ const (
 // larger than the nearest power of 2 greater than or equal to recvLimit.  If
 // recvLimit is <= 0, then the default of 16M is used.
 func ConnectRawSocketPeer(network, address string, serialization serialize.Serialization, logger stdlog.StdLog, recvLimit int) (wamp.Peer, error) {
-	var protocol byte
-	switch serialization {
-	case serialize.MSGPACK:
-		protocol = rawsocketMsgpack
-	case serialize.JSON:
-		protocol = rawsocketJSON
-	default:
-		return nil, errors.New("serialization not supported by rawsocket")
+	err := checkNetworkType(network)
+	if err != nil {
+		return nil, err
+	}
+
+	protocol, err := getProtoByte(serialization)
+	if err != nil {
+		return nil, err
 	}
 
 	conn, err := net.Dial(network, address)
+	if err != nil {
+		return nil, err
+	}
+
+	peer, err := clientHandshake(conn, logger, protocol, recvLimit)
+	if err != nil {
+		conn.Close()
+		return nil, err
+	}
+	return peer, nil
+}
+
+// ConnectTlsRawSocketPeer creates a new rawSocketPeer with the specified
+// config, and connects it, using TLS, to the WAMP router at the specified
+// address.  The network, address, and tlscfg parameters are documented here:
+// https://golang.org/pkg/crypto/tls/#Dial
+//
+// If recvLimit is > 0, then the client will not receive messages with size
+// larger than the nearest power of 2 greater than or equal to recvLimit.  If
+// recvLimit is <= 0, then the default of 16M is used.
+func ConnectTlsRawSocketPeer(network, address string, serialization serialize.Serialization, tlsConfig *tls.Config, logger stdlog.StdLog, recvLimit int) (wamp.Peer, error) {
+	err := checkNetworkType(network)
+	if err != nil {
+		return nil, err
+	}
+
+	protocol, err := getProtoByte(serialization)
+	if err != nil {
+		return nil, err
+	}
+
+	conn, err := tls.Dial(network, address, tlsConfig)
 	if err != nil {
 		return nil, err
 	}
@@ -405,4 +438,24 @@ func bytesToInt(b []byte) int {
 
 func byteToLength(b byte) int {
 	return int(1 << (b + 9))
+}
+
+func checkNetworkType(network string) error {
+	switch network {
+	case "tcp", "tcp4", "tcp6", "unix":
+	default:
+		return errors.New("unsupported network type: " + network)
+	}
+	return nil
+}
+
+func getProtoByte(serialization serialize.Serialization) (byte, error) {
+	switch serialization {
+	case serialize.MSGPACK:
+		return rawsocketMsgpack, nil
+	case serialize.JSON:
+		return rawsocketJSON, nil
+	default:
+		return 0, errors.New("serialization not supported by rawsocket")
+	}
 }

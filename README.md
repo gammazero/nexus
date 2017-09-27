@@ -31,7 +31,7 @@ Nexus is a software package that provides a WAMP router library, client library,
 - **Concurrent Asynchronous I/O** Nexus supports large numbers of clients concurrently sending and receiving messages, and never blocks on I/O, even if a client becomes unresponsive.  See [Router Concurrency](https://github.com/gammazero/nexus/wiki/Router-Concurrency) for details.
 - **WAMP Advanced Profile Features**  This project implements most of the advanced profile features in WAMP v2.  See [current feature support](https://github.com/gammazero/nexus#advanced-profile-feature-support) provided by nexus.  Nexus also offers extended functionality for retrieving session information and for message filtering, giving clients more ability to decide where to send messages.
 - **Flexibility** Multiple transports and serialization options are supported, and more are being developed to maximize interoperability.  Currently nexus provides websocket, rawsocket, and local (in-process) transports.  [JSON](https://en.wikipedia.org/wiki/JSON) and [MessagePack](http://msgpack.org/index.html) serialization is available over websockets and rawsockets.
-- **Security** TLS is available over websockets, and the websocket server API allows for specification of TLS configuration.  The nexus router library also provides interfaces for integration of client authentication and authorization logic.
+- **Security** TLS is available over websockets and rawsockets, and the client and server APIs allow configuring TLS.  The nexus router library also provides interfaces for integration of client authentication and authorization logic.
 
 ## Quick Start
 
@@ -66,12 +66,10 @@ A stable release of nexus is available with support for most advanced profile fe
 
 These features listed here are being added.  If there are are specific items needed, or if any changes in current functionality are needed, then please open an [issue](https://github.com/gammazero/nexus/issues).
 
-- TLS for RawSocket transport
 - stress tests and benchmarks
 - more documentation (in progress)
 - advanced profile examples (in progress)
 - [CBOR](https://tools.ietf.org/html/rfc7049) Serialization (planned)
-- TLS config for `nexusd`
 - testament_meta_api
 - event history
 - call trust levels
@@ -121,6 +119,8 @@ These features listed here are being added.  If there are are specific items nee
 | batched WS transport | No |
 | longpoll transport | No |
 | session meta api | Yes |
+| TLS for websockets | Yes |
+| TLS for rawsockets | Yes |
 
 ## Extended Functionality
 

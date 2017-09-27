@@ -12,7 +12,7 @@ The simple examples can be run from the `examples` directory by running:
 
 ## Example Server and Clients
 
-The example server, in the `server` directory, runs a websocket, tcp raw socket, and unix raw socket transport at the same time.  This allows different clients to connect using any combination of socket types and serialization schemes, to communicate with each other.
+The example server, in the `server` directory, runs a websocket (with and without TLS), tcp raw socket (with and without TLS), and unix raw socket transport at the same time.  This allows different clients to connect using any combination of socket types, TLS, and serialization schemes, to communicate with each other.
 
 The example clients are located in the following locations:
 
@@ -23,7 +23,15 @@ The example clients are located in the following locations:
 
 To connect a client using different types of transport, specify `-socket=web`, `-socket=tcp`, or `-socket=unix`.  If no socket type is specified, then the default is `web` and the client uses a websocket transport.
 
+Connect the client using TLS by specifying the `-tls` and `-skipverify` flags.  The `-skipverify` flag is needed for to skip verification of the certificate presented by the example server.  If `-tls` is not specified, then do not use TLS connection.
+
 To choose the type of serialization for the client to use, specify `-serialize=json` or `-serialize=msgpack`.  If no serialization is specified, then the default for the socket type is used.  That is `json` for websocket and `msgpack` for tcp or unix raw socket.
+
+NOTE: The certificate and key used by the example server were created using the following commands:
+```
+openssl req -x509 -newkey rsa:4096 -keyout key.pem -out cert.pem -days 3650
+openssl rsa -in key.pem -out rsakey.pem
+```
 
 ## RPC Example
 
@@ -54,7 +62,7 @@ The pub/sub example provides a subscriber client and a publisher client that con
 
 ## Multiple Transport Example
 
-A nexus router is capable of routing messages between clients running with different transports and serializations.  To see this, you can run the sample nexus server and then connect clients that use different combinations of websockets and raw sockets, and JSON and MsgPack serialization.
+A nexus router is capable of routing messages between clients running with different transports and serializations.  To see this, you can run the example nexus server and then connect clients that use different combinations of websockets and raw sockets, and JSON and MsgPack serialization.
 
 ### Run Websocket Subscriber with TCP and Unix Raw Socket Publishers
 
@@ -63,4 +71,4 @@ A nexus router is capable of routing messages between clients running with diffe
 3. Run a publisher with `go run pubsub/publisher/publisher.go -socket=tcp`
 4. Run a publisher with `go run pubsub/publisher/publisher.go -socket=unix`
 
-Try different combinations socket type and serialization with multiple clients.
+Try different combinations socket type, TLS, and serialization with multiple clients.
