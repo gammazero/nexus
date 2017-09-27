@@ -12,7 +12,7 @@ The simple examples can be run from the `examples` directory by running:
 
 ## Example Server and Clients
 
-The example server, in the `server` directory, runs a websocket (with and without TLS), tcp raw socket (with and without TLS), and unix raw socket transport at the same time.  This allows different clients to connect using any combination of socket types, TLS, and serialization schemes, to communicate with each other.
+The example server, in the `server` directory, runs a websocket (with and without TLS), tcp raw socket (with and without TLS), and unix raw socket transport at the same time.  This allows different clients to comunicate with each other when connected to the server using any combination of socket types, TLS, and serialization schemes.
 
 The example clients are located in the following locations:
 
