@@ -71,7 +71,7 @@ func NewWebsocketServer(r Router) *WebsocketServer {
 }
 
 // ListenAndServe listens on the specified TCP address and starts a goroutine
-// that accept new client connections until the returned io.closer is closed.
+// that accepts new client connections until the returned io.closer is closed.
 func (s *WebsocketServer) ListenAndServe(address string) (io.Closer, error) {
 	l, err := net.Listen("tcp", address)
 	if err != nil {
@@ -89,9 +89,11 @@ func (s *WebsocketServer) ListenAndServe(address string) (io.Closer, error) {
 }
 
 // ListenAndServeTLS listens on the specified TCP address and starts a
-// goroutine that accept new TLS client connections until the returned
-// io.closer is closed.
-func (s *WebsocketServer) ListenAndServeTLS(address string, tlsConfig *tls.Config, certFile, keyFile string) (io.Closer, error) {
+// goroutine that accepts new TLS client connections until the returned
+// io.closer is closed.  If tls.Config does not already contain a certificate,
+// then certFile and keyFile, if specified, are used to load an X509
+// certificate.
+func (s *WebsocketServer) ListenAndServeTLS(address string, tlscfg *tls.Config, certFile, keyFile string) (io.Closer, error) {
 	l, err := net.Listen("tcp", address)
 	if err != nil {
 		s.log.Print(err)
@@ -102,17 +104,16 @@ func (s *WebsocketServer) ListenAndServeTLS(address string, tlsConfig *tls.Confi
 	//go server.ServeTLS(l, certFile, keyFile)
 
 	var hasCert bool
-	if tlsConfig == nil {
-		tlsConfig = &tls.Config{}
-		hasCert = false
-	} else if len(tlsConfig.Certificates) > 0 || tlsConfig.GetCertificate != nil {
+	if tlscfg == nil {
+		tlscfg = &tls.Config{}
+	} else if len(tlscfg.Certificates) > 0 || tlscfg.GetCertificate != nil {
 		hasCert = true
 	}
 
 	if !hasCert || certFile != "" || keyFile != "" {
 		var err error
-		tlsConfig.Certificates = make([]tls.Certificate, 1)
-		tlsConfig.Certificates[0], err = tls.LoadX509KeyPair(certFile, keyFile)
+		tlscfg.Certificates = make([]tls.Certificate, 1)
+		tlscfg.Certificates[0], err = tls.LoadX509KeyPair(certFile, keyFile)
 		if err != nil {
 			return nil, fmt.Errorf("error loading X509 key pair: %s", err)
 		}
@@ -122,7 +123,7 @@ func (s *WebsocketServer) ListenAndServeTLS(address string, tlsConfig *tls.Confi
 	server := &http.Server{
 		Handler:   s,
 		Addr:      l.Addr().String(),
-		TLSConfig: tlsConfig,
+		TLSConfig: tlscfg,
 	}
 	go server.Serve(l)
 

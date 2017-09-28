@@ -60,19 +60,22 @@ func main() {
 		// Create a new websocket server with the router.
 		wss := nexus.NewWebsocketServer(r)
 		var closer io.Closer
-		if conf.WebSocket.CertFile == "" || conf.WebSocket.KeyFile == "" {
-			closer, err = wss.ListenAndServe(conf.WebSocket.Address)
-		} else {
+		var sockDesc string
+		if conf.WebSocket.CertFile != "" && conf.WebSocket.KeyFile != "" {
 			// Config has cert_file and key_file, so do TLS.
 			closer, err = wss.ListenAndServeTLS(conf.WebSocket.Address, nil,
 				conf.WebSocket.CertFile, conf.WebSocket.KeyFile)
+			sockDesc = "TLS websocket"
+		} else {
+			closer, err = wss.ListenAndServe(conf.WebSocket.Address)
+			sockDesc = "websocket"
 		}
 		if err != nil {
 			logger.Print(err)
 			os.Exit(1)
 		}
 		closers = append(closers, closer)
-		logger.Printf("Listening for websocket connections on ws://%s/",
+		logger.Printf("Listening for %s connections on ws://%s/", sockDesc,
 			conf.WebSocket.Address)
 	}
 	if conf.RawSocket.TCPAddress != "" || conf.RawSocket.UnixAddress != "" {
@@ -80,14 +83,25 @@ func main() {
 		rss := nexus.NewRawSocketServer(r, conf.RawSocket.MaxMsgLen,
 			conf.RawSocket.TCPKeepAliveInterval)
 		if conf.RawSocket.TCPAddress != "" {
-			// Run rawsocket TCP server.
-			closer, err := rss.ListenAndServe("tcp", conf.RawSocket.TCPAddress)
+			var closer io.Closer
+			var sockDesc string
+			if conf.RawSocket.CertFile != "" && conf.RawSocket.KeyFile != "" {
+				// Run TLS rawsocket TCP server.
+				closer, err = rss.ListenAndServeTLS("tcp",
+					conf.RawSocket.TCPAddress, nil, conf.RawSocket.CertFile,
+					conf.RawSocket.KeyFile)
+				sockDesc = "TLS socket"
+			} else {
+				// Run rawsocket TCP server.
+				closer, err = rss.ListenAndServe("tcp", conf.RawSocket.TCPAddress)
+				sockDesc = "socket"
+			}
 			if err != nil {
 				logger.Print(err)
 				os.Exit(1)
 			}
 			closers = append(closers, closer)
-			logger.Println("Listening for TCP socket connections on",
+			logger.Println("Listening for TCP", sockDesc, "connections on",
 				conf.RawSocket.TCPAddress)
 		}
 		if conf.RawSocket.UnixAddress != "" {

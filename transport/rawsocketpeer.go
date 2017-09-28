@@ -1,6 +1,7 @@
 package transport
 
 import (
+	"crypto/tls"
 	"errors"
 	"fmt"
 	"io"
@@ -51,14 +52,14 @@ const (
 // larger than the nearest power of 2 greater than or equal to recvLimit.  If
 // recvLimit is <= 0, then the default of 16M is used.
 func ConnectRawSocketPeer(network, address string, serialization serialize.Serialization, logger stdlog.StdLog, recvLimit int) (wamp.Peer, error) {
-	var protocol byte
-	switch serialization {
-	case serialize.MSGPACK:
-		protocol = rawsocketMsgpack
-	case serialize.JSON:
-		protocol = rawsocketJSON
-	default:
-		return nil, errors.New("serialization not supported by rawsocket")
+	err := checkNetworkType(network)
+	if err != nil {
+		return nil, err
+	}
+
+	protocol, err := getProtoByte(serialization)
+	if err != nil {
+		return nil, err
 	}
 
 	conn, err := net.Dial(network, address)
@@ -74,7 +75,39 @@ func ConnectRawSocketPeer(network, address string, serialization serialize.Seria
 	return peer, nil
 }
 
-// AcceptRawSocket handles the client handshake and returns
+// ConnectTlsRawSocketPeer creates a new rawSocketPeer with the specified
+// config, and connects it, using TLS, to the WAMP router at the specified
+// address.  The network, address, and tlscfg parameters are documented here:
+// https://golang.org/pkg/crypto/tls/#Dial
+//
+// If recvLimit is > 0, then the client will not receive messages with size
+// larger than the nearest power of 2 greater than or equal to recvLimit.  If
+// recvLimit is <= 0, then the default of 16M is used.
+func ConnectTlsRawSocketPeer(network, address string, serialization serialize.Serialization, tlsConfig *tls.Config, logger stdlog.StdLog, recvLimit int) (wamp.Peer, error) {
+	err := checkNetworkType(network)
+	if err != nil {
+		return nil, err
+	}
+
+	protocol, err := getProtoByte(serialization)
+	if err != nil {
+		return nil, err
+	}
+
+	conn, err := tls.Dial(network, address, tlsConfig)
+	if err != nil {
+		return nil, err
+	}
+
+	peer, err := clientHandshake(conn, logger, protocol, recvLimit)
+	if err != nil {
+		conn.Close()
+		return nil, err
+	}
+	return peer, nil
+}
+
+// AcceptRawSocket handles the client handshake and returns a rawSocketPeer.
 //
 // If recvLimit is > 0, then the client will not receive messages with size
 // larger than the nearest power of 2 greater than or equal to recvLimit.  If
@@ -282,6 +315,7 @@ MsgLoop:
 	}
 }
 
+// clientHandshake handles the client-side of a RawSocket transport handshake.
 func clientHandshake(conn net.Conn, logger stdlog.StdLog, protocol byte, recvLimit int) (*rawSocketPeer, error) {
 	maxRecvLen := fitRecvLimit(recvLimit)
 
@@ -335,6 +369,7 @@ func clientHandshake(conn net.Conn, logger stdlog.StdLog, protocol byte, recvLim
 	return newRawSocketPeer(conn, serializer, logger, sendLimit, recvLimit), nil
 }
 
+// serverHandshake handles the server-side of a RawSocket transport handshake.
 func serverHandshake(conn net.Conn, logger stdlog.StdLog, recvLimit int) (*rawSocketPeer, error) {
 	var buf [4]byte
 	if _, err := io.ReadFull(conn, buf[:]); err != nil {
@@ -375,6 +410,7 @@ func serverHandshake(conn net.Conn, logger stdlog.StdLog, recvLimit int) (*rawSo
 	return newRawSocketPeer(conn, serializer, logger, sendLimit, recvLimit), nil
 }
 
+// fitRecvLimit finds the power of 2 that is greater than or equal to the specified receive limit.  This value is returned as the RawSocket transport byte representation of this value.
 func fitRecvLimit(recvLimit int) byte {
 	if recvLimit > 0 {
 		for b := byte(0); b < 0xf; b++ {
@@ -386,6 +422,7 @@ func fitRecvLimit(recvLimit int) byte {
 	return 0xf
 }
 
+// intToBytes encodes a 24-bit integer into 3 bytes.
 func intToBytes(i int) [3]byte {
 	return [3]byte{
 		byte((i >> 16) & 0xff),
@@ -394,6 +431,7 @@ func intToBytes(i int) [3]byte {
 	}
 }
 
+// bytesToInt decodes a slice of bytes into an int value.
 func bytesToInt(b []byte) int {
 	var n, shift uint
 	for i := len(b) - 1; i >= 0; i-- {
@@ -403,6 +441,29 @@ func bytesToInt(b []byte) int {
 	return int(n)
 }
 
+// byteToLength returns the value corresponding to a RawSocket lenght byte.
 func byteToLength(b byte) int {
 	return int(1 << (b + 9))
+}
+
+// checkNetworkType checks for acceptable network type.
+func checkNetworkType(network string) error {
+	switch network {
+	case "tcp", "tcp4", "tcp6", "unix":
+	default:
+		return errors.New("unsupported network type: " + network)
+	}
+	return nil
+}
+
+// getProtoByte returns the RawSocket byte value for a serialization protocol.
+func getProtoByte(serialization serialize.Serialization) (byte, error) {
+	switch serialization {
+	case serialize.MSGPACK:
+		return rawsocketMsgpack, nil
+	case serialize.JSON:
+		return rawsocketJSON, nil
+	default:
+		return 0, errors.New("serialization not supported by rawsocket")
+	}
 }

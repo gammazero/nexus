@@ -6,9 +6,11 @@
     },
     "rawsocket": {
         "tcp_address": "",
-        "tcp_keepalive_interval": "180s",
+        "tcp_keepalive_interval": 180,
         "unix_address": "",
-        "max_msg_len": 0
+        "max_msg_len": 0,
+        "cert_file": "",
+        "key_file": ""
     },
     "log_path": "",
     "router": {

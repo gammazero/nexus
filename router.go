@@ -98,9 +98,11 @@ func NewRouter(config *RouterConfig, logger stdlog.StdLog) (Router, error) {
 	return r, nil
 }
 
+// Logger returns the StdLog that the router uses for logging.
 func (r *router) Logger() stdlog.StdLog { return r.log }
 
-// Attach connects a client to the router and to the requested realm.
+// Attach connects a client to the router and to the requested realm.  If
+// successful, Attach returns after sending a WELCOME message to the client.
 func (r *router) Attach(client wamp.Peer) error {
 	sendAbort := func(reason wamp.URI, abortErr error) {
 		abortMsg := wamp.Abort{Reason: reason}

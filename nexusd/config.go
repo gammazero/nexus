@@ -23,12 +23,15 @@ type Config struct {
 	RawSocket struct {
 		// String form of address (example, "192.0.2.1:25", "[2001:db8::1]:80")
 		TCPAddress string `json:"tcp_address"`
-		// TCP keepalive interval.  Set to 0 to disable.
+		// TCP keepalive interval in seconds.  Set to 0 to disable.
 		TCPKeepAliveInterval time.Duration `json:"tcp_keepalive_interval"`
 		// Path to Unix domain socket.
 		UnixAddress string `json:"unix_address"`
 		// Maximum message length server can receive. Default = 16M.
 		MaxMsgLen int `json:"max_msg_len"`
+		// Files containing a certificate and matching private key.
+		CertFile string `json:"cert_file"`
+		KeyFile  string `json:"key_file"`
 	}
 
 	// File to write log data to.  If not specified, log to stdout.
@@ -50,5 +53,8 @@ func LoadConfig(path string) *Config {
 		log.Fatal("Config Parse Error: ", err)
 	}
 
+	if config.RawSocket.TCPKeepAliveInterval != 0 {
+		config.RawSocket.TCPKeepAliveInterval *= time.Second
+	}
 	return &config
 }
