@@ -227,8 +227,8 @@ func (r *realm) createMetaSession() (wamp.Peer, *Session) {
 // onJoin is called when a non-meta session joins this realm.  The session is
 // stored in the realm's clients and a meta event is published.
 //
-// Note: onJoin() is called from handleSession() so that it is not
-// called for the meta client.
+// Note: onJoin() is called from handleSession, not handleInboundMessages, so
+// that it is not called for the meta client.
 func (r *realm) onJoin(sess *Session) {
 	r.waitHandlers.Add(1)
 	sync := make(chan struct{})
@@ -261,8 +261,8 @@ func (r *realm) onJoin(sess *Session) {
 // events would only be received by meta event subscribers that had not been
 // removed yet, and clients are removed in any order.
 //
-// Note: onLeave() must be called from outside handleSession() so that it is
-// not called for the meta client.
+// Note: onLeave() must be called from outside handleInboundMessages so that it
+// is not called for the meta client.
 func (r *realm) onLeave(sess *Session, shutdown bool) {
 	sync := make(chan struct{})
 	r.actionChan <- func() {

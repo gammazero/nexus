@@ -112,6 +112,9 @@ func (s *RawSocketServer) ListenAndServeTLS(network, address string, tlscfg *tls
 	return l, nil
 }
 
+// handleRawSocket accpets a connection from the listening socket, handles the
+// client handshake, creates a rawSocketPeer, and then attaches that peer to
+// the router.
 func (s *RawSocketServer) handleRawSocket(conn net.Conn) {
 	peer, err := transport.AcceptRawSocket(conn, s.log, s.recvLimit)
 	if err != nil {
