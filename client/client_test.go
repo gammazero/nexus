@@ -66,8 +66,9 @@ func newTestClient(r nexus.Router) (*Client, error) {
 	cfg := ClientConfig{
 		Realm:           testRealm,
 		ResponseTimeout: 500 * time.Millisecond,
+		Logger:          logger,
 	}
-	return NewLocalClient(r, cfg, logger)
+	return ConnectLocal(r, cfg)
 }
 
 func TestJoinRealm(t *testing.T) {
@@ -107,8 +108,9 @@ func TestJoinRealm(t *testing.T) {
 	cfg := ClientConfig{
 		Realm:           "nexus.testnoanon",
 		ResponseTimeout: 500 * time.Millisecond,
+		Logger:          logger,
 	}
-	_, err = NewLocalClient(r, cfg, logger)
+	_, err = ConnectLocal(r, cfg)
 	if err == nil {
 		t.Fatal("expected error due to no anonymous authentication")
 	}
@@ -145,8 +147,9 @@ func TestClientJoinRealmWithCRAuth(t *testing.T) {
 		AuthHandlers: map[string]AuthFunc{
 			"testauth": testAuthFunc,
 		},
+		Logger: logger,
 	}
-	client, err := NewLocalClient(r, cfg, logger)
+	client, err := ConnectLocal(r, cfg)
 	if err != nil {
 		t.Fatal(err)
 	}

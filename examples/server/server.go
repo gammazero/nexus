@@ -16,8 +16,9 @@ import (
 )
 
 const (
-	wsAddr     = "127.0.0.1:8000"
-	tcpAddr    = "127.0.0.1:8001"
+	wsAddr = "127.0.0.1:8000"
+	//tcpAddr    = "127.0.0.1:8001"
+	tcpAddr    = "[::1]:8001"
 	wsAddrTLS  = "127.0.0.1:8100"
 	tcpAddrTLS = "127.0.0.1:8101"
 	unixAddr   = "/tmp/exmpl_nexus_sock"

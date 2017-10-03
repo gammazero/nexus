@@ -8,6 +8,7 @@ package client
 
 import (
 	"context"
+	"crypto/tls"
 	"errors"
 	"fmt"
 	"strings"
@@ -16,6 +17,8 @@ import (
 	"time"
 
 	"github.com/gammazero/nexus/stdlog"
+	"github.com/gammazero/nexus/transport"
+	"github.com/gammazero/nexus/transport/serialize"
 	"github.com/gammazero/nexus/wamp"
 )
 
@@ -44,7 +47,36 @@ type ClientConfig struct {
 
 	// Enable debug logging for client.
 	Debug bool
+
+	// Set to JSON or MSGPACK. Or leave as zero-value to use default for
+	// transport.
+	Serialization serialize.Serialization
+
+	// Provide a tls.Config to connect the client using TLS.  The zero
+	// configuration specifies using defaults.  A nil tls.Config means do not
+	// use TLS.
+	TlsCfg *tls.Config
+
+	// Supplies alternate Dial function for the websocket dialer.
+	Dial transport.DialFunc
+
+	// Logger for client to use.  If not set, client logs to os.Stderr.
+	Logger stdlog.StdLog
+
+	// Client receive limit for use with RawSocket transport.
+	// If recvLimit is > 0, then the client will not receive messages with size
+	// larger than the nearest power of 2 greater than or equal to recvLimit.
+	// If recvLimit is <= 0, then the default of 16M is used.
+	RecvLimit int
 }
+
+// Define serialization consts in client package so that client code does not
+// need to import the serialize package to get the consts.
+const (
+	DEFAULT = serialize.DEFAULT
+	JSON    = serialize.JSON
+	MSGPACK = serialize.MSGPACK
+)
 
 // Features supported by nexus client.
 var clientRoles = wamp.Dict{

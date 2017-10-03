@@ -15,8 +15,10 @@ import (
 )
 
 const (
+	// Use default serialization for transport.
+	DEFAULT Serialization = iota
 	// Use JSON-encoded strings as a payload.
-	JSON Serialization = iota
+	JSON
 	// Use msgpack-encoded strings as a payload.
 	MSGPACK
 )

@@ -17,9 +17,10 @@ import (
 )
 
 const (
-	webAddr    = "ws://localhost:8000/"
-	tcpAddr    = "127.0.0.1:8001"
-	webAddrTLS = "ws://localhost:8100/"
+	webAddr    = "127.0.0.1:8000"
+	webAddrTLS = "127.0.0.1:8100"
+	//tcpAddr    = "127.0.0.1:8001"
+	tcpAddr    = "[::1]:8001"
 	tcpAddrTLS = "127.0.0.1:8101"
 	unixAddr   = "/tmp/exmpl_nexus_sock"
 )
@@ -75,7 +76,10 @@ func NewClient(logger *log.Logger) (*client.Client, error) {
 	}
 
 	cfg := client.ClientConfig{
-		Realm: "nexus.examples",
+		Realm:         "nexus.examples",
+		TlsCfg:        tlscfg,
+		Serialization: serialization,
+		Logger:        logger,
 	}
 
 	// Create client with requested transport type.
@@ -84,29 +88,23 @@ func NewClient(logger *log.Logger) (*client.Client, error) {
 	switch sockType {
 	case "web":
 		if useTLS {
-			cli, err = client.NewWebsocketClient(
-				webAddrTLS, serialization, tlscfg, nil, cfg, logger)
+			cli, err = client.ConnectWebsocket(webAddrTLS, cfg)
 		} else {
-			cli, err = client.NewWebsocketClient(
-				webAddr, serialization, tlscfg, nil, cfg, logger)
+			cli, err = client.ConnectWebsocket(webAddr, cfg)
 		}
-	case "tcp", "tcp4":
+	case "tcp":
 		if useTLS {
-			cli, err = client.NewTlsRawSocketClient(
-				sockType, tcpAddrTLS, serialization, tlscfg, cfg, logger, 0)
+			cli, err = client.ConnectTCP(tcpAddrTLS, cfg)
 		} else {
-			cli, err = client.NewRawSocketClient(
-				sockType, tcpAddr, serialization, cfg, logger, 0)
+			cli, err = client.ConnectTCP(tcpAddr, cfg)
 		}
 	case "unix":
-		cli, err = client.NewRawSocketClient(
-			"unix", unixAddr, serialization, cfg, logger, 0)
-	default:
-		err = errors.New("invalid type, must one of: web, tcp, unix")
+		cli, err = client.ConnectUnix(unixAddr, cfg)
 	}
 	if err != nil {
 		return nil, err
 	}
+
 	if useTLS {
 		sockType = "TLS " + sockType
 	}

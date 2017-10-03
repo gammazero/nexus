@@ -32,9 +32,6 @@ var (
 	cliLogger stdlog.StdLog
 	rtrLogger stdlog.StdLog
 
-	serverURL string
-	rsAddr    string
-
 	err error
 
 	// sockType is set to "web", "tcp", "unix", "".  Empty means use local
@@ -152,9 +149,10 @@ func TestMain(m *testing.M) {
 			fmt.Fprintln(os.Stderr, "Failed to start websocket server:", err)
 			os.Exit(1)
 		}
-		serverURL = fmt.Sprintf("ws://%s/", tcpAddr)
+		serverURL := fmt.Sprintf("ws://%s/", tcpAddr)
 		rtrLogger.Println("WebSocket server listening on", serverURL)
 	case "tcp", "unix":
+		var rsAddr string
 		if sockType == "unix" {
 			rsAddr = unixAddr
 		} else {
@@ -212,26 +210,24 @@ func TestMain(m *testing.M) {
 func connectClientCfg(cfg client.ClientConfig) (*client.Client, error) {
 	var cli *client.Client
 	var err error
-	var serialization serialize.Serialization
 
 	switch serType {
 	case "json":
-		serialization = serialize.JSON
+		cfg.Serialization = serialize.JSON
 	case "msgpack":
-		serialization = serialize.MSGPACK
+		cfg.Serialization = serialize.MSGPACK
 	}
+	cfg.Logger = cliLogger
 
 	switch sockType {
 	case "web":
-		// Use larger response timeout for very slow test systems.
-		cli, err = client.NewWebsocketClient(
-			serverURL, serialization, nil, nil, cfg, cliLogger)
-	case "tcp", "unix":
-		// Use larger response timeout for very slow test systems.
-		cli, err = client.NewRawSocketClient(sockType, rsAddr, serialization,
-			cfg, cliLogger, 0)
+		cli, err = client.ConnectWebsocket(tcpAddr, cfg)
+	case "tcp":
+		cli, err = client.ConnectTCP(tcpAddr, cfg)
+	case "unix":
+		cli, err = client.ConnectUnix(unixAddr, cfg)
 	default:
-		cli, err = client.NewLocalClient(nxr, cfg, cliLogger)
+		cli, err = client.ConnectLocal(nxr, cfg)
 	}
 
 	if err != nil {

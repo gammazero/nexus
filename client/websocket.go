@@ -1,26 +1,30 @@
 package client
 
 import (
-	"crypto/tls"
+	"fmt"
+	"log"
+	"os"
 
-	"github.com/gammazero/nexus/stdlog"
 	"github.com/gammazero/nexus/transport"
-	"github.com/gammazero/nexus/transport/serialize"
 )
 
-// Define serialization consts in client package so that client code does not
-// need to import the serialize package to get the consts.
-const (
-	JSON    = serialize.JSON
-	MSGPACK = serialize.MSGPACK
-)
-
-// NewWebsocketClient creates a new websocket client connected to the WAMP
-// router at the specified URL, using the requested serialization.  The new
+// ConnectWebsocket creates a new websocket client connected to the WAMP
+// router at the specified address, using the requested serialization.  The new
 // client joins the realm specified in the ClientConfig.
-func NewWebsocketClient(url string, serialization serialize.Serialization, tlscfg *tls.Config, dial transport.DialFunc, cfg ClientConfig, logger stdlog.StdLog) (*Client, error) {
-	p, err := transport.ConnectWebsocketPeer(url, serialization, tlscfg, dial,
-		logger)
+//
+// The address parameter specifes a network address (host and port) and has the
+// form "host:port".  The host must be a literal IP address, or a host name
+// that can be resolved to IP addresses.  The port must be a literal port
+// number or a service name.  If the host is a literal IPv6 address it must be
+// enclosed in square brackets, as in "[2001:db8::1]:80".  For details, see:
+// https://golang.org/pkg/net/#Dial
+func ConnectWebsocket(address string, cfg ClientConfig) (*Client, error) {
+	logger := cfg.Logger
+	if logger == nil {
+		logger = log.New(os.Stderr, "", 0)
+	}
+	p, err := transport.ConnectWebsocketPeer(fmt.Sprintf("ws://%s/", address),
+		cfg.Serialization, cfg.TlsCfg, cfg.Dial, logger)
 	if err != nil {
 		return nil, err
 	}
