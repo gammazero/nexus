@@ -54,7 +54,7 @@ func ConnectWebsocketPeer(url string, serialization serialize.Serialization, tls
 	)
 
 	switch serialization {
-	case serialize.DEFAULT, serialize.JSON:
+	case serialize.JSON:
 		protocol = jsonWebsocketProtocol
 		payloadType = websocket.TextMessage
 		serializer = &serialize.JSONSerializer{}

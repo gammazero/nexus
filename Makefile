@@ -11,8 +11,9 @@ test:
 	go get github.com/fortytw2/leaktest
 	go test -race ./...
 	go test -race ./aat -socket=web
-	go test ./aat -socket=web -serialize=msgpack
 	go test -race ./aat -socket=unix
+	go test ./aat -socket=web -serialize=msgpack
+	go test ./aat -socket=tcp -serialize=msgpack
 
 service: $(SERVICE_DIR)/nexusd
 

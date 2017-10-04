@@ -25,7 +25,7 @@ To connect a client using different types of transport, specify `-socket=web`, `
 
 Connect the client using TLS by specifying the `-tls` and `-skipverify` flags.  The `-skipverify` flag is needed for to skip verification of the certificate presented by the example server.  If `-tls` is not specified, then do not use TLS connection.
 
-To choose the type of serialization for the client to use, specify `-serialize=json` or `-serialize=msgpack`.  If no serialization is specified, then the default for the socket type is used.  That is `json` for websocket and `msgpack` for tcp or unix raw socket.
+To choose the type of serialization for the client to use, specify `-serialize=json` or `-serialize=msgpack`.  If no serialization is specified, then the default is `json`.
 
 NOTE: The certificate and key used by the example server were created using the following commands:
 ```

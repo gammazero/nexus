@@ -19,8 +19,7 @@ import (
 const (
 	webAddr    = "127.0.0.1:8000"
 	webAddrTLS = "127.0.0.1:8100"
-	//tcpAddr    = "127.0.0.1:8001"
-	tcpAddr    = "[::1]:8001"
+	tcpAddr    = "127.0.0.1:8001"
 	tcpAddrTLS = "127.0.0.1:8101"
 	unixAddr   = "/tmp/exmpl_nexus_sock"
 )
@@ -30,7 +29,7 @@ func NewClient(logger *log.Logger) (*client.Client, error) {
 	var sockType, serType, certFile, keyFile string
 	flag.StringVar(&sockType, "socket", "web",
 		"-socket=[web, tcp, unix].  Default is web")
-	flag.StringVar(&serType, "serialize", "",
+	flag.StringVar(&serType, "serialize", "json",
 		"-serialize[json, msgpack] or none for socket default")
 	flag.BoolVar(&useTLS, "tls", false, "communicate using TLS")
 	flag.BoolVar(&skipVerify, "skipverify", false,
@@ -60,16 +59,9 @@ func NewClient(logger *log.Logger) (*client.Client, error) {
 	// Get requested serialization.
 	serialization := client.JSON
 	switch serType {
-	case "":
-		if sockType != "web" {
-			serType = "msgpack"
-			serialization = client.MSGPACK
-		} else {
-			serType = "json"
-		}
+	case "json":
 	case "msgpack":
 		serialization = client.MSGPACK
-	case "json":
 	default:
 		return nil, errors.New(
 			"invalid serialization, muse be one of: json, msgpack")

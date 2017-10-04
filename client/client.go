@@ -48,8 +48,7 @@ type ClientConfig struct {
 	// Enable debug logging for client.
 	Debug bool
 
-	// Set to JSON or MSGPACK. Or leave as zero-value to use default for
-	// transport.
+	// Set to JSON or MSGPACK.  Default (zero-value) is JSON.
 	Serialization serialize.Serialization
 
 	// Provide a tls.Config to connect the client using TLS.  The zero
@@ -73,7 +72,6 @@ type ClientConfig struct {
 // Define serialization consts in client package so that client code does not
 // need to import the serialize package to get the consts.
 const (
-	DEFAULT = serialize.DEFAULT
 	JSON    = serialize.JSON
 	MSGPACK = serialize.MSGPACK
 )
