@@ -11,8 +11,8 @@ import (
 // ConnectTCP creates a new client connected a WAMP router over a TCP socket.
 // The new client joins the realm specified in the ClientConfig.
 //
-// The address parameter specifes a network address (host and port) and has the
-// form "host:port".  The host must be a literal IP address, or a host name
+// The address parameter specifies a network address (host and port) and has
+// the form "host:port".  The host must be a literal IP address, or a host name
 // that can be resolved to IP addresses.  The port must be a literal port
 // number or a service name.  If the host is a literal IPv6 address it must be
 // enclosed in square brackets, as in "[2001:db8::1]:80".  For details, see:
@@ -41,8 +41,8 @@ func ConnectTCP(address string, cfg ClientConfig) (*Client, error) {
 // domain socket.  The new client joins the realm specified in the
 // ClientConfig.  Any TLS configuration is ignored for Unix sockets.
 //
-// The Address parameter specifes a path on the loca file system where the Unix
-// socket is created.
+// The Address parameter specifies a path on the local file system where the
+// Unix socket is created.
 func ConnectUnix(address string, cfg ClientConfig) (*Client, error) {
 	if cfg.Logger == nil {
 		cfg.Logger = log.New(os.Stderr, "", 0)
