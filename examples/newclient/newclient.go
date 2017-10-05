@@ -92,6 +92,8 @@ func NewClient(logger *log.Logger) (*client.Client, error) {
 		}
 	case "unix":
 		cli, err = client.ConnectUnix(unixAddr, cfg)
+	default:
+		return nil, errors.New("socket must be one of: web, tcp, unix")
 	}
 	if err != nil {
 		return nil, err

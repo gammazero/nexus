@@ -22,7 +22,7 @@ func NewWebsocketClient(url string, serialization serialize.Serialization, tlscf
 	cfg.Serialization = serialization
 	cfg.Logger = logger
 	cfg.TlsCfg = tlscfg
-	return ConnectWebsocket(strings.Trim(url, "ws:/"), cfg)
+	return ConnectWebsocket(strings.TrimLeft(url, "ws:/"), cfg)
 }
 
 // DEPRECATED - use ConnectTCP or ConnectUnix
@@ -31,14 +31,7 @@ func NewRawSocketClient(network, address string, serialization serialize.Seriali
 	cfg.Logger = logger
 	cfg.RecvLimit = recvLimit
 	cfg.TlsCfg = nil
-	switch network {
-	case "tcp", "tcp4", "tcp6":
-		return ConnectTCP(address, cfg)
-	case "unix":
-		return ConnectUnix(address, cfg)
-	default:
-		return nil, fmt.Errorf("unsupported network: %s", network)
-	}
+	return connectRaw(network, address, cfg)
 }
 
 // DEPRECATED - use ConnectTCP or ConnectUnix
@@ -50,7 +43,10 @@ func NewTlsRawSocketClient(network, address string, serialization serialize.Seri
 		tlscfg = &tls.Config{}
 	}
 	cfg.TlsCfg = tlscfg
+	return connectRaw(network, address, cfg)
+}
 
+func connectRaw(network, address string, cfg ClientConfig) (*Client, error) {
 	switch network {
 	case "tcp", "tcp4", "tcp6":
 		return ConnectTCP(address, cfg)

@@ -59,14 +59,14 @@ type ClientConfig struct {
 	// Supplies alternate Dial function for the websocket dialer.
 	Dial transport.DialFunc
 
-	// Logger for client to use.  If not set, client logs to os.Stderr.
-	Logger stdlog.StdLog
-
 	// Client receive limit for use with RawSocket transport.
 	// If recvLimit is > 0, then the client will not receive messages with size
 	// larger than the nearest power of 2 greater than or equal to recvLimit.
 	// If recvLimit is <= 0, then the default of 16M is used.
 	RecvLimit int
+
+	// Logger for client to use.  If not set, client logs to os.Stderr.
+	Logger stdlog.StdLog
 }
 
 // Define serialization consts in client package so that client code does not
@@ -151,13 +151,10 @@ type Client struct {
 // NewClient takes a connected Peer, joins the realm specified in cfg, and if
 // successful, returns a new client.
 //
-// Each client can be given a separate StdLog instance, which my be desirable
-// when clients are used for different purposes.
-//
-// NOTE: This method is provided for clients that use a Peer implementation not
+// NOTE: This method is exported for clients that use a Peer implementation not
 // provided with the nexus package.  Generally, clients are created using
-// NewWebsocketClient(), NewRawSocketClient(), or NewLocalClient().
-func NewClient(p wamp.Peer, cfg ClientConfig, logger stdlog.StdLog) (*Client, error) {
+// ConnectWebsocket(), ConnectTCP(), ConnectUnix(), or ConnectLocal().
+func NewClient(p wamp.Peer, cfg ClientConfig) (*Client, error) {
 	if cfg.ResponseTimeout == 0 {
 		cfg.ResponseTimeout = defaultResponseTimeout
 	}
@@ -186,7 +183,7 @@ func NewClient(p wamp.Peer, cfg ClientConfig, logger stdlog.StdLog) (*Client, er
 		stopping:   make(chan struct{}),
 		done:       make(chan struct{}),
 
-		log:   logger,
+		log:   cfg.Logger,
 		debug: cfg.Debug,
 
 		realmDetails: welcome.Details,

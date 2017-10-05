@@ -19,14 +19,14 @@ import (
 // enclosed in square brackets, as in "[2001:db8::1]:80".  For details, see:
 // https://golang.org/pkg/net/#Dial
 func ConnectWebsocket(address string, cfg ClientConfig) (*Client, error) {
-	logger := cfg.Logger
-	if logger == nil {
-		logger = log.New(os.Stderr, "", 0)
+	if cfg.Logger == nil {
+		cfg.Logger = log.New(os.Stderr, "", 0)
 	}
-	p, err := transport.ConnectWebsocketPeer(fmt.Sprintf("ws://%s/", address),
-		cfg.Serialization, cfg.TlsCfg, cfg.Dial, logger)
+	addr := fmt.Sprintf("ws://%s/", address)
+	p, err := transport.ConnectWebsocketPeer(addr, cfg.Serialization,
+		cfg.TlsCfg, cfg.Dial, cfg.Logger)
 	if err != nil {
 		return nil, err
 	}
-	return NewClient(p, cfg, logger)
+	return NewClient(p, cfg)
 }
