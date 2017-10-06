@@ -17,10 +17,10 @@ import (
 )
 
 const (
-	webAddr    = "ws://127.0.0.1:8000"
-	webAddrTLS = "wss://127.0.0.1:8100"
-	tcpAddr    = "tcp://127.0.0.1:8001"
-	tcpAddrTLS = "tcps://127.0.0.1:8101"
+	webAddr    = "ws://127.0.0.1:8000/"
+	webAddrTLS = "wss://localhost:8100/"
+	tcpAddr    = "tcp://127.0.0.1:8001/"
+	tcpAddrTLS = "tcps://localhost:8101/"
 	unixAddr   = "unix:///tmp/exmpl_nexus_sock"
 )
 

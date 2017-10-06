@@ -1,12 +1,14 @@
 package aat
 
 import (
+	"crypto/tls"
 	"errors"
 	"flag"
 	"fmt"
 	"io"
 	"log"
 	"os"
+	"path"
 	"testing"
 	"time"
 
@@ -25,6 +27,9 @@ const (
 
 	tcpAddr  = "127.0.0.1:8282"
 	unixAddr = "/tmp/nexustest_sock"
+
+	certFile = "cert.pem"
+	keyFile  = "rsakey.pem"
 )
 
 var (
@@ -39,6 +44,8 @@ var (
 	sockType string
 	// serType is set to "json" or "msgpack".  Ignored if sockType is "".
 	serType string
+	// useTLS is true is using TLS.  Ignored if sockType "unix" or "".
+	useTLS bool
 )
 
 type testAuthz struct{}
@@ -66,6 +73,7 @@ func TestMain(m *testing.M) {
 		"-socket=[web, tcp, unix] or none for local (in-process)")
 	flag.StringVar(&serType, "serialize", "",
 		"-serialize[json, msgpack] or none for socket default")
+	flag.BoolVar(&useTLS, "tls", false, "communicate using TLS")
 	flag.Parse()
 
 	if serType != "" && serType != "json" && serType != "msgpack" {
@@ -98,6 +106,23 @@ func TestMain(m *testing.M) {
 		fmt.Fprintln(os.Stderr, "invalid socket value")
 		flag.Usage()
 		os.Exit(1)
+	}
+	var certPath, keyPath string
+	if useTLS {
+		if sockType == "" || sockType == "unix" {
+			fmt.Fprintln(os.Stderr, "tls requires -socket=web or -socket=tcp")
+			flag.Usage()
+			os.Exit(1)
+		}
+
+		sockDesc += " + TLS"
+		if _, err = os.Stat(certFile); os.IsNotExist(err) {
+			certPath = path.Join("aat", certFile)
+			keyPath = path.Join("aat", keyFile)
+		} else {
+			certPath = certFile
+			keyPath = keyFile
+		}
 	}
 	if serType != "" {
 		sockDesc = fmt.Sprint(sockDesc, " with ", serType, " serialization")
@@ -143,20 +168,31 @@ func TestMain(m *testing.M) {
 	var closer io.Closer
 	switch sockType {
 	case "web":
+		var scheme string
 		wss := nexus.NewWebsocketServer(nxr)
-		closer, err = wss.ListenAndServe(tcpAddr)
+		if useTLS {
+			closer, err = wss.ListenAndServeTLS(tcpAddr, nil, certPath, keyPath)
+			scheme = "wss"
+		} else {
+			closer, err = wss.ListenAndServe(tcpAddr)
+			scheme = "ws"
+		}
 		if err != nil {
 			fmt.Fprintln(os.Stderr, "Failed to start websocket server:", err)
 			os.Exit(1)
 		}
-		rtrLogger.Printf("WebSocket server listening on ws://%s/", tcpAddr)
+		rtrLogger.Printf("WebSocket server listening on %s://%s/", scheme, tcpAddr)
 	case "tcp", "unix":
-		// Createraw socket server.
+		// Create raw socket server.
 		rss := nexus.NewRawSocketServer(nxr, 0, 0)
 		var rsURL string
 		if sockType == "unix" {
 			rsURL = fmt.Sprintf("unix://%s", unixAddr)
 			closer, err = rss.ListenAndServe(sockType, unixAddr)
+		} else if useTLS {
+			rsURL = fmt.Sprintf("tcps://%s/", tcpAddr)
+			closer, err = rss.ListenAndServeTLS(sockType, tcpAddr, nil,
+				certPath, keyPath)
 		} else {
 			rsURL = fmt.Sprintf("tcp://%s/", tcpAddr)
 			closer, err = rss.ListenAndServe(sockType, tcpAddr)
@@ -219,11 +255,30 @@ func connectClientCfg(cfg client.ClientConfig) (*client.Client, error) {
 	}
 	cfg.Logger = cliLogger
 
+	// If TLS requested, then set up TLS configuration to skip verification.
+	if useTLS {
+		cfg.TlsCfg = &tls.Config{
+			InsecureSkipVerify: true,
+		}
+	}
+
 	switch sockType {
 	case "web":
-		cli, err = client.ConnectNet(fmt.Sprintf("ws://%s/", tcpAddr), cfg)
+		var addr string
+		if useTLS {
+			addr = fmt.Sprintf("wss://%s/", tcpAddr)
+		} else {
+			addr = fmt.Sprintf("ws://%s/", tcpAddr)
+		}
+		cli, err = client.ConnectNet(addr, cfg)
 	case "tcp":
-		cli, err = client.ConnectNet(fmt.Sprintf("tcp://%s/", tcpAddr), cfg)
+		var addr string
+		if useTLS {
+			addr = fmt.Sprintf("tcps://%s/", tcpAddr)
+		} else {
+			addr = fmt.Sprintf("tcp://%s/", tcpAddr)
+		}
+		cli, err = client.ConnectNet(addr, cfg)
 	case "unix":
 		cli, err = client.ConnectNet(fmt.Sprintf("unix://%s/", unixAddr), cfg)
 	default:

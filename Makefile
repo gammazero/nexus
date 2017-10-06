@@ -14,6 +14,8 @@ test:
 	go test -race ./aat -socket=unix
 	go test ./aat -socket=web -serialize=msgpack
 	go test ./aat -socket=tcp -serialize=msgpack
+	go test ./aat -socket=web -tls
+	go test ./aat -socket=tcp -tls
 
 service: $(SERVICE_DIR)/nexusd
 
