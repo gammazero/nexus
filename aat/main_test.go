@@ -25,10 +25,6 @@ const (
 
 	tcpAddr  = "127.0.0.1:8282"
 	unixAddr = "/tmp/nexustest_sock"
-
-	webURL  = "wss://127.0.0.1:8282"
-	tcpURL  = "tcp://127.0.0.1:8282"
-	unixURL = "unix:///tmp/nexustest_sock"
 )
 
 var (
@@ -153,21 +149,23 @@ func TestMain(m *testing.M) {
 			fmt.Fprintln(os.Stderr, "Failed to start websocket server:", err)
 			os.Exit(1)
 		}
-		rtrLogger.Println("WebSocket server listening on", webURL)
+		rtrLogger.Printf("WebSocket server listening on ws://%s/", tcpAddr)
 	case "tcp", "unix":
 		// Createraw socket server.
 		rss := nexus.NewRawSocketServer(nxr, 0, 0)
-		var rsAddr string
+		var rsURL string
 		if sockType == "unix" {
+			rsURL = fmt.Sprintf("unix://%s", unixAddr)
 			closer, err = rss.ListenAndServe(sockType, unixAddr)
 		} else {
+			rsURL = fmt.Sprintf("tcp://%s/", tcpAddr)
 			closer, err = rss.ListenAndServe(sockType, tcpAddr)
 		}
 		if err != nil {
 			fmt.Fprintln(os.Stderr, "Failed to start rawsocket server:", err)
 			os.Exit(1)
 		}
-		rtrLogger.Println("RawSocket server listening on", rsAddr)
+		rtrLogger.Println("RawSocket server listening on", rsURL)
 	}
 
 	// Connect and disconnect so that router is started before running tests.
