@@ -8,6 +8,7 @@ package client
 
 import (
 	"context"
+	"crypto/tls"
 	"errors"
 	"fmt"
 	"strings"
@@ -16,6 +17,8 @@ import (
 	"time"
 
 	"github.com/gammazero/nexus/stdlog"
+	"github.com/gammazero/nexus/transport"
+	"github.com/gammazero/nexus/transport/serialize"
 	"github.com/gammazero/nexus/wamp"
 )
 
@@ -44,7 +47,34 @@ type ClientConfig struct {
 
 	// Enable debug logging for client.
 	Debug bool
+
+	// Set to JSON or MSGPACK.  Default (zero-value) is JSON.
+	Serialization serialize.Serialization
+
+	// Provide a tls.Config to connect the client using TLS.  The zero
+	// configuration specifies using defaults.  A nil tls.Config means do not
+	// use TLS.
+	TlsCfg *tls.Config
+
+	// Supplies alternate Dial function for the websocket dialer.
+	Dial transport.DialFunc
+
+	// Client receive limit for use with RawSocket transport.
+	// If recvLimit is > 0, then the client will not receive messages with size
+	// larger than the nearest power of 2 greater than or equal to recvLimit.
+	// If recvLimit is <= 0, then the default of 16M is used.
+	RecvLimit int
+
+	// Logger for client to use.  If not set, client logs to os.Stderr.
+	Logger stdlog.StdLog
 }
+
+// Define serialization consts in client package so that client code does not
+// need to import the serialize package to get the consts.
+const (
+	JSON    = serialize.JSON
+	MSGPACK = serialize.MSGPACK
+)
 
 // Features supported by nexus client.
 var clientRoles = wamp.Dict{
@@ -121,13 +151,10 @@ type Client struct {
 // NewClient takes a connected Peer, joins the realm specified in cfg, and if
 // successful, returns a new client.
 //
-// Each client can be given a separate StdLog instance, which my be desirable
-// when clients are used for different purposes.
-//
-// NOTE: This method is provided for clients that use a Peer implementation not
+// NOTE: This method is exported for clients that use a Peer implementation not
 // provided with the nexus package.  Generally, clients are created using
-// NewWebsocketClient(), NewRawSocketClient(), or NewLocalClient().
-func NewClient(p wamp.Peer, cfg ClientConfig, logger stdlog.StdLog) (*Client, error) {
+// ConnectNet() or ConnectLocal().
+func NewClient(p wamp.Peer, cfg ClientConfig) (*Client, error) {
 	if cfg.ResponseTimeout == 0 {
 		cfg.ResponseTimeout = defaultResponseTimeout
 	}
@@ -156,7 +183,7 @@ func NewClient(p wamp.Peer, cfg ClientConfig, logger stdlog.StdLog) (*Client, er
 		stopping:   make(chan struct{}),
 		done:       make(chan struct{}),
 
-		log:   logger,
+		log:   cfg.Logger,
 		debug: cfg.Debug,
 
 		realmDetails: welcome.Details,

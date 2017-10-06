@@ -11,14 +11,14 @@ import (
 const exampleTopic = "example.hello"
 
 func main() {
-	cfg := client.ClientConfig{
-		Realm: "nexus.examples",
-	}
 	logger := log.New(os.Stdout, "", 0)
+	cfg := client.ClientConfig{
+		Realm:  "nexus.examples",
+		Logger: logger,
+	}
 
 	// Connect publisher session.
-	publisher, err := client.NewWebsocketClient("ws://localhost:8000/",
-		client.JSON, nil, nil, cfg, logger)
+	publisher, err := client.ConnectNet("ws://localhost:8000/", cfg)
 	if err != nil {
 		logger.Fatal(err)
 	}

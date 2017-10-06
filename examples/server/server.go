@@ -63,7 +63,7 @@ func main() {
 		log.Fatal(err)
 	}
 	defer tcpCloser.Close()
-	log.Println("RawSocket TCP server listening on", tcpAddr)
+	log.Printf("RawSocket TCP server listening on tcp://%s/", tcpAddr)
 
 	// Run unix rawsocket server.
 	unixCloser, err := rss.ListenAndServe("unix", unixAddr)
@@ -71,7 +71,7 @@ func main() {
 		log.Fatal(err)
 	}
 	defer unixCloser.Close()
-	log.Println("RawSocket unix server listening on", unixAddr)
+	log.Printf("RawSocket unix server listening on unix://%s", unixAddr)
 
 	// ---- Start TLS servers ----
 
@@ -90,7 +90,7 @@ func main() {
 		log.Fatal(err)
 	}
 	defer wsTlsCloser.Close()
-	log.Printf("TLS Websocket server listening on ws://%s/", wsAddrTLS)
+	log.Printf("TLS Websocket server listening on wss://%s/", wsAddrTLS)
 
 	// Run TLS TCP rawsocket server.
 	tcpTlsCloser, err := rss.ListenAndServeTLS("tcp", tcpAddrTLS, nil, certPath, keyPath)
@@ -98,7 +98,7 @@ func main() {
 		log.Fatal(err)
 	}
 	defer tcpTlsCloser.Close()
-	log.Println("TLS RawSocket TCP server listening on", tcpAddrTLS)
+	log.Printf("TLS RawSocket TCP server listening on tcps://%s/", tcpAddrTLS)
 
 	// Wait for SIGINT (CTRL-c), then close servers and exit.
 	shutdown := make(chan os.Signal, 1)

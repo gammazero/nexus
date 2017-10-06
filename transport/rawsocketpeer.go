@@ -459,10 +459,10 @@ func checkNetworkType(network string) error {
 // getProtoByte returns the RawSocket byte value for a serialization protocol.
 func getProtoByte(serialization serialize.Serialization) (byte, error) {
 	switch serialization {
-	case serialize.MSGPACK:
-		return rawsocketMsgpack, nil
 	case serialize.JSON:
 		return rawsocketJSON, nil
+	case serialize.MSGPACK:
+		return rawsocketMsgpack, nil
 	default:
 		return 0, errors.New("serialization not supported by rawsocket")
 	}

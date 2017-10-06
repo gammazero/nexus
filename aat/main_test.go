@@ -1,12 +1,14 @@
 package aat
 
 import (
+	"crypto/tls"
 	"errors"
 	"flag"
 	"fmt"
 	"io"
 	"log"
 	"os"
+	"path"
 	"testing"
 	"time"
 
@@ -25,6 +27,9 @@ const (
 
 	tcpAddr  = "127.0.0.1:8282"
 	unixAddr = "/tmp/nexustest_sock"
+
+	certFile = "cert.pem"
+	keyFile  = "rsakey.pem"
 )
 
 var (
@@ -32,14 +37,14 @@ var (
 	cliLogger stdlog.StdLog
 	rtrLogger stdlog.StdLog
 
-	serverURL string
-	rsAddr    string
-
 	err error
 
-	// sockType is set to "web", "tcp", "unix", "".  Empty means use local
-	// connection to connect client to router.
-	sockType string
+	// scheme determines the transport and use of TLS.  Value must be one of
+	// the following: "ws", "wss", "tcp", "tcps", "unix", "".
+	// Empty indicates direct (in proc) connection to router.  TLS is not
+	// available for "" or "unix".
+	scheme string
+
 	// serType is set to "json" or "msgpack".  Ignored if sockType is "".
 	serType string
 )
@@ -65,10 +70,10 @@ func (a *testAuthz) Authorize(sess *nexus.Session, msg wamp.Message) (bool, erro
 
 func TestMain(m *testing.M) {
 	// ----- Setup environment -----
-	flag.StringVar(&sockType, "socket", "",
-		"-socket=[web, tcp, unix] or none for local (in-process)")
+	flag.StringVar(&scheme, "scheme", "",
+		"-scheme=[ws, wss, tcp, tcps, unix] or none for local (in-process)")
 	flag.StringVar(&serType, "serialize", "",
-		"-serialize[json, msgpack] or none for socket default")
+		"-serialize[json, msgpack] default is json")
 	flag.Parse()
 
 	if serType != "" && serType != "json" && serType != "msgpack" {
@@ -77,35 +82,16 @@ func TestMain(m *testing.M) {
 		os.Exit(1)
 	}
 
-	var sockDesc string
-	switch sockType {
-	case "web":
-		sockDesc = "WEBSOCKETS"
-		if serType == "" {
-			serType = "json"
+	var certPath, keyPath string
+	if scheme == "wss" || scheme == "tcps" {
+		if _, err = os.Stat(certFile); os.IsNotExist(err) {
+			certPath = path.Join("aat", certFile)
+			keyPath = path.Join("aat", keyFile)
+		} else {
+			certPath = certFile
+			keyPath = keyFile
 		}
-	case "tcp":
-		sockDesc = "TCP RAWSOCKETS"
-		if serType == "" {
-			serType = "msgpack"
-		}
-	case "unix":
-		sockDesc = "UNIX RAWSOCKETS"
-		if serType == "" {
-			serType = "msgpack"
-		}
-	case "":
-		sockDesc = "LOCAL CONNECTIONS"
-		serType = ""
-	default:
-		fmt.Fprintln(os.Stderr, "invalid socket value")
-		flag.Usage()
-		os.Exit(1)
 	}
-	if serType != "" {
-		sockDesc = fmt.Sprint(sockDesc, " with ", serType, " serialization")
-	}
-	fmt.Println("===== CLIENT USING", sockDesc, "=====")
 
 	// Create separate logger for client and router.
 	cliLogger = log.New(os.Stdout, "CLIENT> ", log.LstdFlags)
@@ -142,33 +128,52 @@ func TestMain(m *testing.M) {
 	if err != nil {
 		panic(err)
 	}
+	defer nxr.Close()
 
 	var closer io.Closer
-	switch sockType {
-	case "web":
-		wss := nexus.NewWebsocketServer(nxr)
-		closer, err = wss.ListenAndServe(tcpAddr)
-		if err != nil {
-			fmt.Fprintln(os.Stderr, "Failed to start websocket server:", err)
-			os.Exit(1)
-		}
-		serverURL = fmt.Sprintf("ws://%s/", tcpAddr)
-		rtrLogger.Println("WebSocket server listening on", serverURL)
-	case "tcp", "unix":
-		if sockType == "unix" {
-			rsAddr = unixAddr
-		} else {
-			rsAddr = tcpAddr
-		}
-		// Createraw socket server.
-		rss := nexus.NewRawSocketServer(nxr, 0, 0)
-		closer, err = rss.ListenAndServe(sockType, rsAddr)
-		if err != nil {
-			fmt.Fprintln(os.Stderr, "Failed to start rawsocket server:", err)
-			os.Exit(1)
-		}
-		rtrLogger.Println("RawSocket server listening on", rsAddr)
+	var sockDesc string
+	addr := tcpAddr
+	switch scheme {
+	case "":
+		serType = ""
+		sockDesc = "LOCAL CONNECTIONS"
+	case "ws":
+		s := nexus.NewWebsocketServer(nxr)
+		closer, err = s.ListenAndServe(tcpAddr)
+		sockDesc = "WEBSOCKETS"
+	case "wss":
+		s := nexus.NewWebsocketServer(nxr)
+		closer, err = s.ListenAndServeTLS(tcpAddr, nil, certPath, keyPath)
+		sockDesc = "WEBSOCKETS + TLS"
+	case "tcp":
+		s := nexus.NewRawSocketServer(nxr, 0, 0)
+		closer, err = s.ListenAndServe(scheme, tcpAddr)
+		sockDesc = "TCP RAWSOCKETS"
+	case "tcps":
+		s := nexus.NewRawSocketServer(nxr, 0, 0)
+		closer, err = s.ListenAndServeTLS("tcp", tcpAddr, nil, certPath, keyPath)
+		sockDesc = "TCP RAWSOCKETS + TLS"
+	case "unix":
+		s := nexus.NewRawSocketServer(nxr, 0, 0)
+		closer, err = s.ListenAndServe(scheme, unixAddr)
+		addr = unixAddr
+		sockDesc = "UNIX RAWSOCKETS"
+	default:
+		fmt.Fprintln(os.Stderr, "invalid scheme:", scheme)
+		flag.Usage()
+		os.Exit(1)
 	}
+	if err != nil {
+		fmt.Fprintln(os.Stderr, "Failed to start websocket server:", err)
+		os.Exit(1)
+	}
+	if closer != nil {
+		rtrLogger.Printf("Server listening on %s://%s", scheme, addr)
+	}
+	if serType != "" {
+		sockDesc = fmt.Sprint(sockDesc, " with ", serType, " serialization")
+	}
+	fmt.Println("===== CLIENT USING", sockDesc, "=====")
 
 	// Connect and disconnect so that router is started before running tests.
 	// Otherwise, goroutine leak detection will think the router goroutines
@@ -205,35 +210,39 @@ func TestMain(m *testing.M) {
 	if closer != nil {
 		closer.Close()
 	}
-	nxr.Close()
 	os.Exit(rc)
 }
 
 func connectClientCfg(cfg client.ClientConfig) (*client.Client, error) {
 	var cli *client.Client
 	var err error
-	var serialization serialize.Serialization
 
 	switch serType {
 	case "json":
-		serialization = serialize.JSON
+		cfg.Serialization = serialize.JSON
 	case "msgpack":
-		serialization = serialize.MSGPACK
+		cfg.Serialization = serialize.MSGPACK
 	}
+	cfg.Logger = cliLogger
 
-	switch sockType {
-	case "web":
-		// Use larger response timeout for very slow test systems.
-		cli, err = client.NewWebsocketClient(
-			serverURL, serialization, nil, nil, cfg, cliLogger)
-	case "tcp", "unix":
-		// Use larger response timeout for very slow test systems.
-		cli, err = client.NewRawSocketClient(sockType, rsAddr, serialization,
-			cfg, cliLogger, 0)
+	switch scheme {
+	case "ws", "tcp":
+		addr := fmt.Sprintf("%s://%s/", scheme, tcpAddr)
+		cli, err = client.ConnectNet(addr, cfg)
+	case "wss", "tcps":
+		// If TLS requested, set up TLS configuration to skip verification.
+		cfg.TlsCfg = &tls.Config{
+			InsecureSkipVerify: true,
+		}
+		addr := fmt.Sprintf("%s://%s/", scheme, tcpAddr)
+		cli, err = client.ConnectNet(addr, cfg)
+	case "unix":
+		addr := fmt.Sprintf("%s://%s/", scheme, unixAddr)
+		cli, err = client.ConnectNet(addr, cfg)
 	default:
-		cli, err = client.NewLocalClient(nxr, cfg, cliLogger)
-	}
+		cli, err = client.ConnectLocal(nxr, cfg)
 
+	}
 	if err != nil {
 		cliLogger.Println("Failed to create client:", err)
 		return nil, err
