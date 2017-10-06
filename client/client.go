@@ -57,6 +57,7 @@ type ClientConfig struct {
 	TlsCfg *tls.Config
 
 	// Supplies alternate Dial function for the websocket dialer.
+	// See https://godoc.org/github.com/gorilla/websocket#Dialer
 	Dial transport.DialFunc
 
 	// Client receive limit for use with RawSocket transport.

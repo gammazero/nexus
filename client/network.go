@@ -28,8 +28,8 @@ import (
 // https://golang.org/pkg/net/#Dial
 //
 // For Unix socket clients, the routerURL has the form "unix://path".  The path
-// portion specifes a path on the local file system where the Unix socket is
-// created.  TLS not used for unix socket.
+// portion specifies a path on the local file system where the Unix socket is
+// created.  TLS is not used for unix socket.
 func ConnectNet(routerURL string, cfg ClientConfig) (*Client, error) {
 	if cfg.Logger == nil {
 		cfg.Logger = log.New(os.Stderr, "", 0)
