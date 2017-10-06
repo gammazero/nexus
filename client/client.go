@@ -153,7 +153,7 @@ type Client struct {
 //
 // NOTE: This method is exported for clients that use a Peer implementation not
 // provided with the nexus package.  Generally, clients are created using
-// ConnectWebsocket(), ConnectTCP(), ConnectUnix(), or ConnectLocal().
+// ConnectNet() or ConnectLocal().
 func NewClient(p wamp.Peer, cfg ClientConfig) (*Client, error) {
 	if cfg.ResponseTimeout == 0 {
 		cfg.ResponseTimeout = defaultResponseTimeout
