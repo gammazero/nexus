@@ -94,15 +94,8 @@ func (s *WebsocketServer) ListenAndServe(address string) (io.Closer, error) {
 // then certFile and keyFile, if specified, are used to load an X509
 // certificate.
 func (s *WebsocketServer) ListenAndServeTLS(address string, tlscfg *tls.Config, certFile, keyFile string) (io.Closer, error) {
-	l, err := net.Listen("tcp", address)
-	if err != nil {
-		s.log.Print(err)
-		return nil, err
-	}
-
-	// With Go 1.9, all code below, until return, can be replaced with this:
+	// With Go 1.9, code below, until tls.Listen, can be removed when using:
 	//go server.ServeTLS(l, certFile, keyFile)
-
 	var hasCert bool
 	if tlscfg == nil {
 		tlscfg = &tls.Config{}
@@ -119,13 +112,21 @@ func (s *WebsocketServer) ListenAndServeTLS(address string, tlscfg *tls.Config, 
 		}
 	}
 
+	l, err := tls.Listen("tcp", address, tlscfg)
+	if err != nil {
+		s.log.Print(err)
+		return nil, err
+	}
+
 	// Run service on configured port.
 	server := &http.Server{
 		Handler:   s,
 		Addr:      l.Addr().String(),
 		TLSConfig: tlscfg,
 	}
+
 	go server.Serve(l)
+	//go server.ServeTLS(l, certFile, keyFile)
 
 	return l, nil
 }
