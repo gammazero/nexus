@@ -25,6 +25,10 @@ const (
 
 	tcpAddr  = "127.0.0.1:8282"
 	unixAddr = "/tmp/nexustest_sock"
+
+	webURL  = "wss://127.0.0.1:8282"
+	tcpURL  = "tcp://127.0.0.1:8282"
+	unixURL = "unix:///tmp/nexustest_sock"
 )
 
 var (
@@ -149,18 +153,16 @@ func TestMain(m *testing.M) {
 			fmt.Fprintln(os.Stderr, "Failed to start websocket server:", err)
 			os.Exit(1)
 		}
-		serverURL := fmt.Sprintf("ws://%s/", tcpAddr)
-		rtrLogger.Println("WebSocket server listening on", serverURL)
+		rtrLogger.Println("WebSocket server listening on", webURL)
 	case "tcp", "unix":
-		var rsAddr string
-		if sockType == "unix" {
-			rsAddr = unixAddr
-		} else {
-			rsAddr = tcpAddr
-		}
 		// Createraw socket server.
 		rss := nexus.NewRawSocketServer(nxr, 0, 0)
-		closer, err = rss.ListenAndServe(sockType, rsAddr)
+		var rsAddr string
+		if sockType == "unix" {
+			closer, err = rss.ListenAndServe(sockType, unixAddr)
+		} else {
+			closer, err = rss.ListenAndServe(sockType, tcpAddr)
+		}
 		if err != nil {
 			fmt.Fprintln(os.Stderr, "Failed to start rawsocket server:", err)
 			os.Exit(1)
@@ -221,15 +223,15 @@ func connectClientCfg(cfg client.ClientConfig) (*client.Client, error) {
 
 	switch sockType {
 	case "web":
-		cli, err = client.ConnectWebsocket(tcpAddr, cfg)
+		cli, err = client.ConnectNet(fmt.Sprintf("ws://%s/", tcpAddr), cfg)
 	case "tcp":
-		cli, err = client.ConnectTCP(tcpAddr, cfg)
+		cli, err = client.ConnectNet(fmt.Sprintf("tcp://%s/", tcpAddr), cfg)
 	case "unix":
-		cli, err = client.ConnectUnix(unixAddr, cfg)
+		cli, err = client.ConnectNet(fmt.Sprintf("unix://%s/", unixAddr), cfg)
 	default:
 		cli, err = client.ConnectLocal(nxr, cfg)
-	}
 
+	}
 	if err != nil {
 		cliLogger.Println("Failed to create client:", err)
 		return nil, err

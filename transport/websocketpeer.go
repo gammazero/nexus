@@ -72,6 +72,7 @@ func ConnectWebsocketPeer(url string, serialization serialize.Serialization, tls
 		Proxy:           http.ProxyFromEnvironment,
 		NetDial:         dial,
 	}
+
 	conn, _, err := dialer.Dial(url, nil)
 	if err != nil {
 		return nil, err

@@ -17,11 +17,11 @@ import (
 )
 
 const (
-	webAddr    = "127.0.0.1:8000"
-	webAddrTLS = "127.0.0.1:8100"
-	tcpAddr    = "127.0.0.1:8001"
-	tcpAddrTLS = "127.0.0.1:8101"
-	unixAddr   = "/tmp/exmpl_nexus_sock"
+	webAddr    = "ws://127.0.0.1:8000"
+	webAddrTLS = "wss://127.0.0.1:8100"
+	tcpAddr    = "tcp://127.0.0.1:8001"
+	tcpAddrTLS = "tcps://127.0.0.1:8101"
+	unixAddr   = "unix:///tmp/exmpl_nexus_sock"
 )
 
 func NewClient(logger *log.Logger) (*client.Client, error) {
@@ -76,25 +76,27 @@ func NewClient(logger *log.Logger) (*client.Client, error) {
 
 	// Create client with requested transport type.
 	var cli *client.Client
+	var addr string
 	var err error
 	switch sockType {
 	case "web":
 		if useTLS {
-			cli, err = client.ConnectWebsocket(webAddrTLS, cfg)
+			addr = webAddrTLS
 		} else {
-			cli, err = client.ConnectWebsocket(webAddr, cfg)
+			addr = webAddr
 		}
 	case "tcp":
 		if useTLS {
-			cli, err = client.ConnectTCP(tcpAddrTLS, cfg)
+			addr = tcpAddrTLS
 		} else {
-			cli, err = client.ConnectTCP(tcpAddr, cfg)
+			addr = tcpAddr
 		}
 	case "unix":
-		cli, err = client.ConnectUnix(unixAddr, cfg)
+		addr = unixAddr
 	default:
 		return nil, errors.New("socket must be one of: web, tcp, unix")
 	}
+	cli, err = client.ConnectNet(addr, cfg)
 	if err != nil {
 		return nil, err
 	}

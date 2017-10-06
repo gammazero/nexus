@@ -3,7 +3,6 @@ package client
 import (
 	"crypto/tls"
 	"fmt"
-	"strings"
 
 	"github.com/gammazero/nexus"
 	"github.com/gammazero/nexus/stdlog"
@@ -17,24 +16,31 @@ func NewLocalClient(router nexus.Router, cfg ClientConfig, logger stdlog.StdLog)
 	return ConnectLocal(router, cfg)
 }
 
-// DEPRECATED - use ConnectWebsocket
+// DEPRECATED - use ConnectNet with "ws://host/" or "wss://host/"
 func NewWebsocketClient(url string, serialization serialize.Serialization, tlscfg *tls.Config, dial transport.DialFunc, cfg ClientConfig, logger stdlog.StdLog) (*Client, error) {
 	cfg.Serialization = serialization
 	cfg.Logger = logger
 	cfg.TlsCfg = tlscfg
-	return ConnectWebsocket(strings.TrimLeft(url, "ws:/"), cfg)
+	return ConnectNet(url, cfg)
 }
 
-// DEPRECATED - use ConnectTCP or ConnectUnix
+// DEPRECATED - use ConnectNet with "tcp://address/" or "unix://address"
 func NewRawSocketClient(network, address string, serialization serialize.Serialization, cfg ClientConfig, logger stdlog.StdLog, recvLimit int) (*Client, error) {
 	cfg.Serialization = serialization
 	cfg.Logger = logger
 	cfg.RecvLimit = recvLimit
 	cfg.TlsCfg = nil
-	return connectRaw(network, address, cfg)
+	switch network {
+	case "tcp", "tcp4", "tcp6":
+		return ConnectNet(fmt.Sprintf("tcp://%s/", address), cfg)
+	case "unix":
+		return ConnectNet(fmt.Sprintf("unix://%s", address), cfg)
+	default:
+		return nil, fmt.Errorf("unsupported network: %s", network)
+	}
 }
 
-// DEPRECATED - use ConnectTCP or ConnectUnix
+// DEPRECATED - use ConnectNet with "tcps://address/"
 func NewTlsRawSocketClient(network, address string, serialization serialize.Serialization, tlscfg *tls.Config, cfg ClientConfig, logger stdlog.StdLog, recvLimit int) (*Client, error) {
 	cfg.Serialization = serialization
 	cfg.Logger = logger
@@ -43,15 +49,9 @@ func NewTlsRawSocketClient(network, address string, serialization serialize.Seri
 		tlscfg = &tls.Config{}
 	}
 	cfg.TlsCfg = tlscfg
-	return connectRaw(network, address, cfg)
-}
-
-func connectRaw(network, address string, cfg ClientConfig) (*Client, error) {
 	switch network {
 	case "tcp", "tcp4", "tcp6":
-		return ConnectTCP(address, cfg)
-	case "unix":
-		return ConnectUnix(address, cfg)
+		return ConnectNet(fmt.Sprintf("tcps://%s/", address), cfg)
 	default:
 		return nil, fmt.Errorf("unsupported network: %s", network)
 	}

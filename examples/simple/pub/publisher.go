@@ -18,7 +18,7 @@ func main() {
 	}
 
 	// Connect publisher session.
-	publisher, err := client.ConnectWebsocket("localhost:8000", cfg)
+	publisher, err := client.ConnectNet("ws://localhost:8000/", cfg)
 	if err != nil {
 		logger.Fatal(err)
 	}

@@ -23,7 +23,7 @@ The example clients are located in the following locations:
 
 To connect a client using different types of transport, specify `-socket=web`, `-socket=tcp`, or `-socket=unix`.  If no socket type is specified, then the default is `web` and the client uses a websocket transport.
 
-Connect the client using TLS by specifying the `-tls` and `-skipverify` flags.  The `-skipverify` flag is needed for to skip verification of the certificate presented by the example server.  If `-tls` is not specified, then do not use TLS connection.
+Connect the client using TLS by specifying the `-tls` and `-skipverify` flags.  The `-skipverify` flag is needed for to skip verification of the certificate presented by the example server.  If `-tls` is not specified, then client will not use a TLS connection.
 
 To choose the type of serialization for the client to use, specify `-serialize=json` or `-serialize=msgpack`.  If no serialization is specified, then the default is `json`.
 
