@@ -17,21 +17,20 @@ import (
 )
 
 const (
-	webAddr    = "ws://127.0.0.1:8000/"
-	webAddrTLS = "wss://localhost:8100/"
-	tcpAddr    = "tcp://127.0.0.1:8001/"
-	tcpAddrTLS = "tcps://localhost:8101/"
-	unixAddr   = "unix:///tmp/exmpl_nexus_sock"
+	wsAddr   = "127.0.0.1:8000"
+	wssAddr  = "localhost:8100"
+	tcpAddr  = "127.0.0.1:8001"
+	tcpsAddr = "localhost:8101"
+	unixAddr = "/tmp/exmpl_nexus_sock"
 )
 
 func NewClient(logger *log.Logger) (*client.Client, error) {
-	var useTLS, skipVerify bool
-	var sockType, serType, certFile, keyFile string
-	flag.StringVar(&sockType, "socket", "web",
-		"-socket=[web, tcp, unix].  Default is web")
+	var skipVerify bool
+	var scheme, serType, certFile, keyFile string
+	flag.StringVar(&scheme, "scheme", "ws",
+		"-scheme=[ws, wss, tcp, tcps, unix].  Default is ws (websocket no tls)")
 	flag.StringVar(&serType, "serialize", "json",
 		"-serialize[json, msgpack] or none for socket default")
-	flag.BoolVar(&useTLS, "tls", false, "communicate using TLS")
 	flag.BoolVar(&skipVerify, "skipverify", false,
 		"accept any certificate presented by the server")
 	flag.StringVar(&certFile, "cert", "",
@@ -39,22 +38,6 @@ func NewClient(logger *log.Logger) (*client.Client, error) {
 	flag.StringVar(&keyFile, "key", "",
 		"private key file with PEM encoded data")
 	flag.Parse()
-
-	// If TLS requested, then set up TLS configuration.
-	var tlscfg *tls.Config
-	if useTLS {
-		tlscfg = &tls.Config{
-			InsecureSkipVerify: skipVerify,
-		}
-		// If asked to load a client certificate to present to server.
-		if certFile != "" || keyFile != "" {
-			cert, err := tls.LoadX509KeyPair(certFile, keyFile)
-			if err != nil {
-				return nil, fmt.Errorf("error loading X509 key pair: %s", err)
-			}
-			tlscfg.Certificates = append(tlscfg.Certificates, cert)
-		}
-	}
 
 	// Get requested serialization.
 	serialization := client.JSON
@@ -69,42 +52,49 @@ func NewClient(logger *log.Logger) (*client.Client, error) {
 
 	cfg := client.ClientConfig{
 		Realm:         "nexus.examples",
-		TlsCfg:        tlscfg,
 		Serialization: serialization,
 		Logger:        logger,
+	}
+
+	if scheme == "wss" || scheme == "tcps" {
+		// If TLS requested, then set up TLS configuration.
+		tlscfg := &tls.Config{
+			InsecureSkipVerify: skipVerify,
+		}
+		// If asked to load a client certificate to present to server.
+		if certFile != "" || keyFile != "" {
+			cert, err := tls.LoadX509KeyPair(certFile, keyFile)
+			if err != nil {
+				return nil, fmt.Errorf("error loading X509 key pair: %s", err)
+			}
+			tlscfg.Certificates = append(tlscfg.Certificates, cert)
+		}
+		cfg.TlsCfg = tlscfg
 	}
 
 	// Create client with requested transport type.
 	var cli *client.Client
 	var addr string
 	var err error
-	switch sockType {
-	case "web":
-		if useTLS {
-			addr = webAddrTLS
-		} else {
-			addr = webAddr
-		}
+	switch scheme {
+	case "ws":
+		addr = fmt.Sprintf("%s://%s/", scheme, wsAddr)
+	case "wss":
+		addr = fmt.Sprintf("%s://%s/", scheme, wssAddr)
 	case "tcp":
-		if useTLS {
-			addr = tcpAddrTLS
-		} else {
-			addr = tcpAddr
-		}
+		addr = fmt.Sprintf("%s://%s/", scheme, tcpAddr)
+	case "tcps":
+		addr = fmt.Sprintf("%s://%s/", scheme, tcpsAddr)
 	case "unix":
-		addr = unixAddr
+		addr = fmt.Sprintf("%s://%s", scheme, unixAddr)
 	default:
-		return nil, errors.New("socket must be one of: web, tcp, unix")
+		return nil, errors.New("scheme must be one of: ws, wss, tcp, tcps, unix")
 	}
 	cli, err = client.ConnectNet(addr, cfg)
 	if err != nil {
 		return nil, err
 	}
 
-	if useTLS {
-		sockType = "TLS " + sockType
-	}
-	logger.Println("Connected using", sockType, "socket with", serType,
-		"serialization")
+	logger.Println("Connected to", addr, "using", serType, "serialization")
 	return cli, nil
 }
