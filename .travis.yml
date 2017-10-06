@@ -13,6 +13,6 @@ before_script:
 
 script:
   - go test -v -race ./...
-  - go test -v -race ./aat -socket=web
-  - go test -v ./aat -socket=web -serialize=msgpack -tls
-  - go test -v ./aat -socket=tcp -tls
+  - go test -v -race ./aat -scheme=ws
+  - go test -v ./aat -scheme=wss -serialize=msgpack
+  - go test -v ./aat -scheme=tcps
