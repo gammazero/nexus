@@ -106,8 +106,9 @@ func (r *router) Logger() stdlog.StdLog { return r.log }
 func (r *router) Attach(client wamp.Peer) error {
 	sendAbort := func(reason wamp.URI, abortErr error) {
 		abortMsg := wamp.Abort{Reason: reason}
+		abortMsg.Details = wamp.Dict{}
 		if abortErr != nil {
-			abortMsg.Details = wamp.Dict{"error": abortErr.Error()}
+			abortMsg.Details["error"] = abortErr.Error()
 			r.log.Println("Aborting client connection:", abortErr)
 		}
 		client.Send(&abortMsg)

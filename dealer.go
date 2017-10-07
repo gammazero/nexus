@@ -736,26 +736,28 @@ func (d *Dealer) yield(callee *Session, msg *wamp.Yield) {
 		return
 	}
 	callID := invk.callID
+	// Find caller for this result.
+	caller, ok := d.calls[callID]
+
+	details := wamp.Dict{}
 	progress := wamp.OptionFlag(msg.Options, "receive_progress")
 	if !progress {
 		delete(d.invocations, msg.Request)
-
 		// Delete callID -> invocation.
 		delete(d.invocationByCall, callID)
+		// Delete pending call since it is finished.
+		delete(d.calls, callID)
+	} else {
+		// If this is a progressive response, then set progress=true.
+		details["progress"] = true
 	}
 
-	// Find and delete pending call.
-	caller, ok := d.calls[callID]
+	// Did not find caller.
 	if !ok {
 		// Found invocation id that does not have any call id.
 		d.log.Println("!!! No matching caller for invocation from YIELD:",
 			msg.Request)
 		return
-	}
-	details := wamp.Dict{}
-	if !progress {
-		delete(d.calls, callID)
-		details["progress"] = true
 	}
 
 	// Send RESULT to the caller.  This forwards the YIELD from the callee.
