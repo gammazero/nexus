@@ -610,7 +610,7 @@ func (d *Dealer) call(caller *Session, msg *wamp.Call) {
 		// forward the Caller's willingness to receive progressive
 		// results by setting.
 		if callee.HasFeature(roleCallee, featureProgCallResults) {
-			details[featureProgCallResults] = true
+			details[wamp.OptReceiveProgress] = true
 		}
 	}
 
@@ -740,7 +740,8 @@ func (d *Dealer) yield(callee *Session, msg *wamp.Yield) {
 	caller, ok := d.calls[callID]
 
 	details := wamp.Dict{}
-	progress := wamp.OptionFlag(msg.Options, "receive_progress")
+
+	progress := wamp.OptionFlag(msg.Options, wamp.OptProgress)
 	if !progress {
 		delete(d.invocations, msg.Request)
 		// Delete callID -> invocation.
@@ -749,7 +750,7 @@ func (d *Dealer) yield(callee *Session, msg *wamp.Yield) {
 		delete(d.calls, callID)
 	} else {
 		// If this is a progressive response, then set progress=true.
-		details["progress"] = true
+		details[wamp.OptProgress] = true
 	}
 
 	// Did not find caller.

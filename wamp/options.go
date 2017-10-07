@@ -11,6 +11,7 @@ const (
 	OptInvoke          = "invoke"
 	OptMatch           = "match"
 	OptMode            = "mode"
+	OptProgress        = "progress"
 	OptReceiveProgress = "receive_progress"
 	OptTimeout         = "timeout"
 
