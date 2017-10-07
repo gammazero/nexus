@@ -205,6 +205,9 @@ func TestBasicCall(t *testing.T) {
 	if rslt.Request != 125 {
 		t.Fatal("wrong request ID in RESULT")
 	}
+	if wamp.OptionFlag(rslt.Details, "progress") {
+		t.Fatal("progress flag should not be set for response")
+	}
 
 	// Test calling valid procedure, with callee responding with error.
 	dealer.Call(callerSession,
