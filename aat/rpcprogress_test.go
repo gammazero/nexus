@@ -73,8 +73,7 @@ func TestRPCProgressiveCallResults(t *testing.T) {
 
 	// Test calling the procedure.
 	callArgs := wamp.List{1, 2, 3, 4, 5, 6, 7, 8, 9, 10}
-	ctx, cf := context.WithTimeout(context.Background(), time.Second*10)
-	defer cf()
+	ctx := context.Background()
 	result, err := caller.CallProgress(ctx, progProc, nil, callArgs, nil, "", progHandler)
 	if err != nil {
 		t.Fatal("Failed to call procedure:", err)

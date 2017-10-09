@@ -412,10 +412,10 @@ func (c *Client) Publish(topic string, options wamp.Dict, args wamp.List, kwargs
 // cancel the call-in-progress.  The client application can use this to
 // abandon what it is doing, if it chooses to pay attention to ctx.Done().
 //
-// If the caller is willing to recieve progressive results, SendProgress() may
-// be called from within this function so for each progressive result to send
-// to the caller.  It is not required that the handler send any progressive
-// results.
+// If the callee wishes to send progressive results, and the caller is willing
+// to receive them, SendProgress() may be called from within an
+// InvocationHandler for each progressive result to send to the caller.  It is
+// not required that the handler send any progressive results.
 type InvocationHandler func(context.Context, wamp.List, wamp.Dict, wamp.Dict) (result *InvokeResult)
 
 // Register registers the client to handle invocations of the specified
@@ -550,8 +550,7 @@ func (c *Client) Unregister(procedure string) error {
 // CANCEL message is sent to the router to cancel the call according to the
 // specified mode.
 //
-// If cancelMode must be one of the following:
-//     "kill", "killnowait', "skip".
+// If cancelMode must be one of the following: "kill", "killnowait', "skip".
 // Setting  to  ""  specifies  using  the  default  value:  "killnowait".   The
 // cancelMode is  an option  for a  CANCEL message, not  for the  CALL message,
 // which is why it is specified as a parameter to the Call() API.
@@ -584,16 +583,6 @@ func (c *Client) Unregister(procedure string) error {
 // To request a remote call timeout, specify a timeout in milliseconds:
 //   options["timeout"] = 30000
 //
-// Progressive Call Results
-//
-// A caller can indicate its willingness to receive progressive results by
-// setting the "receive_progress" option.  If the callee supports progressive
-// calls, the dealer will forward this indication from the caller to the
-// callee.
-//
-// To indicate willingness to receive progressive results:
-//   options["receive_progress"] = true
-//
 // Caller Identification
 //
 // A caller may request the disclosure of its identity (its WAMP session ID) to
@@ -603,14 +592,33 @@ func (c *Client) Unregister(procedure string) error {
 //   options["disclose_me"] = true
 //
 // NOTE: Use consts defined in wamp/options.go instead of raw strings.
+//
+// Progressive Call Results
+//
+// To request progressive call results, use the CallProgress function.
 func (c *Client) Call(ctx context.Context, procedure string, options wamp.Dict, args wamp.List, kwargs wamp.Dict, cancelMode string) (*wamp.Result, error) {
 	return c.CallProgress(ctx, procedure, options, args, kwargs, cancelMode, nil)
 }
 
+// ProgressCallback is a type of function that is registered to asynchronously
+// handle progressive results during the a call to CallProgress().
 type ProgressCallback func(*wamp.Result)
 
 // CallProgress is the same as Call with the addition of a progress callback
 // function as the last parameter.
+//
+// A caller can indicate its willingness to receive progressive results by
+// calling CallProgress and supplying a callback function to handle progressive
+// results that are returned before the final result.  Like Call(),
+// CallProgress() returns the when the final result is returned by the callee.
+// The progress callback is guaranteed not to be called after CallProgress()
+// returns.
+//
+// There is no need to set the "receive_progress" option, as this is
+// automatically set if a progress callback is provided.
+//
+// IMPORTANT: If the context has a timeout, then this needs to be sufficient to
+// receive all progressive results as well as the final result.
 func (c *Client) CallProgress(ctx context.Context, procedure string, options wamp.Dict, args wamp.List, kwargs wamp.Dict, cancelMode string, progcb ProgressCallback) (*wamp.Result, error) {
 	switch cancelMode {
 	case wamp.CancelModeKill, wamp.CancelModeKillNoWait, wamp.CancelModeSkip:
@@ -1187,14 +1195,6 @@ func (c *Client) waitForReplyWithCancel(ctx context.Context, id wamp.ID, mode, p
 	<-sync
 	if !ok {
 		return nil, fmt.Errorf("not expecting reply for ID: %v", id)
-	}
-
-	// If the context does not have a deadline, then give it the default
-	// response timeout.
-	if _, ok := ctx.Deadline(); !ok {
-		var cancel context.CancelFunc
-		ctx, cancel = context.WithTimeout(ctx, c.responseTimeout)
-		defer cancel()
 	}
 
 	var msg wamp.Message
