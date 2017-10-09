@@ -27,19 +27,19 @@ func TestRPCProgressiveCallResults(t *testing.T) {
 		if err != nil {
 			fmt.Println("Error sending Alpha progress:", err)
 		}
-		time.Sleep(1000 * time.Millisecond)
+		time.Sleep(500 * time.Millisecond)
 
 		err = callee.SendProgress(ctx, wamp.List{"Bravo"}, nil)
 		if err != nil {
 			fmt.Println("Error sending Bravo progress:", err)
 		}
-		time.Sleep(1000 * time.Millisecond)
+		time.Sleep(500 * time.Millisecond)
 
 		err = callee.SendProgress(ctx, wamp.List{"Charlie"}, nil)
 		if err != nil {
 			fmt.Println("Error sending Charlie progress:", err)
 		}
-		time.Sleep(1000 * time.Millisecond)
+		time.Sleep(500 * time.Millisecond)
 
 		var sum int64
 		for i := range args {
@@ -73,10 +73,9 @@ func TestRPCProgressiveCallResults(t *testing.T) {
 
 	// Test calling the procedure.
 	callArgs := wamp.List{1, 2, 3, 4, 5, 6, 7, 8, 9, 10}
-	ctx := context.Background()
-	fmt.Println("---> Calling", progProc)
+	ctx, cf := context.WithTimeout(context.Background(), time.Second*10)
+	defer cf()
 	result, err := caller.CallProgress(ctx, progProc, nil, callArgs, nil, "", progHandler)
-	fmt.Println("--->", progProc, "returned")
 	if err != nil {
 		t.Fatal("Failed to call procedure:", err)
 	}
@@ -86,6 +85,9 @@ func TestRPCProgressiveCallResults(t *testing.T) {
 	}
 	if sum != 55 {
 		t.Fatal("Wrong result:", sum)
+	}
+	if progCount != 3 {
+		t.Fatal("Expected progCount == 3")
 	}
 
 	// Test unregister.
@@ -101,8 +103,5 @@ func TestRPCProgressiveCallResults(t *testing.T) {
 	err = callee.Close()
 	if err != nil {
 		t.Fatal("Failed to disconnect client:", err)
-	}
-	if progCount != 3 {
-		t.Fatal("Expected progCount == 3")
 	}
 }
