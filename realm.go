@@ -41,10 +41,11 @@ type realm struct {
 	authenticators map[string]auth.Authenticator
 
 	// session ID -> Session
-	clients map[wamp.ID]*Session
+	clients    map[wamp.ID]*wamp.Session
+	clientStop chan struct{}
 
 	metaPeer  wamp.Peer
-	metaSess  *Session
+	metaSess  *wamp.Session
 	metaIDGen *wamp.IDGen
 
 	actionChan chan func()
@@ -54,6 +55,7 @@ type realm struct {
 
 	// Session meta-procedure registration ID -> handler map.
 	metaProcMap map[wamp.ID]func(*wamp.Invocation) wamp.Message
+	metaStop    chan struct{}
 	metaDone    chan struct{}
 
 	closed    bool
@@ -75,9 +77,11 @@ func newRealm(config *RealmConfig, broker *Broker, dealer *Dealer, logger stdlog
 		dealer:         dealer,
 		authorizer:     config.Authorizer,
 		authenticators: config.Authenticators,
-		clients:        map[wamp.ID]*Session{},
+		clients:        map[wamp.ID]*wamp.Session{},
+		clientStop:     make(chan struct{}),
 		actionChan:     make(chan func()),
 		metaIDGen:      wamp.NewIDGen(),
+		metaStop:       make(chan struct{}),
 		metaDone:       make(chan struct{}),
 		metaProcMap:    make(map[wamp.ID]func(*wamp.Invocation) wamp.Message, 9),
 		log:            logger,
@@ -102,6 +106,15 @@ func newRealm(config *RealmConfig, broker *Broker, dealer *Dealer, logger stdlog
 	}
 
 	return r, nil
+}
+
+// waitReady waits for the realm to be fully initialized and running.
+func (r *realm) waitReady() {
+	sync := make(chan struct{})
+	r.actionChan <- func() {
+		close(sync)
+	}
+	<-sync
 }
 
 // close performs an orderly shutdown of the realm.
@@ -135,13 +148,13 @@ func (r *realm) close() {
 	}
 	r.closed = true
 
+	// Make sure that realm is fully initialized, by checking that it is
+	// running, before closing.
+	r.waitReady()
+
 	// Kick all clients off.  Clients will not generate meta events when the
 	// ErrSystesShutdown reason is given.
-	r.actionChan <- func() {
-		for _, client := range r.clients {
-			client.stop <- wamp.ErrSystemShutdown
-		}
-	}
+	close(r.clientStop)
 
 	// Wait until each client's handleInboundMessages() has exited.  No new
 	// messages can be generated once sessions are closed.
@@ -151,7 +164,7 @@ func (r *realm) close() {
 	// the meta client receives GOODBYE from the meta session, the meta
 	// session is done and will not try to publish anything more to the
 	// broker, and it is finally safe to exit and close the broker.
-	r.metaSess.stop <- wamp.ErrSystemShutdown
+	close(r.metaStop)
 	<-r.metaDone
 
 	// handleInboundMessages() and metaProcedureHandler() are the only things
@@ -170,13 +183,8 @@ func (r *realm) close() {
 // run must be called to start the Realm.
 // It blocks so should be executed in a separate goroutine
 func (r *realm) run() {
-	// Create a session that bridges two peers.  Meta events are published by
-	// the metaPeer returned, which is the remote side of the router uplink.
-	// Sending a PUBLISH message to it will result in the router publishing the
-	// event to any subscribers.
-	r.metaPeer, r.metaSess = r.createMetaSession()
-
-	r.dealer.SetMetaPeer(r.metaPeer)
+	// Create a local client for publishing meta events.
+	r.createMetaSession()
 
 	// Register to handle session meta procedures.
 	r.registerMetaProcedure(wamp.MetaProcSessionCount, r.sessionCount)
@@ -199,29 +207,30 @@ func (r *realm) run() {
 }
 
 // createMetaSession creates and starts a session that runs in this realm, and
-// returns both sides of the session.
-//
-// This is used for creating a local client for publishing meta events.
-func (r *realm) createMetaSession() (wamp.Peer, *Session) {
+// bridges two peers.  One peer, the r.metaSess, is associated with the router
+// and handles meta session requests.  The other, r.metaPeer, is the remote
+// side of the router uplink and is used as the interface to send meta session
+// messages to.  Sending a PUBLISH message to it will result in the router
+// publishing the event to any subscribers.
+func (r *realm) createMetaSession() {
 	cli, rtr := transport.LinkedPeers(r.log)
+	r.metaPeer = cli
+	r.dealer.SetMetaPeer(cli)
 
 	details := wamp.SetOption(nil, "authrole", "trusted")
 
 	// This session is the local leg of the router uplink.
-	sess := &Session{
+	r.metaSess = &wamp.Session{
 		Peer:    rtr,
 		ID:      wamp.GlobalID(),
 		Details: details,
-		stop:    make(chan wamp.URI, 1),
 	}
 
 	// Run the handler for messages from the meta session.
-	go r.handleInboundMessages(sess)
+	go r.handleInboundMessages(r.metaSess)
 	if r.debug {
-		r.log.Println("Started meta-session", sess)
+		r.log.Println("Started meta-session", r.metaSess)
 	}
-
-	return cli, sess
 }
 
 // onJoin is called when a non-meta session joins this realm.  The session is
@@ -229,7 +238,7 @@ func (r *realm) createMetaSession() (wamp.Peer, *Session) {
 //
 // Note: onJoin() is called from handleSession, not handleInboundMessages, so
 // that it is not called for the meta client.
-func (r *realm) onJoin(sess *Session) {
+func (r *realm) onJoin(sess *wamp.Session) {
 	r.waitHandlers.Add(1)
 	sync := make(chan struct{})
 	r.actionChan <- func() {
@@ -263,7 +272,7 @@ func (r *realm) onJoin(sess *Session) {
 //
 // Note: onLeave() must be called from outside handleInboundMessages so that it
 // is not called for the meta client.
-func (r *realm) onLeave(sess *Session, shutdown bool) {
+func (r *realm) onLeave(sess *wamp.Session, shutdown bool) {
 	sync := make(chan struct{})
 	r.actionChan <- func() {
 		delete(r.clients, sess.ID)
@@ -291,7 +300,7 @@ func (r *realm) onLeave(sess *Session, shutdown bool) {
 // HandleSession starts a session attached to this realm.
 //
 // Routing occurs only between WAMP Sessions that have joined the same Realm.
-func (r *realm) handleSession(sess *Session) error {
+func (r *realm) handleSession(sess *wamp.Session) error {
 	// The lock is held in mutual exclusion with the closing of the realm.
 	// This ensures that no new session handler can start once the realm is
 	// closing, during which the realm waits for all existing session handlers
@@ -321,9 +330,13 @@ func (r *realm) handleSession(sess *Session) error {
 
 // handleInboundMessages handles the messages sent from a client session to
 // the router.
-func (r *realm) handleInboundMessages(sess *Session) bool {
+func (r *realm) handleInboundMessages(sess *wamp.Session) bool {
 	if r.debug {
 		defer r.log.Println("Ended session", sess)
+	}
+	stopChan := r.clientStop
+	if sess == r.metaSess {
+		stopChan = r.metaStop
 	}
 	recvChan := sess.Recv()
 	for {
@@ -335,15 +348,15 @@ func (r *realm) handleInboundMessages(sess *Session) bool {
 				r.log.Println("Lost", sess)
 				return false
 			}
-		case reason := <-sess.stop:
+		case <-stopChan:
 			if r.debug {
-				r.log.Printf("Stop session %s: %v", sess, reason)
+				r.log.Printf("Stop session %s: system shutdown", sess)
 			}
 			sess.Send(&wamp.Goodbye{
-				Reason:  reason,
+				Reason:  wamp.ErrSystemShutdown,
 				Details: wamp.Dict{},
 			})
-			return reason == wamp.ErrSystemShutdown
+			return true
 		}
 
 		if r.debug {
@@ -408,7 +421,7 @@ func (r *realm) handleInboundMessages(sess *Session) bool {
 // authzMessage checks if the session is authroized to send the message.  If
 // authorization fails or if the session is not authorized, then an error
 // response is returned to the client, and this method returns false.
-func (r *realm) authzMessage(sess *Session, msg wamp.Message) bool {
+func (r *realm) authzMessage(sess *wamp.Session, msg wamp.Message) bool {
 	isAuthz, err := r.authorizer.Authorize(sess, msg)
 	if !isAuthz {
 		errRsp := &wamp.Error{Type: msg.MessageType()}
@@ -522,6 +535,10 @@ func (r *realm) registerMetaProcedure(procedure wamp.URI, f func(*wamp.Invocatio
 	if !ok {
 		err, ok := msg.(*wamp.Error)
 		if !ok {
+			if _, ok = msg.(*wamp.Goodbye); ok {
+				r.log.Println("Shutdown during meta procedure registration")
+				return
+			}
 			r.log.Println("PANIC! Received unexpected", msg.MessageType())
 			panic("cannot register meta procedure")
 		}
@@ -653,7 +670,7 @@ func (r *realm) sessionGet(msg *wamp.Invocation) wamp.Message {
 		return makeErr()
 	}
 
-	retChan := make(chan *Session)
+	retChan := make(chan *wamp.Session)
 	r.actionChan <- func() {
 		sess, _ := r.clients[wamp.ID(sessID)]
 		retChan <- sess

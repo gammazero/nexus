@@ -28,7 +28,7 @@ func TestBasicSubscribe(t *testing.T) {
 	// Test subscribing to a topic.
 	broker := NewBroker(logger, false, true, debug)
 	subscriber := newTestPeer()
-	sess := &Session{Peer: subscriber}
+	sess := &wamp.Session{Peer: subscriber}
 	testTopic := wamp.URI("nexus.test.topic")
 	broker.Subscribe(sess, &wamp.Subscribe{Request: 123, Topic: testTopic})
 
@@ -114,7 +114,7 @@ func TestUnsubscribe(t *testing.T) {
 	// Subscribe to topic
 	broker := NewBroker(logger, false, true, debug)
 	subscriber := newTestPeer()
-	sess := &Session{Peer: subscriber}
+	sess := &wamp.Session{Peer: subscriber}
 	testTopic := wamp.URI("nexus.test.topic")
 	broker.Subscribe(sess, &wamp.Subscribe{Request: 123, Topic: testTopic})
 	rsp := <-sess.Recv()
@@ -148,7 +148,7 @@ func TestRemove(t *testing.T) {
 	// Subscribe to topic
 	broker := NewBroker(logger, false, true, debug)
 	subscriber := newTestPeer()
-	sess := &Session{Peer: subscriber}
+	sess := &wamp.Session{Peer: subscriber}
 	testTopic := wamp.URI("nexus.test.topic")
 	broker.Subscribe(sess, &wamp.Subscribe{Request: 123, Topic: testTopic})
 	rsp := <-sess.Recv()
@@ -163,7 +163,7 @@ func TestRemove(t *testing.T) {
 
 	// Wait for another subscriber as a way to wait for the RemoveSession to
 	// complete.
-	sess2 := &Session{Peer: subscriber}
+	sess2 := &wamp.Session{Peer: subscriber}
 	broker.Subscribe(sess2,
 		&wamp.Subscribe{Request: 789, Topic: wamp.URI("nexus.test.sync")})
 	rsp = <-sess2.Recv()
@@ -190,7 +190,7 @@ func TestRemove(t *testing.T) {
 func TestBasicPubSub(t *testing.T) {
 	broker := NewBroker(logger, false, true, debug)
 	subscriber := newTestPeer()
-	sess := &Session{Peer: subscriber}
+	sess := &wamp.Session{Peer: subscriber}
 	testTopic := wamp.URI("nexus.test.topic")
 	msg := &wamp.Subscribe{
 		Request: 123,
@@ -206,7 +206,7 @@ func TestBasicPubSub(t *testing.T) {
 	}
 
 	publisher := newTestPeer()
-	pubSess := &Session{Peer: publisher}
+	pubSess := &wamp.Session{Peer: publisher}
 	broker.Publish(pubSess, &wamp.Publish{Request: 124, Topic: testTopic,
 		Arguments: wamp.List{"hello world"}})
 	rsp = <-sess.Recv()
@@ -229,7 +229,7 @@ func TestPrefxPatternBasedSubscription(t *testing.T) {
 	// Test match=prefix
 	broker := NewBroker(logger, false, true, debug)
 	subscriber := newTestPeer()
-	sess := &Session{Peer: subscriber}
+	sess := &wamp.Session{Peer: subscriber}
 	testTopic := wamp.URI("nexus.test.topic")
 	testTopicPfx := wamp.URI("nexus.test.")
 	msg := &wamp.Subscribe{
@@ -268,7 +268,7 @@ func TestPrefxPatternBasedSubscription(t *testing.T) {
 	}
 
 	publisher := newTestPeer()
-	pubSess := &Session{Peer: publisher}
+	pubSess := &wamp.Session{Peer: publisher}
 	broker.Publish(pubSess, &wamp.Publish{Request: 124, Topic: testTopic})
 	rsp = <-sess.Recv()
 	evt, ok := rsp.(*wamp.Event)
@@ -289,7 +289,7 @@ func TestWildcardPatternBasedSubscription(t *testing.T) {
 	// Test match=prefix
 	broker := NewBroker(logger, false, true, debug)
 	subscriber := newTestPeer()
-	sess := &Session{Peer: subscriber}
+	sess := &wamp.Session{Peer: subscriber}
 	testTopic := wamp.URI("nexus.test.topic")
 	testTopicWc := wamp.URI("nexus..topic")
 	msg := &wamp.Subscribe{
@@ -328,7 +328,7 @@ func TestWildcardPatternBasedSubscription(t *testing.T) {
 	}
 
 	publisher := newTestPeer()
-	pubSess := &Session{Peer: publisher}
+	pubSess := &wamp.Session{Peer: publisher}
 	broker.Publish(pubSess, &wamp.Publish{Request: 124, Topic: testTopic})
 	rsp = <-sess.Recv()
 	evt, ok := rsp.(*wamp.Event)
@@ -352,7 +352,7 @@ func TestSubscriberBlackwhiteListing(t *testing.T) {
 		"authid":   "jdoe",
 		"authrole": "admin",
 	}
-	sess := &Session{
+	sess := &wamp.Session{
 		Peer:    subscriber,
 		ID:      wamp.GlobalID(),
 		Details: details,
@@ -379,7 +379,7 @@ func TestSubscriberBlackwhiteListing(t *testing.T) {
 			},
 		},
 	}
-	pubSess := &Session{Peer: publisher, Details: details}
+	pubSess := &wamp.Session{Peer: publisher, Details: details}
 
 	// Test whilelist
 	broker.Publish(pubSess, &wamp.Publish{
@@ -459,7 +459,7 @@ func TestSubscriberBlackwhiteListing(t *testing.T) {
 func TestPublisherExclusion(t *testing.T) {
 	broker := NewBroker(logger, false, true, debug)
 	subscriber := newTestPeer()
-	sess := &Session{Peer: subscriber}
+	sess := &wamp.Session{Peer: subscriber}
 	testTopic := wamp.URI("nexus.test.topic")
 
 	broker.Subscribe(sess, &wamp.Subscribe{Request: 123, Topic: testTopic})
@@ -485,7 +485,7 @@ func TestPublisherExclusion(t *testing.T) {
 			},
 		},
 	}
-	pubSess := &Session{Peer: publisher, Details: details}
+	pubSess := &wamp.Session{Peer: publisher, Details: details}
 
 	// Subscribe the publish session also.
 	broker.Subscribe(pubSess, &wamp.Subscribe{Request: 123, Topic: testTopic})
@@ -543,7 +543,7 @@ func TestPublisherIdentification(t *testing.T) {
 			},
 		},
 	}
-	sess := &Session{Peer: subscriber, Details: details}
+	sess := &wamp.Session{Peer: subscriber, Details: details}
 
 	testTopic := wamp.URI("nexus.test.topic")
 
@@ -557,7 +557,7 @@ func TestPublisherIdentification(t *testing.T) {
 	}
 
 	publisher := newTestPeer()
-	pubSess := &Session{Peer: publisher, ID: wamp.GlobalID()}
+	pubSess := &wamp.Session{Peer: publisher, ID: wamp.GlobalID()}
 	broker.Publish(pubSess, &wamp.Publish{
 		Request: 124,
 		Topic:   testTopic,

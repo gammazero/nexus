@@ -252,11 +252,10 @@ func (r *router) Attach(client wamp.Peer) error {
 	sessDetails["session"] = welcome.ID
 
 	// Create new session.
-	sess := &Session{
+	sess := &wamp.Session{
 		Peer:    client,
 		ID:      welcome.ID,
 		Details: sessDetails,
-		stop:    make(chan wamp.URI, 1),
 	}
 
 	if err := realm.handleSession(sess); err != nil {
@@ -317,6 +316,7 @@ func (r *router) addRealm(config *RealmConfig) (*realm, error) {
 		r.waitRealms.Done()
 	}()
 
+	realm.waitReady()
 	r.log.Println("Added realm:", config.URI)
 	return realm, nil
 }

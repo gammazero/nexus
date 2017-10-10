@@ -119,7 +119,7 @@ type InvokeResult struct {
 
 // A Client routes messages to/from a WAMP router.
 type Client struct {
-	peer wamp.Peer
+	sess wamp.Session
 
 	responseTimeout time.Duration
 	awaitingReply   map[wamp.ID]chan wamp.Message
@@ -139,9 +139,6 @@ type Client struct {
 
 	stopping          chan struct{}
 	activeInvHandlers sync.WaitGroup
-
-	id           wamp.ID
-	realmDetails wamp.Dict
 
 	log   stdlog.StdLog
 	debug bool
@@ -168,7 +165,11 @@ func NewClient(p wamp.Peer, cfg ClientConfig) (*Client, error) {
 	}
 
 	c := &Client{
-		peer: p,
+		sess: wamp.Session{
+			Peer:    p,
+			ID:      welcome.ID,
+			Details: welcome.Details,
+		},
 
 		responseTimeout: cfg.ResponseTimeout,
 		awaitingReply:   map[wamp.ID]chan wamp.Message{},
@@ -188,9 +189,6 @@ func NewClient(p wamp.Peer, cfg ClientConfig) (*Client, error) {
 
 		log:   cfg.Logger,
 		debug: cfg.Debug,
-
-		realmDetails: welcome.Details,
-		id:           welcome.ID,
 	}
 	go c.run()
 	go c.receiveFromRouter()
@@ -203,7 +201,7 @@ func (c *Client) Done() <-chan struct{} { return c.done }
 
 // ID returns the client's session ID which is assigned after attaching to a
 // router and joining a realm.
-func (c *Client) ID() wamp.ID { return c.id }
+func (c *Client) ID() wamp.ID { return c.sess.ID }
 
 // AuthFunc takes the HELLO details and CHALLENGE extra data and returns the
 // signature string and a details map.  If the signature is accepted, the
@@ -220,7 +218,7 @@ func (c *Client) ID() wamp.ID { return c.id }
 type AuthFunc func(helloDetails wamp.Dict, challengeExtra wamp.Dict) (signature string, details wamp.Dict)
 
 // RealmDetails returns the realm information received in the WELCOME message.
-func (c *Client) RealmDetails() wamp.Dict { return c.realmDetails }
+func (c *Client) RealmDetails() wamp.Dict { return c.sess.Details }
 
 // EventHandler is a function that handles a publish event.
 type EventHandler func(args wamp.List, kwargs wamp.Dict, details wamp.Dict)
@@ -249,7 +247,7 @@ func (c *Client) Subscribe(topic string, fn EventHandler, options wamp.Dict) err
 		Options: options,
 		Topic:   wamp.URI(topic),
 	}
-	c.peer.Send(sub)
+	c.sess.Send(sub)
 
 	// Wait to receive SUBSCRIBED message.
 	msg, err := c.waitForReply(id)
@@ -319,7 +317,7 @@ func (c *Client) Unsubscribe(topic string) error {
 		Request:      id,
 		Subscription: subID,
 	}
-	c.peer.Send(sub)
+	c.sess.Send(sub)
 
 	// Wait to receive UNSUBSCRIBED message.
 	msg, err := c.waitForReply(id)
@@ -378,7 +376,7 @@ func (c *Client) Publish(topic string, options wamp.Dict, args wamp.List, kwargs
 	if pubAck {
 		c.expectReply(id)
 	}
-	c.peer.Send(&wamp.Publish{
+	c.sess.Send(&wamp.Publish{
 		Request:     id,
 		Options:     options,
 		Topic:       wamp.URI(topic),
@@ -442,7 +440,7 @@ func (c *Client) Register(procedure string, fn InvocationHandler, options wamp.D
 		Options:   options,
 		Procedure: wamp.URI(procedure),
 	}
-	c.peer.Send(register)
+	c.sess.Send(register)
 
 	// Wait to receive REGISTERED message.
 	msg, err := c.waitForReply(id)
@@ -516,7 +514,7 @@ func (c *Client) Unregister(procedure string) error {
 		Request:      id,
 		Registration: procID,
 	}
-	c.peer.Send(unregister)
+	c.sess.Send(unregister)
 
 	// Wait to receive UNREGISTERED message.
 	msg, err := c.waitForReply(id)
@@ -659,7 +657,7 @@ func (c *Client) CallProgress(ctx context.Context, procedure string, options wam
 		Arguments:   args,
 		ArgumentsKw: kwargs,
 	}
-	c.peer.Send(call)
+	c.sess.Send(call)
 
 	// Wait to receive RESULT message.
 	var msg wamp.Message
@@ -721,7 +719,7 @@ func (c *Client) Close() error {
 	// Stop the client's main goroutine.
 	close(c.actionChan)
 
-	c.realmDetails = nil
+	c.sess.Peer = nil
 	return nil
 }
 
@@ -783,14 +781,14 @@ func joinRealm(peer wamp.Peer, cfg ClientConfig) (*wamp.Welcome, error) {
 func (c *Client) leaveRealm() {
 	// Send GOODBYE to router.  The router will respond with a GOODBYE message
 	// which is handled by receiveFromRouter, and causes it to exit.
-	c.peer.Send(&wamp.Goodbye{
+	c.sess.Send(&wamp.Goodbye{
 		Details: wamp.Dict{},
 		Reason:  wamp.ErrCloseRealm,
 	})
 
 	// Close the peer.  This causes receiveFromRouter to exit if it has not
 	// already done so after receiving GOODBYE from router.
-	c.peer.Close()
+	c.sess.Close()
 
 	// Wait for receiveFromRouter to exit.
 	<-c.done
@@ -912,11 +910,11 @@ func unexpectedMsgError(msg wamp.Message, expected wamp.MessageType) error {
 func (c *Client) receiveFromRouter() {
 	defer close(c.done)
 	if c.debug {
-		defer c.log.Println("Client", c.id, "closed")
+		defer c.log.Println("Client", c.sess, "closed")
 	}
-	for msg := range c.peer.Recv() {
+	for msg := range c.sess.Recv() {
 		if c.debug {
-			c.log.Println("Client", c.id, "received", msg.MessageType())
+			c.log.Println("Client", c.sess, "received", msg.MessageType())
 		}
 		switch msg := msg.(type) {
 		case *wamp.Event:
@@ -988,7 +986,7 @@ func (c *Client) SendProgress(ctx context.Context, args wamp.List, kwArgs wamp.D
 	if !canSendProg {
 		return errors.New("caller not accepting progressive results")
 	}
-	return c.peer.Send(&wamp.Yield{
+	return c.sess.Send(&wamp.Yield{
 		Request:     req,
 		Options:     wamp.Dict{wamp.OptProgress: true},
 		Arguments:   args,
@@ -1007,7 +1005,7 @@ func (c *Client) handleInvocation(msg *wamp.Invocation) {
 			// reported as ErrNoSuchProcedure, since the dealer has a procedure
 			// registered.  It is reported as ErrInvalidArgument to denote that
 			// the client has a problem with the registration ID argument.
-			c.peer.Send(&wamp.Error{
+			c.sess.Send(&wamp.Error{
 				Type:      wamp.INVOCATION,
 				Request:   msg.Request,
 				Details:   wamp.Dict{},
@@ -1094,7 +1092,7 @@ func (c *Client) handleInvocation(msg *wamp.Invocation) {
 					return
 				}
 
-				c.peer.Send(&wamp.Error{
+				c.sess.Send(&wamp.Error{
 					Type:        wamp.INVOCATION,
 					Request:     msg.Request,
 					Details:     wamp.Dict{},
@@ -1104,7 +1102,7 @@ func (c *Client) handleInvocation(msg *wamp.Invocation) {
 				})
 				return
 			}
-			c.peer.Send(&wamp.Yield{
+			c.sess.Send(&wamp.Yield{
 				Request:     msg.Request,
 				Options:     wamp.Dict{},
 				Arguments:   result.Args,
@@ -1204,7 +1202,7 @@ CollectResults:
 	case msg = <-wait:
 	case <-ctx.Done():
 		c.log.Printf("Call to '%s' canceled (mode=%s)", procedure, mode)
-		c.peer.Send(&wamp.Cancel{
+		c.sess.Send(&wamp.Cancel{
 			Request: id,
 			Options: wamp.SetOption(nil, wamp.OptMode, mode),
 		})

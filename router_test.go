@@ -67,7 +67,7 @@ func newTestRouter() (Router, error) {
 	return NewRouter(config, logger)
 }
 
-func testClient(r Router) (*Session, error) {
+func testClient(r Router) (*wamp.Session, error) {
 	client, server := transport.LinkedPeers(logger)
 	// Run as goroutine since Send will block until message read by router, if
 	// client uses unbuffered channel.
@@ -88,7 +88,7 @@ func testClient(r Router) (*Session, error) {
 		}
 		sid = msg.(*wamp.Welcome).ID
 	}
-	return &Session{
+	return &wamp.Session{
 		Peer: client,
 		ID:   sid,
 	}, nil
