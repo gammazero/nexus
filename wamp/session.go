@@ -3,7 +3,8 @@ package wamp
 import "fmt"
 
 // Session is an active WAMP session.  It associates a session ID and details
-// with a connected Peer.
+// with a connected Peer, which is the remote side of the session.  So, if the
+// session owned by the router, then the Peer is the connected client.
 type Session struct {
 	// Interface for communicating with connected peer.
 	Peer
