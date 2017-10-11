@@ -14,7 +14,7 @@ type Authorizer interface {
 	// the message.  This allows the authorizer to also work as an interceptor
 	// of messages to change their content or change the sending session based
 	// on the intercepted message.
-	Authorize(*Session, wamp.Message) (bool, error)
+	Authorize(*wamp.Session, wamp.Message) (bool, error)
 }
 
 // authorizer is the default implementation that always returns authorized.
@@ -26,6 +26,6 @@ func NewAuthorizer() Authorizer {
 }
 
 // Authorize default implementation authorizes any session for all roles.
-func (a *authorizer) Authorize(sess *Session, msg wamp.Message) (bool, error) {
+func (a *authorizer) Authorize(sess *wamp.Session, msg wamp.Message) (bool, error) {
 	return true, nil
 }

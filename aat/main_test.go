@@ -51,7 +51,7 @@ var (
 
 type testAuthz struct{}
 
-func (a *testAuthz) Authorize(sess *nexus.Session, msg wamp.Message) (bool, error) {
+func (a *testAuthz) Authorize(sess *wamp.Session, msg wamp.Message) (bool, error) {
 	m, ok := msg.(*wamp.Subscribe)
 	if !ok {
 		if callMsg, ok := msg.(*wamp.Call); ok {
