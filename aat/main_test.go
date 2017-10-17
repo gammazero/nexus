@@ -13,9 +13,9 @@ import (
 	"time"
 
 	"github.com/fortytw2/leaktest"
-	"github.com/gammazero/nexus"
-	"github.com/gammazero/nexus/auth"
 	"github.com/gammazero/nexus/client"
+	"github.com/gammazero/nexus/router"
+	"github.com/gammazero/nexus/router/auth"
 	"github.com/gammazero/nexus/stdlog"
 	"github.com/gammazero/nexus/transport/serialize"
 	"github.com/gammazero/nexus/wamp"
@@ -33,7 +33,7 @@ const (
 )
 
 var (
-	nxr       nexus.Router
+	nxr       router.Router
 	cliLogger stdlog.StdLog
 	rtrLogger stdlog.StdLog
 
@@ -103,8 +103,8 @@ func TestMain(m *testing.M) {
 	}
 
 	// Create router instance.
-	routerConfig := &nexus.RouterConfig{
-		RealmConfigs: []*nexus.RealmConfig{
+	routerConfig := &router.RouterConfig{
+		RealmConfigs: []*router.RealmConfig{
 			{
 				URI:           wamp.URI(testRealm),
 				StrictURI:     false,
@@ -124,7 +124,7 @@ func TestMain(m *testing.M) {
 		},
 		//Debug: true,
 	}
-	nxr, err = nexus.NewRouter(routerConfig, rtrLogger)
+	nxr, err = router.NewRouter(routerConfig, rtrLogger)
 	if err != nil {
 		panic(err)
 	}
@@ -138,23 +138,23 @@ func TestMain(m *testing.M) {
 		serType = ""
 		sockDesc = "LOCAL CONNECTIONS"
 	case "ws":
-		s := nexus.NewWebsocketServer(nxr)
+		s := router.NewWebsocketServer(nxr)
 		closer, err = s.ListenAndServe(tcpAddr)
 		sockDesc = "WEBSOCKETS"
 	case "wss":
-		s := nexus.NewWebsocketServer(nxr)
+		s := router.NewWebsocketServer(nxr)
 		closer, err = s.ListenAndServeTLS(tcpAddr, nil, certPath, keyPath)
 		sockDesc = "WEBSOCKETS + TLS"
 	case "tcp":
-		s := nexus.NewRawSocketServer(nxr, 0, 0)
+		s := router.NewRawSocketServer(nxr, 0, 0)
 		closer, err = s.ListenAndServe(scheme, tcpAddr)
 		sockDesc = "TCP RAWSOCKETS"
 	case "tcps":
-		s := nexus.NewRawSocketServer(nxr, 0, 0)
+		s := router.NewRawSocketServer(nxr, 0, 0)
 		closer, err = s.ListenAndServeTLS("tcp", tcpAddr, nil, certPath, keyPath)
 		sockDesc = "TCP RAWSOCKETS + TLS"
 	case "unix":
-		s := nexus.NewRawSocketServer(nxr, 0, 0)
+		s := router.NewRawSocketServer(nxr, 0, 0)
 		closer, err = s.ListenAndServe(scheme, unixAddr)
 		addr = unixAddr
 		sockDesc = "UNIX RAWSOCKETS"

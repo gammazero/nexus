@@ -9,7 +9,7 @@ import (
 	"os"
 	"os/signal"
 
-	"github.com/gammazero/nexus"
+	"github.com/gammazero/nexus/router"
 	"github.com/gammazero/nexus/wamp"
 )
 
@@ -17,22 +17,22 @@ const address = "127.0.0.1:8000"
 
 func main() {
 	// Create router instance.
-	routerConfig := &nexus.RouterConfig{
-		RealmConfigs: []*nexus.RealmConfig{
-			&nexus.RealmConfig{
+	routerConfig := &router.RouterConfig{
+		RealmConfigs: []*router.RealmConfig{
+			&router.RealmConfig{
 				URI:           wamp.URI("nexus.examples"),
 				AnonymousAuth: true,
 			},
 		},
 	}
-	nxr, err := nexus.NewRouter(routerConfig, nil)
+	nxr, err := router.NewRouter(routerConfig, nil)
 	if err != nil {
 		log.Fatal(err)
 	}
 	defer nxr.Close()
 
 	// Create and run server.
-	closer, err := nexus.NewWebsocketServer(nxr).ListenAndServe(address)
+	closer, err := router.NewWebsocketServer(nxr).ListenAndServe(address)
 	if err != nil {
 		log.Fatal(err)
 	}

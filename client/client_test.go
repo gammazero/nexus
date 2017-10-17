@@ -9,8 +9,8 @@ import (
 	"time"
 
 	"github.com/fortytw2/leaktest"
-	"github.com/gammazero/nexus"
-	"github.com/gammazero/nexus/auth"
+	"github.com/gammazero/nexus/router"
+	"github.com/gammazero/nexus/router/auth"
 	"github.com/gammazero/nexus/stdlog"
 	"github.com/gammazero/nexus/transport"
 	"github.com/gammazero/nexus/wamp"
@@ -26,21 +26,21 @@ func init() {
 	logger = log.New(os.Stdout, "", log.LstdFlags)
 }
 
-func getTestPeer(r nexus.Router) wamp.Peer {
+func getTestPeer(r router.Router) wamp.Peer {
 	cli, rtr := transport.LinkedPeers(r.Logger())
 	go r.Attach(rtr)
 	return cli
 }
 
-func getTestRouter(realmConfig *nexus.RealmConfig) (nexus.Router, error) {
-	config := &nexus.RouterConfig{
-		RealmConfigs: []*nexus.RealmConfig{realmConfig},
+func getTestRouter(realmConfig *router.RealmConfig) (router.Router, error) {
+	config := &router.RouterConfig{
+		RealmConfigs: []*router.RealmConfig{realmConfig},
 	}
-	return nexus.NewRouter(config, logger)
+	return router.NewRouter(config, logger)
 }
 
-func connectedTestClients() (*Client, *Client, nexus.Router, error) {
-	realmConfig := &nexus.RealmConfig{
+func connectedTestClients() (*Client, *Client, router.Router, error) {
+	realmConfig := &router.RealmConfig{
 		URI:           wamp.URI(testRealm),
 		StrictURI:     true,
 		AnonymousAuth: true,
@@ -62,7 +62,7 @@ func connectedTestClients() (*Client, *Client, nexus.Router, error) {
 	return c1, c2, r, nil
 }
 
-func newTestClient(r nexus.Router) (*Client, error) {
+func newTestClient(r router.Router) (*Client, error) {
 	cfg := ClientConfig{
 		Realm:           testRealm,
 		ResponseTimeout: 500 * time.Millisecond,
@@ -74,7 +74,7 @@ func newTestClient(r nexus.Router) (*Client, error) {
 func TestJoinRealm(t *testing.T) {
 	defer leaktest.Check(t)()
 
-	realmConfig := &nexus.RealmConfig{
+	realmConfig := &router.RealmConfig{
 		URI:           wamp.URI(testRealm),
 		StrictURI:     true,
 		AnonymousAuth: true,
@@ -94,7 +94,7 @@ func TestJoinRealm(t *testing.T) {
 	r.Close()
 
 	// Test that client cannot join realm when anonymous auth is disabled.
-	realmConfig = &nexus.RealmConfig{
+	realmConfig = &router.RealmConfig{
 		URI:           wamp.URI("nexus.testnoanon"),
 		StrictURI:     true,
 		AnonymousAuth: false,
@@ -125,7 +125,7 @@ func TestClientJoinRealmWithCRAuth(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	realmConfig := &nexus.RealmConfig{
+	realmConfig := &router.RealmConfig{
 		URI:           wamp.URI("nexus.test.auth"),
 		StrictURI:     true,
 		AnonymousAuth: false,

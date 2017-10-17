@@ -1,11 +1,11 @@
-package nexus
+package router
 
 import (
 	"errors"
 	"fmt"
 	"sync"
 
-	"github.com/gammazero/nexus/auth"
+	"github.com/gammazero/nexus/router/auth"
 	"github.com/gammazero/nexus/stdlog"
 	"github.com/gammazero/nexus/transport"
 	"github.com/gammazero/nexus/wamp"

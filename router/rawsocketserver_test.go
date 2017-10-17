@@ -1,7 +1,6 @@
-package nexus
+package router
 
 import (
-	"fmt"
 	"testing"
 
 	"github.com/fortytw2/leaktest"
@@ -10,23 +9,9 @@ import (
 	"github.com/gammazero/nexus/wamp"
 )
 
-var (
-	routerConfig = &RouterConfig{
-		RealmConfigs: []*RealmConfig{
-			{
-				URI:           testRealm,
-				StrictURI:     false,
-				AnonymousAuth: true,
-				AllowDisclose: true,
-			},
-		},
-		Debug: false,
-	}
-)
+const tcpAddr = "127.0.0.1:8181"
 
-const wsAddr = "127.0.0.1:8000"
-
-func TestWSHandshakeJSON(t *testing.T) {
+func TestRSHandshakeJSON(t *testing.T) {
 	defer leaktest.Check(t)()
 
 	r, err := NewRouter(routerConfig, nil)
@@ -34,15 +19,14 @@ func TestWSHandshakeJSON(t *testing.T) {
 		t.Fatal(err)
 	}
 	defer r.Close()
-
-	closer, err := NewWebsocketServer(r).ListenAndServe(wsAddr)
+	clsr, err := NewRawSocketServer(r, 0, 0).ListenAndServe("tcp", tcpAddr)
 	if err != nil {
 		t.Fatal(err)
 	}
-	defer closer.Close()
+	defer clsr.Close()
 
-	client, err := transport.ConnectWebsocketPeer(
-		fmt.Sprintf("ws://%s/", wsAddr), serialize.JSON, nil, nil, r.Logger())
+	client, err := transport.ConnectRawSocketPeer("tcp", tcpAddr,
+		serialize.JSON, r.Logger(), 0)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -59,7 +43,7 @@ func TestWSHandshakeJSON(t *testing.T) {
 	client.Close()
 }
 
-func TestWSHandshakeMsgpack(t *testing.T) {
+func TestRSHandshakeMsgpack(t *testing.T) {
 	defer leaktest.Check(t)()
 
 	r, err := NewRouter(routerConfig, nil)
@@ -67,15 +51,14 @@ func TestWSHandshakeMsgpack(t *testing.T) {
 		t.Fatal(err)
 	}
 	defer r.Close()
-
-	closer, err := NewWebsocketServer(r).ListenAndServe(wsAddr)
+	clsr, err := NewRawSocketServer(r, 0, 0).ListenAndServe("tcp", tcpAddr)
 	if err != nil {
 		t.Fatal(err)
 	}
-	defer closer.Close()
+	defer clsr.Close()
 
-	client, err := transport.ConnectWebsocketPeer(
-		fmt.Sprintf("ws://%s/", wsAddr), serialize.MSGPACK, nil, nil, r.Logger())
+	client, err := transport.ConnectRawSocketPeer("tcp", tcpAddr,
+		serialize.MSGPACK, r.Logger(), 0)
 	if err != nil {
 		t.Fatal(err)
 	}

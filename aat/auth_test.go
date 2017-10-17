@@ -8,8 +8,8 @@ import (
 	"time"
 
 	"github.com/fortytw2/leaktest"
-	"github.com/gammazero/nexus/auth"
 	"github.com/gammazero/nexus/client"
+	"github.com/gammazero/nexus/router/auth"
 	"github.com/gammazero/nexus/wamp"
 )
 
