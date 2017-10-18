@@ -12,6 +12,8 @@ The simple examples can be run from the `examples` directory by running:
 
 ## Example Server and Clients
 
+The project Wiki provides a walk-through of [client](https://github.com/gammazero/nexus/wiki/Client-Library) and [server](https://github.com/gammazero/nexus/wiki/Router-Library) example code.
+
 The example server, in the `server` directory, runs a websocket (with and without TLS), tcp raw socket (with and without TLS), and unix raw socket transport at the same time.  This allows different clients to communicate with each other when connected to the server using any combination of socket types, TLS, and serialization schemes.
 
 The example clients are located in the following locations:
@@ -21,7 +23,7 @@ The example clients are located in the following locations:
 - `rpc/callee/`
 - `rpc/caller/`
 
-To connect a client using different types of transports and whether or not to use TLS set the URL scheme with `-scheme=`:
+Set the URL scheme with `-scheme=` to specify the type of transport, and whether or not to use TLS, when connecting a client:
 
 - Websocket: `-scheme=ws`
 - Websocket + TLS: `-scheme=wss`
