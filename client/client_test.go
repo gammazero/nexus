@@ -121,11 +121,7 @@ func TestJoinRealm(t *testing.T) {
 func TestClientJoinRealmWithCRAuth(t *testing.T) {
 	defer leaktest.Check(t)()
 
-	crAuth, err := auth.NewCRAuthenticator(&serverKeyStore{"static"}, time.Second)
-	if err != nil {
-		t.Fatal(err)
-	}
-
+	crAuth := auth.NewCRAuthenticator(&serverKeyStore{"static"}, time.Second)
 	realmConfig := &router.RealmConfig{
 		URI:            wamp.URI("nexus.test.auth"),
 		StrictURI:      true,
@@ -446,13 +442,13 @@ func TestTimeoutRemoteProcedureCall(t *testing.T) {
 
 // ---- authentication test stuff ------
 
-func clientAuthFunc(d wamp.Dict, c wamp.Dict) (string, wamp.Dict) {
-	ch := wamp.OptionString(c, "challenge")
+func clientAuthFunc(c *wamp.Challenge) (string, wamp.Dict) {
+	chStr := wamp.OptionString(c.Extra, "challenge")
 	// If the client needed to lookup a user's key, this would require decoding
 	// the JSON-encoded ch string and getting the authid. For this example
 	// assume that client only operate as one user and knows the key to use.
 	key := "squeemishosafradge"
-	sig := crsign.SignChallenge(ch, []byte(key))
+	sig := crsign.SignChallenge(chStr, []byte(key))
 	return sig, wamp.Dict{}
 }
 

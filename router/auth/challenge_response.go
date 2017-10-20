@@ -19,11 +19,11 @@ type CRAuthenticator struct {
 
 // NewCRAuthenticator creates a new CRAuthenticator with the given key store
 // and the maximum time to wait for a client to respond to a CHALLENGE message.
-func NewCRAuthenticator(keyStore KeyStore, timeout time.Duration) (*CRAuthenticator, error) {
+func NewCRAuthenticator(keyStore KeyStore, timeout time.Duration) *CRAuthenticator {
 	return &CRAuthenticator{
 		keyStore: keyStore,
 		timeout:  timeout,
-	}, nil
+	}
 }
 
 func (cr *CRAuthenticator) AuthMethod() string { return "wampcra" }
@@ -66,10 +66,13 @@ func (cr *CRAuthenticator) Authenticate(sid wamp.ID, details wamp.Dict, client w
 	}
 
 	// Challenge response needed.  Send CHALLENGE message to client.
-	client.Send(&wamp.Challenge{
+	err = client.Send(&wamp.Challenge{
 		AuthMethod: cr.AuthMethod(),
 		Extra:      extra,
 	})
+	if err != nil {
+		return nil, err
+	}
 
 	// Read AUTHENTICATE response from client.
 	msg, err := wamp.RecvTimeout(client, cr.timeout)

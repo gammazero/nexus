@@ -203,10 +203,9 @@ func (c *Client) Done() <-chan struct{} { return c.done }
 // router and joining a realm.
 func (c *Client) ID() wamp.ID { return c.sess.ID }
 
-// AuthFunc takes the HELLO details and CHALLENGE extra data and returns the
-// signature string and a details map.  If the signature is accepted, the
-// details are used to populate the welcome message, as well as the session
-// attributes.
+// AuthFunc takes the CHALLENGE message and returns the signature string and
+// any WELCOME message details.  If the signature is accepted, the details are
+// used to populate the welcome message, as well as the session attributes.
 //
 // In response to a CHALLENGE message, the Client MUST send an AUTHENTICATE
 // message.  Therefore, AuthFunc does not return an error.  If an error is
@@ -215,7 +214,7 @@ func (c *Client) ID() wamp.ID { return c.sess.ID }
 //
 // This is used in the AuthHandler map, in a ClientConfig, and is used when
 // the client joins a realm.
-type AuthFunc func(helloDetails wamp.Dict, challengeExtra wamp.Dict) (signature string, details wamp.Dict)
+type AuthFunc func(challenge *wamp.Challenge) (signature string, details wamp.Dict)
 
 // RealmDetails returns the realm information received in the WELCOME message.
 func (c *Client) RealmDetails() wamp.Dict { return c.sess.Details }
@@ -758,7 +757,7 @@ func joinRealm(peer wamp.Peer, cfg ClientConfig) (*wamp.Welcome, error) {
 	if len(cfg.AuthHandlers) > 0 {
 		// See if router sent CHALLENGE in response to client HELLO.
 		if challenge, ok := msg.(*wamp.Challenge); ok {
-			msg, err = handleCRAuth(peer, challenge, details, cfg.AuthHandlers,
+			msg, err = handleCRAuth(peer, challenge, cfg.AuthHandlers,
 				cfg.ResponseTimeout)
 			if err != nil {
 				return nil, err
@@ -801,7 +800,7 @@ func (c *Client) run() {
 	}
 }
 
-func handleCRAuth(peer wamp.Peer, challenge *wamp.Challenge, details wamp.Dict, authHandlers map[string]AuthFunc, rspTimeout time.Duration) (wamp.Message, error) {
+func handleCRAuth(peer wamp.Peer, challenge *wamp.Challenge, authHandlers map[string]AuthFunc, rspTimeout time.Duration) (wamp.Message, error) {
 	// Look up the authentication function for the specified authmethod.
 	authFunc, ok := authHandlers[challenge.AuthMethod]
 	if !ok {
@@ -812,7 +811,7 @@ func handleCRAuth(peer wamp.Peer, challenge *wamp.Challenge, details wamp.Dict, 
 		peer.Send(&wamp.Authenticate{})
 	} else {
 		// Create signature and send AUTHENTICATE.
-		signature, authDetails := authFunc(details, challenge.Extra)
+		signature, authDetails := authFunc(challenge)
 		peer.Send(&wamp.Authenticate{
 			Signature: signature,
 			Extra:     authDetails,

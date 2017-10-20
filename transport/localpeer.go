@@ -50,7 +50,9 @@ func (p *localPeer) Send(msg wamp.Message) error {
 		case p.wr <- msg:
 		default:
 			err := fmt.Errorf("client blocked - dropped %s", msg.MessageType())
-			p.log.Println("!!!", err)
+			if p.log != nil {
+				p.log.Println("!!!", err)
+			}
 			return err
 		}
 		return nil

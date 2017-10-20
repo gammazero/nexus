@@ -98,10 +98,7 @@ func TestMain(m *testing.M) {
 	rtrLogger = log.New(os.Stdout, "ROUTER> ", log.LstdFlags)
 
 	sks := &serverKeyStore{"UserDB"}
-	crAuth, err := auth.NewCRAuthenticator(sks, time.Second)
-	if err != nil {
-		panic(err)
-	}
+	crAuth := auth.NewCRAuthenticator(sks, time.Second)
 
 	// Create router instance.
 	routerConfig := &router.RouterConfig{

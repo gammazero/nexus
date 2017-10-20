@@ -9,7 +9,7 @@ import (
 )
 
 // ticketAuthenticator implements CRAuthenticator
-type ticketAuthenticator struct {
+type TicketAuthenticator struct {
 	CRAuthenticator
 }
 
@@ -20,8 +20,8 @@ type ticketAuthenticator struct {
 // wire. If the transport WAMP is running over is not encrypted, a
 // man-in-the-middle can sniff and possibly hijack the ticket. If the ticket
 // value is reused, that might enable replay attacks.
-func NewTicketAuthenticator(keyStore KeyStore, timeout time.Duration) Authenticator {
-	return &ticketAuthenticator{
+func NewTicketAuthenticator(keyStore KeyStore, timeout time.Duration) *TicketAuthenticator {
+	return &TicketAuthenticator{
 		CRAuthenticator{
 			keyStore: keyStore,
 			timeout:  timeout,
@@ -29,9 +29,9 @@ func NewTicketAuthenticator(keyStore KeyStore, timeout time.Duration) Authentica
 	}
 }
 
-func (t *ticketAuthenticator) AuthMethod() string { return "ticket" }
+func (t *TicketAuthenticator) AuthMethod() string { return "ticket" }
 
-func (t *ticketAuthenticator) Authenticate(sid wamp.ID, details wamp.Dict, client wamp.Peer) (*wamp.Welcome, error) {
+func (t *TicketAuthenticator) Authenticate(sid wamp.ID, details wamp.Dict, client wamp.Peer) (*wamp.Welcome, error) {
 	// The HELLO.Details.authid|string is the authentication ID (e.g. username)
 	// the client wishes to authenticate as. For Ticket-based authentication,
 	// this MUST be provided.
@@ -45,12 +45,6 @@ func (t *ticketAuthenticator) Authenticate(sid wamp.ID, details wamp.Dict, clien
 		return nil, err
 	}
 
-	// Ticket authenticator should not have been used for authmethod other than
-	// "ticket", but check anyway.
-	if "ticket" != wamp.OptionString(details, "authmethod") {
-		return nil, errors.New("invalid authmethod for ticket authentication")
-	}
-
 	ticket, err := t.keyStore.AuthKey(authID, t.AuthMethod())
 	if err != nil {
 		return nil, err
@@ -58,10 +52,13 @@ func (t *ticketAuthenticator) Authenticate(sid wamp.ID, details wamp.Dict, clien
 
 	// Challenge Extra map is empty since the ticket challenge only asks for a
 	// ticket (using authmethod) and provides no additional challenge info.
-	client.Send(&wamp.Challenge{
+	err = client.Send(&wamp.Challenge{
 		AuthMethod: t.AuthMethod(),
 		Extra:      wamp.Dict{},
 	})
+	if err != nil {
+		return nil, err
+	}
 
 	// Read AUTHENTICATE response from client.
 	msg, err := wamp.RecvTimeout(client, t.timeout)
