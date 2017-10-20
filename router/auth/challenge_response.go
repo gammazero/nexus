@@ -1,38 +1,78 @@
 package auth
 
 import (
+	"crypto/rand"
+	"encoding/base64"
+	"errors"
 	"fmt"
+	"time"
 
 	"github.com/gammazero/nexus/wamp"
+	"github.com/gammazero/nexus/wamp/crsign"
 )
 
-// Challenge returns a PendingCRAuth for Challenge/Response authentication.
-type Challenger interface {
-	Challenge(details wamp.Dict) (PendingCRAuth, error)
-}
-
-// CRAuthenticator
+// CRAuthenticator is a challenge-response authenticator.
 type CRAuthenticator struct {
-	challenger Challenger
+	keyStore KeyStore
+	timeout  time.Duration
 }
 
-func NewCRAuthenticator(challenger Challenger) (*CRAuthenticator, error) {
+// NewCRAuthenticator creates a new CRAuthenticator with the given key store
+// and the maximum time to wait for a client to respond to a CHALLENGE message.
+func NewCRAuthenticator(keyStore KeyStore, timeout time.Duration) (*CRAuthenticator, error) {
 	return &CRAuthenticator{
-		challenger: challenger,
+		keyStore: keyStore,
+		timeout:  timeout,
 	}, nil
 }
 
-func (cr *CRAuthenticator) Authenticate(details wamp.Dict, client wamp.Peer) (*wamp.Welcome, error) {
-	pendingCRAuth, err := cr.challenger.Challenge(details)
+func (cr *CRAuthenticator) AuthMethod() string { return "wampcra" }
+
+func (cr *CRAuthenticator) Authenticate(sid wamp.ID, details wamp.Dict, client wamp.Peer) (*wamp.Welcome, error) {
+	authid := wamp.OptionString(details, "authid")
+	if authid == "" {
+		return nil, errors.New("missing authid")
+	}
+
+	// Get the auth key needed for signing the challenge string.
+	key, err := cr.keyStore.AuthKey(authid, cr.AuthMethod())
+	if err != nil {
+		// Do not error here since that leaks authid info.
+		keyStr, _ := getNonce()
+		if keyStr == "" {
+			keyStr = wamp.NowISO8601()
+		}
+		key = []byte(keyStr)
+	}
+
+	authrole, err := cr.keyStore.AuthRole(authid)
+	if err != nil {
+		// Do not error here since that leaks authid info.
+		authrole = "user"
+	}
+
+	// Create the JSON encoded challenge string.
+	chStr, err := cr.makeChallengeStr(sid, authid, authrole)
 	if err != nil {
 		return nil, err
 	}
 
+	extra := wamp.Dict{"challenge": chStr}
+	salt, keylen, iters := cr.keyStore.PasswordInfo(authid)
+	if salt != "" {
+		extra["salt"] = salt
+		extra["keylen"] = keylen
+		extra["iterations"] = iters
+	}
+
 	// Challenge response needed.  Send CHALLENGE message to client.
-	client.Send(pendingCRAuth.Msg())
+	client.Send(&wamp.Challenge{
+		AuthMethod: cr.AuthMethod(),
+		Extra:      extra,
+	})
 
 	// Read AUTHENTICATE response from client.
-	msg, err := wamp.RecvTimeout(client, pendingCRAuth.Timeout())
+	msg, err := wamp.RecvTimeout(client, cr.timeout)
 	if err != nil {
 		return nil, err
 	}
@@ -42,10 +82,40 @@ func (cr *CRAuthenticator) Authenticate(details wamp.Dict, client wamp.Peer) (*w
 			msg.MessageType(), client)
 	}
 
-	welcome, err := pendingCRAuth.Authenticate(authRsp)
-	if err != nil {
-		return nil, err
+	// Check signature.
+	if crsign.SignChallenge(chStr, key) != authRsp.Signature {
+		return nil, errors.New("invalid signature")
 	}
 
-	return welcome, nil
+	// Create welcome details containing auth info.
+	welcomeDetails := wamp.Dict{
+		"authid":       authid,
+		"authrole":     authrole,
+		"authmethod":   cr.AuthMethod(),
+		"authprovider": cr.keyStore.Provider(),
+	}
+
+	return &wamp.Welcome{Details: welcomeDetails}, nil
+}
+
+func (cr *CRAuthenticator) makeChallengeStr(session wamp.ID, authid, authrole string) (string, error) {
+	nonce, err := getNonce()
+	if err != nil {
+		return "", fmt.Errorf("failed to get nonce: %s", err)
+	}
+
+	return fmt.Sprintf(
+		"{ \"nonce\": \"%s\", \"authprovider\": \"%s\", \"authid\": \"%s\", \"timestamp\": \"%s\", \"authrole\": \"%s\", \"authmethod\": \"%s\", \"session\": %d}",
+		nonce, cr.keyStore.Provider(), authid, wamp.NowISO8601(), authrole,
+		cr.AuthMethod(), int(session)), nil
+}
+
+func getNonce() (string, error) {
+	c := 16
+	b := make([]byte, c)
+	_, err := rand.Read(b)
+	if err != nil {
+		return "", err
+	}
+	return base64.StdEncoding.EncodeToString(b), nil
 }
