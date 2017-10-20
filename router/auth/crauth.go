@@ -108,7 +108,7 @@ func (cr *CRAuthenticator) makeChallengeStr(session wamp.ID, authid, authrole st
 	}
 
 	return fmt.Sprintf(
-		"{ \"nonce\": \"%s\", \"authprovider\": \"%s\", \"authid\": \"%s\", \"timestamp\": \"%s\", \"authrole\": \"%s\", \"authmethod\": \"%s\", \"session\": %d}",
+		"{ \"nonce\":\"%s\", \"authprovider\":\"%s\", \"authid\":\"%s\", \"timestamp\":\"%s\", \"authrole\":\"%s\", \"authmethod\":\"%s\", \"session\":%d }",
 		nonce, cr.keyStore.Provider(), authid, wamp.NowISO8601(), authrole,
 		cr.AuthMethod(), int(session)), nil
 }
