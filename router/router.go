@@ -1,3 +1,9 @@
+/*
+Package router provides a WAMP router implementation that supports most of the
+WAMP advanced profile, offers multiple transports and TLS, and extends
+publication filtering functionality.
+
+*/
 package router
 
 import (
