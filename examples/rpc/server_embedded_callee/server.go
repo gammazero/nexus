@@ -7,8 +7,8 @@ import (
 	"os"
 	"os/signal"
 
-	"github.com/gammazero/nexus"
 	"github.com/gammazero/nexus/client"
+	"github.com/gammazero/nexus/router"
 	"github.com/gammazero/nexus/wamp"
 )
 
@@ -16,16 +16,16 @@ const wsAddr = "127.0.0.1:8000"
 
 func main() {
 	// Create router instance.
-	routerConfig := &nexus.RouterConfig{
-		RealmConfigs: []*nexus.RealmConfig{
-			&nexus.RealmConfig{
+	routerConfig := &router.RouterConfig{
+		RealmConfigs: []*router.RealmConfig{
+			&router.RealmConfig{
 				URI:           wamp.URI("nexus.examples"),
 				AnonymousAuth: true,
 				AllowDisclose: true,
 			},
 		},
 	}
-	nxr, err := nexus.NewRouter(routerConfig, nil)
+	nxr, err := router.NewRouter(routerConfig, nil)
 	if err != nil {
 		log.Fatal(err)
 	}
@@ -33,10 +33,11 @@ func main() {
 
 	logger := log.New(os.Stdout, "CALLEE> ", log.LstdFlags)
 	cfg := client.ClientConfig{
-		Realm: "nexus.examples",
+		Realm:  "nexus.examples",
+		Logger: logger,
 	}
 	// Create local callee client.
-	callee, err := client.NewLocalClient(nxr, cfg, logger)
+	callee, err := client.ConnectLocal(nxr, cfg)
 	if err != nil {
 		logger.Fatal(err)
 	}
@@ -50,7 +51,7 @@ func main() {
 	logger.Println("Registered procedure", procName, "with router")
 
 	// Create and run websocket server.
-	closer, err := nexus.NewWebsocketServer(nxr).ListenAndServe(wsAddr)
+	closer, err := router.NewWebsocketServer(nxr).ListenAndServe(wsAddr)
 	if err != nil {
 		log.Fatal(err)
 	}

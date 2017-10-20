@@ -6,7 +6,7 @@ import (
 	"log"
 	"time"
 
-	"github.com/gammazero/nexus"
+	"github.com/gammazero/nexus/router"
 )
 
 type Config struct {
@@ -38,7 +38,7 @@ type Config struct {
 	LogPath string `json:"log_path"`
 	// Router configuration parameters.
 	// See https://godoc.org/github.com/gammazero/nexus#RouterConfig
-	Router nexus.RouterConfig
+	Router router.RouterConfig
 }
 
 func LoadConfig(path string) *Config {

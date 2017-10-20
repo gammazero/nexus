@@ -13,7 +13,7 @@ import (
 	"os/signal"
 	"time"
 
-	"github.com/gammazero/nexus"
+	"github.com/gammazero/nexus/router"
 )
 
 func usage() {
@@ -48,7 +48,7 @@ func main() {
 	}
 
 	// Create router and realms from config.
-	r, err := nexus.NewRouter(&conf.Router, logger)
+	r, err := router.NewRouter(&conf.Router, logger)
 	if err != nil {
 		logger.Print(err)
 		os.Exit(1)
@@ -58,7 +58,7 @@ func main() {
 	var closers []io.Closer
 	if conf.WebSocket.Address != "" {
 		// Create a new websocket server with the router.
-		wss := nexus.NewWebsocketServer(r)
+		wss := router.NewWebsocketServer(r)
 		var closer io.Closer
 		var sockDesc string
 		if conf.WebSocket.CertFile != "" && conf.WebSocket.KeyFile != "" {
@@ -80,7 +80,7 @@ func main() {
 	}
 	if conf.RawSocket.TCPAddress != "" || conf.RawSocket.UnixAddress != "" {
 		// Create a new rawsocket server with the router.
-		rss := nexus.NewRawSocketServer(r, conf.RawSocket.MaxMsgLen,
+		rss := router.NewRawSocketServer(r, conf.RawSocket.MaxMsgLen,
 			conf.RawSocket.TCPKeepAliveInterval)
 		if conf.RawSocket.TCPAddress != "" {
 			var closer io.Closer

@@ -4,7 +4,7 @@ import (
 	"log"
 	"os"
 
-	"github.com/gammazero/nexus"
+	"github.com/gammazero/nexus/router"
 	"github.com/gammazero/nexus/transport"
 )
 
@@ -13,7 +13,7 @@ import (
 // as the router, to the router.  Doing this eliminates the need for any socket
 // of serialization overhead.  The new client joins the realm specified in the
 // ClientConfig.
-func ConnectLocal(router nexus.Router, cfg ClientConfig) (*Client, error) {
+func ConnectLocal(router router.Router, cfg ClientConfig) (*Client, error) {
 	if cfg.Logger == nil {
 		cfg.Logger = log.New(os.Stderr, "", 0)
 	}

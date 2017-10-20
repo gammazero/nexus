@@ -11,7 +11,7 @@ import (
 	"os/signal"
 	"path"
 
-	"github.com/gammazero/nexus"
+	"github.com/gammazero/nexus/router"
 	"github.com/gammazero/nexus/wamp"
 )
 
@@ -28,24 +28,24 @@ const (
 
 func main() {
 	// Create router instance.
-	routerConfig := &nexus.RouterConfig{
-		RealmConfigs: []*nexus.RealmConfig{
-			&nexus.RealmConfig{
+	routerConfig := &router.RouterConfig{
+		RealmConfigs: []*router.RealmConfig{
+			&router.RealmConfig{
 				URI:           wamp.URI("nexus.examples"),
 				AnonymousAuth: true,
 				AllowDisclose: true,
 			},
 		},
 	}
-	nxr, err := nexus.NewRouter(routerConfig, nil)
+	nxr, err := router.NewRouter(routerConfig, nil)
 	if err != nil {
 		log.Fatal(err)
 	}
 	defer nxr.Close()
 
 	// Create websocket and rawsocket servers.
-	wss := nexus.NewWebsocketServer(nxr)
-	rss := nexus.NewRawSocketServer(nxr, 0, 0)
+	wss := router.NewWebsocketServer(nxr)
+	rss := router.NewRawSocketServer(nxr, 0, 0)
 
 	// ---- Start servers ----
 
