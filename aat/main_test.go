@@ -97,7 +97,8 @@ func TestMain(m *testing.M) {
 	cliLogger = log.New(os.Stdout, "CLIENT> ", log.LstdFlags)
 	rtrLogger = log.New(os.Stdout, "ROUTER> ", log.LstdFlags)
 
-	crAuth, err := auth.NewCRAuthenticator(&testCRAuthenticator{})
+	sks := &serverKeyStore{"UserDB"}
+	crAuth, err := auth.NewCRAuthenticator(sks, time.Second)
 	if err != nil {
 		panic(err)
 	}
@@ -112,14 +113,12 @@ func TestMain(m *testing.M) {
 				AllowDisclose: false,
 			},
 			{
-				URI:           wamp.URI(testAuthRealm),
-				StrictURI:     false,
-				AnonymousAuth: true,
-				AllowDisclose: false,
-				Authenticators: map[string]auth.Authenticator{
-					"testauth": crAuth,
-				},
-				Authorizer: &testAuthz{},
+				URI:            wamp.URI(testAuthRealm),
+				StrictURI:      false,
+				AnonymousAuth:  true,
+				AllowDisclose:  false,
+				Authenticators: []auth.Authenticator{crAuth},
+				Authorizer:     &testAuthz{},
 			},
 		},
 		//Debug: true,

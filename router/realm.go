@@ -22,9 +22,9 @@ type RealmConfig struct {
 	AnonymousAuth bool `json:"anonymous_auth"`
 	// Allow publisher and caller identity disclosure when requested.
 	AllowDisclose bool `json:"allow_disclose"`
-	// Map of authentication methods to Authenticator interfaces.
-	Authenticators map[string]auth.Authenticator
-	// Authroizer called for each message.
+	// Slice of Authenticator interfaces.
+	Authenticators []auth.Authenticator
+	// Authorizer called for each message.
 	Authorizer Authorizer
 }
 
@@ -73,29 +73,29 @@ func newRealm(config *RealmConfig, broker *Broker, dealer *Dealer, logger stdlog
 	}
 
 	r := &realm{
-		broker:         broker,
-		dealer:         dealer,
-		authorizer:     config.Authorizer,
-		authenticators: config.Authenticators,
-		clients:        map[wamp.ID]*wamp.Session{},
-		clientStop:     make(chan struct{}),
-		actionChan:     make(chan func()),
-		metaIDGen:      wamp.NewIDGen(),
-		metaStop:       make(chan struct{}),
-		metaDone:       make(chan struct{}),
-		metaProcMap:    make(map[wamp.ID]func(*wamp.Invocation) wamp.Message, 9),
-		log:            logger,
-		debug:          debug,
+		broker:      broker,
+		dealer:      dealer,
+		authorizer:  config.Authorizer,
+		clients:     map[wamp.ID]*wamp.Session{},
+		clientStop:  make(chan struct{}),
+		actionChan:  make(chan func()),
+		metaIDGen:   wamp.NewIDGen(),
+		metaStop:    make(chan struct{}),
+		metaDone:    make(chan struct{}),
+		metaProcMap: make(map[wamp.ID]func(*wamp.Invocation) wamp.Message, 9),
+		log:         logger,
+		debug:       debug,
 	}
 
 	if r.authorizer == nil {
 		r.authorizer = NewAuthorizer()
 	}
 
-	if r.authenticators == nil {
-		r.authenticators = map[string]auth.Authenticator{}
-
+	r.authenticators = map[string]auth.Authenticator{}
+	for _, auth := range config.Authenticators {
+		r.authenticators[auth.AuthMethod()] = auth
 	}
+
 	// If allowing anonymous authentication, then install the anonymous
 	// authenticator.  Install this first so that it is replaced in case a
 	// custom anonymous authenticator is supplied.
@@ -464,7 +464,7 @@ func (r *realm) authzMessage(sess *wamp.Session, msg wamp.Message) bool {
 
 // authClient authenticates the client according to the authmethods in the
 // HELLO message details and the authenticators available for this realm.
-func (r *realm) authClient(client wamp.Peer, details wamp.Dict) (*wamp.Welcome, error) {
+func (r *realm) authClient(sid wamp.ID, client wamp.Peer, details wamp.Dict) (*wamp.Welcome, error) {
 	var authmethods []string
 	if _authmethods, ok := details["authmethods"]; ok {
 		amList, _ := wamp.AsList(_authmethods)
@@ -487,7 +487,7 @@ func (r *realm) authClient(client wamp.Peer, details wamp.Dict) (*wamp.Welcome, 
 	}
 
 	// Return welcome message or error.
-	welcome, err := authr.Authenticate(details, client)
+	welcome, err := authr.Authenticate(sid, details, client)
 	if err != nil {
 		return nil, err
 	}

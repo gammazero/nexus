@@ -234,14 +234,15 @@ func (r *router) Attach(client wamp.Peer) error {
 	// message or an error.
 	//
 	// Authentication may take some some.
-	welcome, err := realm.authClient(client, hello.Details)
+	sid := wamp.GlobalID()
+	welcome, err := realm.authClient(sid, client, hello.Details)
 	if err != nil {
 		sendAbort(wamp.ErrAuthenticationFailed, err)
 		return errors.New("authentication error: " + err.Error())
 	}
 
 	// Fill in the values of the welcome message and send to client.
-	welcome.ID = wamp.GlobalID()
+	welcome.ID = sid
 
 	// Session needs details from HELLO and from WELCOME, but roles from HELLO
 	// only.

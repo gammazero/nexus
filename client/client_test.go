@@ -14,6 +14,7 @@ import (
 	"github.com/gammazero/nexus/stdlog"
 	"github.com/gammazero/nexus/transport"
 	"github.com/gammazero/nexus/wamp"
+	"github.com/gammazero/nexus/wamp/crsign"
 )
 
 const (
@@ -120,19 +121,17 @@ func TestJoinRealm(t *testing.T) {
 func TestClientJoinRealmWithCRAuth(t *testing.T) {
 	defer leaktest.Check(t)()
 
-	crAuth, err := auth.NewCRAuthenticator(&testCRAuthenticator{})
+	crAuth, err := auth.NewCRAuthenticator(&serverKeyStore{"static"}, time.Second)
 	if err != nil {
 		t.Fatal(err)
 	}
 
 	realmConfig := &router.RealmConfig{
-		URI:           wamp.URI("nexus.test.auth"),
-		StrictURI:     true,
-		AnonymousAuth: false,
-		AllowDisclose: false,
-		Authenticators: map[string]auth.Authenticator{
-			"testauth": crAuth,
-		},
+		URI:            wamp.URI("nexus.test.auth"),
+		StrictURI:      true,
+		AnonymousAuth:  false,
+		AllowDisclose:  false,
+		Authenticators: []auth.Authenticator{crAuth},
 	}
 	r, err := getTestRouter(realmConfig)
 	if err != nil {
@@ -142,10 +141,10 @@ func TestClientJoinRealmWithCRAuth(t *testing.T) {
 	cfg := ClientConfig{
 		Realm: "nexus.test.auth",
 		HelloDetails: wamp.Dict{
-			"username": "jdoe",
+			"authid": "jdoe",
 		},
 		AuthHandlers: map[string]AuthFunc{
-			"testauth": testAuthFunc,
+			"wampcra": clientAuthFunc,
 		},
 		Logger: logger,
 	}
@@ -446,61 +445,45 @@ func TestTimeoutRemoteProcedureCall(t *testing.T) {
 }
 
 // ---- authentication test stuff ------
-func testAuthFunc(d wamp.Dict, c wamp.Dict) (string, wamp.Dict) {
+
+func clientAuthFunc(d wamp.Dict, c wamp.Dict) (string, wamp.Dict) {
 	ch := wamp.OptionString(c, "challenge")
-	return testCRSign(ch), wamp.Dict{}
+	// If the client needed to lookup a user's key, this would require decoding
+	// the JSON-encoded ch string and getting the authid. For this example
+	// assume that client only operate as one user and knows the key to use.
+	key := "squeemishosafradge"
+	sig := crsign.SignChallenge(ch, []byte(key))
+	return sig, wamp.Dict{}
 }
 
-type testCRAuthenticator struct{}
-
-// pendingTestAuth implements the PendingCRAuth interface.
-type pendingTestAuth struct {
-	authID string
-	secret string
-	role   string
+type serverKeyStore struct {
+	provider string
 }
 
-func (t *testCRAuthenticator) Challenge(details wamp.Dict) (auth.PendingCRAuth, error) {
-	username := wamp.OptionString(details, "username")
-	if username == "" {
-		return nil, errors.New("no username given")
+func (ks *serverKeyStore) AuthKey(authid, authmethod string) ([]byte, error) {
+	if authid != "jdoe" {
+		return nil, errors.New("no such user: " + authid)
 	}
-
-	secret := testCRSign(username)
-
-	return &pendingTestAuth{
-		authID: username,
-		role:   "user",
-		secret: secret,
-	}, nil
+	switch authmethod {
+	case "wampcra":
+		// Lookup the user's key.
+		return []byte("squeemishosafradge"), nil
+	case "ticket":
+		// Lookup the user's key.
+		return []byte("ticketforjoe1234"), nil
+	}
+	return nil, nil
 }
 
-func testCRSign(uname string) string {
-	return uname + "123xyz"
+func (ks *serverKeyStore) PasswordInfo(authid string) (string, int, int) {
+	return "", 0, 0
 }
 
-// Return the test challenge message.
-func (p *pendingTestAuth) Msg() *wamp.Challenge {
-	return &wamp.Challenge{
-		AuthMethod: "testauth",
-		Extra:      wamp.Dict{"challenge": p.authID},
+func (ks *serverKeyStore) Provider() string { return ks.provider }
+
+func (ks *serverKeyStore) AuthRole(authid string) (string, error) {
+	if authid != "jdoe" {
+		return "", errors.New("no such user: " + authid)
 	}
-}
-
-func (p *pendingTestAuth) Timeout() time.Duration { return time.Second }
-
-func (p *pendingTestAuth) Authenticate(msg *wamp.Authenticate) (*wamp.Welcome, error) {
-
-	if p.secret != msg.Signature {
-		return nil, errors.New("invalid signature")
-	}
-
-	// Create welcome details containing auth info.
-	details := wamp.Dict{
-		"authid":     p.authID,
-		"authmethod": "testauth",
-		"authrole":   p.role,
-	}
-
-	return &wamp.Welcome{Details: details}, nil
+	return "user", nil
 }
