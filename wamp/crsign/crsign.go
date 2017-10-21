@@ -1,3 +1,5 @@
+// Package crsign provides functionality for signing challenge data in
+// challenge-response authentication.
 package crsign
 
 import (
