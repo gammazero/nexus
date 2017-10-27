@@ -122,8 +122,8 @@ func AcceptRawSocket(conn net.Conn, logger stdlog.StdLog, recvLimit int) (wamp.P
 }
 
 // newRawSocketPeer creates a rawsocket peer from an existing socket
-// connection.  This is used for handling clients connecting to the WAMP
-// router.
+// connection.  This is used by clients connecting to the WAMP router, and by
+// servers to handle connections from clients.
 func newRawSocketPeer(conn net.Conn, serializer serialize.Serializer, logger stdlog.StdLog, sendLimit, recvLimit int) *rawSocketPeer {
 	rs := &rawSocketPeer{
 		conn:       conn,

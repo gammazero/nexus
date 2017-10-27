@@ -34,8 +34,8 @@ func LinkedPeers(logger stdlog.StdLog) (wamp.Peer, wamp.Peer) {
 
 // localPeer implements Peer
 type localPeer struct {
-	wr  chan<- wamp.Message
 	rd  <-chan wamp.Message
+	wr  chan<- wamp.Message
 	log stdlog.StdLog
 }
 
@@ -44,7 +44,7 @@ func (p *localPeer) Recv() <-chan wamp.Message { return p.rd }
 
 // Send writes a message to the peer's outbound message channel.
 func (p *localPeer) Send(msg wamp.Message) error {
-	// If capacity is > 0, then wr is the rToC channel.
+	// If capacity is > 1, then wr is the rToC channel.
 	if cap(p.wr) > 1 {
 		select {
 		case p.wr <- msg:

@@ -218,20 +218,21 @@ func TestConversion(t *testing.T) {
 	if !ok || len(d) == 0 {
 		t.Error("Failed to convert to Dict")
 	}
-	if d, ok := AsDict(interface{}(num)); ok || d != nil {
+	if d, ok = AsDict(interface{}(num)); ok || d != nil {
 		t.Error("Should fail converting int to Dict")
 	}
 
-	if l, ok := AsList(ilist); !ok || len(l) != len(list) {
+	l, ok := AsList(ilist)
+	if !ok || len(l) != len(list) {
 		t.Error("Failed to convert to List")
 	}
-	if l, ok := AsList(list); !ok || len(l) != len(list) {
+	if l, ok = AsList(list); !ok || len(l) != len(list) {
 		t.Error("Failed to convert to List")
 	}
-	if l, ok := AsList(bytes); !ok || len(l) != len(bytes) {
+	if l, ok = AsList(bytes); !ok || len(l) != len(bytes) {
 		t.Error("Failed to convert to List")
 	}
-	if l, ok := AsList(num); ok || l != nil {
+	if l, ok = AsList(num); ok || l != nil {
 		t.Error("Should fail converting int to List")
 	}
 
@@ -242,29 +243,31 @@ func TestConversion(t *testing.T) {
 		t.Error("Invalid ID conversion")
 	}
 
-	if _, ok := AsString(str); !ok {
+	if _, ok = AsString(str); !ok {
 		t.Error("String conversion failed")
 	}
-	if _, ok := AsString(uri); !ok {
+	if _, ok = AsString(uri); !ok {
 		t.Error("String conversion failed")
 	}
-	if _, ok := AsString(bytes); !ok {
+	if _, ok = AsString(bytes); !ok {
 		t.Error("String conversion failed")
 	}
-	if s, ok := AsString(num); ok || s != "" {
+	s, ok := AsString(num)
+	if ok || s != "" {
 		t.Error("Should fail converting int to string")
 	}
 
-	if _, ok := AsURI(uri); !ok {
+	if _, ok = AsURI(uri); !ok {
 		t.Error("URI conversion failed")
 	}
-	if _, ok := AsURI(str); !ok {
+	if _, ok = AsURI(str); !ok {
 		t.Error("String conversion failed")
 	}
-	if _, ok := AsURI(bytes); !ok {
+	if _, ok = AsURI(bytes); !ok {
 		t.Error("URI conversion failed")
 	}
-	if s, ok := AsURI(num); ok || s != "" {
+	u, ok := AsURI(num)
+	if ok || u != "" {
 		t.Error("Should fail converting int to URI")
 	}
 
