@@ -81,8 +81,8 @@ func ConnectWebsocketPeer(url string, serialization serialize.Serialization, tls
 }
 
 // NewWebsocketPeer creates a websocket peer from an existing websocket
-// connection.  This is used for handling clients connecting to the WAMP
-// router.
+// connection.  This is used by clients connecting to the WAMP router, and by
+// servers to handle connections from clients.
 func NewWebsocketPeer(conn *websocket.Conn, serializer serialize.Serializer, payloadType int, logger stdlog.StdLog) wamp.Peer {
 	w := &websocketPeer{
 		conn:         conn,

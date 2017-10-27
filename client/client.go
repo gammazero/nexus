@@ -241,12 +241,11 @@ func (c *Client) Subscribe(topic string, fn EventHandler, options wamp.Dict) err
 	}
 	id := c.idGen.Next()
 	c.expectReply(id)
-	sub := &wamp.Subscribe{
+	c.sess.Send(&wamp.Subscribe{
 		Request: id,
 		Options: options,
 		Topic:   wamp.URI(topic),
-	}
-	c.sess.Send(sub)
+	})
 
 	// Wait to receive SUBSCRIBED message.
 	msg, err := c.waitForReply(id)
@@ -312,11 +311,10 @@ func (c *Client) Unsubscribe(topic string) error {
 
 	id := c.idGen.Next()
 	c.expectReply(id)
-	sub := &wamp.Unsubscribe{
+	c.sess.Send(&wamp.Unsubscribe{
 		Request:      id,
 		Subscription: subID,
-	}
-	c.sess.Send(sub)
+	})
 
 	// Wait to receive UNSUBSCRIBED message.
 	msg, err := c.waitForReply(id)
@@ -434,12 +432,11 @@ type InvocationHandler func(context.Context, wamp.List, wamp.Dict, wamp.Dict) (r
 func (c *Client) Register(procedure string, fn InvocationHandler, options wamp.Dict) error {
 	id := c.idGen.Next()
 	c.expectReply(id)
-	register := &wamp.Register{
+	c.sess.Send(&wamp.Register{
 		Request:   id,
 		Options:   options,
 		Procedure: wamp.URI(procedure),
-	}
-	c.sess.Send(register)
+	})
 
 	// Wait to receive REGISTERED message.
 	msg, err := c.waitForReply(id)
@@ -509,11 +506,10 @@ func (c *Client) Unregister(procedure string) error {
 
 	id := c.idGen.Next()
 	c.expectReply(id)
-	unregister := &wamp.Unregister{
+	c.sess.Send(&wamp.Unregister{
 		Request:      id,
 		Registration: procID,
-	}
-	c.sess.Send(unregister)
+	})
 
 	// Wait to receive UNREGISTERED message.
 	msg, err := c.waitForReply(id)
@@ -649,14 +645,13 @@ func (c *Client) CallProgress(ctx context.Context, procedure string, options wam
 
 	id := c.idGen.Next()
 	c.expectReply(id)
-	call := &wamp.Call{
+	c.sess.Send(&wamp.Call{
 		Request:     id,
 		Procedure:   wamp.URI(procedure),
 		Options:     options,
 		Arguments:   args,
 		ArgumentsKw: kwargs,
-	}
-	c.sess.Send(call)
+	})
 
 	// Wait to receive RESULT message.
 	var msg wamp.Message
