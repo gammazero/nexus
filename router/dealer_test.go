@@ -12,7 +12,7 @@ import (
 
 func newTestDealer() (*Dealer, wamp.Peer) {
 	d := NewDealer(logger, false, true, debug)
-	metaClient, rtr := transport.LinkedPeers(logger)
+	metaClient, rtr := transport.LinkedPeers()
 	d.SetMetaPeer(rtr)
 	return d, metaClient
 }
@@ -1007,7 +1007,7 @@ func TestRPCBlockedSlowClientCall(t *testing.T) {
 	dealer, metaClient := newTestDealer()
 
 	// Register a procedure.
-	callee, rtr := transport.LinkedPeers(logger)
+	callee, rtr := transport.LinkedPeers()
 	calleeSess := &wamp.Session{Peer: rtr}
 	dealer.Register(calleeSess,
 		&wamp.Register{Request: 223, Procedure: testProcedure})
@@ -1021,7 +1021,7 @@ func TestRPCBlockedSlowClientCall(t *testing.T) {
 		t.Fatal("Registration meta event fail:", err)
 	}
 
-	caller, rtr := transport.LinkedPeers(logger)
+	caller, rtr := transport.LinkedPeers()
 	callerSession := &wamp.Session{Peer: rtr}
 
 	for i := 0; i < 20; i++ {

@@ -117,7 +117,7 @@ func (r *router) Attach(client wamp.Peer) error {
 			abortMsg.Details["error"] = abortErr.Error()
 			r.log.Println("Aborting client connection:", abortErr)
 		}
-		client.Send(&abortMsg)
+		client.Send(&abortMsg) // Blocking OK; this is session goroutine.
 		client.Close()
 	}
 
@@ -271,7 +271,7 @@ func (r *router) Attach(client wamp.Peer) error {
 		return err
 	}
 
-	client.Send(welcome)
+	client.Send(welcome) // Blocking OK; this is session goroutine.
 	if r.debug {
 		r.log.Println("Created session:", welcome.ID)
 	}

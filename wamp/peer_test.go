@@ -13,6 +13,8 @@ func newTestPeer() Peer {
 	return &testPeer{make(chan Message, 1)}
 }
 
+func (p *testPeer) TrySend(msg Message) error { return nil }
+
 func (p *testPeer) Send(msg Message) error {
 	p.in <- msg
 	return nil

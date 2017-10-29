@@ -156,14 +156,17 @@ func newRawSocketPeer(conn net.Conn, serializer serialize.Serializer, logger std
 
 func (rs *rawSocketPeer) Recv() <-chan wamp.Message { return rs.rd }
 
-func (rs *rawSocketPeer) Send(msg wamp.Message) error {
+func (rs *rawSocketPeer) TrySend(msg wamp.Message) error {
 	select {
 	case rs.wr <- msg:
 	default:
-		err := fmt.Errorf("client blocked - dropped %s", msg.MessageType())
-		rs.log.Println("!!!", err)
-		return err
+		return errors.New("try again")
 	}
+	return nil
+}
+
+func (rs *rawSocketPeer) Send(msg wamp.Message) error {
+	rs.wr <- msg
 	return nil
 }
 
