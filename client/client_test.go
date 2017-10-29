@@ -5,6 +5,7 @@ import (
 	"errors"
 	"log"
 	"os"
+	"strings"
 	"testing"
 	"time"
 
@@ -28,7 +29,7 @@ func init() {
 }
 
 func getTestPeer(r router.Router) wamp.Peer {
-	cli, rtr := transport.LinkedPeers(r.Logger())
+	cli, rtr := transport.LinkedPeers()
 	go r.Attach(rtr)
 	return cli
 }
@@ -68,6 +69,7 @@ func newTestClient(r router.Router) (*Client, error) {
 		Realm:           testRealm,
 		ResponseTimeout: 500 * time.Millisecond,
 		Logger:          logger,
+		Debug:           true,
 	}
 	return ConnectLocal(r, cfg)
 }
@@ -91,8 +93,34 @@ func TestJoinRealm(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
+
+	if client.ID() == wamp.ID(0) {
+		t.Fatal("Invalid client ID")
+	}
+
+	realmInfo := client.RealmDetails()
+	_, err = wamp.DictValue(realmInfo, []string{"roles", "broker"})
+	if err != nil {
+		t.Fatal("Router missing broker role")
+	}
+	_, err = wamp.DictValue(realmInfo, []string{"roles", "dealer"})
+	if err != nil {
+		t.Fatal("Router missing dealer role")
+	}
+
 	client.Close()
 	r.Close()
+
+	if err = client.Close(); err == nil {
+		t.Fatal("No error from double Close()")
+	}
+
+	// Test the Done is signaled.
+	select {
+	case <-client.Done():
+	case <-time.After(time.Millisecond):
+		t.Fatal("Expected client done")
+	}
 
 	// Test that client cannot join realm when anonymous auth is disabled.
 	realmConfig = &router.RealmConfig{
@@ -184,15 +212,26 @@ func TestSubscribe(t *testing.T) {
 		t.Fatal("expected invalid uri error")
 	}
 
-	// Subscribe should work with match set. wildcard
+	// Subscribe should work with match set to wildcard.
 	err = sub.Subscribe(wcTopic, evtHandler, wamp.SetOption(nil, "match", "wildcard"))
 	if err != nil {
 		t.Fatal("subscribe error:", err)
 	}
 
-	// Publish an event to something that matches by wildcard.
-	pub.Publish(testTopic, nil, wamp.List{"hello world"}, nil)
+	// Test getting subscription ID.
+	if _, ok := sub.SubscriptionID(wcTopic); !ok {
+		t.Fatal("Did not get subscription ID")
+	}
+	if _, ok := sub.SubscriptionID("no.such.topic"); ok {
+		t.Fatal("Expected !ok looking up subscription ID for bad topic")
+	}
 
+	// Publish an event to something that matches by wildcard.
+	args := wamp.List{"hello world"}
+	err = pub.Publish(testTopic, nil, args, nil)
+	if err != nil {
+		t.Fatal("Failed to publish without ack:", err)
+	}
 	// Make sure the event was received.
 	select {
 	case err = <-errChan:
@@ -202,6 +241,35 @@ func TestSubscribe(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
+
+	opts := wamp.SetOption(nil, wamp.OptAcknowledge, true)
+	err = pub.Publish(testTopic, opts, args, nil)
+	if err != nil {
+		t.Fatal("Failed to publish with ack:", err)
+	}
+	// Make sure the event was received.
+	select {
+	case err = <-errChan:
+	case <-time.After(time.Second):
+		t.Fatal("did not get published event")
+	}
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	// Publish to invalid URI and check for error.
+	err = pub.Publish(".bad-uri.bad bad.", opts, args, nil)
+	if err == nil {
+		t.Fatal("Expected error publishing to bad URI with ack")
+	}
+
+	// Make sure the event was not received.
+	select {
+	case <-time.After(time.Millisecond):
+	case err = <-errChan:
+		t.Fatal("Should not have called event handler")
+	}
+
 	err = sub.Unsubscribe(wcTopic)
 	if err != nil {
 		t.Fatal("unsubscribe error:", err)
@@ -234,6 +302,14 @@ func TestRemoteProcedureCall(t *testing.T) {
 		t.Fatal("failed to register procedure:", err)
 	}
 
+	// Test getting registration ID.
+	if _, ok := callee.RegistrationID(procName); !ok {
+		t.Fatal("Did not get subscription ID")
+	}
+	if _, ok := callee.RegistrationID("no.such.procedure"); ok {
+		t.Fatal("Expected !ok looking up registration ID for bad procedure")
+	}
+
 	// Test calling the procedure.
 	callArgs := wamp.List{73}
 	ctx := context.Background()
@@ -259,6 +335,17 @@ func TestRemoteProcedureCall(t *testing.T) {
 	if result != nil {
 		t.Fatal("result should be nil on error")
 	}
+	if !strings.HasSuffix(err.Error(), "wamp.error.no_such_procedure") {
+		t.Fatal("Wrong error when calling unregistered procedure")
+	}
+	rpcErr, ok := err.(RPCError)
+	if !ok {
+		t.Fatal("Expected err to be RPCError")
+	}
+	if rpcErr.Err.Error != wamp.ErrNoSuchProcedure {
+		t.Fatal("Wrong error URI in RPC error")
+	}
+
 	caller.Close()
 	callee.Close()
 	r.Close()
@@ -398,6 +485,10 @@ func TestTimeoutRemoteProcedureCall(t *testing.T) {
 	procName := "myproc"
 	if err = callee.Register(procName, handler, nil); err != nil {
 		t.Fatal("failed to register procedure:", err)
+	}
+
+	if err = callee.Register("bad proc! no no", handler, nil); err == nil {
+		t.Fatal("Expected error registering with bad procedure name")
 	}
 
 	errChan := make(chan error)

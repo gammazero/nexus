@@ -1,10 +1,7 @@
 package transport
 
 import (
-	"log"
-	"os"
 	"runtime"
-	"strings"
 	"testing"
 	"time"
 
@@ -12,7 +9,7 @@ import (
 )
 
 func _TestSendRecv(t *testing.T) {
-	c, r := LinkedPeers(nil)
+	c, r := LinkedPeers()
 
 	go c.Send(&wamp.Hello{})
 	select {
@@ -40,17 +37,16 @@ func _TestSendRecv(t *testing.T) {
 }
 
 func TestDropOnBlockedClient(t *testing.T) {
-	logger := log.New(os.Stdout, "", 0)
-	_, r := LinkedPeers(logger)
+	_, r := LinkedPeers()
 
 	// Check that r -> c drops when full
 	for i := 0; i < linkedPeersOutQueueSize; i++ {
-		r.Send(&wamp.Publish{})
+		r.TrySend(&wamp.Publish{})
 	}
 	done := make(chan struct{})
 	var err error
 	go func() {
-		err = r.Send(&wamp.Publish{})
+		err = r.TrySend(&wamp.Publish{})
 		close(done)
 	}()
 	select {
@@ -58,13 +54,13 @@ func TestDropOnBlockedClient(t *testing.T) {
 	case <-time.After(time.Second):
 		t.Fatal("Send should have dropped and not blocked")
 	}
-	if err == nil || !strings.HasPrefix(err.Error(), "client blocked") {
+	if err == nil || err.Error() != "try again" {
 		t.Fatal("Expected blocked error")
 	}
 }
 
 func TestBlockOnBlockedRouter(t *testing.T) {
-	c, r := LinkedPeers(nil)
+	c, r := LinkedPeers()
 
 	done := make(chan struct{})
 	go func() {
@@ -83,7 +79,7 @@ func TestBlockOnBlockedRouter(t *testing.T) {
 }
 
 func BenchmarkClientToRouter(b *testing.B) {
-	c, r := LinkedPeers(nil)
+	c, r := LinkedPeers()
 
 	b.ResetTimer()
 	go func() {
@@ -97,7 +93,7 @@ func BenchmarkClientToRouter(b *testing.B) {
 }
 
 func BenchmarkRouterToClient(b *testing.B) {
-	c, r := LinkedPeers(nil)
+	c, r := LinkedPeers()
 
 	b.ResetTimer()
 	go func() {

@@ -118,7 +118,7 @@ func (b *Broker) Publish(pub *wamp.Session, msg *wamp.Publish) {
 		errMsg := fmt.Sprintf(
 			"publish with invalid topic URI %v (URI strict checking %v)",
 			msg.Topic, b.strictURI)
-		pub.Send(&wamp.Error{
+		b.trySend(pub, &wamp.Error{
 			Type:      msg.MessageType(),
 			Request:   msg.Request,
 			Error:     wamp.ErrInvalidURI,
@@ -140,7 +140,7 @@ func (b *Broker) Publish(pub *wamp.Session, msg *wamp.Publish) {
 	if wamp.OptionFlag(msg.Options, wamp.OptDiscloseMe) {
 		// Broker MAY deny a publisher's request to disclose its identity.
 		if !b.allowDisclose {
-			pub.Send(&wamp.Error{
+			b.trySend(pub, &wamp.Error{
 				Type:    msg.MessageType(),
 				Request: msg.Request,
 				Details: wamp.Dict{},
@@ -160,7 +160,7 @@ func (b *Broker) Publish(pub *wamp.Session, msg *wamp.Publish) {
 
 	// Send Published message if acknowledge is present and true.
 	if pubAck, _ := msg.Options[wamp.OptAcknowledge].(bool); pubAck {
-		pub.Send(&wamp.Published{Request: msg.Request, Publication: pubID})
+		b.trySend(pub, &wamp.Published{Request: msg.Request, Publication: pubID})
 	}
 }
 
@@ -187,7 +187,7 @@ func (b *Broker) Subscribe(sub *wamp.Session, msg *wamp.Subscribe) {
 		errMsg := fmt.Sprintf(
 			"subscribe for invalid topic URI %v (URI strict checking %v)",
 			msg.Topic, b.strictURI)
-		sub.Send(&wamp.Error{
+		b.trySend(sub, &wamp.Error{
 			Type:      msg.MessageType(),
 			Request:   msg.Request,
 			Error:     wamp.ErrInvalidURI,
@@ -241,19 +241,19 @@ func (b *Broker) run() {
 func (b *Broker) publish(pub *wamp.Session, msg *wamp.Publish, pubID wamp.ID, excludePub, disclose bool, filter *publishFilter) {
 	// Publish to subscribers with exact match.
 	subs := b.topicSubscribers[msg.Topic]
-	pubEvent(pub, msg, pubID, subs, excludePub, false, disclose, filter)
+	b.pubEvent(pub, msg, pubID, subs, excludePub, false, disclose, filter)
 
 	// Publish to subscribers with prefix match.
 	for pfxTopic, subs := range b.pfxTopicSubscribers {
 		if msg.Topic.PrefixMatch(pfxTopic) {
-			pubEvent(pub, msg, pubID, subs, excludePub, true, disclose, filter)
+			b.pubEvent(pub, msg, pubID, subs, excludePub, true, disclose, filter)
 		}
 	}
 
 	// Publish to subscribers with wildcard match.
 	for wcTopic, subs := range b.wcTopicSubscribers {
 		if msg.Topic.WildcardMatch(wcTopic) {
-			pubEvent(pub, msg, pubID, subs, excludePub, true, disclose, filter)
+			b.pubEvent(pub, msg, pubID, subs, excludePub, true, disclose, filter)
 		}
 	}
 }
@@ -297,7 +297,7 @@ func (b *Broker) subscribe(sub *wamp.Session, msg *wamp.Subscribe, match string)
 		for alreadyID, alreadySub := range idSub {
 			if alreadySub == sub {
 				// Already subscribed, send existing subscription ID.
-				sub.Send(&wamp.Subscribed{
+				b.trySend(sub, &wamp.Subscribed{
 					Request:      msg.Request,
 					Subscription: alreadyID,
 				})
@@ -319,7 +319,7 @@ func (b *Broker) subscribe(sub *wamp.Session, msg *wamp.Subscribe, match string)
 	idSet[id] = struct{}{}
 
 	// Tell sender the new subscription ID.
-	sub.Send(&wamp.Subscribed{Request: msg.Request, Subscription: id})
+	b.trySend(sub, &wamp.Subscribed{Request: msg.Request, Subscription: id})
 
 	if newSub {
 		b.pubSubCreateMeta(msg.Topic, sub.ID, id, match)
@@ -336,12 +336,11 @@ func (b *Broker) unsubscribe(sub *wamp.Session, msg *wamp.Unsubscribe) {
 	if !ok {
 		if topic, ok = b.pfxSubscriptions[msg.Subscription]; !ok {
 			if topic, ok = b.wcSubscriptions[msg.Subscription]; !ok {
-				err := &wamp.Error{
+				b.trySend(sub, &wamp.Error{
 					Type:    msg.MessageType(),
 					Request: msg.Request,
 					Error:   wamp.ErrNoSuchSubscription,
-				}
-				sub.Send(err)
+				})
 				b.log.Println("Error unsubscribing: no such subscription",
 					msg.Subscription)
 				return
@@ -386,7 +385,7 @@ func (b *Broker) unsubscribe(sub *wamp.Session, msg *wamp.Unsubscribe) {
 	}
 
 	// Tell sender they are unsubscribed.
-	sub.Send(&wamp.Unsubscribed{Request: msg.Request})
+	b.trySend(sub, &wamp.Unsubscribed{Request: msg.Request})
 
 	// Publish WAMP unsubscribe meta event.
 	b.pubSubMeta(wamp.MetaEventSubOnUnsubscribe, sub.ID, msg.Subscription)
@@ -436,7 +435,7 @@ func (b *Broker) removeSession(sub *wamp.Session) {
 
 // pubEvent sends an event to all subscribers that are not excluded from
 // receiving the event.
-func pubEvent(pub *wamp.Session, msg *wamp.Publish, pubID wamp.ID, subs map[wamp.ID]*wamp.Session, excludePublisher, sendTopic, disclose bool, filter *publishFilter) {
+func (b *Broker) pubEvent(pub *wamp.Session, msg *wamp.Publish, pubID wamp.ID, subs map[wamp.ID]*wamp.Session, excludePublisher, sendTopic, disclose bool, filter *publishFilter) {
 	for id, sub := range subs {
 		// Do not send event to publisher.
 		if sub == pub && excludePublisher {
@@ -463,7 +462,7 @@ func pubEvent(pub *wamp.Session, msg *wamp.Publish, pubID wamp.ID, subs map[wamp
 
 		// TODO: Handle publication trust levels
 
-		sub.Send(&wamp.Event{
+		b.trySend(sub, &wamp.Event{
 			Publication:  pubID,
 			Subscription: id,
 			Arguments:    msg.Arguments,
@@ -509,7 +508,7 @@ func (b *Broker) pubSubMeta(metaTopic wamp.URI, subSessID, subID wamp.ID) {
 			if sendTopic {
 				details[detailTopic] = metaTopic
 			}
-			sub.Send(&wamp.Event{
+			b.trySend(sub, &wamp.Event{
 				Publication:  pubID,
 				Subscription: id,
 				Details:      details,
@@ -545,7 +544,7 @@ func (b *Broker) pubSubCreateMeta(subTopic wamp.URI, subSessID, subID wamp.ID, m
 				"uri":         subTopic,
 				wamp.OptMatch: match,
 			}
-			sub.Send(&wamp.Event{
+			b.trySend(sub, &wamp.Event{
 				Publication:  pubID,
 				Subscription: id,
 				Details:      details,
@@ -554,4 +553,13 @@ func (b *Broker) pubSubCreateMeta(subTopic wamp.URI, subSessID, subID wamp.ID, m
 		}
 	}
 	b.pubMeta(wamp.MetaEventSubOnCreate, sendMeta)
+}
+
+func (b *Broker) trySend(sess *wamp.Session, msg wamp.Message) error {
+	if err := sess.TrySend(msg); err != nil {
+		err := fmt.Errorf("client blocked - dropped %s", msg.MessageType())
+		b.log.Println("!!!", err)
+		return err
+	}
+	return nil
 }

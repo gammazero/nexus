@@ -17,7 +17,7 @@ func ConnectLocal(router router.Router, cfg ClientConfig) (*Client, error) {
 	if cfg.Logger == nil {
 		cfg.Logger = log.New(os.Stderr, "", 0)
 	}
-	localSide, routerSide := transport.LinkedPeers(cfg.Logger)
+	localSide, routerSide := transport.LinkedPeers()
 
 	go func() {
 		if err := router.Attach(routerSide); err != nil {

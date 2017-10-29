@@ -80,7 +80,7 @@ func clientAuthFunc(c *wamp.Challenge) (string, wamp.Dict) {
 }
 
 func TestTicketAuth(t *testing.T) {
-	cp, rp := transport.LinkedPeers(nil)
+	cp, rp := transport.LinkedPeers()
 	defer cp.Close()
 	defer rp.Close()
 	go cliRsp(cp)
@@ -132,7 +132,7 @@ func TestTicketAuth(t *testing.T) {
 }
 
 func TestCRAuth(t *testing.T) {
-	cp, rp := transport.LinkedPeers(nil)
+	cp, rp := transport.LinkedPeers()
 	defer cp.Close()
 	defer rp.Close()
 	go cliRsp(cp)

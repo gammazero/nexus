@@ -170,7 +170,7 @@ func (d *Dealer) Register(callee *wamp.Session, msg *wamp.Register) {
 		errMsg := fmt.Sprintf(
 			"register for invalid procedure URI %v (URI strict checking %v)",
 			msg.Procedure, d.strictURI)
-		callee.Send(&wamp.Error{
+		d.trySend(callee, &wamp.Error{
 			Type:      msg.MessageType(),
 			Request:   msg.Request,
 			Error:     wamp.ErrInvalidURI,
@@ -188,7 +188,7 @@ func (d *Dealer) Register(callee *wamp.Session, msg *wamp.Register) {
 		if wampURI {
 			errMsg := fmt.Sprintf("register for restricted procedure URI %v",
 				msg.Procedure)
-			callee.Send(&wamp.Error{
+			d.trySend(callee, &wamp.Error{
 				Type:      msg.MessageType(),
 				Request:   msg.Request,
 				Error:     wamp.ErrInvalidURI,
@@ -202,7 +202,7 @@ func (d *Dealer) Register(callee *wamp.Session, msg *wamp.Register) {
 	// allow, then send error as registration response.
 	discloseCaller := wamp.OptionFlag(msg.Options, wamp.OptDiscloseCaller)
 	if !d.allowDisclose && discloseCaller {
-		callee.Send(&wamp.Error{
+		d.trySend(callee, &wamp.Error{
 			Type:    msg.MessageType(),
 			Request: msg.Request,
 			Details: wamp.Dict{},
@@ -376,7 +376,7 @@ func (d *Dealer) register(callee *wamp.Session, msg *wamp.Register, match, invok
 		if reg.policy == "" || reg.policy == wamp.InvokeSingle {
 			d.log.Println("REGISTER for already registered procedure",
 				msg.Procedure, "from callee", callee)
-			callee.Send(&wamp.Error{
+			d.trySend(callee, &wamp.Error{
 				Type:    msg.MessageType(),
 				Request: msg.Request,
 				Details: wamp.Dict{},
@@ -391,7 +391,7 @@ func (d *Dealer) register(callee *wamp.Session, msg *wamp.Register, match, invok
 			d.log.Println("REGISTER for already registered procedure",
 				msg.Procedure, "with conflicting invocation policy (has",
 				reg.policy, "and", invokePolicy, "was requested")
-			callee.Send(&wamp.Error{
+			d.trySend(callee, &wamp.Error{
 				Type:    msg.MessageType(),
 				Request: msg.Request,
 				Details: wamp.Dict{},
@@ -416,7 +416,7 @@ func (d *Dealer) register(callee *wamp.Session, msg *wamp.Register, match, invok
 		d.log.Printf("Registered procedure %v (regID=%v) to callee %v",
 			msg.Procedure, regID, callee)
 	}
-	callee.Send(&wamp.Registered{
+	d.trySend(callee, &wamp.Registered{
 		Request:      msg.Request,
 		Registration: regID,
 	})
@@ -447,7 +447,7 @@ func (d *Dealer) unregister(callee *wamp.Session, msg *wamp.Unregister) {
 	delReg, err := d.delCalleeReg(callee, msg.Registration)
 	if err != nil {
 		d.log.Println("Cannot unregister:", err)
-		callee.Send(&wamp.Error{
+		d.trySend(callee, &wamp.Error{
 			Type:    msg.MessageType(),
 			Request: msg.Request,
 			Details: wamp.Dict{},
@@ -456,7 +456,7 @@ func (d *Dealer) unregister(callee *wamp.Session, msg *wamp.Unregister) {
 		return
 	}
 
-	callee.Send(&wamp.Unregistered{Request: msg.Request})
+	d.trySend(callee, &wamp.Unregistered{Request: msg.Request})
 
 	if d.metaPeer == nil {
 		return
@@ -521,7 +521,7 @@ func (d *Dealer) call(caller *wamp.Session, msg *wamp.Call) {
 	reg, ok := d.matchProcedure(msg.Procedure)
 	if !ok || len(reg.callees) == 0 {
 		// If no registered procedure, send error.
-		caller.Send(&wamp.Error{
+		d.trySend(caller, &wamp.Error{
 			Type:    msg.MessageType(),
 			Request: msg.Request,
 			Details: wamp.Dict{},
@@ -590,7 +590,7 @@ func (d *Dealer) call(caller *wamp.Session, msg *wamp.Call) {
 		if wamp.OptionFlag(msg.Options, wamp.OptDiscloseMe) {
 			// Dealer MAY deny a Caller's request to disclose its identity.
 			if !d.allowDisclose {
-				caller.Send(&wamp.Error{
+				d.trySend(caller, &wamp.Error{
 					Type:    msg.MessageType(),
 					Request: msg.Request,
 					Details: wamp.Dict{},
@@ -624,7 +624,7 @@ func (d *Dealer) call(caller *wamp.Session, msg *wamp.Call) {
 
 	// Send INVOCATION to the endpoint that has registered the requested
 	// procedure.
-	err := callee.Send(&wamp.Invocation{
+	err := d.trySend(callee, &wamp.Invocation{
 		Request:      invocationID,
 		Registration: reg.id,
 		Details:      details,
@@ -686,7 +686,7 @@ func (d *Dealer) cancel(caller *wamp.Session, msg *wamp.Cancel) {
 			d.log.Println("Callee", invk.callee, "does not support call canceling")
 		} else {
 			// Send INTERRUPT message to callee.
-			err := invk.callee.Send(&wamp.Interrupt{
+			err := d.trySend(invk.callee, &wamp.Interrupt{
 				Request: invocationID,
 				Options: msg.Options,
 			})
@@ -718,7 +718,7 @@ func (d *Dealer) cancel(caller *wamp.Session, msg *wamp.Cancel) {
 	delete(d.invocations, invocationID)
 
 	// Send error to the caller.
-	caller.Send(&wamp.Error{
+	d.trySend(caller, &wamp.Error{
 		Type:    wamp.CALL,
 		Request: msg.Request,
 		Error:   wamp.ErrCanceled,
@@ -762,7 +762,7 @@ func (d *Dealer) yield(callee *wamp.Session, msg *wamp.Yield) {
 	}
 
 	// Send RESULT to the caller.  This forwards the YIELD from the callee.
-	caller.Send(&wamp.Result{
+	d.trySend(caller, &wamp.Result{
 		Request:     callID,
 		Details:     details,
 		Arguments:   msg.Arguments,
@@ -796,7 +796,7 @@ func (d *Dealer) error(msg *wamp.Error) {
 	delete(d.calls, callID)
 
 	// Send error to the caller.
-	caller.Send(&wamp.Error{
+	d.trySend(caller, &wamp.Error{
 		Type:        wamp.CALL,
 		Request:     callID,
 		Error:       msg.Error,
@@ -1086,4 +1086,13 @@ func (d *Dealer) RegCountCallees(msg *wamp.Invocation) wamp.Message {
 		Request:   msg.Request,
 		Arguments: wamp.List{count},
 	}
+}
+
+func (d *Dealer) trySend(sess *wamp.Session, msg wamp.Message) error {
+	if err := sess.TrySend(msg); err != nil {
+		err := fmt.Errorf("client blocked - dropped %s", msg.MessageType())
+		d.log.Println("!!!", err)
+		return err
+	}
+	return nil
 }

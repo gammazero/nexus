@@ -213,7 +213,7 @@ func (r *realm) run() {
 // messages to.  Sending a PUBLISH message to it will result in the router
 // publishing the event to any subscribers.
 func (r *realm) createMetaSession() {
-	cli, rtr := transport.LinkedPeers(r.log)
+	cli, rtr := transport.LinkedPeers()
 	r.metaPeer = cli
 	r.dealer.SetMetaPeer(cli)
 
@@ -352,7 +352,7 @@ func (r *realm) handleInboundMessages(sess *wamp.Session) bool {
 			if r.debug {
 				r.log.Printf("Stop session %s: system shutdown", sess)
 			}
-			sess.Send(&wamp.Goodbye{
+			sess.TrySend(&wamp.Goodbye{
 				Reason:  wamp.ErrSystemShutdown,
 				Details: wamp.Dict{},
 			})
@@ -401,7 +401,7 @@ func (r *realm) handleInboundMessages(sess *wamp.Session) bool {
 
 		case *wamp.Goodbye:
 			// Handle client leaving realm.
-			sess.Send(&wamp.Goodbye{
+			sess.TrySend(&wamp.Goodbye{
 				Reason:  wamp.ErrGoodbyeAndOut,
 				Details: wamp.Dict{},
 			})
@@ -456,7 +456,10 @@ func (r *realm) authzMessage(sess *wamp.Session, msg wamp.Message) bool {
 			errRsp.Error = wamp.ErrNotAuthorized
 			r.log.Println("Client", sess, msg.MessageType(), "not authorized")
 		}
-		sess.Send(errRsp)
+		err = sess.TrySend(errRsp)
+		if err != nil {
+			r.log.Println("!!! client blocked, could not send authz error")
+		}
 		return false
 	}
 	return true

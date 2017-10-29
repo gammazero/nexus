@@ -1,9 +1,8 @@
 package transport
 
 import (
-	"fmt"
+	"errors"
 
-	"github.com/gammazero/nexus/stdlog"
 	"github.com/gammazero/nexus/wamp"
 )
 
@@ -12,7 +11,7 @@ const linkedPeersOutQueueSize = 16
 // LinkedPeers creates two connected peers.  Messages sent to one peer appear
 // in the Recv of the other.  This is used for connecting client sessions to
 // the router.
-func LinkedPeers(logger stdlog.StdLog) (wamp.Peer, wamp.Peer) {
+func LinkedPeers() (wamp.Peer, wamp.Peer) {
 	// The channel used for the router to send messages to the client should be
 	// large enough to prevent blocking while waiting for a slow client, as a
 	// client may block on I/O.  If the client does block, then the message
@@ -25,40 +24,36 @@ func LinkedPeers(logger stdlog.StdLog) (wamp.Peer, wamp.Peer) {
 	cToR := make(chan wamp.Message)
 
 	// router reads from and writes to client
-	r := &localPeer{rd: cToR, wr: rToC, log: logger}
+	r := &localPeer{rd: cToR, wr: rToC}
 	// client reads from and writes to router
-	c := &localPeer{rd: rToC, wr: cToR, log: logger}
+	c := &localPeer{rd: rToC, wr: cToR}
 
 	return c, r
 }
 
 // localPeer implements Peer
 type localPeer struct {
-	rd  <-chan wamp.Message
-	wr  chan<- wamp.Message
-	log stdlog.StdLog
+	rd <-chan wamp.Message
+	wr chan<- wamp.Message
 }
 
 // Recv returns the channel this peer reads incoming messages from.
 func (p *localPeer) Recv() <-chan wamp.Message { return p.rd }
 
-// Send writes a message to the peer's outbound message channel.
-func (p *localPeer) Send(msg wamp.Message) error {
-	// If capacity is > 1, then wr is the rToC channel.
-	if cap(p.wr) > 1 {
-		select {
-		case p.wr <- msg:
-		default:
-			err := fmt.Errorf("client blocked - dropped %s", msg.MessageType())
-			if p.log != nil {
-				p.log.Println("!!!", err)
-			}
-			return err
-		}
-		return nil
+// TrySend writes a message to the peer's outbound message channel.
+func (p *localPeer) TrySend(msg wamp.Message) error {
+	select {
+	case p.wr <- msg:
+	default:
+		return errors.New("try again")
 	}
-	// It is OK for the router to block a client since this will not block
-	// other clients.
+	return nil
+}
+
+// Send writes a message to the peer's outbound message channel.
+// Typically called by clients, since it is OK for the router to block a client
+// since this will not block other clients.
+func (p *localPeer) Send(msg wamp.Message) error {
 	p.wr <- msg
 	return nil
 }

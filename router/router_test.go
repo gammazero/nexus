@@ -68,7 +68,7 @@ func newTestRouter() (Router, error) {
 }
 
 func testClient(r Router) (*wamp.Session, error) {
-	client, server := transport.LinkedPeers(logger)
+	client, server := transport.LinkedPeers()
 	// Run as goroutine since Send will block until message read by router, if
 	// client uses unbuffered channel.
 	go client.Send(&wamp.Hello{Realm: testRealm, Details: clientRoles})
@@ -125,7 +125,7 @@ func TestHandshakeBadRealm(t *testing.T) {
 	}
 	defer r.Close()
 
-	client, server := transport.LinkedPeers(logger)
+	client, server := transport.LinkedPeers()
 	go client.Send(&wamp.Hello{Realm: "does.not.exist"})
 	err = r.Attach(server)
 	if err == nil {

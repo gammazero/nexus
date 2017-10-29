@@ -272,11 +272,7 @@ func TestHandshake(t *testing.T) {
 		t.Fatal("Failed to close client:", err)
 	}
 	err = cli.Close()
-	if err != nil {
-		t.Fatal("Failed to close client 2nd time:", err)
-	}
-	err = cli.Close()
-	if err != nil {
-		t.Fatal("Failed to close client 3rd time:", err)
+	if err == nil {
+		t.Fatal("Expected error if client already closed")
 	}
 }

@@ -1,6 +1,7 @@
 package router
 
 import (
+	"errors"
 	"testing"
 	"time"
 
@@ -15,6 +16,15 @@ func newTestPeer() *testPeer {
 	return &testPeer{
 		in: make(chan wamp.Message, 1),
 	}
+}
+
+func (p *testPeer) TrySend(msg wamp.Message) error {
+	select {
+	case p.in <- msg:
+	default:
+		return errors.New("try again")
+	}
+	return nil
 }
 
 func (p *testPeer) Send(msg wamp.Message) error {

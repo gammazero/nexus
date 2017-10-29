@@ -2,6 +2,7 @@ package transport
 
 import (
 	"crypto/tls"
+	"errors"
 	"fmt"
 	"net"
 	"net/http"
@@ -113,14 +114,17 @@ func NewWebsocketPeer(conn *websocket.Conn, serializer serialize.Serializer, pay
 
 func (w *websocketPeer) Recv() <-chan wamp.Message { return w.rd }
 
-func (w *websocketPeer) Send(msg wamp.Message) error {
+func (w *websocketPeer) TrySend(msg wamp.Message) error {
 	select {
 	case w.wr <- msg:
 	default:
-		err := fmt.Errorf("client blocked - dropped %s", msg.MessageType())
-		w.log.Println("!!!", err)
-		return err
+		return errors.New("try again")
 	}
+	return nil
+}
+
+func (w *websocketPeer) Send(msg wamp.Message) error {
+	w.wr <- msg
 	return nil
 }
 
@@ -174,6 +178,7 @@ func (w *websocketPeer) recvHandler() {
 	// When done, close read channel to cause router to remove session if not
 	// already removed.
 	defer close(w.rd)
+	defer w.conn.Close()
 	for {
 		msgType, b, err := w.conn.ReadMessage()
 		if err != nil {
@@ -188,9 +193,6 @@ func (w *websocketPeer) recvHandler() {
 				// messages.
 				w.wr <- nil
 				<-w.wsWriterDone
-
-				// Close websocket connection.
-				w.conn.Close()
 			}
 			// The error is only one of these erors.  It is generally not
 			// helpful to log this, so keeping this commented out.
@@ -198,12 +200,11 @@ func (w *websocketPeer) recvHandler() {
 			// websocket: close 1000 (normal): goodbye
 			// read tcp addr:port->addr:port: use of closed network connection
 			//w.log.Print(err)
-			break
+			return
 		}
 
 		if msgType == websocket.CloseMessage {
-			w.conn.Close()
-			break
+			return
 		}
 
 		msg, err := w.serializer.Deserialize(b)
@@ -227,9 +228,8 @@ func (w *websocketPeer) recvHandler() {
 			select {
 			case w.rd <- msg:
 			case <-time.After(time.Second):
-				w.conn.Close()
-				return
 			}
+			return
 		}
 	}
 }
