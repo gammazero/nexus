@@ -698,7 +698,7 @@ func (rpce RPCError) Error() string {
 // connection to the router.
 func (c *Client) Close() error {
 	if !atomic.CompareAndSwapInt32(&c.closed, 0, 1) {
-		return nil
+		return errors.New("already closed")
 	}
 
 	// Cancel any running invocation handlers and wait for them to finish.
