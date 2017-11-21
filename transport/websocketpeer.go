@@ -117,8 +117,6 @@ func (w *websocketPeer) Recv() <-chan wamp.Message { return w.rd }
 func (w *websocketPeer) TrySend(msg wamp.Message) error {
 	select {
 	case w.wr <- msg:
-	case <-w.writerDone:
-		return errors.New("transport closed")
 	default:
 		return errors.New("blocked")
 	}
