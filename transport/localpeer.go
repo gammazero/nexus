@@ -45,7 +45,7 @@ func (p *localPeer) TrySend(msg wamp.Message) error {
 	select {
 	case p.wr <- msg:
 	default:
-		return errors.New("try again")
+		return errors.New("blocked")
 	}
 	return nil
 }

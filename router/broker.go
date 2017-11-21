@@ -555,11 +555,10 @@ func (b *Broker) pubSubCreateMeta(subTopic wamp.URI, subSessID, subID wamp.ID, m
 	b.pubMeta(wamp.MetaEventSubOnCreate, sendMeta)
 }
 
-func (b *Broker) trySend(sess *wamp.Session, msg wamp.Message) error {
+func (b *Broker) trySend(sess *wamp.Session, msg wamp.Message) bool {
 	if err := sess.TrySend(msg); err != nil {
-		err := fmt.Errorf("client blocked - dropped %s", msg.MessageType())
-		b.log.Println("!!!", err)
-		return err
+		b.log.Println("!!! broker dropped", msg.MessageType(), "message:", err)
+		return false
 	}
-	return nil
+	return true
 }

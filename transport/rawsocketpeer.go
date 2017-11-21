@@ -160,7 +160,7 @@ func (rs *rawSocketPeer) TrySend(msg wamp.Message) error {
 	select {
 	case rs.wr <- msg:
 	default:
-		return errors.New("try again")
+		return errors.New("blocked")
 	}
 	return nil
 }

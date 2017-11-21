@@ -28,7 +28,7 @@ type websocketPeer struct {
 	rd chan wamp.Message
 	wr chan wamp.Message
 
-	wsWriterDone chan struct{}
+	writerDone chan struct{}
 
 	log stdlog.StdLog
 }
@@ -86,11 +86,11 @@ func ConnectWebsocketPeer(url string, serialization serialize.Serialization, tls
 // servers to handle connections from clients.
 func NewWebsocketPeer(conn *websocket.Conn, serializer serialize.Serializer, payloadType int, logger stdlog.StdLog) wamp.Peer {
 	w := &websocketPeer{
-		conn:         conn,
-		serializer:   serializer,
-		payloadType:  payloadType,
-		closed:       make(chan struct{}),
-		wsWriterDone: make(chan struct{}),
+		conn:        conn,
+		serializer:  serializer,
+		payloadType: payloadType,
+		closed:      make(chan struct{}),
+		writerDone:  make(chan struct{}),
 
 		// The router will read from this channel and immediately dispatch the
 		// message to the broker or dealer.  Therefore this channel can be
@@ -118,7 +118,7 @@ func (w *websocketPeer) TrySend(msg wamp.Message) error {
 	select {
 	case w.wr <- msg:
 	default:
-		return errors.New("try again")
+		return errors.New("blocked")
 	}
 	return nil
 }
@@ -138,7 +138,7 @@ func (w *websocketPeer) Close() {
 	// messages.  Do not close wr channel in case there are incoming messages
 	// during close.
 	w.wr <- nil
-	<-w.wsWriterDone
+	<-w.writerDone
 
 	closeMsg := websocket.FormatCloseMessage(websocket.CloseNormalClosure,
 		"goodbye")
@@ -156,7 +156,7 @@ func (w *websocketPeer) Close() {
 // sendHandler pulls messages from the write channel, and pushes them to the
 // websocket.
 func (w *websocketPeer) sendHandler() {
-	defer close(w.wsWriterDone)
+	defer close(w.writerDone)
 	for msg := range w.wr {
 		if msg == nil {
 			return
@@ -192,7 +192,7 @@ func (w *websocketPeer) recvHandler() {
 				// still happening) and allow it to finish sending any queued
 				// messages.
 				w.wr <- nil
-				<-w.wsWriterDone
+				<-w.writerDone
 			}
 			// The error is only one of these erors.  It is generally not
 			// helpful to log this, so keeping this commented out.

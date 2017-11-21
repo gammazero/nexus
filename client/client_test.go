@@ -3,6 +3,7 @@ package client
 import (
 	"context"
 	"errors"
+	"fmt"
 	"log"
 	"os"
 	"strings"
@@ -344,6 +345,90 @@ func TestRemoteProcedureCall(t *testing.T) {
 	}
 	if rpcErr.Err.Error != wamp.ErrNoSuchProcedure {
 		t.Fatal("Wrong error URI in RPC error")
+	}
+
+	caller.Close()
+	callee.Close()
+	r.Close()
+}
+
+func TestProgressiveCall(t *testing.T) {
+	// Connect two clients to the same server
+	callee, caller, r, err := connectedTestClients()
+	if err != nil {
+		t.Fatal("failed to connect test clients:", err)
+	}
+
+	// Hanbdler sends progressive results.
+	handler := func(ctx context.Context, args wamp.List, kwargs, details wamp.Dict) *InvokeResult {
+		senderr := callee.SendProgress(ctx, wamp.List{"Alpha"}, nil)
+		if senderr != nil {
+			fmt.Println("Error sending Alpha progress:", senderr)
+			return &InvokeResult{Err: "test.failed"}
+		}
+		time.Sleep(500 * time.Millisecond)
+
+		senderr = callee.SendProgress(ctx, wamp.List{"Bravo"}, nil)
+		if senderr != nil {
+			fmt.Println("Error sending Bravo progress:", senderr)
+			return &InvokeResult{Err: "test.failed"}
+		}
+		time.Sleep(500 * time.Millisecond)
+
+		senderr = callee.SendProgress(ctx, wamp.List{"Charlie"}, nil)
+		if senderr != nil {
+			fmt.Println("Error sending Charlie progress:", senderr)
+			return &InvokeResult{Err: "test.failed"}
+		}
+		time.Sleep(500 * time.Millisecond)
+
+		var sum int64
+		for i := range args {
+			n, ok := wamp.AsInt64(args[i])
+			if ok {
+				sum += n
+			}
+		}
+		return &InvokeResult{Args: wamp.List{sum}}
+	}
+
+	procName := "nexus.test.progproc"
+
+	// Register procedure
+	if err = callee.Register(procName, handler, nil); err != nil {
+		t.Fatal("Failed to register procedure:", err)
+	}
+
+	progCount := 0
+	progHandler := func(result *wamp.Result) {
+		arg := result.Arguments[0].(string)
+		if (progCount == 0 && arg != "Alpha") || (progCount == 1 && arg != "Bravo") || (progCount == 2 && arg != "Charlie") {
+			return
+		}
+		progCount++
+	}
+
+	// Test calling the procedure.
+	callArgs := wamp.List{1, 2, 3, 4, 5, 6, 7, 8, 9, 10}
+	ctx := context.Background()
+	result, err := caller.CallProgress(ctx, procName, nil, callArgs, nil, "", progHandler)
+	if err != nil {
+		t.Fatal("Failed to call procedure:", err)
+	}
+	sum, ok := wamp.AsInt64(result.Arguments[0])
+	if !ok {
+		t.Fatal("Could not convert result to int64")
+	}
+	if sum != 55 {
+		t.Fatal("Wrong result:", sum)
+	}
+	if progCount != 3 {
+		t.Fatal("Expected progCount == 3")
+	}
+
+	// Test unregister.
+	if err = callee.Unregister(procName); err != nil {
+		t.Fatal("Failed to unregister procedure:", err)
 	}
 
 	caller.Close()
