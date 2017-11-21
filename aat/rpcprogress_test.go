@@ -21,7 +21,7 @@ func TestRPCProgressiveCallResults(t *testing.T) {
 		t.Fatal("Failed to connect client:", err)
 	}
 
-	// Test registering a valid procedure.
+	// Hanbdler sends progressive results.
 	handler := func(ctx context.Context, args wamp.List, kwargs, details wamp.Dict) *client.InvokeResult {
 		err := callee.SendProgress(ctx, wamp.List{"Alpha"}, nil)
 		if err != nil {
