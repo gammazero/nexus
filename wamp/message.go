@@ -82,10 +82,7 @@ var mtStrings = map[MessageType]string{
 }
 
 // String returns the message type string.
-func (mt MessageType) String() string {
-	mtStr := mtStrings[mt]
-	return mtStr
-}
+func (mt MessageType) String() string { return mtStrings[mt] }
 
 // NewMessage returns an empty message of the type specified.
 func NewMessage(t MessageType) Message {

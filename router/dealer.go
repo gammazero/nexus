@@ -624,14 +624,13 @@ func (d *Dealer) call(caller *wamp.Session, msg *wamp.Call) {
 
 	// Send INVOCATION to the endpoint that has registered the requested
 	// procedure.
-	err := d.trySend(callee, &wamp.Invocation{
+	if !d.trySend(callee, &wamp.Invocation{
 		Request:      invocationID,
 		Registration: reg.id,
 		Details:      details,
 		Arguments:    msg.Arguments,
 		ArgumentsKw:  msg.ArgumentsKw,
-	})
-	if err != nil {
+	}) {
 		d.error(&wamp.Error{
 			Type:      wamp.INVOCATION,
 			Request:   invocationID,
@@ -686,11 +685,10 @@ func (d *Dealer) cancel(caller *wamp.Session, msg *wamp.Cancel) {
 			d.log.Println("Callee", invk.callee, "does not support call canceling")
 		} else {
 			// Send INTERRUPT message to callee.
-			err := d.trySend(invk.callee, &wamp.Interrupt{
+			if d.trySend(invk.callee, &wamp.Interrupt{
 				Request: invocationID,
 				Options: msg.Options,
-			})
-			if err == nil {
+			}) {
 				d.log.Println("Dealer sent INTERRUPT to cancel invocation",
 					invocationID, "for call", msg.Request, "mode:", mode)
 
@@ -1088,11 +1086,10 @@ func (d *Dealer) RegCountCallees(msg *wamp.Invocation) wamp.Message {
 	}
 }
 
-func (d *Dealer) trySend(sess *wamp.Session, msg wamp.Message) error {
+func (d *Dealer) trySend(sess *wamp.Session, msg wamp.Message) bool {
 	if err := sess.TrySend(msg); err != nil {
-		err := fmt.Errorf("client blocked - dropped %s", msg.MessageType())
-		d.log.Println("!!!", err)
-		return err
+		d.log.Println("!!! dealer dropped", msg.MessageType(), "message:", err)
+		return false
 	}
-	return nil
+	return true
 }
