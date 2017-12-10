@@ -33,7 +33,8 @@ type KeyStore interface {
 	// AuthKey returns the user's key appropriate for the specified authmethod.
 	AuthKey(authid, authmethod string) ([]byte, error)
 
-	// PasswordInfo returns salting info for the user's password.
+	// PasswordInfo returns salting info for the user's password.  This
+	// information must be available when using keys computed with PBKDF2.
 	PasswordInfo(authid string) (string, int, int)
 
 	// Returns the authrole for the user.

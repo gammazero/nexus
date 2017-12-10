@@ -2,6 +2,7 @@ package aat
 
 import (
 	"context"
+	"crypto/sha256"
 	"errors"
 	"strings"
 	"testing"
@@ -11,6 +12,14 @@ import (
 	"github.com/gammazero/nexus/client"
 	"github.com/gammazero/nexus/wamp"
 	"github.com/gammazero/nexus/wamp/crsign"
+	"golang.org/x/crypto/pbkdf2"
+)
+
+const (
+	password   = "squeemishosafradge"
+	pwSalt     = "salt123"
+	keylen     = 32
+	iterations = 1000
 )
 
 func TestJoinRealmWithCRAuth(t *testing.T) {
@@ -145,13 +154,9 @@ func TestAuthz(t *testing.T) {
 }
 
 func clientAuthFunc(c *wamp.Challenge) (string, wamp.Dict) {
-	chStr := wamp.OptionString(c.Extra, "challenge")
-	// If the client needed to lookup a user's key, this would require decoding
-	// the JSON-encoded ch string and getting the authid. For this example
-	// assume that client only operate as one user and knows the key to use.
-	key := "squeemishosafradge"
-	sig := crsign.SignChallenge(chStr, []byte(key))
-	return sig, wamp.Dict{}
+	// Assume that client only operates as one user and knows the key to use.
+	// password := askPassword(chStr)
+	return crsign.RespondChallenge(password, c, nil), wamp.Dict{}
 }
 
 type serverKeyStore struct {
@@ -164,8 +169,10 @@ func (ks *serverKeyStore) AuthKey(authid, authmethod string) ([]byte, error) {
 	}
 	switch authmethod {
 	case "wampcra":
-		// Lookup the user's key.
-		return []byte("squeemishosafradge"), nil
+		// Lookup the user'es key.
+		pw := []byte(password)
+		salt := []byte(pwSalt)
+		return pbkdf2.Key(pw, salt, iterations, keylen, sha256.New), nil
 	case "ticket":
 		// Lookup the user's key.
 		return []byte("ticketforjoe1234"), nil
@@ -174,7 +181,7 @@ func (ks *serverKeyStore) AuthKey(authid, authmethod string) ([]byte, error) {
 }
 
 func (ks *serverKeyStore) PasswordInfo(authid string) (string, int, int) {
-	return "", 0, 0
+	return pwSalt, keylen, iterations
 }
 
 func (ks *serverKeyStore) Provider() string { return ks.provider }

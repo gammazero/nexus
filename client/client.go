@@ -718,8 +718,8 @@ func (c *Client) Close() error {
 }
 
 // joinRealm joins a WAMP realm, handling challenge/response authentication if
-// needed.  The authHandlers argument supplies a map of WAMP authmethod names
-// to functions that handle each auth type.  This can be nil if router is
+// needed.  The authHandlers portion of cfg supplies a map of WAMP authmethod
+// names to functions that handle each auth type.  This can be nil if router is
 // expected to allow anonymous authentication.
 func joinRealm(peer wamp.Peer, cfg ClientConfig) (*wamp.Welcome, error) {
 	if cfg.Realm == "" {
