@@ -35,7 +35,7 @@ type KeyStore interface {
 
 	// PasswordInfo returns salting info for the user's password.  This
 	// information must be available when using keys computed with PBKDF2.
-	PasswordInfo(authid string) (string, int, int)
+	PasswordInfo(authid string) (salt string, keylen int, iterations int)
 
 	// Returns the authrole for the user.
 	AuthRole(authid string) (string, error)
