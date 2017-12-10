@@ -67,7 +67,7 @@ func cliRsp(p wamp.Peer) {
 func clientAuthFunc(c *wamp.Challenge) (string, wamp.Dict) {
 	// If the client needed to lookup a user's key, this would require decoding
 	// the JSON-encoded ch string and getting the authid. For this example
-	// assume that client only operate as one user and knows the key to use.
+	// assume that client only operates as one user and knows the key to use.
 	var sig string
 	switch c.AuthMethod {
 	case "ticket":

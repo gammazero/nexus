@@ -58,6 +58,7 @@ func (cr *CRAuthenticator) Authenticate(sid wamp.ID, details wamp.Dict, client w
 	}
 
 	extra := wamp.Dict{"challenge": chStr}
+	// If key was created using PBKDF2, then salting info should be present.
 	salt, keylen, iters := cr.keyStore.PasswordInfo(authid)
 	if salt != "" {
 		extra["salt"] = salt
