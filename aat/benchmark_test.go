@@ -43,7 +43,7 @@ func BenchmarkPub256Sub(b *testing.B) {
 }
 
 func BenchmarkPub512Sub(b *testing.B) {
-	benchPubSub(256, b)
+	benchPubSub(512, b)
 }
 
 func benchPubSub(subCount int, b *testing.B) {

@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"net"
 	"net/http"
+	"strings"
 	"time"
 
 	"github.com/gammazero/nexus/stdlog"
@@ -167,7 +168,9 @@ func (w *websocketPeer) sendHandler() {
 		}
 
 		if err = w.conn.WriteMessage(w.payloadType, b); err != nil {
-			w.log.Print(err)
+			if !strings.HasSuffix(err.Error(), "close sent") {
+				w.log.Print(err)
+			}
 		}
 	}
 }
