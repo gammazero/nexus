@@ -46,7 +46,7 @@ func TestPubSub(t *testing.T) {
 	if err != nil {
 		t.Fatal("Failed to connect client:", err)
 	}
-	// Publish an event to something that matches by wildcard.
+	// Publish an event to topic.
 	err = publisher.Publish(testTopic, wamp.Dict{wamp.OptAcknowledge: true},
 		wamp.List{"hello world"}, nil)
 	if err != nil {
