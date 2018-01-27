@@ -157,16 +157,41 @@ func AsInt64(v interface{}) (int64, bool) {
 		return int64(v), true
 	case int32:
 		return int64(v), true
-	case float64:
-		return int64(v), true
 	case uint:
 		return int64(v), true
 	case uint32:
+		return int64(v), true
+	case float64:
+		return int64(v), true
+	case float32:
 		return int64(v), true
 	}
 	return 0, false
 }
 
+func AsFloat64(v interface{}) (float64, bool) {
+	switch v := v.(type) {
+	case float64:
+		return v, true
+	case float32:
+		return float64(v), true
+	case int64:
+		return float64(v), true
+	case ID:
+		return float64(v), true
+	case uint64:
+		return float64(v), true
+	case int:
+		return float64(v), true
+	case int32:
+		return float64(v), true
+	case uint:
+		return float64(v), true
+	case uint32:
+		return float64(v), true
+	}
+	return 0.0, false
+}
 func AsDict(v interface{}) (Dict, bool) {
 	n := NormalizeDict(v)
 	return n, n != nil

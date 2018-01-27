@@ -271,8 +271,12 @@ func TestConversion(t *testing.T) {
 		t.Error("Should fail converting int to URI")
 	}
 
-	if _, ok = AsInt64(int64(num)); !ok {
+	var i64 int64
+	if i64, ok = AsInt64(int64(num)); !ok {
 		t.Error("ID conversion failed")
+	}
+	if i64 != int64(num) {
+		t.Error("Wrong number")
 	}
 	if _, ok = AsInt64(ID(num)); !ok {
 		t.Error("ID conversion failed")
@@ -298,13 +302,62 @@ func TestConversion(t *testing.T) {
 	if _, ok = AsInt64(uint64(num)); !ok {
 		t.Error("ID conversion failed")
 	}
-	if _, ok = AsInt64(float64(num)); !ok {
+	if _, ok = AsInt64(float32(num)); !ok {
 		t.Error("ID conversion failed")
+	}
+	if i64, ok = AsInt64(float64(num)); !ok {
+		t.Error("ID conversion failed")
+	}
+	if i64 != int64(num) {
+		t.Error("Wrong number")
 	}
 	if _, ok = AsInt64(str); ok {
 		t.Error("Invalid ID conversion")
 	}
 
+	var f64 float64
+	if f64, ok = AsFloat64(float64(num)); !ok {
+		t.Error("ID conversion failed")
+	}
+	if f64 != float64(num) {
+		t.Error("Wrong number")
+	}
+	if _, ok = AsFloat64(float32(num)); !ok {
+		t.Error("ID conversion failed")
+	}
+	if _, ok = AsFloat64(ID(num)); !ok {
+		t.Error("ID conversion failed")
+	}
+	if _, ok = AsFloat64(uint64(num)); !ok {
+		t.Error("ID conversion failed")
+	}
+	if _, ok = AsFloat64(int(num)); !ok {
+		t.Error("ID conversion failed")
+	}
+	if _, ok = AsFloat64(int32(num)); !ok {
+		t.Error("ID conversion failed")
+	}
+	if _, ok = AsFloat64(int64(num)); !ok {
+		t.Error("ID conversion failed")
+	}
+	if _, ok = AsFloat64(uint(num)); !ok {
+		t.Error("ID conversion failed")
+	}
+	if _, ok = AsFloat64(uint32(num)); !ok {
+		t.Error("ID conversion failed")
+	}
+	if _, ok = AsFloat64(uint64(num)); !ok {
+		t.Error("ID conversion failed")
+	}
+	if f64, ok = AsFloat64(int64(num)); !ok {
+		t.Error("ID conversion failed")
+	}
+	if f64 != float64(num) {
+		t.Error("Wrong number")
+	}
+	if _, ok = AsFloat64(str); ok {
+		t.Error("Invalid ID conversion")
+	}
 }
 
 func BenchmarkNormalized(b *testing.B) {
