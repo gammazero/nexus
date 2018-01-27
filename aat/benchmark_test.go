@@ -85,7 +85,6 @@ func benchPubSub(subCount int, b *testing.B) {
 
 	publisher.Close()
 	for i := range subs {
-		subs[i].Unsubscribe(testTopic)
 		subs[i].Close()
 	}
 }
