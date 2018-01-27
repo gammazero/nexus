@@ -211,11 +211,15 @@ func (rs *rawSocketPeer) sendHandler() {
 		lenBytes := intToBytes(len(b))
 		header := []byte{0x0, lenBytes[0], lenBytes[1], lenBytes[2]}
 		if _, err = rs.conn.Write(header); err != nil {
-			rs.log.Println("Error writing header:", err)
+			if !wamp.IsGoodbyeAck(msg) {
+				rs.log.Println("Error writing header:", err)
+			}
 			continue
 		}
 		if _, err = rs.conn.Write(b); err != nil {
-			rs.log.Println("Error writing message:", err)
+			if !wamp.IsGoodbyeAck(msg) {
+				rs.log.Println("Error writing message:", msg, err)
+			}
 			continue
 		}
 	}
