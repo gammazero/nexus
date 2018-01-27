@@ -1,5 +1,5 @@
 /*
-Package wamp defines all message types, data types, and reserved URI valies
+Package wamp defines all message types, data types, and reserved URI values
 defined by the WAMP specification.
 
 */
@@ -452,3 +452,16 @@ type Interrupt struct {
 }
 
 func (msg *Interrupt) MessageType() MessageType { return INTERRUPT }
+
+// IsGoodbyeAck checks if the message is an ack to end of session.  This is
+// used by transports to avoid logging an error if unable to send a goodbye
+// acknowledgment to a client, since the client may not have waited for the
+// acknowledgment.
+func IsGoodbyeAck(msg Message) bool {
+	if gb, ok := msg.(*Goodbye); ok {
+		if gb.Reason == ErrGoodbyeAndOut {
+			return true
+		}
+	}
+	return false
+}
