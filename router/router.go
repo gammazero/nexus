@@ -51,6 +51,17 @@ type Router interface {
 	Logger() stdlog.StdLog
 }
 
+// An DynamicRouter is a router that allows for dynamic Realm adding.
+type DynamicRouter interface {
+	Router
+
+	// AddRealm will append a realm to this router
+	AddRealm(*RealmConfig) error
+
+	// RemoveRealm will attempt to remove a realm from this router
+	RemoveRealm(wamp.URI)
+}
+
 // DefaultRouter is the default WAMP router implementation.
 type router struct {
 	realms map[wamp.URI]*realm
@@ -300,8 +311,34 @@ func (r *router) Close() {
 	r.log.Println("Router stopped")
 }
 
-// addRealm creates a new Realm and adds that to the router.  At least one
-// realm is needed, unless automatic realm creation is enabled.
+// AddRealm allows the addition of a realm after construction
+func (r *router) AddRealm(config *RealmConfig) error {
+	var err error
+	sync := make(chan struct{})
+	r.actionChan <- func() {
+		_, err = r.addRealm(config)
+		close(sync)
+	}
+	<-sync
+	return err
+}
+
+// RemoveRealm will close and then remove a realm from this router, if the realm exists.
+func (r *router) RemoveRealm(name wamp.URI) {
+	sync := make(chan struct{})
+	r.actionChan <- func() {
+		if realm, ok := r.realms[name]; ok {
+			realm.close()
+			delete(r.realms, name)
+			r.log.Printf("Realm %s completed shutdown", name)
+			r.log.Printf("Removed realm: %s", name)
+		}
+		close(sync)
+	}
+	<-sync
+}
+
+// addRealm perform the process of attempting to create and add a realm to this router.
 func (r *router) addRealm(config *RealmConfig) (*realm, error) {
 	if _, ok := r.realms[config.URI]; ok {
 		return nil, errors.New("realm already exists: " + string(config.URI))
