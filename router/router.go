@@ -78,10 +78,6 @@ type router struct {
 
 // NewRouter creates a WAMP router instance.
 func NewRouter(config *RouterConfig, logger stdlog.StdLog) (Router, error) {
-	if len(config.RealmConfigs) == 0 && config.RealmTemplate == nil {
-		return nil, fmt.Errorf("invalid router config. Must define either realms or realmsTemplate, or both")
-
-	}
 	// If logger not provided, create one.
 	if logger == nil {
 		logger = log.New(os.Stdout, "", log.LstdFlags)
