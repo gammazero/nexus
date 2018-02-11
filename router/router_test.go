@@ -771,19 +771,14 @@ func TestRegistrationMetaProcedures(t *testing.T) {
 	}
 }
 
-func TestDynamicRouter(t *testing.T) {
-	var dr DynamicRouter
-	var ok bool
-
+func TestDynamicRealmChange(t *testing.T) {
 	defer leaktest.Check(t)
-	r, err := newTestRouter()
+
+	dr, err := newTestRouter()
 	if err != nil {
 		t.Fatal(err)
 	}
-	defer r.Close()
-	if dr, ok = r.(DynamicRouter); !ok {
-		t.Fatal("Expected router to implement DyanmicRouter")
-	}
+	defer dr.Close()
 
 	err = dr.AddRealm(&RealmConfig{
 		URI:           testRealm2,

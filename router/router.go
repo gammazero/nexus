@@ -49,11 +49,6 @@ type Router interface {
 
 	// Logger returns the logger the router is using.
 	Logger() stdlog.StdLog
-}
-
-// An DynamicRouter is a router that allows for dynamic Realm adding.
-type DynamicRouter interface {
-	Router
 
 	// AddRealm will append a realm to this router
 	AddRealm(*RealmConfig) error
