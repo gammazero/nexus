@@ -49,6 +49,12 @@ type Router interface {
 
 	// Logger returns the logger the router is using.
 	Logger() stdlog.StdLog
+
+	// AddRealm will append a realm to this router
+	AddRealm(*RealmConfig) error
+
+	// RemoveRealm will attempt to remove a realm from this router
+	RemoveRealm(wamp.URI)
 }
 
 // DefaultRouter is the default WAMP router implementation.
@@ -67,10 +73,6 @@ type router struct {
 
 // NewRouter creates a WAMP router instance.
 func NewRouter(config *RouterConfig, logger stdlog.StdLog) (Router, error) {
-	if len(config.RealmConfigs) == 0 && config.RealmTemplate == nil {
-		return nil, fmt.Errorf("invalid router config. Must define either realms or realmsTemplate, or both")
-
-	}
 	// If logger not provided, create one.
 	if logger == nil {
 		logger = log.New(os.Stdout, "", log.LstdFlags)
@@ -300,8 +302,45 @@ func (r *router) Close() {
 	r.log.Println("Router stopped")
 }
 
-// addRealm creates a new Realm and adds that to the router.  At least one
-// realm is needed, unless automatic realm creation is enabled.
+// AddRealm allows the addition of a realm after construction
+func (r *router) AddRealm(config *RealmConfig) error {
+	var err error
+	sync := make(chan struct{})
+	r.actionChan <- func() {
+		_, err = r.addRealm(config)
+		close(sync)
+	}
+	<-sync
+	return err
+}
+
+// RemoveRealm will close and then remove a realm from this router, if the realm exists.
+func (r *router) RemoveRealm(name wamp.URI) {
+	// Because we want to force atomicity as briefly as possible, the atomic func will be used purely to attempt to
+	// locate the realm
+	var realm *realm
+	var ok bool
+	sync := make(chan struct{})
+	r.actionChan <- func() {
+		if realm, ok = r.realms[name]; ok {
+			// if found, go ahead and remove the realm from the router to prevent new clients from joining it.
+			delete(r.realms, name)
+			r.log.Printf("Removed realm: %s", name)
+		}
+		close(sync)
+	}
+	// wait until the atomic func has completed
+	<-sync
+	// if the realm was found within the router, close it outside of the atomic func while still blocking the caller
+	if ok {
+		realm.close()
+		r.log.Printf("Realm %s completed shutdown", name)
+	}
+}
+
+// addRealm perform the process of attempting to create and add a realm to this router.
+//
+// this method should ONLY be called from within an atomic func
 func (r *router) addRealm(config *RealmConfig) (*realm, error) {
 	if _, ok := r.realms[config.URI]; ok {
 		return nil, errors.New("realm already exists: " + string(config.URI))

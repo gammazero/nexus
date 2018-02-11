@@ -16,6 +16,7 @@ import (
 
 const (
 	testRealm       = wamp.URI("nexus.test.realm")
+	testRealm2      = wamp.URI("nexus.test.realm2")
 	testProcedure   = wamp.URI("nexus.test.endpoint")
 	testProcedureWC = wamp.URI("nexus..endpoint")
 )
@@ -67,11 +68,11 @@ func newTestRouter() (Router, error) {
 	return NewRouter(config, logger)
 }
 
-func testClient(r Router) (*wamp.Session, error) {
+func testClientInRealm(r Router, realm wamp.URI) (*wamp.Session, error) {
 	client, server := transport.LinkedPeers()
 	// Run as goroutine since Send will block until message read by router, if
 	// client uses unbuffered channel.
-	go client.Send(&wamp.Hello{Realm: testRealm, Details: clientRoles})
+	go client.Send(&wamp.Hello{Realm: realm, Details: clientRoles})
 	err := r.Attach(server)
 	if err != nil {
 		return nil, err
@@ -92,6 +93,10 @@ func testClient(r Router) (*wamp.Session, error) {
 		Peer: client,
 		ID:   sid,
 	}, nil
+}
+
+func testClient(r Router) (*wamp.Session, error) {
+	return testClientInRealm(r, testRealm)
 }
 
 func TestHandshake(t *testing.T) {
@@ -763,5 +768,61 @@ func TestRegistrationMetaProcedures(t *testing.T) {
 	}
 	if count != 1 {
 		t.Fatal("Wring number of callees")
+	}
+}
+
+func TestDynamicRealmChange(t *testing.T) {
+	defer leaktest.Check(t)
+
+	dr, err := newTestRouter()
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer dr.Close()
+
+	err = dr.AddRealm(&RealmConfig{
+		URI:           testRealm2,
+		StrictURI:     false,
+		AnonymousAuth: true,
+		AllowDisclose: false,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	cli, err := testClientInRealm(dr, testRealm2)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	cli.Send(&wamp.Goodbye{})
+	select {
+	case <-time.After(time.Second):
+		t.Fatal("no goodbye message after sending goodbye")
+	case msg := <-cli.Recv():
+		if _, ok := msg.(*wamp.Goodbye); !ok {
+			t.Fatalf("expected GOODBYE, received %s", msg.MessageType())
+		}
+	}
+
+	cli, err = testClientInRealm(dr, testRealm2)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	sync := make(chan wamp.Message)
+	go func() {
+		sync <- <-cli.Recv()
+	}()
+
+	dr.RemoveRealm(testRealm2)
+
+	select {
+	case <-time.After(time.Second):
+		t.Fatal("expected client to be booted when removing realm")
+	case msg := <-sync:
+		if _, ok := msg.(*wamp.Goodbye); !ok {
+			t.Fatalf("expected GOODBYE, received %s", msg.MessageType())
+		}
 	}
 }
