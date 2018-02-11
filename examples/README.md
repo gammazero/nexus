@@ -23,7 +23,7 @@ The example clients are located in the following locations:
 - `rpc/callee/`
 - `rpc/caller/`
 
-Set the URL scheme with `-scheme=` to specify the type of transport, and whether or not to use TLS, when connecting a client:
+When connecting a client, set the URL scheme with `-scheme=` to specify the type of transport, and whether or not to use TLS:
 
 - Websocket: `-scheme=ws`
 - Websocket + TLS: `-scheme=wss`
@@ -33,7 +33,10 @@ Set the URL scheme with `-scheme=` to specify the type of transport, and whether
 
 If no scheme is specified, then the default is `ws` (websocket without TLS).
 
-When using TLS ("wss" or "tcps" schemes) specifying the `-skipverify` flag.  The `-skipverify` flag is needed to skip verification of the certificate presented by the example server.  The flag can be omitted if using a certificate the can be verified or to check that verification fails with an invalid certificate.
+When using TLS ("wss" or "tcps" schemes), certificate verification fails when using a certificate that cannot be verified.  For verification of the server's certificate to work, it is necessary to trust the server's certificate by specifying `-trust=server/cert.pem`.  Verification can also be skippen using the `-skipverify` flag.  Example running subscriber client:
+```
+go run pubsub/subscriber/subscriber.go -scheme=wss -trust=server/cert.pem
+```
 
 To choose the type of serialization for the client to use, specify `-serialize=json` or `-serialize=msgpack`.  If no serialization is specified, then the default is `json`.
 

@@ -104,12 +104,11 @@ func (s *WebsocketServer) ListenAndServeTLS(address string, tlscfg *tls.Config, 
 	}
 
 	if !hasCert || certFile != "" || keyFile != "" {
-		var err error
-		tlscfg.Certificates = make([]tls.Certificate, 1)
-		tlscfg.Certificates[0], err = tls.LoadX509KeyPair(certFile, keyFile)
+		cert, err := tls.LoadX509KeyPair(certFile, keyFile)
 		if err != nil {
 			return nil, fmt.Errorf("error loading X509 key pair: %s", err)
 		}
+		tlscfg.Certificates = append(tlscfg.Certificates, cert)
 	}
 
 	l, err := tls.Listen("tcp", address, tlscfg)

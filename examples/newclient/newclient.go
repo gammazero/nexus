@@ -8,9 +8,12 @@ package newclient
 
 import (
 	"crypto/tls"
+	"crypto/x509"
+	"encoding/pem"
 	"errors"
 	"flag"
 	"fmt"
+	"io/ioutil"
 	"log"
 
 	"github.com/gammazero/nexus/client"
@@ -26,13 +29,15 @@ const (
 
 func NewClient(logger *log.Logger) (*client.Client, error) {
 	var skipVerify bool
-	var scheme, serType, certFile, keyFile string
+	var scheme, serType, caFile, certFile, keyFile string
 	flag.StringVar(&scheme, "scheme", "ws",
 		"-scheme=[ws, wss, tcp, tcps, unix].  Default is ws (websocket no tls)")
 	flag.StringVar(&serType, "serialize", "json",
 		"-serialize[json, msgpack] or none for socket default")
 	flag.BoolVar(&skipVerify, "skipverify", false,
 		"accept any certificate presented by the server")
+	flag.StringVar(&caFile, "trust", "",
+		"CA or self-signed certificate to trust in PEM encoded file")
 	flag.StringVar(&certFile, "cert", "",
 		"certificate file with PEM encoded data")
 	flag.StringVar(&keyFile, "key", "",
@@ -69,6 +74,38 @@ func NewClient(logger *log.Logger) (*client.Client, error) {
 			}
 			tlscfg.Certificates = append(tlscfg.Certificates, cert)
 		}
+		// If not skipping verification and told to trust a certificate.
+		if !skipVerify && caFile != "" {
+			// Load PEM-encoded certificate to trust.
+			certPEM, err := ioutil.ReadFile(caFile)
+			if err != nil {
+				return nil, err
+			}
+			// Create CertPool containing the certificate to trust.
+			roots := x509.NewCertPool()
+			if !roots.AppendCertsFromPEM(certPEM) {
+				return nil, errors.New("failed to import certificate to trust")
+			}
+			// Trust the certificate by putting it into the pool of root CAs.
+			tlscfg.RootCAs = roots
+
+			// Decode and parse the server cert to extract the subject info.
+			block, _ := pem.Decode(certPEM)
+			if block == nil {
+				return nil, errors.New("failed to decode certificate to trust")
+			}
+			cert, err := x509.ParseCertificate(block.Bytes)
+			if err != nil {
+				return nil, err
+			}
+			log.Println("Trusting certificate", caFile, "with CN:",
+				cert.Subject.CommonName)
+
+			// Set ServerName in TLS config to CN from trusted cert so that
+			// certificate will validate if CN does not match DNS name.
+			tlscfg.ServerName = cert.Subject.CommonName
+		}
+
 		cfg.TlsCfg = tlscfg
 	}
 
