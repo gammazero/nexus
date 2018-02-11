@@ -543,10 +543,11 @@ func (c *Client) Unregister(procedure string) error {
 // CANCEL message is sent to the router to cancel the call according to the
 // specified mode.
 //
-// If cancelMode must be one of the following: "kill", "killnowait', "skip".
-// Setting  to  ""  specifies  using  the  default  value:  "killnowait".   The
-// cancelMode is  an option  for a  CANCEL message, not  for the  CALL message,
-// which is why it is specified as a parameter to the Call() API.
+// cancelMode must be one of the following: "kill", "killnowait', "skip".
+// Setting to "" specifies using the default value: "killnowait".  cancelMode
+// is an option for a CANCEL message, not for the CALL message, which is why it
+// is specified as a parameter to the Call() API, and not a message option for
+// CALL.
 //
 // Cancellation behaves differently depending on the mode:
 //
