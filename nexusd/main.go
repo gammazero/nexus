@@ -60,6 +60,7 @@ func main() {
 		// Create a new websocket server with the router.
 		wss := router.NewWebsocketServer(r)
 		if conf.WebSocket.EnableCompression {
+			logger.Printf("Compression enabled")
 			// Set optional websocket config.
 			wss.SetConfig(router.WebsocketConfig{
 				EnableCompression:     true,
