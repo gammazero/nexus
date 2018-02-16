@@ -68,6 +68,11 @@ type ClientConfig struct {
 
 	// Logger for client to use.  If not set, client logs to os.Stderr.
 	Logger stdlog.StdLog
+
+	// Websocket compression configuration parameters.
+	WsEnableCompression     bool
+	WsEnableContextTakeover bool
+	WsCompressionLevel      int
 }
 
 // Define serialization consts in client package so that client code does not

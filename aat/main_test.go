@@ -47,6 +47,9 @@ var (
 
 	// serType is set to "json" or "msgpack".  Ignored if sockType is "".
 	serType string
+
+	// compress enabled compression on both client and server config
+	compress bool
 )
 
 type testAuthz struct{}
@@ -74,6 +77,7 @@ func TestMain(m *testing.M) {
 		"-scheme=[ws, wss, tcp, tcps, unix] or none for local (in-process)")
 	flag.StringVar(&serType, "serialize", "",
 		"-serialize[json, msgpack] default is json")
+	flag.BoolVar(&compress, "compress", false, "enable compression")
 	flag.Parse()
 
 	if serType != "" && serType != "json" && serType != "msgpack" {
@@ -135,12 +139,21 @@ func TestMain(m *testing.M) {
 		sockDesc = "LOCAL CONNECTIONS"
 	case "ws":
 		s := router.NewWebsocketServer(nxr)
-		closer, err = s.ListenAndServe(tcpAddr)
 		sockDesc = "WEBSOCKETS"
+		// Set optional websocket config.
+		if compress {
+			s.SetConfig(router.WebsocketConfig{EnableCompression: true})
+			sockDesc += " + compression"
+		}
+		closer, err = s.ListenAndServe(tcpAddr)
 	case "wss":
 		s := router.NewWebsocketServer(nxr)
-		closer, err = s.ListenAndServeTLS(tcpAddr, nil, certPath, keyPath)
 		sockDesc = "WEBSOCKETS + TLS"
+		if compress {
+			s.SetConfig(router.WebsocketConfig{EnableCompression: true})
+			sockDesc += " + compression"
+		}
+		closer, err = s.ListenAndServeTLS(tcpAddr, nil, certPath, keyPath)
 	case "tcp":
 		s := router.NewRawSocketServer(nxr, 0, 0)
 		closer, err = s.ListenAndServe(scheme, tcpAddr)
@@ -164,13 +177,15 @@ func TestMain(m *testing.M) {
 		os.Exit(1)
 	}
 	if closer != nil {
-		rtrLogger.Printf("Server listening on %s://%s", scheme, addr)
+		rtrLogger.Printf("Server listening on %s://%s compression=%t", scheme, addr, compress)
 	}
 	if serType != "" {
 		sockDesc = fmt.Sprint(sockDesc, " with ", serType, " serialization")
 	}
 	fmt.Println("===== CLIENT USING", sockDesc, "=====")
-
+	if compress {
+		fmt.Println("Compression enabled")
+	}
 	// Connect and disconnect so that router is started before running tests.
 	// Otherwise, goroutine leak detection will think the router goroutines
 	// have leaked if that are not already running.
@@ -220,6 +235,10 @@ func connectClientCfg(cfg client.ClientConfig) (*client.Client, error) {
 		cfg.Serialization = serialize.MSGPACK
 	}
 	cfg.Logger = cliLogger
+
+	if compress {
+		cfg.WsEnableCompression = true
+	}
 
 	switch scheme {
 	case "ws", "tcp":

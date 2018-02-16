@@ -14,6 +14,13 @@ import (
 	"github.com/gorilla/websocket"
 )
 
+type WebsocketConfig struct {
+	// Enable per message write compression.
+	EnableCompression     bool `json:"enable_compression"`
+	EnableContextTakeover bool `json:"enable_context_takeover"`
+	CompressionLevel      int  `json:"compression_level"`
+}
+
 // websocketPeer implements the Peer interface, connecting the Send and Recv
 // methods to a websocket.
 type websocketPeer struct {
@@ -47,7 +54,7 @@ type DialFunc func(network, addr string) (net.Conn, error)
 
 // ConnectWebsocketPeer creates a new websocketPeer with the specified config,
 // and connects it to the websocket server at the specified URL.
-func ConnectWebsocketPeer(url string, serialization serialize.Serialization, tlsConfig *tls.Config, dial DialFunc, logger stdlog.StdLog) (wamp.Peer, error) {
+func ConnectWebsocketPeer(url string, serialization serialize.Serialization, tlsConfig *tls.Config, dial DialFunc, logger stdlog.StdLog, wsCfg WebsocketConfig) (wamp.Peer, error) {
 	var (
 		protocol    string
 		payloadType int
@@ -72,6 +79,10 @@ func ConnectWebsocketPeer(url string, serialization serialize.Serialization, tls
 		TLSClientConfig: tlsConfig,
 		Proxy:           http.ProxyFromEnvironment,
 		NetDial:         dial,
+
+		EnableCompression: wsCfg.EnableCompression,
+		//EnableContextTakeover: wsCfg.EnableContextTakeover,
+		//CompressionLevel: wsCfg.CompressionLevel,
 	}
 
 	conn, _, err := dialer.Dial(url, nil)

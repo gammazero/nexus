@@ -70,6 +70,20 @@ func NewWebsocketServer(r Router) *WebsocketServer {
 	return s
 }
 
+// WebsocketConfig is a type alias so that callers of SetConfig do not need to
+// import "github.com/gammazero/nexus/transport".
+type WebsocketConfig transport.WebsocketConfig
+
+// SetConfig applies optional configuration settings to the websocket server.
+func (s *WebsocketServer) SetConfig(wsCfg WebsocketConfig) {
+	if wsCfg.EnableCompression {
+		s.Upgrader.EnableCompression = true
+		// Uncomment after https://github.com/gorilla/websocket/pull/342
+		//s.Upgrader.CompressionLevel = wsCfg.CompressionLevel
+		//s.Upgrader.EnableContextTakeover = wsCfg.EnableContextTakeover
+	}
+}
+
 // ListenAndServe listens on the specified TCP address and starts a goroutine
 // that accepts new client connections until the returned io.closer is closed.
 func (s *WebsocketServer) ListenAndServe(address string) (io.Closer, error) {
