@@ -42,10 +42,13 @@ func ConnectNet(routerURL string, cfg ClientConfig) (*Client, error) {
 	var p wamp.Peer
 	switch u.Scheme {
 	case "ws", "wss":
-		wsCfg := transport.WebsocketConfig{
-			EnableCompression:     cfg.WsEnableCompression,
-			EnableContextTakeover: cfg.WsEnableContextTakeover,
-			CompressionLevel:      cfg.WsCompressionLevel,
+		var wsCfg *transport.WebsocketConfig
+		if cfg.WsEnableCompression {
+			wsCfg = &transport.WebsocketConfig{
+				EnableCompression:     cfg.WsEnableCompression,
+				EnableContextTakeover: cfg.WsEnableContextTakeover,
+				CompressionLevel:      cfg.WsCompressionLevel,
+			}
 		}
 		p, err = transport.ConnectWebsocketPeer(routerURL, cfg.Serialization,
 			cfg.TlsCfg, cfg.Dial, cfg.Logger, wsCfg)

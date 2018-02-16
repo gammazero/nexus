@@ -42,7 +42,7 @@ func TestWSHandshakeJSON(t *testing.T) {
 	defer closer.Close()
 
 	client, err := transport.ConnectWebsocketPeer(
-		fmt.Sprintf("ws://%s/", wsAddr), serialize.JSON, nil, nil, r.Logger())
+		fmt.Sprintf("ws://%s/", wsAddr), serialize.JSON, nil, nil, r.Logger(), nil)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -75,7 +75,7 @@ func TestWSHandshakeMsgpack(t *testing.T) {
 	defer closer.Close()
 
 	client, err := transport.ConnectWebsocketPeer(
-		fmt.Sprintf("ws://%s/", wsAddr), serialize.MSGPACK, nil, nil, r.Logger())
+		fmt.Sprintf("ws://%s/", wsAddr), serialize.MSGPACK, nil, nil, r.Logger(), nil)
 	if err != nil {
 		t.Fatal(err)
 	}

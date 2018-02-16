@@ -54,7 +54,7 @@ type DialFunc func(network, addr string) (net.Conn, error)
 
 // ConnectWebsocketPeer creates a new websocketPeer with the specified config,
 // and connects it to the websocket server at the specified URL.
-func ConnectWebsocketPeer(url string, serialization serialize.Serialization, tlsConfig *tls.Config, dial DialFunc, logger stdlog.StdLog, wsCfg WebsocketConfig) (wamp.Peer, error) {
+func ConnectWebsocketPeer(url string, serialization serialize.Serialization, tlsConfig *tls.Config, dial DialFunc, logger stdlog.StdLog, wsCfg *WebsocketConfig) (wamp.Peer, error) {
 	var (
 		protocol    string
 		payloadType int
@@ -79,10 +79,11 @@ func ConnectWebsocketPeer(url string, serialization serialize.Serialization, tls
 		TLSClientConfig: tlsConfig,
 		Proxy:           http.ProxyFromEnvironment,
 		NetDial:         dial,
-
-		EnableCompression: wsCfg.EnableCompression,
-		//EnableContextTakeover: wsCfg.EnableContextTakeover,
-		//CompressionLevel: wsCfg.CompressionLevel,
+	}
+	if wsCfg != nil {
+		dialer.EnableCompression = wsCfg.EnableCompression
+		//dialer.EnableContextTakeover = wsCfg.EnableContextTakeover
+		//dialer.CompressionLevel = wsCfg.CompressionLevel
 	}
 
 	conn, _, err := dialer.Dial(url, nil)
