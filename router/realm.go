@@ -478,10 +478,8 @@ func (r *realm) authClient(sid wamp.ID, client wamp.Peer, details wamp.Dict) (*w
 	if client.Local() && !r.localAuth {
 		// Create welcome details for local client.
 		details = wamp.Dict{
-			"authid":       string(wamp.GlobalID()),
-			"authmethod":   "local",
-			"authrole":     "local-client",
-			"authprovider": "static",
+			"authid":   string(wamp.GlobalID()),
+			"authrole": "trusted",
 			"roles": wamp.Dict{
 				"broker": r.broker.Role(),
 				"dealer": r.dealer.Role(),
