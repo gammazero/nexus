@@ -477,9 +477,15 @@ func (r *realm) authClient(sid wamp.ID, client wamp.Peer, details wamp.Dict) (*w
 	// If the client is local, then no authentication is required.
 	if client.Local() && !r.localAuth {
 		// Create welcome details for local client.
+		authid, _ := wamp.AsString(details["authid"])
+		if authid == "" {
+			authid = string(wamp.GlobalID())
+		}
 		details = wamp.Dict{
-			"authid":   string(wamp.GlobalID()),
-			"authrole": "trusted",
+			"authid":       authid,
+			"authrole":     "trusted",
+			"authmethod":   "local",
+			"authprovider": "static",
 			"roles": wamp.Dict{
 				"broker": r.broker.Role(),
 				"dealer": r.dealer.Role(),
