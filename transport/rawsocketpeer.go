@@ -190,6 +190,10 @@ func (rs *rawSocketPeer) Close() {
 	rs.conn.Close()
 }
 
+// Local returns false since rawsockets may be exernal clients, and require
+// authentication.
+func (rs *rawSocketPeer) Local() bool { return false }
+
 // sendHandler pulls messages from the write channel, and pushes them to the
 // socket.
 func (rs *rawSocketPeer) sendHandler() {

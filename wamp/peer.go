@@ -18,6 +18,9 @@ type Peer interface {
 
 	// Recv returns a channel of messages from the peer.
 	Recv() <-chan Message
+
+	// Local returns true if the peer is local (in-proc).
+	Local() bool
 }
 
 // RecvTimeout receives a message from a peer within the specified time.

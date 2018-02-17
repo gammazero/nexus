@@ -33,6 +33,7 @@ func (p *testPeer) Send(msg wamp.Message) error {
 }
 func (p *testPeer) Recv() <-chan wamp.Message { return p.in }
 func (p *testPeer) Close()                    { return }
+func (p *testPeer) Local() bool               { return false }
 
 func TestBasicSubscribe(t *testing.T) {
 	// Test subscribing to a topic.

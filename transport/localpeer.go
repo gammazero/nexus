@@ -61,3 +61,7 @@ func (p *localPeer) Send(msg wamp.Message) error {
 // Close closes the outgoing channel, waking any readers waiting on data from
 // this peer.
 func (p *localPeer) Close() { close(p.wr) }
+
+// Local returns true for local clients.  They do no need authentication since
+// they are part of the same process.
+func (p *localPeer) Local() bool { return true }

@@ -21,6 +21,7 @@ func (p *testPeer) Send(msg Message) error {
 }
 func (p *testPeer) Recv() <-chan Message { return p.in }
 func (p *testPeer) Close()               { close(p.in) }
+func (p *testPeer) Local() bool          { return false }
 
 func TestRecvTimeout(t *testing.T) {
 	p := newTestPeer()
