@@ -153,10 +153,6 @@ func (w *websocketPeer) Close() {
 	w.conn.Close()
 }
 
-// Local returns false since websockets may be exernal clients, and require
-// authentication.
-func (w *websocketPeer) Local() bool { return false }
-
 // sendHandler pulls messages from the write channel, and pushes them to the
 // websocket.
 func (w *websocketPeer) sendHandler() {

@@ -475,7 +475,7 @@ func (r *realm) authzMessage(sess *wamp.Session, msg wamp.Message) bool {
 // HELLO message details and the authenticators available for this realm.
 func (r *realm) authClient(sid wamp.ID, client wamp.Peer, details wamp.Dict) (*wamp.Welcome, error) {
 	// If the client is local, then no authentication is required.
-	if client.Local() && !r.localAuth {
+	if transport.IsLocal(client) && !r.localAuth {
 		// Create welcome details for local client.
 		authid, _ := wamp.AsString(details["authid"])
 		if authid == "" {
