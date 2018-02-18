@@ -26,6 +26,9 @@ type RealmConfig struct {
 	Authenticators []auth.Authenticator
 	// Authorizer called for each message.
 	Authorizer Authorizer
+	// Require authentication for local clients.  Normally local clients are
+	// always trusted.  Setting this treats local clients same as others.
+	RequireLocalAuth bool `json:"require_local_auth"`
 }
 
 // A Realm is a WAMP routing and administrative domain, optionally protected by
@@ -63,6 +66,8 @@ type realm struct {
 
 	log   stdlog.StdLog
 	debug bool
+
+	localAuth bool
 }
 
 // newRealm creates a new realm with the given RealmConfig, broker and dealer.
@@ -85,6 +90,7 @@ func newRealm(config *RealmConfig, broker *Broker, dealer *Dealer, logger stdlog
 		metaProcMap: make(map[wamp.ID]func(*wamp.Invocation) wamp.Message, 9),
 		log:         logger,
 		debug:       debug,
+		localAuth:   config.RequireLocalAuth,
 	}
 
 	if r.authorizer == nil {
@@ -468,6 +474,35 @@ func (r *realm) authzMessage(sess *wamp.Session, msg wamp.Message) bool {
 // authClient authenticates the client according to the authmethods in the
 // HELLO message details and the authenticators available for this realm.
 func (r *realm) authClient(sid wamp.ID, client wamp.Peer, details wamp.Dict) (*wamp.Welcome, error) {
+	// If the client is local, then no authentication is required.
+	if transport.IsLocal(client) && !r.localAuth {
+		// Create welcome details for local client.
+		authid, _ := wamp.AsString(details["authid"])
+		if authid == "" {
+			authid = string(wamp.GlobalID())
+		}
+		details = wamp.Dict{
+			"authid":       authid,
+			"authrole":     "trusted",
+			"authmethod":   "local",
+			"authprovider": "static",
+			"roles": wamp.Dict{
+				"broker": r.broker.Role(),
+				"dealer": r.dealer.Role(),
+			},
+		}
+		return &wamp.Welcome{Details: details}, nil
+	}
+
+	// The default authentication method is "WAMP-Anonymous" if client does not
+	// specify otherwise.
+	if _, ok := details["authmethods"]; !ok {
+		if details == nil {
+			details = wamp.Dict{}
+		}
+		details["authmethods"] = []string{"anonymous"}
+	}
+
 	var authmethods []string
 	if _authmethods, ok := details["authmethods"]; ok {
 		amList, _ := wamp.AsList(_authmethods)

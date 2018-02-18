@@ -31,6 +31,13 @@ func LinkedPeers() (wamp.Peer, wamp.Peer) {
 	return c, r
 }
 
+// IsLocal returns true is the wamp.Peer is a localPeer.  These do not need
+// authentication since they are part of the same process.
+func IsLocal(p wamp.Peer) bool {
+	_, ok := p.(*localPeer)
+	return ok
+}
+
 // localPeer implements Peer
 type localPeer struct {
 	rd <-chan wamp.Message

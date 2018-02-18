@@ -223,19 +223,10 @@ func (r *router) Attach(client wamp.Peer) error {
 		}
 	}
 
-	// The default authentication method is "WAMP-Anonymous" if client does not
-	// specify otherwise.
-	if _, ok = hello.Details["authmethods"]; !ok {
-		if hello.Details == nil {
-			hello.Details = wamp.Dict{}
-		}
-		hello.Details["authmethods"] = []string{"anonymous"}
-	}
-
 	// Handle any necessary client auth.  This results in either a WELCOME
 	// message or an error.
 	//
-	// Authentication may take some some.
+	// Authentication may take some time.
 	sid := wamp.GlobalID()
 	welcome, err := realm.authClient(sid, client, hello.Details)
 	if err != nil {
