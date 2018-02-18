@@ -44,10 +44,11 @@ func getTestRouter(realmConfig *router.RealmConfig) (router.Router, error) {
 
 func connectedTestClients() (*Client, *Client, router.Router, error) {
 	realmConfig := &router.RealmConfig{
-		URI:           wamp.URI(testRealm),
-		StrictURI:     true,
-		AnonymousAuth: true,
-		AllowDisclose: true,
+		URI:              wamp.URI(testRealm),
+		StrictURI:        true,
+		AnonymousAuth:    true,
+		AllowDisclose:    true,
+		RequireLocalAuth: true,
 	}
 	r, err := getTestRouter(realmConfig)
 	if err != nil {
@@ -79,10 +80,11 @@ func TestJoinRealm(t *testing.T) {
 	defer leaktest.Check(t)()
 
 	realmConfig := &router.RealmConfig{
-		URI:           wamp.URI(testRealm),
-		StrictURI:     true,
-		AnonymousAuth: true,
-		AllowDisclose: true,
+		URI:              wamp.URI(testRealm),
+		StrictURI:        true,
+		AnonymousAuth:    true,
+		AllowDisclose:    true,
+		RequireLocalAuth: true,
 	}
 	r, err := getTestRouter(realmConfig)
 	if err != nil {
@@ -125,10 +127,11 @@ func TestJoinRealm(t *testing.T) {
 
 	// Test that client cannot join realm when anonymous auth is disabled.
 	realmConfig = &router.RealmConfig{
-		URI:           wamp.URI("nexus.testnoanon"),
-		StrictURI:     true,
-		AnonymousAuth: false,
-		AllowDisclose: false,
+		URI:              wamp.URI("nexus.testnoanon"),
+		StrictURI:        true,
+		AnonymousAuth:    false,
+		AllowDisclose:    false,
+		RequireLocalAuth: true,
 	}
 	r, err = getTestRouter(realmConfig)
 	if err != nil {
@@ -152,11 +155,12 @@ func TestClientJoinRealmWithCRAuth(t *testing.T) {
 
 	crAuth := auth.NewCRAuthenticator(&serverKeyStore{"static"}, time.Second)
 	realmConfig := &router.RealmConfig{
-		URI:            wamp.URI("nexus.test.auth"),
-		StrictURI:      true,
-		AnonymousAuth:  false,
-		AllowDisclose:  false,
-		Authenticators: []auth.Authenticator{crAuth},
+		URI:              wamp.URI("nexus.test.auth"),
+		StrictURI:        true,
+		AnonymousAuth:    false,
+		AllowDisclose:    false,
+		Authenticators:   []auth.Authenticator{crAuth},
+		RequireLocalAuth: true,
 	}
 	r, err := getTestRouter(realmConfig)
 	if err != nil {
