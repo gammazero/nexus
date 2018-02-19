@@ -1,6 +1,7 @@
 package auth
 
 import (
+	"crypto/hmac"
 	"crypto/rand"
 	"encoding/base64"
 	"errors"
@@ -87,7 +88,8 @@ func (cr *CRAuthenticator) Authenticate(sid wamp.ID, details wamp.Dict, client w
 	}
 
 	// Check signature.
-	if crsign.SignChallenge(chStr, key) != authRsp.Signature {
+	signedCh := crsign.SignChallenge(chStr, key)
+	if !hmac.Equal([]byte(authRsp.Signature), []byte(signedCh)) {
 		return nil, errors.New("invalid signature")
 	}
 
