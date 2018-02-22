@@ -87,7 +87,7 @@ func (cr *CRAuthenticator) Authenticate(sid wamp.ID, details wamp.Dict, client w
 	}
 
 	// Check signature.
-	if crsign.SignChallenge(chStr, key) != authRsp.Signature {
+	if !crsign.VerifySignature(authRsp.Signature, chStr, key) {
 		return nil, errors.New("invalid signature")
 	}
 

@@ -623,12 +623,10 @@ func TestTimeoutRemoteProcedureCall(t *testing.T) {
 // ---- authentication test stuff ------
 
 func clientAuthFunc(c *wamp.Challenge) (string, wamp.Dict) {
-	chStr := wamp.OptionString(c.Extra, "challenge")
 	// If the client needed to lookup a user's key, this would require decoding
 	// the JSON-encoded ch string and getting the authid. For this example
-	// assume that client only operate as one user and knows the key to use.
-	key := "squeemishosafradge"
-	sig := crsign.SignChallenge(chStr, []byte(key))
+	// assume that client only operates as one user and knows the key to use.
+	sig := crsign.RespondChallenge("squeemishosafradge", c, nil)
 	return sig, wamp.Dict{}
 }
 

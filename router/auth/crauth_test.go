@@ -73,8 +73,7 @@ func clientAuthFunc(c *wamp.Challenge) (string, wamp.Dict) {
 	case "ticket":
 		sig = goodTicket
 	case "wampcra":
-		chStr := wamp.OptionString(c.Extra, "challenge")
-		sig = crsign.SignChallenge(chStr, []byte(goodSecret))
+		sig = crsign.RespondChallenge(goodSecret, c, nil)
 	}
 	return sig, wamp.Dict{}
 }
