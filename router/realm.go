@@ -93,10 +93,6 @@ func newRealm(config *RealmConfig, broker *Broker, dealer *Dealer, logger stdlog
 		localAuth:   config.RequireLocalAuth,
 	}
 
-	if r.authorizer == nil {
-		r.authorizer = NewAuthorizer()
-	}
-
 	r.authenticators = map[string]auth.Authenticator{}
 	for _, auth := range config.Authenticators {
 		r.authenticators[auth.AuthMethod()] = auth
@@ -370,9 +366,9 @@ func (r *realm) handleInboundMessages(sess *wamp.Session) bool {
 				msg.MessageType(), msg)
 		}
 
-		// N.B. meta session is always authorized
-		if sess != r.metaSess && !r.authzMessage(sess, msg) {
-			// Not authorized; error response send; do not process message.
+		// Note: meta session is always authorized
+		if r.authorizer != nil && sess != r.metaSess && !r.authzMessage(sess, msg) {
+			// Not authorized; error response sent; do not process message.
 			continue
 		}
 
