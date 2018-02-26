@@ -48,7 +48,7 @@ var (
 	// serType is set to "json" or "msgpack".  Ignored if sockType is "".
 	serType string
 
-	// compress enabled compression on both client and server config
+	// compress enables compression on both client and server config
 	compress bool
 )
 
