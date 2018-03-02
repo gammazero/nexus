@@ -38,25 +38,9 @@ func (s *RawSocketServer) ListenAndServe(network, address string) (io.Closer, er
 		s.log.Print(err)
 		return nil, err
 	}
-	go func() {
-		for {
-			conn, err := l.Accept()
-			if err != nil {
-				// Error normal when listener closed, do not log.
-				l.Close()
-				return
-			}
-			if tcpConn, ok := conn.(*net.TCPConn); ok {
-				if s.keepalive != 0 {
-					tcpConn.SetKeepAlive(true)
-					tcpConn.SetKeepAlivePeriod(s.keepalive)
-				} else {
-					tcpConn.SetKeepAlive(false)
-				}
-			}
-			go s.handleRawSocket(conn)
-		}
-	}()
+
+	// Start request handler loop.
+	go s.requestHandler(l)
 
 	return l, nil
 }
@@ -88,27 +72,30 @@ func (s *RawSocketServer) ListenAndServeTLS(network, address string, tlscfg *tls
 		return nil, err
 	}
 
-	go func() {
-		for {
-			conn, err := l.Accept()
-			if err != nil {
-				// Error normal when listener closed, do not log.
-				l.Close()
-				return
-			}
-			if tcpConn, ok := conn.(*net.TCPConn); ok {
-				if s.keepalive != 0 {
-					tcpConn.SetKeepAlive(true)
-					tcpConn.SetKeepAlivePeriod(s.keepalive)
-				} else {
-					tcpConn.SetKeepAlive(false)
-				}
-			}
-			go s.handleRawSocket(conn)
-		}
-	}()
+	// Start request handler loop.
+	go s.requestHandler(l)
 
 	return l, nil
+}
+
+func (s *RawSocketServer) requestHandler(l net.Listener) {
+	for {
+		conn, err := l.Accept()
+		if err != nil {
+			// Error normal when listener closed, do not log.
+			l.Close()
+			return
+		}
+		if tcpConn, ok := conn.(*net.TCPConn); ok {
+			if s.keepalive != 0 {
+				tcpConn.SetKeepAlive(true)
+				tcpConn.SetKeepAlivePeriod(s.keepalive)
+			} else {
+				tcpConn.SetKeepAlive(false)
+			}
+		}
+		go s.handleRawSocket(conn)
+	}
 }
 
 // handleRawSocket accpets a connection from the listening socket, handles the

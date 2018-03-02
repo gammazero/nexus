@@ -16,6 +16,8 @@ import (
 
 type WebsocketConfig struct {
 	// Enable per message write compression.
+	// When configuring server: allows compression, used if clients request
+	// When configuring client: requests compression, used if server allows
 	EnableCompression     bool `json:"enable_compression"`
 	EnableContextTakeover bool `json:"enable_context_takeover"`
 	CompressionLevel      int  `json:"compression_level"`
