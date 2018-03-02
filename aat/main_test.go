@@ -17,6 +17,7 @@ import (
 	"github.com/gammazero/nexus/router"
 	"github.com/gammazero/nexus/router/auth"
 	"github.com/gammazero/nexus/stdlog"
+	"github.com/gammazero/nexus/transport"
 	"github.com/gammazero/nexus/transport/serialize"
 	"github.com/gammazero/nexus/wamp"
 )
@@ -143,7 +144,7 @@ func TestMain(m *testing.M) {
 		sockDesc = "WEBSOCKETS"
 		// Set optional websocket config.
 		if compress {
-			s.SetConfig(router.WebsocketConfig{EnableCompression: true})
+			s.SetConfig(transport.WebsocketConfig{EnableCompression: true})
 			sockDesc += " + compression"
 		}
 		closer, err = s.ListenAndServe(tcpAddr)
@@ -151,7 +152,7 @@ func TestMain(m *testing.M) {
 		s := router.NewWebsocketServer(nxr)
 		sockDesc = "WEBSOCKETS + TLS"
 		if compress {
-			s.SetConfig(router.WebsocketConfig{EnableCompression: true})
+			s.SetConfig(transport.WebsocketConfig{EnableCompression: true})
 			sockDesc += " + compression"
 		}
 		closer, err = s.ListenAndServeTLS(tcpAddr, nil, certPath, keyPath)
@@ -238,7 +239,7 @@ func connectClientCfg(cfg client.ClientConfig) (*client.Client, error) {
 	cfg.Logger = cliLogger
 
 	if compress {
-		cfg.WsEnableCompression = true
+		cfg.WsCfg.EnableCompression = true
 	}
 
 	switch scheme {

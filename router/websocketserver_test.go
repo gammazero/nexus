@@ -35,14 +35,17 @@ func TestWSHandshakeJSON(t *testing.T) {
 	}
 	defer r.Close()
 
-	closer, err := NewWebsocketServer(r).ListenAndServe(wsAddr)
+	s := NewWebsocketServer(r)
+	wsCfg := transport.WebsocketConfig{EnableCompression: true}
+	s.SetConfig(wsCfg)
+	closer, err := s.ListenAndServe(wsAddr)
 	if err != nil {
 		t.Fatal(err)
 	}
 	defer closer.Close()
 
 	client, err := transport.ConnectWebsocketPeer(
-		fmt.Sprintf("ws://%s/", wsAddr), serialize.JSON, nil, nil, r.Logger(), nil)
+		fmt.Sprintf("ws://%s/", wsAddr), serialize.JSON, nil, nil, r.Logger(), &wsCfg)
 	if err != nil {
 		t.Fatal(err)
 	}

@@ -110,7 +110,7 @@ func NewClient(logger *log.Logger) (*client.Client, error) {
 		cfg.TlsCfg = tlscfg
 	}
 	if compress {
-		cfg.WsEnableCompression = true
+		cfg.WsCfg.EnableCompression = true
 	}
 
 	// Create client with requested transport type.

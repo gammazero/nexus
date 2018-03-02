@@ -70,12 +70,8 @@ func NewWebsocketServer(r Router) *WebsocketServer {
 	return s
 }
 
-// WebsocketConfig is a type alias so that callers of SetConfig do not need to
-// import "github.com/gammazero/nexus/transport".
-type WebsocketConfig transport.WebsocketConfig
-
 // SetConfig applies optional configuration settings to the websocket server.
-func (s *WebsocketServer) SetConfig(wsCfg WebsocketConfig) {
+func (s *WebsocketServer) SetConfig(wsCfg transport.WebsocketConfig) {
 	if wsCfg.EnableCompression {
 		s.Upgrader.EnableCompression = true
 		// Uncomment after https://github.com/gorilla/websocket/pull/342

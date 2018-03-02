@@ -12,6 +12,7 @@ import (
 	"path"
 
 	"github.com/gammazero/nexus/router"
+	"github.com/gammazero/nexus/transport"
 	"github.com/gammazero/nexus/wamp"
 )
 
@@ -46,7 +47,7 @@ func main() {
 	// Create websocket and rawsocket servers.  Websocket comopression enabled,
 	// will be used if clients request it.
 	wss := router.NewWebsocketServer(nxr)
-	wss.SetConfig(router.WebsocketConfig{EnableCompression: true})
+	wss.SetConfig(transport.WebsocketConfig{EnableCompression: true})
 	rss := router.NewRawSocketServer(nxr, 0, 0)
 
 	// ---- Start servers ----
