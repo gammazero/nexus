@@ -84,7 +84,7 @@ func newRealm(config *RealmConfig, broker *Broker, dealer *Dealer, logger stdlog
 		clients:     map[wamp.ID]*wamp.Session{},
 		clientStop:  make(chan struct{}),
 		actionChan:  make(chan func()),
-		metaIDGen:   wamp.NewIDGen(),
+		metaIDGen:   new(wamp.IDGen),
 		metaStop:    make(chan struct{}),
 		metaDone:    make(chan struct{}),
 		metaProcMap: make(map[wamp.ID]func(*wamp.Invocation) wamp.Message, 9),

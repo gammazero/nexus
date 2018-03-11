@@ -78,7 +78,7 @@ func NewBroker(logger stdlog.StdLog, strictURI, allowDisclose, debug bool) *Brok
 		// channel is appropriate.
 		actionChan: make(chan func()),
 
-		idGen: wamp.NewIDGen(),
+		idGen: new(wamp.IDGen),
 
 		strictURI:     strictURI,
 		allowDisclose: allowDisclose,

@@ -126,7 +126,7 @@ func NewDealer(logger stdlog.StdLog, strictURI, allowDisclose, debug bool) *Deal
 		// channel is appropriate.
 		actionChan: make(chan func()),
 
-		idGen: wamp.NewIDGen(),
+		idGen: new(wamp.IDGen),
 		prng:  rand.New(rand.NewSource(time.Now().Unix())),
 
 		strictURI:     strictURI,
