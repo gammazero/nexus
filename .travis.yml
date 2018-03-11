@@ -1,10 +1,10 @@
 language: go
 
 go:
-  - 1.7
-  - 1.8
-  - 1.9
-  - tip
+  - "1.8"
+  - "1.9"
+  - "1.10"
+  - "tip"
 
 before_script:
   - go get github.com/fortytw2/leaktest
@@ -18,6 +18,6 @@ script:
   - go test -v -race ./router/...
   - go test -v -race ./client/...
   - go test -v -race ./aat/...
-  - go test -v -race ./aat -scheme=ws
+  - go test -v -race ./aat -scheme=ws -compress
   - go test -v ./aat -scheme=wss -serialize=msgpack
   - go test -v ./aat -scheme=tcps

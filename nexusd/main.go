@@ -14,6 +14,7 @@ import (
 	"time"
 
 	"github.com/gammazero/nexus/router"
+	"github.com/gammazero/nexus/transport"
 )
 
 func usage() {
@@ -59,6 +60,16 @@ func main() {
 	if conf.WebSocket.Address != "" {
 		// Create a new websocket server with the router.
 		wss := router.NewWebsocketServer(r)
+		if conf.WebSocket.EnableCompression {
+			logger.Printf("Compression enabled")
+			// Set optional websocket config.
+			wss.SetConfig(transport.WebsocketConfig{
+				EnableCompression:     true,
+				EnableContextTakeover: conf.WebSocket.EnableContextTakeover,
+				CompressionLevel:      conf.WebSocket.CompressionLevel,
+			})
+		}
+
 		var closer io.Closer
 		var sockDesc string
 		if conf.WebSocket.CertFile != "" && conf.WebSocket.KeyFile != "" {

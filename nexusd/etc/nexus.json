@@ -2,7 +2,8 @@
     "websocket": {
         "address": ":8080",
         "cert_file": "",
-        "key_file": ""
+        "key_file": "",
+        "enable_compression": false
     },
     "rawsocket": {
         "tcp_address": "",

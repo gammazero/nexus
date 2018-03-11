@@ -68,6 +68,9 @@ type ClientConfig struct {
 
 	// Logger for client to use.  If not set, client logs to os.Stderr.
 	Logger stdlog.StdLog
+
+	// Websocket transport configuration.
+	WsCfg transport.WebsocketConfig
 }
 
 // Define serialization consts in client package so that client code does not

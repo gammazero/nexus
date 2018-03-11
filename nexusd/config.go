@@ -17,6 +17,10 @@ type Config struct {
 		// Files containing a certificate and matching private key.
 		CertFile string `json:"cert_file"`
 		KeyFile  string `json:"key_file"`
+		// Enable per message write compression.
+		EnableCompression     bool `json:"enable_compression"`
+		EnableContextTakeover bool `json:"enable_context_takeover"`
+		CompressionLevel      int  `json:"compression_level"`
 	}
 
 	// RawSocket configuration parameters.

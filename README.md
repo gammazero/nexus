@@ -121,6 +121,7 @@ These features listed here are being added.  If there are are specific items nee
 | session meta api | Yes |
 | TLS for websockets | Yes |
 | TLS for rawsockets | Yes |
+| websocket compression | Yes |
 
 ## Extended Functionality
 

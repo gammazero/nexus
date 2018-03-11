@@ -28,7 +28,7 @@ const (
 )
 
 func NewClient(logger *log.Logger) (*client.Client, error) {
-	var skipVerify bool
+	var skipVerify, compress bool
 	var scheme, serType, caFile, certFile, keyFile string
 	flag.StringVar(&scheme, "scheme", "ws",
 		"-scheme=[ws, wss, tcp, tcps, unix].  Default is ws (websocket no tls)")
@@ -42,6 +42,7 @@ func NewClient(logger *log.Logger) (*client.Client, error) {
 		"certificate file with PEM encoded data")
 	flag.StringVar(&keyFile, "key", "",
 		"private key file with PEM encoded data")
+	flag.BoolVar(&compress, "compress", false, "enable websocket compression")
 	flag.Parse()
 
 	// Get requested serialization.
@@ -107,6 +108,9 @@ func NewClient(logger *log.Logger) (*client.Client, error) {
 		}
 
 		cfg.TlsCfg = tlscfg
+	}
+	if compress {
+		cfg.WsCfg.EnableCompression = true
 	}
 
 	// Create client with requested transport type.

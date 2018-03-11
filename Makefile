@@ -22,6 +22,14 @@ test:
 	go test ./aat -scheme=wss
 	go test ./aat -scheme=tcps
 
+benchmark:
+	go test ./aat -run=XXX -bench=.
+	go test ./aat -run=XXX -bench=. -scheme=ws
+	go test ./aat -run=XXX -bench=. -scheme=wss
+	go test ./aat -run=XXX -bench=. -scheme=tcp
+	go test ./aat -run=XXX -bench=. -scheme=tcps
+	go test ./aat -run=XXX -bench=. -scheme=ws -compress
+
 service: $(SERVICE_DIR)/nexusd
 
 $(SERVICE_DIR)/nexusd:

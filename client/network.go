@@ -43,7 +43,7 @@ func ConnectNet(routerURL string, cfg ClientConfig) (*Client, error) {
 	switch u.Scheme {
 	case "ws", "wss":
 		p, err = transport.ConnectWebsocketPeer(routerURL, cfg.Serialization,
-			cfg.TlsCfg, cfg.Dial, cfg.Logger)
+			cfg.TlsCfg, cfg.Dial, cfg.Logger, &cfg.WsCfg)
 	case "tcp":
 		p, err = transport.ConnectRawSocketPeer(u.Scheme, u.Host,
 			cfg.Serialization, cfg.Logger, cfg.RecvLimit)

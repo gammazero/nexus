@@ -23,21 +23,21 @@ func TestRPCProgressiveCallResults(t *testing.T) {
 
 	// Handler sends progressive results.
 	handler := func(ctx context.Context, args wamp.List, kwargs, details wamp.Dict) *client.InvokeResult {
-		err := callee.SendProgress(ctx, wamp.List{"Alpha"}, nil)
-		if err != nil {
-			fmt.Println("Error sending Alpha progress:", err)
+		e := callee.SendProgress(ctx, wamp.List{"Alpha"}, nil)
+		if e != nil {
+			fmt.Println("Error sending Alpha progress:", e)
 		}
 		time.Sleep(500 * time.Millisecond)
 
-		err = callee.SendProgress(ctx, wamp.List{"Bravo"}, nil)
-		if err != nil {
-			fmt.Println("Error sending Bravo progress:", err)
+		e = callee.SendProgress(ctx, wamp.List{"Bravo"}, nil)
+		if e != nil {
+			fmt.Println("Error sending Bravo progress:", e)
 		}
 		time.Sleep(500 * time.Millisecond)
 
-		err = callee.SendProgress(ctx, wamp.List{"Charlie"}, nil)
-		if err != nil {
-			fmt.Println("Error sending Charlie progress:", err)
+		e = callee.SendProgress(ctx, wamp.List{"Charlie"}, nil)
+		if e != nil {
+			fmt.Println("Error sending Charlie progress:", e)
 		}
 		time.Sleep(500 * time.Millisecond)
 
