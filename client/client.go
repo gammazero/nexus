@@ -138,7 +138,7 @@ type Client struct {
 	progGate       map[context.Context]wamp.ID
 
 	actionChan chan func()
-	idGen      *wamp.IDGen
+	idGen      *wamp.SyncIDGen
 
 	stopping          chan struct{}
 	activeInvHandlers sync.WaitGroup
@@ -186,7 +186,7 @@ func NewClient(p wamp.Peer, cfg ClientConfig) (*Client, error) {
 		progGate:       map[context.Context]wamp.ID{},
 
 		actionChan: make(chan func()),
-		idGen:      wamp.NewIDGen(),
+		idGen:      new(wamp.SyncIDGen),
 		stopping:   make(chan struct{}),
 		done:       make(chan struct{}),
 

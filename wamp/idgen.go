@@ -2,6 +2,7 @@ package wamp
 
 import (
 	"math/rand"
+	"sync"
 	"time"
 )
 
@@ -16,7 +17,7 @@ func GlobalID() ID {
 	return ID(rand.Int63n(maxID))
 }
 
-// ID generator for WAMP request IDs.
+// ID generator for WAMP request IDs.  Create with new(IDGen).
 //
 // WAMP request IDs are sequential per WAMP session, starting at 1 and wrapping
 // around at 2**53 (both value are inclusive [1, 2**53]).
@@ -31,11 +32,6 @@ type IDGen struct {
 	next int64
 }
 
-// NewIDGen a new sequential ID generator.
-func NewIDGen() *IDGen {
-	return &IDGen{}
-}
-
 // Next returns next ID.
 func (g *IDGen) Next() ID {
 	g.next++
@@ -43,4 +39,17 @@ func (g *IDGen) Next() ID {
 		g.next = 1
 	}
 	return ID(g.next)
+}
+
+// SyncIDGen is a concurrent-safe IDGen.  Create with new(SyncIDGen).
+type SyncIDGen struct {
+	IDGen
+	lock sync.Mutex
+}
+
+// Next returns next ID.
+func (g *SyncIDGen) Next() ID {
+	g.lock.Lock()
+	defer g.lock.Unlock()
+	return g.IDGen.Next()
 }
