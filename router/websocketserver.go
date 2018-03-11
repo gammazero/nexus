@@ -132,7 +132,7 @@ func (s *WebsocketServer) ListenAndServeTLS(address string, tlscfg *tls.Config, 
 
 // ServeHTTP handles HTTP connections.
 func (s *WebsocketServer) ServeHTTP(w http.ResponseWriter, r *http.Request) {
-	conn, err := s.Upgrader.Upgrade(w, r, nil)
+	conn, err := s.Upgrader.Upgrade(w, r, w.Header())
 	if err != nil {
 		s.log.Println("Error upgrading to websocket connection:", err)
 		http.Error(w, err.Error(), http.StatusBadRequest)
