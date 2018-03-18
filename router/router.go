@@ -44,6 +44,10 @@ type Router interface {
 	// Attach connects a client to the router and to the requested realm.
 	Attach(wamp.Peer) error
 
+	// AttachClient connects a client to the router and to the requested realm.
+	// It provides additional transport information details.
+	AttachClient(wamp.Peer, wamp.Dict) error
+
 	// Close stops the router and waits message processing to stop.
 	Close()
 
@@ -109,9 +113,33 @@ func NewRouter(config *RouterConfig, logger stdlog.StdLog) (Router, error) {
 // Logger returns the StdLog that the router uses for logging.
 func (r *router) Logger() stdlog.StdLog { return r.log }
 
+func (r *router) Attach(client wamp.Peer) error {
+	return r.AttachClient(client, nil)
+}
+
 // Attach connects a client to the router and to the requested realm.  If
 // successful, Attach returns after sending a WELCOME message to the client.
-func (r *router) Attach(client wamp.Peer) error {
+//
+// Additional information is provided in transportDetails.  This information
+// becomes part of HELLO.Details and session.Details, as details["transport"].
+// This exposes it to auth/authz.  The information includes items useful for
+// authentication, in details.transport.auth.  If the client is a websocket
+// client, then transportDetails will contain the following:
+//
+//     auth.request
+//     auth.cookieid
+//     auth.nextcookieid
+//
+// auth.request contains information for the HTTP upgrade request.
+// auth.cookieid is the value of the tracking cookie that was present in the
+// request, and auth.nextcookieid is the value of the tracking cookie that was
+// sent to the client in response to the upgrade request.  This cookie can be
+// used to track if the same client was previously seen, and lookup information
+// about that client, such a whether it was previously authenticated.  This
+// information will not be present if the client was not a websocket, and
+// cookieids will not be present if cookie tracking is not enabled for the
+// router.
+func (r *router) AttachClient(client wamp.Peer, transportDetails wamp.Dict) error {
 	sendAbort := func(reason wamp.URI, abortErr error) {
 		abortMsg := wamp.Abort{Reason: reason}
 		abortMsg.Details = wamp.Dict{}
@@ -223,6 +251,9 @@ func (r *router) Attach(client wamp.Peer) error {
 		}
 	}
 
+	// Include any transport details with HELLO.Details.
+	hello.Details["transport"] = transportDetails
+
 	// Handle any necessary client auth.  This results in either a WELCOME
 	// message or an error.
 	//
@@ -249,12 +280,12 @@ func (r *router) Attach(client wamp.Peer) error {
 		}
 		sessDetails[k] = v
 	}
-	sessDetails["session"] = welcome.ID
+	sessDetails["session"] = sid
 
 	// Create new session.
 	sess := &wamp.Session{
 		Peer:    client,
-		ID:      welcome.ID,
+		ID:      sid,
 		Details: sessDetails,
 	}
 
@@ -266,7 +297,7 @@ func (r *router) Attach(client wamp.Peer) error {
 
 	client.Send(welcome) // Blocking OK; this is session goroutine.
 	if r.debug {
-		r.log.Println("Created session:", welcome.ID)
+		r.log.Println("Created session:", sid)
 	}
 	return nil
 }

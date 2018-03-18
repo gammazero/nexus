@@ -21,6 +21,18 @@ type WebsocketConfig struct {
 	EnableCompression     bool `json:"enable_compression"`
 	EnableContextTakeover bool `json:"enable_context_takeover"`
 	CompressionLevel      int  `json:"compression_level"`
+
+	// Tells server to send random cookie to websocket client.  This cookie can
+	// be sent with subsequent websocket requests to identify the returning
+	// client.  Only used for WebsocketServer configuration.
+	EnableTrackingCookie bool `json:"enable_tracking_cookie"`
+
+	// If provided when configuring websocket client, cookies from server are
+	// put in here.  This allows cookies to be stored and then sent back to the
+	// server in subsequent websocket connections.  Cookies may be used to
+	// identify returning clients, and can be used to authenticate clients.
+	// Olny used for websocket client configuration.
+	Jar http.CookieJar
 }
 
 // websocketPeer implements the Peer interface, connecting the Send and Recv
@@ -86,6 +98,8 @@ func ConnectWebsocketPeer(url string, serialization serialize.Serialization, tls
 		dialer.EnableCompression = wsCfg.EnableCompression
 		//dialer.EnableContextTakeover = wsCfg.EnableContextTakeover
 		//dialer.CompressionLevel = wsCfg.CompressionLevel
+
+		dialer.Jar = wsCfg.Jar
 	}
 
 	conn, _, err := dialer.Dial(url, nil)

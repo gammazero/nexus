@@ -14,6 +14,9 @@ type testKeyStore struct {
 	provider string
 	secret   string
 	ticket   string
+	cookieid string
+
+	authByCookie bool
 }
 
 const (
@@ -32,14 +35,8 @@ func (ks *testKeyStore) AuthKey(authid, authmethod string) ([]byte, error) {
 	case "ticket":
 		return []byte(ks.ticket), nil
 	}
-	return nil, nil
+	return nil, errors.New("unsupported authmethod")
 }
-
-func (ks *testKeyStore) PasswordInfo(authid string) (string, int, int) {
-	return "", 0, 0
-}
-
-func (ks *testKeyStore) Provider() string { return ks.provider }
 
 func (ks *testKeyStore) AuthRole(authid string) (string, error) {
 	if authid != "jdoe" {
@@ -48,7 +45,48 @@ func (ks *testKeyStore) AuthRole(authid string) (string, error) {
 	return "user", nil
 }
 
-var tks = &testKeyStore{"static", goodSecret, goodTicket}
+func (ks *testKeyStore) PasswordInfo(authid string) (string, int, int) {
+	return "", 0, 0
+}
+
+func (ks *testKeyStore) Provider() string { return ks.provider }
+
+func (ks *testKeyStore) AlreadyAuth(authid string, details wamp.Dict) bool {
+	v, err := wamp.DictValue(details, []string{"transport", "auth", "cookieid"})
+	if err != nil {
+		// No tracking cookie, so not auth.
+		return false
+	}
+	cookieid, ok := wamp.AsString(v)
+	if ok {
+		// Tracking cookie matches cookie of previously good client.
+		if cookieid == ks.cookieid {
+			ks.authByCookie = true
+			return true
+		}
+	}
+	return false
+}
+
+func (ks *testKeyStore) OnWelcome(authid string, welcome *wamp.Welcome, details wamp.Dict) error {
+	v, err := wamp.DictValue(details, []string{"transport", "auth", "nextcookieid"})
+	if err != nil {
+		return nil
+	}
+	nextcookieid, ok := wamp.AsString(v)
+	if ok {
+		// Update tracking cookie that will identify this authenticated client.
+		ks.cookieid = nextcookieid
+	}
+	welcome.Details["authbycookie"] = ks.authByCookie
+	return nil
+}
+
+var tks = &testKeyStore{
+	provider: "static",
+	secret:   goodSecret,
+	ticket:   goodTicket,
+}
 
 func cliRsp(p wamp.Peer) {
 	for msg := range p.Recv() {
@@ -103,6 +141,10 @@ func TestTicketAuth(t *testing.T) {
 
 	// Test with known authid.
 	details["authid"] = "jdoe"
+	// Provide tracking cookie to ientify this client in the future.
+	authDict := wamp.Dict{"nextcookieid": "a1b2c3"}
+	details["transport"] = wamp.Dict{"auth": authDict}
+
 	welcome, err = ticketAuth.Authenticate(sid, details, rp)
 	if err != nil {
 		t.Fatal("challenge failed: ", err.Error())
@@ -119,7 +161,9 @@ func TestTicketAuth(t *testing.T) {
 	if wamp.OptionString(welcome.Details, "authrole") != "user" {
 		t.Fatal("incorrect authrole in welcome details")
 	}
-
+	if wamp.OptionFlag(welcome.Details, "authbycookie") {
+		t.Fatal("authbycookie set incorrectly to true")
+	}
 	tks.ticket = "bad"
 
 	// Test with bad ticket.
@@ -127,6 +171,21 @@ func TestTicketAuth(t *testing.T) {
 	welcome, err = ticketAuth.Authenticate(sid, details, rp)
 	if err == nil {
 		t.Fatal("expected error with bad ticket")
+	}
+
+	// Supply the previous tracking cookie in transport.auth.  This will
+	// identify the previously authenticated client.
+	authDict["cookieid"] = "a1b2c3"
+	authDict["nextcookieid"] = "xyz123"
+	welcome, err = ticketAuth.Authenticate(sid, details, rp)
+	// Event though ticket is bad, cookie from previous good session should
+	// authenticate client.
+	if err != nil {
+		t.Fatal("challenge failed: ", err.Error())
+	}
+	// Client should be authenticated by cookie.
+	if !wamp.OptionFlag(welcome.Details, "authbycookie") {
+		t.Fatal("authbycookie set incorrectly to false")
 	}
 }
 
@@ -155,6 +214,9 @@ func TestCRAuth(t *testing.T) {
 
 	// Test with known authid.
 	details["authid"] = "jdoe"
+	authDict := wamp.Dict{"nextcookieid": "a1b2c3"}
+	details["transport"] = wamp.Dict{"auth": authDict}
+
 	welcome, err = crAuth.Authenticate(sid, details, rp)
 	if err != nil {
 		t.Fatal("challenge failed: ", err.Error())
@@ -179,5 +241,12 @@ func TestCRAuth(t *testing.T) {
 	welcome, err = crAuth.Authenticate(sid, details, rp)
 	if err == nil {
 		t.Fatal("expected error with bad key")
+	}
+
+	authDict["cookieid"] = "a1b2c3"
+	authDict["nextcookieid"] = "xyz123"
+	welcome, err = crAuth.Authenticate(sid, details, rp)
+	if err != nil {
+		t.Fatal("challenge failed: ", err.Error())
 	}
 }

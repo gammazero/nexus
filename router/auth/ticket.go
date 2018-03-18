@@ -45,6 +45,25 @@ func (t *TicketAuthenticator) Authenticate(sid wamp.ID, details wamp.Dict, clien
 		return nil, err
 	}
 
+	ks, ok := t.keyStore.(BypassKeyStore)
+	if ok {
+		if ks.AlreadyAuth(authID, details) {
+			// Create welcome details containing auth info.
+			welcome := &wamp.Welcome{
+				Details: wamp.Dict{
+					"authid":       authID,
+					"authrole":     authrole,
+					"authmethod":   t.AuthMethod(),
+					"authprovider": t.keyStore.Provider(),
+				},
+			}
+			if err = ks.OnWelcome(authID, welcome, details); err != nil {
+				return nil, err
+			}
+			return welcome, nil
+		}
+	}
+
 	ticket, err := t.keyStore.AuthKey(authID, t.AuthMethod())
 	if err != nil {
 		return nil, err
@@ -79,11 +98,21 @@ func (t *TicketAuthenticator) Authenticate(sid wamp.ID, details wamp.Dict, clien
 	}
 
 	// Create welcome details containing auth info.
-	welcomeDetails := wamp.Dict{
-		"authid":       authID,
-		"authmethod":   t.AuthMethod(),
-		"authrole":     authrole,
-		"authprovider": t.keyStore.Provider()}
+	welcome := &wamp.Welcome{
+		Details: wamp.Dict{
+			"authid":       authID,
+			"authmethod":   t.AuthMethod(),
+			"authrole":     authrole,
+			"authprovider": t.keyStore.Provider(),
+		},
+	}
 
-	return &wamp.Welcome{Details: welcomeDetails}, nil
+	if ks != nil {
+		// Tell the keystore that the client was authenticated, and provide the
+		// transport details if available.
+		if err = ks.OnWelcome(authID, welcome, details); err != nil {
+			return nil, err
+		}
+	}
+	return welcome, nil
 }

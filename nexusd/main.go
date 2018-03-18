@@ -60,14 +60,20 @@ func main() {
 	if conf.WebSocket.Address != "" {
 		// Create a new websocket server with the router.
 		wss := router.NewWebsocketServer(r)
-		if conf.WebSocket.EnableCompression {
-			logger.Printf("Compression enabled")
+		if conf.WebSocket.EnableCompression || conf.WebSocket.EnableTrackingCookie {
+			var wsCfg transport.WebsocketConfig
+			if conf.WebSocket.EnableCompression {
+				logger.Printf("Compression enabled")
+				wsCfg.EnableCompression = true
+				wsCfg.EnableContextTakeover = conf.WebSocket.EnableContextTakeover
+				wsCfg.CompressionLevel = conf.WebSocket.CompressionLevel
+			}
+			if conf.WebSocket.EnableTrackingCookie {
+				logger.Printf("Cookie tracking enabled")
+				wsCfg.EnableTrackingCookie = true
+			}
 			// Set optional websocket config.
-			wss.SetConfig(transport.WebsocketConfig{
-				EnableCompression:     true,
-				EnableContextTakeover: conf.WebSocket.EnableContextTakeover,
-				CompressionLevel:      conf.WebSocket.CompressionLevel,
-			})
+			wss.SetConfig(wsCfg)
 		}
 
 		var closer io.Closer

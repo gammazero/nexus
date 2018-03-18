@@ -160,7 +160,9 @@ func clientAuthFunc(c *wamp.Challenge) (string, wamp.Dict) {
 }
 
 type serverKeyStore struct {
-	provider string
+	provider     string
+	cookieid     string
+	authByCookie bool
 }
 
 func (ks *serverKeyStore) AuthKey(authid, authmethod string) ([]byte, error) {
@@ -191,4 +193,35 @@ func (ks *serverKeyStore) AuthRole(authid string) (string, error) {
 		return "", errors.New("no such user: " + authid)
 	}
 	return "user", nil
+}
+
+func (ks *serverKeyStore) AlreadyAuth(authid string, details wamp.Dict) bool {
+	v, err := wamp.DictValue(details, []string{"transport", "auth", "cookieid"})
+	if err != nil {
+		// No tracking cookie, so not auth.
+		return false
+	}
+	cookieid, ok := wamp.AsString(v)
+	if ok {
+		// Tracking cookie matches cookie of previously good client.
+		if cookieid == ks.cookieid {
+			ks.authByCookie = true
+			return true
+		}
+	}
+	return false
+}
+
+func (ks *serverKeyStore) OnWelcome(authid string, welcome *wamp.Welcome, details wamp.Dict) error {
+	v, err := wamp.DictValue(details, []string{"transport", "auth", "nextcookieid"})
+	if err != nil {
+		return nil
+	}
+	nextcookieid, ok := wamp.AsString(v)
+	if ok {
+		// Update tracking cookie that will identify this authenticated client.
+		ks.cookieid = nextcookieid
+	}
+	welcome.Details["authbycookie"] = ks.authByCookie
+	return nil
 }

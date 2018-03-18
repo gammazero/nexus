@@ -9,6 +9,7 @@ import (
 
 	"github.com/gammazero/nexus/stdlog"
 	"github.com/gammazero/nexus/transport"
+	"github.com/gammazero/nexus/wamp"
 )
 
 // RawSocketServer handles socket connections.
@@ -108,7 +109,7 @@ func (s *RawSocketServer) handleRawSocket(conn net.Conn) {
 		return
 	}
 
-	if err := s.router.Attach(peer); err != nil {
+	if err := s.router.AttachClient(peer, wamp.Dict{"type": "rawsocket"}); err != nil {
 		s.log.Println("Error attaching to router:", err)
 	}
 }

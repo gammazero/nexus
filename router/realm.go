@@ -252,12 +252,14 @@ func (r *realm) onJoin(sess *wamp.Session) {
 	// Session Meta Events MUST be dispatched by the Router to the same realm
 	// as the WAMP session which triggered the event.
 	//
-	// WAMP spec only specifies publishing "authid", "authrole", "authmethod",
-	// "authprovider", "transport".  This implementation publishes all details.
+	// WAMP spec only specifies publishing "session", "authid", "authrole",
+	// "authmethod", "authprovider", "transport".  This implementation
+	// publishes all details except transport.auth.
+	output := cleanSessionDetails(sess.Details)
 	r.metaPeer.Send(&wamp.Publish{
 		Request:   wamp.GlobalID(),
 		Topic:     wamp.MetaEventSessionOnJoin,
-		Arguments: wamp.List{sess.Details},
+		Arguments: wamp.List{output},
 	})
 }
 
@@ -490,6 +492,12 @@ func (r *realm) authClient(sid wamp.ID, client wamp.Peer, details wamp.Dict) (*w
 		return &wamp.Welcome{Details: details}, nil
 	}
 
+	_, err := wamp.DictValue(details, []string{"transport", "auth", "wsrequest"})
+	if err == nil {
+		//req = v.(*http.Request)
+		fmt.Println("---> Got HTTP request from transport")
+	}
+
 	// The default authentication method is "WAMP-Anonymous" if client does not
 	// specify otherwise.
 	if _, ok := details["authmethods"]; !ok {
@@ -714,11 +722,45 @@ func (r *realm) sessionGet(msg *wamp.Invocation) wamp.Message {
 		return makeErr()
 	}
 
-	// WAMP spec only specifies returning "authid", "authrole", "authmethod",
-	// "authprovider", and "transport".  All details are returned in this
-	// implementation.
+	output := cleanSessionDetails(sess.Details)
+
+	// WAMP spec only specifies returning "session", "authid", "authrole",
+	// "authmethod", "authprovider", and "transport".  All details are returned
+	// in this implementation, except transport.auth.
 	return &wamp.Yield{
 		Request:   msg.Request,
-		Arguments: wamp.List{sess.Details},
+		Arguments: wamp.List{output},
 	}
+}
+
+// cleanSessionDetails removed transport.auth from the details.  This is used
+// to prevent exposing auth information to session meta.
+func cleanSessionDetails(details wamp.Dict) wamp.Dict {
+	_, err := wamp.DictValue(details, []string{"transport", "auth"})
+	if err != nil {
+		return details
+	}
+
+	var altTrans wamp.Dict
+	for n, v := range wamp.DictChild(details, "transport") {
+		if n == "auth" {
+			continue
+		}
+		if altTrans == nil {
+			altTrans = wamp.Dict{}
+		}
+		altTrans[n] = v
+	}
+
+	output := wamp.Dict{}
+	for n, v := range details {
+		if n == "transport" {
+			if len(altTrans) > 0 {
+				output[n] = altTrans
+			}
+			continue
+		}
+		output[n] = v
+	}
+	return output
 }

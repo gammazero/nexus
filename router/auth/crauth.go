@@ -34,21 +34,40 @@ func (cr *CRAuthenticator) Authenticate(sid wamp.ID, details wamp.Dict, client w
 		return nil, errors.New("missing authid")
 	}
 
-	// Get the auth key needed for signing the challenge string.
-	key, err := cr.keyStore.AuthKey(authid, cr.AuthMethod())
-	if err != nil {
-		// Do not error here since that leaks authid info.
-		keyStr, _ := getNonce()
-		if keyStr == "" {
-			keyStr = wamp.NowISO8601()
-		}
-		key = []byte(keyStr)
-	}
-
 	authrole, err := cr.keyStore.AuthRole(authid)
 	if err != nil {
 		// Do not error here since that leaks authid info.
 		authrole = "user"
+	}
+
+	ks, ok := cr.keyStore.(BypassKeyStore)
+	if ok {
+		if ks.AlreadyAuth(authid, details) {
+			// Create welcome details containing auth info.
+			welcome := &wamp.Welcome{
+				Details: wamp.Dict{
+					"authid":       authid,
+					"authrole":     authrole,
+					"authmethod":   cr.AuthMethod(),
+					"authprovider": cr.keyStore.Provider(),
+				},
+			}
+			if err = ks.OnWelcome(authid, welcome, details); err != nil {
+				return nil, err
+			}
+			return welcome, nil
+		}
+	}
+
+	// Get the key and authrole needed for signing the challenge string.
+	key, err := cr.keyStore.AuthKey(authid, cr.AuthMethod())
+	if err != nil {
+		// Do not error here since that leaks authid info.
+		keyStr, _ := nonce()
+		if keyStr == "" {
+			keyStr = wamp.NowISO8601()
+		}
+		key = []byte(keyStr)
 	}
 
 	// Create the JSON encoded challenge string.
@@ -91,19 +110,28 @@ func (cr *CRAuthenticator) Authenticate(sid wamp.ID, details wamp.Dict, client w
 		return nil, errors.New("invalid signature")
 	}
 
-	// Create welcome details containing auth info.
-	welcomeDetails := wamp.Dict{
-		"authid":       authid,
-		"authrole":     authrole,
-		"authmethod":   cr.AuthMethod(),
-		"authprovider": cr.keyStore.Provider(),
+	// Create welcome message containing auth info.
+	welcome := &wamp.Welcome{
+		Details: wamp.Dict{
+			"authid":       authid,
+			"authrole":     authrole,
+			"authmethod":   cr.AuthMethod(),
+			"authprovider": cr.keyStore.Provider(),
+		},
 	}
 
-	return &wamp.Welcome{Details: welcomeDetails}, nil
+	if ks != nil {
+		// Tell the keystore that the client was authenticated, and provide the
+		// transport details if available.
+		if err = ks.OnWelcome(authid, welcome, details); err != nil {
+			return nil, err
+		}
+	}
+	return welcome, nil
 }
 
 func (cr *CRAuthenticator) makeChallengeStr(session wamp.ID, authid, authrole string) (string, error) {
-	nonce, err := getNonce()
+	nonce, err := nonce()
 	if err != nil {
 		return "", fmt.Errorf("failed to get nonce: %s", err)
 	}
@@ -114,9 +142,9 @@ func (cr *CRAuthenticator) makeChallengeStr(session wamp.ID, authid, authrole st
 		cr.AuthMethod(), int(session)), nil
 }
 
-func getNonce() (string, error) {
-	c := 16
-	b := make([]byte, c)
+// nonce generates 16 randome bytes as a base64 encoded string.
+func nonce() (string, error) {
+	b := make([]byte, 16)
 	_, err := rand.Read(b)
 	if err != nil {
 		return "", err

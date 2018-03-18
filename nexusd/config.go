@@ -21,6 +21,8 @@ type Config struct {
 		EnableCompression     bool `json:"enable_compression"`
 		EnableContextTakeover bool `json:"enable_context_takeover"`
 		CompressionLevel      int  `json:"compression_level"`
+		// Enable sending cookie to identify client in later connections.
+		EnableTrackingCookie bool `json:"enable_tracking_cookie"`
 	}
 
 	// RawSocket configuration parameters.
