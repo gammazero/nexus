@@ -69,8 +69,12 @@ func main() {
 				wsCfg.CompressionLevel = conf.WebSocket.CompressionLevel
 			}
 			if conf.WebSocket.EnableTrackingCookie {
-				logger.Printf("Cookie tracking enabled")
-				wsCfg.EnableTrackingCookie = true
+				logger.Printf("Tracking cookie enabled - not currently used")
+				//wsCfg.EnableTrackingCookie = true
+			}
+			if conf.WebSocket.EnableRequestCapture {
+				logger.Printf("Request capture enabled - not currently used")
+				//wsCfg.EnableRequestCapture = true
 			}
 			// Set optional websocket config.
 			wss.SetConfig(wsCfg)
