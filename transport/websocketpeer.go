@@ -28,9 +28,9 @@ type WebsocketConfig struct {
 	// the websocket client.  A returning client may identify itself by sending
 	// a previously issued tracking cookie in a websocket request.  If a
 	// request header received by the server contains the tracking cookie, then
-	// it is included in the HELLO and session details.  The tracking cookie
-	// sent to the client (the cookie to expect for subsequent connections) is
-	// also stored in HELLO and session details.
+	// the cookie is included in the HELLO and session details.  The new
+	// tracking cookie that gets sent to the client (the cookie to expect for
+	// subsequent connections) is also stored in HELLO and session details.
 	//
 	// The cookie from the request, and the next cookie to expect, are
 	// stored in the HELLO and session details, respectively, as:
