@@ -42,6 +42,7 @@ type WebsocketServer struct {
 	log       stdlog.StdLog
 
 	enableTrackingCookie bool
+	enableRequestCapture bool
 }
 
 // NewWebsocketServer takes a router instance and creates a new websocket
@@ -84,6 +85,7 @@ func (s *WebsocketServer) SetConfig(wsCfg transport.WebsocketConfig) {
 		//s.Upgrader.EnableContextTakeover = wsCfg.EnableContextTakeover
 	}
 	s.enableTrackingCookie = wsCfg.EnableTrackingCookie
+	s.enableRequestCapture = wsCfg.EnableRequestCapture
 }
 
 // ListenAndServe listens on the specified TCP address and starts a goroutine
@@ -148,10 +150,21 @@ func (s *WebsocketServer) ListenAndServeTLS(address string, tlscfg *tls.Config, 
 
 // ServeHTTP handles HTTP connections.
 func (s *WebsocketServer) ServeHTTP(w http.ResponseWriter, r *http.Request) {
-	authDict := wamp.Dict{}
+	var authDict wamp.Dict
 	var nextCookie *http.Cookie
+
+	// If tracking cookie is enabled, then read the tracking cookie from the
+	// request header, if it contains the cookie.  Generate a new tracking
+	// cookie for next time and put it in the response header.
 	if s.enableTrackingCookie {
+		if authDict == nil {
+			authDict = wamp.Dict{}
+		}
 		const cookieName = "nexus-wamp-cookie"
+		if reqCk, err := r.Cookie(cookieName); err == nil {
+			authDict["cookie"] = reqCk
+			//fmt.Println("===> Received tracking cookie: ", reqCk)
+		}
 		b := make([]byte, 18)
 		_, err := rand.Read(b)
 		if err == nil {
@@ -161,38 +174,28 @@ func (s *WebsocketServer) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 				Value: base64.URLEncoding.EncodeToString(b),
 			}
 			http.SetCookie(w, nextCookie)
-			authDict["nextcookieid"] = nextCookie
-			if reqCk, err := r.Cookie(cookieName); err == nil {
-				authDict["cookieid"] = reqCk.Value
-				//fmt.Println("===> Received tracking cookie: ", reqCk)
-			}
+			authDict["nextcookie"] = nextCookie
 			//fmt.Println("===> Sent Next tracking cookie:", nextCookie)
 			//fmt.Println()
 		}
 	}
+
+	// If request capture is enabled, then the HTTP upgrade http.Request in the
+	// HELLO and session details as transport.auth details.request.
+	if s.enableRequestCapture {
+		if authDict == nil {
+			authDict = wamp.Dict{}
+		}
+		authDict["request"] = r
+	}
+
 	conn, err := s.Upgrader.Upgrade(w, r, w.Header())
 	if err != nil {
 		s.log.Println("Error upgrading to websocket connection:", err)
 		http.Error(w, err.Error(), http.StatusBadRequest)
 		return
 	}
-	// Include information from HTTP upgrade request in transport.auth details.
-	authDict["request"] = wamp.Dict{
-		"host":       r.Host,
-		"url":        fmt.Sprint(r.URL),
-		"proto":      r.Proto,
-		"remoteaddr": r.RemoteAddr,
-		"requesturi": r.RequestURI,
-	}
-	reqCookies := r.Cookies()
-	if len(reqCookies) != 0 {
-		cookieDict := wamp.Dict{}
-		for _, c := range reqCookies {
-			cookieDict[c.Name] = c.Value
-		}
-		authDict["cookies"] = cookieDict
-	}
-	s.handleWebsocket(conn, wamp.Dict{"auth": authDict, "type": "websocket"})
+	s.handleWebsocket(conn, wamp.Dict{"auth": authDict})
 }
 
 // addProtocol registers a serializer for protocol and payload type.

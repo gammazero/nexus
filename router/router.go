@@ -252,7 +252,9 @@ func (r *router) AttachClient(client wamp.Peer, transportDetails wamp.Dict) erro
 	}
 
 	// Include any transport details with HELLO.Details.
-	hello.Details["transport"] = transportDetails
+	if len(transportDetails) != 0 {
+		hello.Details["transport"] = transportDetails
+	}
 
 	// Handle any necessary client auth.  This results in either a WELCOME
 	// message or an error.

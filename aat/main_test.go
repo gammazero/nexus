@@ -7,9 +7,7 @@ import (
 	"fmt"
 	"io"
 	"log"
-	"net/http"
 	"net/http/cookiejar"
-	"net/url"
 	"os"
 	"path"
 	"testing"
@@ -54,8 +52,6 @@ var (
 
 	// compress enables compression on both client and server config
 	compress bool
-
-	jar http.CookieJar
 )
 
 type testAuthz struct{}
@@ -90,14 +86,6 @@ func TestMain(m *testing.M) {
 		fmt.Fprintln(os.Stderr, "invalid serialize value")
 		flag.Usage()
 		os.Exit(1)
-	}
-
-	if scheme == "ws" || scheme == "wss" {
-		jar, err = cookiejar.New(nil)
-		if err != nil {
-			fmt.Fprintln(os.Stderr, err)
-			os.Exit(1)
-		}
 	}
 
 	var certPath, keyPath string
@@ -157,7 +145,10 @@ func TestMain(m *testing.M) {
 	case "ws":
 		s := router.NewWebsocketServer(nxr)
 		sockDesc = "WEBSOCKETS"
-		wsCfg := transport.WebsocketConfig{EnableTrackingCookie: true}
+		wsCfg := transport.WebsocketConfig{
+			EnableTrackingCookie: true,
+			EnableRequestCapture: true,
+		}
 		// Set optional websocket config.
 		if compress {
 			wsCfg.EnableCompression = true
@@ -168,7 +159,10 @@ func TestMain(m *testing.M) {
 	case "wss":
 		s := router.NewWebsocketServer(nxr)
 		sockDesc = "WEBSOCKETS + TLS"
-		wsCfg := transport.WebsocketConfig{EnableTrackingCookie: true}
+		wsCfg := transport.WebsocketConfig{
+			EnableTrackingCookie: true,
+			EnableRequestCapture: true,
+		}
 		if compress {
 			wsCfg.EnableCompression = true
 			sockDesc += " + compression"
@@ -261,36 +255,20 @@ func connectClientCfg(cfg client.ClientConfig) (*client.Client, error) {
 		cfg.WsCfg.EnableCompression = true
 	}
 
-	var cookieURL *url.URL
-	if scheme == "ws" || scheme == "wss" {
-		var ckScheme string
-		if scheme == "ws" {
-			ckScheme = "http"
-		} else {
-			ckScheme = "https"
-		}
-		cookieURL, err = url.Parse(fmt.Sprintf("%s://%s/", ckScheme, tcpAddr))
-		if err != nil {
-			fmt.Println("===> ERROR parsing URL:", err)
-		} else {
-			cfg.WsCfg.EnableTrackingCookie = true
-			cfg.WsCfg.Jar = jar
-		}
-	}
-
+	var addr string
 	switch scheme {
 	case "ws", "tcp":
-		addr := fmt.Sprintf("%s://%s/", scheme, tcpAddr)
+		addr = fmt.Sprintf("%s://%s/", scheme, tcpAddr)
 		cli, err = client.ConnectNet(addr, cfg)
 	case "wss", "tcps":
 		// If TLS requested, set up TLS configuration to skip verification.
 		cfg.TlsCfg = &tls.Config{
 			InsecureSkipVerify: true,
 		}
-		addr := fmt.Sprintf("%s://%s/", scheme, tcpAddr)
+		addr = fmt.Sprintf("%s://%s/", scheme, tcpAddr)
 		cli, err = client.ConnectNet(addr, cfg)
 	case "unix":
-		addr := fmt.Sprintf("%s://%s/", scheme, unixAddr)
+		addr = fmt.Sprintf("%s://%s/", scheme, unixAddr)
 		cli, err = client.ConnectNet(addr, cfg)
 	default:
 		cli, err = client.ConnectLocal(nxr, cfg)
@@ -301,8 +279,17 @@ func connectClientCfg(cfg client.ClientConfig) (*client.Client, error) {
 	}
 
 	if cfg.WsCfg.Jar != nil {
+		if scheme != "ws" && scheme != "wss" {
+			// Programming error in test.
+			panic("CookieJar provided for non-websocket client")
+		}
+
+		cookieURL, err := client.CookieURL(addr)
+		if err != nil {
+			return nil, err
+		}
 		cookies := cfg.WsCfg.Jar.Cookies(cookieURL)
-		//fmt.Println("===> COOKIES FROM ROUTER", cookies)
+		cliLogger.Println("Client received cookies from router:", cookies)
 		var found bool
 		for i := range cookies {
 			if cookies[i].Name == "nexus-wamp-cookie" {
@@ -337,7 +324,22 @@ func connectClient() (*client.Client, error) {
 
 func TestHandshake(t *testing.T) {
 	defer leaktest.Check(t)()
-	cli, err := connectClient()
+
+	cfg := client.ClientConfig{
+		Realm:           testRealm,
+		ResponseTimeout: time.Second,
+	}
+
+	if scheme == "ws" || scheme == "wss" {
+		jar, err := cookiejar.New(nil)
+		if err != nil {
+			fmt.Fprintln(os.Stderr, err)
+			os.Exit(1)
+		}
+		cfg.WsCfg.Jar = jar
+	}
+
+	cli, err := connectClientCfg(cfg)
 	if err != nil {
 		t.Fatal("Failed to connect client:", err)
 	}

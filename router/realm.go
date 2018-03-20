@@ -733,8 +733,9 @@ func (r *realm) sessionGet(msg *wamp.Invocation) wamp.Message {
 	}
 }
 
-// cleanSessionDetails removed transport.auth from the details.  This is used
-// to prevent exposing auth information to session meta.
+// cleanSessionDetails removes transport.auth from the details.  This is done
+// because the data in transport.auth may not be serializable and to prevent
+// exposing auth information to session meta.
 func cleanSessionDetails(details wamp.Dict) wamp.Dict {
 	_, err := wamp.DictValue(details, []string{"transport", "auth"})
 	if err != nil {

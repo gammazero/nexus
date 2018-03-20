@@ -23,20 +23,20 @@ type Authenticator interface {
 	// Authenticate takes HELLO details and returns a WELCOME message if
 	// successful, otherwise it returns an error.
 	//
-	// If the client was a websocket peer, then the websocket upgrade request
-	// is available from the client.
+	// If the client is a websocket peer, and request capture is enabled, then
+	// the HTTP request is stored in details.  If cookie tracking is enabled,
+	// then the cookie from the request, and the next cookie to expect, are
+	// also stored in details.
 	//
-	//    httpReq := transport.WSRequest(client)
+	// These websocket data items are available as:
 	//
-	// If cookie tracking is also enabled, then a subsequent request from the
-	// client will include an expected cookie.  That expected cookie isa
-	// available from the client and can be retireved with a helper function:
+	//     details.auth.request|*http.Request
+	//     details.transport.auth.cookie|*http.Cookie
+	//     details.transport.auth.nextcookie|*http.Cookie
 	//
-	//    expectedCookie := transport.WSNextCookie(client)
-	//
-	// The tracking cookie can be used to tell if a previous clien to the
-	// router, and lookup information about that client, such as whether it was
-	// previously authenticated.
+	// The tracking cookie can be used to tell if a client was previously
+	// connected to the router, and lookup information about that client, such
+	// as whether it was successfully authenticated.
 	Authenticate(sid wamp.ID, details wamp.Dict, client wamp.Peer) (*wamp.Welcome, error)
 
 	// AuthMethod returns a string describing the authentication methiod.
@@ -60,7 +60,7 @@ type KeyStore interface {
 }
 
 // BypassKeyStore is a KeyStore with additional functionality for looking at
-// HELLO/Session details, including transport information, to recognize clients
+// HELLO.Details, including transport.auth information, to recognize clients
 // that have been previously authenticated.
 //
 // When used with the provided CR and ticket authenticators, if AlreadyAuth

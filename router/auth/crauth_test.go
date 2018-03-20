@@ -2,6 +2,7 @@ package auth
 
 import (
 	"errors"
+	"net/http"
 	"testing"
 	"time"
 
@@ -14,7 +15,7 @@ type testKeyStore struct {
 	provider string
 	secret   string
 	ticket   string
-	cookieid string
+	cookie   *http.Cookie
 
 	authByCookie bool
 }
@@ -52,32 +53,28 @@ func (ks *testKeyStore) PasswordInfo(authid string) (string, int, int) {
 func (ks *testKeyStore) Provider() string { return ks.provider }
 
 func (ks *testKeyStore) AlreadyAuth(authid string, details wamp.Dict) bool {
-	v, err := wamp.DictValue(details, []string{"transport", "auth", "cookieid"})
+	v, err := wamp.DictValue(details, []string{"transport", "auth", "cookie"})
 	if err != nil {
 		// No tracking cookie, so not auth.
 		return false
 	}
-	cookieid, ok := wamp.AsString(v)
-	if ok {
-		// Tracking cookie matches cookie of previously good client.
-		if cookieid == ks.cookieid {
-			ks.authByCookie = true
-			return true
-		}
+	cookie := v.(*http.Cookie)
+	// Check if tracking cookie matches cookie of previously good client.
+	if cookie.Value == ks.cookie.Value {
+		ks.authByCookie = true
+		return true
 	}
 	return false
 }
 
 func (ks *testKeyStore) OnWelcome(authid string, welcome *wamp.Welcome, details wamp.Dict) error {
-	v, err := wamp.DictValue(details, []string{"transport", "auth", "nextcookieid"})
+	v, err := wamp.DictValue(details, []string{"transport", "auth", "nextcookie"})
 	if err != nil {
 		return nil
 	}
-	nextcookieid, ok := wamp.AsString(v)
-	if ok {
-		// Update tracking cookie that will identify this authenticated client.
-		ks.cookieid = nextcookieid
-	}
+	// Update tracking cookie that will identify this authenticated client.
+	ks.cookie = v.(*http.Cookie)
+
 	welcome.Details["authbycookie"] = ks.authByCookie
 	return nil
 }
@@ -142,7 +139,8 @@ func TestTicketAuth(t *testing.T) {
 	// Test with known authid.
 	details["authid"] = "jdoe"
 	// Provide tracking cookie to ientify this client in the future.
-	authDict := wamp.Dict{"nextcookieid": "a1b2c3"}
+	nextCookie := &http.Cookie{Name: "nexus-wamp-cookie", Value: "a1b2c3"}
+	authDict := wamp.Dict{"nextcookie": nextCookie}
 	details["transport"] = wamp.Dict{"auth": authDict}
 
 	welcome, err = ticketAuth.Authenticate(sid, details, rp)
@@ -175,8 +173,8 @@ func TestTicketAuth(t *testing.T) {
 
 	// Supply the previous tracking cookie in transport.auth.  This will
 	// identify the previously authenticated client.
-	authDict["cookieid"] = "a1b2c3"
-	authDict["nextcookieid"] = "xyz123"
+	authDict["cookie"] = &http.Cookie{Name: "nexus-wamp-cookie", Value: "a1b2c3"}
+	authDict["nextcookie"] = &http.Cookie{Name: "nexus-wamp-cookie", Value: "xyz123"}
 	welcome, err = ticketAuth.Authenticate(sid, details, rp)
 	// Event though ticket is bad, cookie from previous good session should
 	// authenticate client.
@@ -214,7 +212,8 @@ func TestCRAuth(t *testing.T) {
 
 	// Test with known authid.
 	details["authid"] = "jdoe"
-	authDict := wamp.Dict{"nextcookieid": "a1b2c3"}
+	nextCookie := &http.Cookie{Name: "nexus-wamp-cookie", Value: "a1b2c3"}
+	authDict := wamp.Dict{"nextcookie": nextCookie}
 	details["transport"] = wamp.Dict{"auth": authDict}
 
 	welcome, err = crAuth.Authenticate(sid, details, rp)
@@ -243,8 +242,8 @@ func TestCRAuth(t *testing.T) {
 		t.Fatal("expected error with bad key")
 	}
 
-	authDict["cookieid"] = "a1b2c3"
-	authDict["nextcookieid"] = "xyz123"
+	authDict["cookie"] = &http.Cookie{Name: "nexus-wamp-cookie", Value: "a1b2c3"}
+	authDict["nextcookie"] = &http.Cookie{Name: "nexus-wamp-cookie", Value: "xyz123"}
 	welcome, err = crAuth.Authenticate(sid, details, rp)
 	if err != nil {
 		t.Fatal("challenge failed: ", err.Error())
