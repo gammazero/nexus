@@ -96,6 +96,9 @@ const (
 	// A Router encountered a network failure.
 	ErrNetworkFailure = URI("wamp.error.network_failure")
 
+	// A Peer received invalid WAMP protocol message.
+	ErrProtocolViolation = URI("wamp.error.protocol_violation")
+
 	// -- Session Meta Events --
 
 	// Fired when a session joins a realm on the router.

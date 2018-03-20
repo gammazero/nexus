@@ -147,6 +147,61 @@ func TestHandshakeBadRealm(t *testing.T) {
 	}
 }
 
+// Test sending a
+func TestProtocolViolation(t *testing.T) {
+	defer leaktest.Check(t)()
+	r, err := newTestRouter()
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer r.Close()
+	cli, err := testClient(r)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	// Send HELLO message after session established.
+	cli.Send(&wamp.Hello{Realm: testRealm, Details: clientRoles})
+	select {
+	case <-time.After(time.Second):
+		t.Fatal("timed out waiting for ABORT")
+	case msg := <-cli.Recv():
+		abort, ok := msg.(*wamp.Abort)
+		if !ok {
+			t.Fatal("expected ABORT, received:", msg.MessageType())
+		}
+		if abort.Reason != wamp.ErrProtocolViolation {
+			t.Fatal("Expected reason to be", wamp.ErrProtocolViolation)
+		}
+		//errMsg := wamp.OptionString(abort.Details, "error")
+		//fmt.Println("===> Abort error:", errMsg)
+	}
+
+	// Send SUBSCRIBE before session established.
+	client, server := transport.LinkedPeers()
+	// Run as goroutine since Send will block until message read by router, if
+	// client uses unbuffered channel.
+	go client.Send(&wamp.Subscribe{Request: wamp.GlobalID(), Topic: wamp.URI("some.uri")})
+	if err = r.Attach(server); err == nil {
+		t.Fatal("Expected error from Attach")
+	}
+
+	select {
+	case <-time.After(time.Second):
+		t.Fatal("timed out waiting for ABORT")
+	case msg := <-client.Recv():
+		abort, ok := msg.(*wamp.Abort)
+		if !ok {
+			t.Fatal("expected ABORT, received:", msg.MessageType())
+		}
+		if abort.Reason != wamp.ErrProtocolViolation {
+			t.Fatal("Expected reason to be", wamp.ErrProtocolViolation)
+		}
+		//errMsg := wamp.OptionString(abort.Details, "error")
+		//fmt.Println("===> Abort error:", errMsg)
+	}
+}
+
 func TestRouterSubscribe(t *testing.T) {
 	defer leaktest.Check(t)()
 	const testTopic = wamp.URI("some.uri")

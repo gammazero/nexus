@@ -137,12 +137,9 @@ func (r *router) Attach(client wamp.Peer) error {
 	// Client after the transport has been established.
 	hello, ok := msg.(*wamp.Hello)
 	if !ok {
-		// Note: This URI is not official and there is no requirement to send
-		// an error back to the client in this case.  Seems helpful to at least
-		// let the client know what was wrong.
-		err = fmt.Errorf("protocol error: expected HELLO, received %s",
-			msg.MessageType())
-		sendAbort(wamp.URI("wamp.exception.protocol_violation"), err)
+		// Received unexpected message - protocol violation.
+		err = fmt.Errorf("expected HELLO, received %s", msg.MessageType())
+		sendAbort(wamp.ErrProtocolViolation, err)
 		return err
 	}
 

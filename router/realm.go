@@ -322,7 +322,15 @@ func (r *realm) handleSession(sess *wamp.Session) error {
 		r.log.Println("Started session", sess)
 	}
 	go func() {
-		shutdown := r.handleInboundMessages(sess)
+		shutdown, err := r.handleInboundMessages(sess)
+		if err != nil {
+			abortMsg := wamp.Abort{
+				Reason:  wamp.ErrProtocolViolation,
+				Details: wamp.Dict{"error": err.Error()},
+			}
+			r.log.Println("Aborting session", sess, ":", err)
+			sess.Send(&abortMsg) // Blocking OK; this is session goroutine.
+		}
 		r.onLeave(sess, shutdown)
 		sess.Close()
 	}()
@@ -332,7 +340,7 @@ func (r *realm) handleSession(sess *wamp.Session) error {
 
 // handleInboundMessages handles the messages sent from a client session to
 // the router.
-func (r *realm) handleInboundMessages(sess *wamp.Session) bool {
+func (r *realm) handleInboundMessages(sess *wamp.Session) (bool, error) {
 	if r.debug {
 		defer r.log.Println("Ended session", sess)
 	}
@@ -348,7 +356,7 @@ func (r *realm) handleInboundMessages(sess *wamp.Session) bool {
 		case msg, open = <-recvChan:
 			if !open {
 				r.log.Println("Lost", sess)
-				return false
+				return false, nil
 			}
 		case <-stopChan:
 			if r.debug {
@@ -358,7 +366,7 @@ func (r *realm) handleInboundMessages(sess *wamp.Session) bool {
 				Reason:  wamp.ErrSystemShutdown,
 				Details: wamp.Dict{},
 			})
-			return true
+			return true, nil
 		}
 
 		if r.debug {
@@ -394,12 +402,10 @@ func (r *realm) handleInboundMessages(sess *wamp.Session) bool {
 		case *wamp.Error:
 			// An INVOCATION error is the only type of ERROR message the
 			// router should receive.
-			if msg.Type == wamp.INVOCATION {
-				r.dealer.Error(msg)
-			} else {
-				r.log.Printf("Invalid ERROR received from session %v: %v",
-					sess, msg)
+			if msg.Type != wamp.INVOCATION {
+				return false, fmt.Errorf("invalid ERROR received: %v", msg)
 			}
+			r.dealer.Error(msg)
 
 		case *wamp.Goodbye:
 			// Handle client leaving realm.
@@ -411,11 +417,11 @@ func (r *realm) handleInboundMessages(sess *wamp.Session) bool {
 				r.log.Println("GOODBYE from session", sess, "reason:",
 					msg.Reason)
 			}
-			return false
+			return false, nil
 
 		default:
 			// Received unrecognized message type.
-			r.log.Println("Unhandled", msg.MessageType(), "from session", sess)
+			return false, fmt.Errorf("unexpected %v", msg.MessageType())
 		}
 	}
 }
