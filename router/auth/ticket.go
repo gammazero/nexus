@@ -42,7 +42,7 @@ func (t *TicketAuthenticator) Authenticate(sid wamp.ID, details wamp.Dict, clien
 
 	authrole, err := t.keyStore.AuthRole(authID)
 	if err != nil {
-		return nil, err
+		authrole = ""
 	}
 
 	ks, ok := t.keyStore.(BypassKeyStore)
@@ -66,7 +66,9 @@ func (t *TicketAuthenticator) Authenticate(sid wamp.ID, details wamp.Dict, clien
 
 	ticket, err := t.keyStore.AuthKey(authID, t.AuthMethod())
 	if err != nil {
-		return nil, err
+		// Do not return error here as this leaks authid.  Instead, set the
+		// ticket to nil which will prevent it from authenticating.
+		ticket = nil
 	}
 
 	// Challenge Extra map is empty since the ticket challenge only asks for a
@@ -93,7 +95,7 @@ func (t *TicketAuthenticator) Authenticate(sid wamp.ID, details wamp.Dict, clien
 	// The client will send an AUTHENTICATE message containing a ticket.  The
 	// server will then check if the ticket provided is permissible (for the
 	// authid given).
-	if authRsp.Signature != string(ticket) {
+	if ticket == nil || authRsp.Signature != string(ticket) {
 		return nil, errors.New("invalid ticket")
 	}
 
