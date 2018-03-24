@@ -42,12 +42,33 @@ func (t *TicketAuthenticator) Authenticate(sid wamp.ID, details wamp.Dict, clien
 
 	authrole, err := t.keyStore.AuthRole(authID)
 	if err != nil {
-		return nil, err
+		authrole = ""
+	}
+
+	ks, ok := t.keyStore.(BypassKeyStore)
+	if ok {
+		if ks.AlreadyAuth(authID, details) {
+			// Create welcome details containing auth info.
+			welcome := &wamp.Welcome{
+				Details: wamp.Dict{
+					"authid":       authID,
+					"authrole":     authrole,
+					"authmethod":   t.AuthMethod(),
+					"authprovider": t.keyStore.Provider(),
+				},
+			}
+			if err = ks.OnWelcome(authID, welcome, details); err != nil {
+				return nil, err
+			}
+			return welcome, nil
+		}
 	}
 
 	ticket, err := t.keyStore.AuthKey(authID, t.AuthMethod())
 	if err != nil {
-		return nil, err
+		// Do not return error here as this leaks authid.  Instead, set the
+		// ticket to nil which will prevent it from authenticating.
+		ticket = nil
 	}
 
 	// Challenge Extra map is empty since the ticket challenge only asks for a
@@ -74,16 +95,26 @@ func (t *TicketAuthenticator) Authenticate(sid wamp.ID, details wamp.Dict, clien
 	// The client will send an AUTHENTICATE message containing a ticket.  The
 	// server will then check if the ticket provided is permissible (for the
 	// authid given).
-	if authRsp.Signature != string(ticket) {
+	if ticket == nil || authRsp.Signature != string(ticket) {
 		return nil, errors.New("invalid ticket")
 	}
 
 	// Create welcome details containing auth info.
-	welcomeDetails := wamp.Dict{
-		"authid":       authID,
-		"authmethod":   t.AuthMethod(),
-		"authrole":     authrole,
-		"authprovider": t.keyStore.Provider()}
+	welcome := &wamp.Welcome{
+		Details: wamp.Dict{
+			"authid":       authID,
+			"authmethod":   t.AuthMethod(),
+			"authrole":     authrole,
+			"authprovider": t.keyStore.Provider(),
+		},
+	}
 
-	return &wamp.Welcome{Details: welcomeDetails}, nil
+	if ks != nil {
+		// Tell the keystore that the client was authenticated, and provide the
+		// transport details if available.
+		if err = ks.OnWelcome(authID, welcome, details); err != nil {
+			return nil, err
+		}
+	}
+	return welcome, nil
 }

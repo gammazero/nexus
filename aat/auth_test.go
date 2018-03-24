@@ -4,6 +4,9 @@ import (
 	"context"
 	"crypto/sha256"
 	"errors"
+	"fmt"
+	"net/http"
+	"net/http/cookiejar"
 	"strings"
 	"testing"
 	"time"
@@ -47,6 +50,57 @@ func TestJoinRealmWithCRAuth(t *testing.T) {
 	}
 
 	cli.Close()
+}
+
+func TestJoinRealmWithCRCookieAuth(t *testing.T) {
+	cfg := client.ClientConfig{
+		Realm: testAuthRealm,
+		HelloDetails: wamp.Dict{
+			"authid": "jdoe",
+		},
+		AuthHandlers: map[string]client.AuthFunc{
+			"wampcra": clientAuthFunc,
+		},
+		ResponseTimeout: time.Second,
+	}
+
+	if scheme == "ws" || scheme == "wss" {
+		jar, err := cookiejar.New(nil)
+		if err != nil {
+			t.Fatal("failed to create CookieJar:", err)
+		}
+		cfg.WsCfg.Jar = jar
+	}
+
+	cli, err := connectClientCfg(cfg)
+	if err != nil {
+		t.Fatal("Failed to connect client:", err)
+	}
+	cli.Close()
+	details := cli.RealmDetails()
+
+	// Client should not have be authenticated by cookie first time.
+	if wamp.OptionFlag(details, "authbycookie") {
+		t.Fatal("authbycookie set incorrectly to true")
+	}
+
+	cli, err = connectClientCfg(cfg)
+	if err != nil {
+		t.Fatal("Failed to connect client:", err)
+	}
+	cli.Close()
+	details = cli.RealmDetails()
+
+	// If websocket, then should be authenticated by cookie this time.
+	if cfg.WsCfg.Jar != nil {
+		if !wamp.OptionFlag(details, "authbycookie") {
+			t.Fatal("should have been authenticated by cookie")
+		}
+	} else {
+		if wamp.OptionFlag(details, "authbycookie") {
+			t.Fatal("authbycookie set incorrectly to true")
+		}
+	}
 }
 
 func TestJoinRealmWithCRAuthBad(t *testing.T) {
@@ -160,7 +214,9 @@ func clientAuthFunc(c *wamp.Challenge) (string, wamp.Dict) {
 }
 
 type serverKeyStore struct {
-	provider string
+	provider     string
+	cookie       *http.Cookie
+	authByCookie bool
 }
 
 func (ks *serverKeyStore) AuthKey(authid, authmethod string) ([]byte, error) {
@@ -191,4 +247,46 @@ func (ks *serverKeyStore) AuthRole(authid string) (string, error) {
 		return "", errors.New("no such user: " + authid)
 	}
 	return "user", nil
+}
+
+func (ks *serverKeyStore) AlreadyAuth(authid string, details wamp.Dict) bool {
+	// Verify that the request has been captured.
+	v, err := wamp.DictValue(details, []string{"transport", "auth", "request"})
+	if err != nil {
+		// Not authorized - pretend request is needed for some reason.
+		return false
+	}
+
+	v, err = wamp.DictValue(details, []string{"transport", "auth", "cookie"})
+	if err != nil {
+		// No tracking cookie - client not recognized, so not auth.
+		return false
+	}
+	cookie := v.(*http.Cookie)
+
+	// Tracking cookie matches cookie of previously good client.
+	if cookie.Value != ks.cookie.Value {
+		// Did not have expected tracking cookie.
+		fmt.Println("===> wrong cookie value", cookie, "!=", ks.cookie)
+		return false
+	}
+
+	ks.authByCookie = true
+	return true
+}
+
+func (ks *serverKeyStore) OnWelcome(authid string, welcome *wamp.Welcome, details wamp.Dict) error {
+	v, err := wamp.DictValue(details, []string{"transport", "auth", "nextcookie"})
+	if err != nil {
+		// Tracking cookie not enabled.
+		return nil
+	}
+	nextcookie := v.(*http.Cookie)
+
+	// Update tracking cookie that will identify this authenticated client.
+	ks.cookie = nextcookie
+
+	// Tell the client whether or not it was allowed by its cookie.
+	welcome.Details["authbycookie"] = ks.authByCookie
+	return nil
 }

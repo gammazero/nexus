@@ -44,6 +44,10 @@ type Router interface {
 	// Attach connects a client to the router and to the requested realm.
 	Attach(wamp.Peer) error
 
+	// AttachClient connects a client to the router and to the requested realm.
+	// It provides additional transport information details.
+	AttachClient(wamp.Peer, wamp.Dict) error
+
 	// Close stops the router and waits message processing to stop.
 	Close()
 
@@ -112,6 +116,20 @@ func (r *router) Logger() stdlog.StdLog { return r.log }
 // Attach connects a client to the router and to the requested realm.  If
 // successful, Attach returns after sending a WELCOME message to the client.
 func (r *router) Attach(client wamp.Peer) error {
+	return r.AttachClient(client, nil)
+}
+
+// AttachClient connects a client to the router and to the requested realm.  If
+// successful, Attach returns after sending a WELCOME message to the client.
+//
+// Additional information is provided in transportDetails.  This information
+// becomes part of HELLO.Details and session.Details, as details["transport"].
+// This exposes it to authenticator and authorizer logic.  The information
+// includes items useful for authentication, in details.transport.auth.
+//
+// See websocketpeer.WebSocketConfig for information provided by websocket
+// connections.
+func (r *router) AttachClient(client wamp.Peer, transportDetails wamp.Dict) error {
 	sendAbort := func(reason wamp.URI, abortErr error) {
 		abortMsg := wamp.Abort{Reason: reason}
 		abortMsg.Details = wamp.Dict{}
@@ -220,6 +238,11 @@ func (r *router) Attach(client wamp.Peer) error {
 		}
 	}
 
+	// Include any transport details with HELLO.Details.
+	if len(transportDetails) != 0 {
+		hello.Details["transport"] = transportDetails
+	}
+
 	// Handle any necessary client auth.  This results in either a WELCOME
 	// message or an error.
 	//
@@ -246,12 +269,12 @@ func (r *router) Attach(client wamp.Peer) error {
 		}
 		sessDetails[k] = v
 	}
-	sessDetails["session"] = welcome.ID
+	sessDetails["session"] = sid
 
 	// Create new session.
 	sess := &wamp.Session{
 		Peer:    client,
-		ID:      welcome.ID,
+		ID:      sid,
 		Details: sessDetails,
 	}
 
@@ -263,7 +286,7 @@ func (r *router) Attach(client wamp.Peer) error {
 
 	client.Send(welcome) // Blocking OK; this is session goroutine.
 	if r.debug {
-		r.log.Println("Created session:", welcome.ID)
+		r.log.Println("Created session:", sid)
 	}
 	return nil
 }

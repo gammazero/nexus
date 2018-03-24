@@ -62,3 +62,26 @@ func ConnectNet(routerURL string, cfg ClientConfig) (*Client, error) {
 	}
 	return NewClient(p, cfg)
 }
+
+// CookieURL takes a websocket URL string and outputs a url.URL that can be
+// used to retrieve cookies from a http.CookieJar as may be provided in
+// ClientConfig.WsCfg.Jar.
+func CookieURL(routerURL string) (*url.URL, error) {
+	u, err := url.Parse(routerURL)
+	if err != nil {
+		return nil, err
+	}
+
+	switch u.Scheme {
+	case "ws":
+		u.Scheme = "http"
+	case "wss":
+		u.Scheme = "https"
+	case "http", "https":
+		// Ok already; do nothing
+	default:
+		return nil, fmt.Errorf("scheme not valid for websocket: %s", u.Scheme)
+	}
+
+	return u, nil
+}
