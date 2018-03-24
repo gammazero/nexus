@@ -35,11 +35,11 @@ type Authenticator interface {
 	//     details.transport.auth.nextcookie|*http.Cookie
 	//
 	// The tracking cookie can be used to tell if a client was previously
-	// connected to the router, and lookup information about that client, such
+	// connected to the router, and look up information about that client, such
 	// as whether it was successfully authenticated.
 	Authenticate(sid wamp.ID, details wamp.Dict, client wamp.Peer) (*wamp.Welcome, error)
 
-	// AuthMethod returns a string describing the authentication methiod.
+	// AuthMethod returns a string describing the authentication method.
 	AuthMethod() string
 }
 
@@ -55,7 +55,7 @@ type KeyStore interface {
 	// Returns the authrole for the user.
 	AuthRole(authid string) (string, error)
 
-	// Returns name of this KeyStore instnace.
+	// Returns name of this KeyStore instance.
 	Provider() string
 }
 

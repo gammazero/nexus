@@ -54,6 +54,9 @@ type WebsocketConfig struct {
 	// request in the HELLO and session details.  It is stored in
 	// Details.transport.auth.request|*http.Request and is available to
 	// auth/authz logic.
+	//
+	// EnableTrackingCookie and EnableRequestCapture is configured for the
+	// server by passing WebsocketConfig to WebsocketServer.SetConfig().
 	EnableRequestCapture bool `json:"enable_request_capture"`
 
 	// For websocket client configuration only

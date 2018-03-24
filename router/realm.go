@@ -492,12 +492,6 @@ func (r *realm) authClient(sid wamp.ID, client wamp.Peer, details wamp.Dict) (*w
 		return &wamp.Welcome{Details: details}, nil
 	}
 
-	_, err := wamp.DictValue(details, []string{"transport", "auth", "wsrequest"})
-	if err == nil {
-		//req = v.(*http.Request)
-		fmt.Println("---> Got HTTP request from transport")
-	}
-
 	// The default authentication method is "WAMP-Anonymous" if client does not
 	// specify otherwise.
 	if _, ok := details["authmethods"]; !ok {
