@@ -21,6 +21,51 @@ type WebsocketConfig struct {
 	EnableCompression     bool `json:"enable_compression"`
 	EnableContextTakeover bool `json:"enable_context_takeover"`
 	CompressionLevel      int  `json:"compression_level"`
+
+	// For WebsocketServer configuration only
+	//
+	// EnableTrackingCookie tells the server to send a random-value cookie to
+	// the websocket client.  A returning client may identify itself by sending
+	// a previously issued tracking cookie in a websocket request.  If a
+	// request header received by the server contains the tracking cookie, then
+	// the cookie is included in the HELLO and session details.  The new
+	// tracking cookie that gets sent to the client (the cookie to expect for
+	// subsequent connections) is also stored in HELLO and session details.
+	//
+	// The cookie from the request, and the next cookie to expect, are
+	// stored in the HELLO and session details, respectively, as:
+	//
+	//     Details.transport.auth.cookie|*http.Cookie
+	//     Details.transport.auth.nextcookie|*http.Cookie
+	//
+	// This information is available to auth/authz logic, and can be retrieved
+	// from details as follows:
+	//
+	//     req *http.Request
+	//     path := []string{"transport", "auth", "request"}
+	//     v, err := wamp.DictValue(details, path)
+	//     if err == nil {
+	//         req = v.(*http.Request)
+	//     }
+	//
+	// The "cookie" and "nextcookie" values are retrieved similarly.
+	EnableTrackingCookie bool `json:"enable_tracking_cookie"`
+	// EnableRequestCapture tells the server to include the upgrade HTTP
+	// request in the HELLO and session details.  It is stored in
+	// Details.transport.auth.request|*http.Request and is available to
+	// auth/authz logic.
+	//
+	// EnableTrackingCookie and EnableRequestCapture is configured for the
+	// server by passing WebsocketConfig to WebsocketServer.SetConfig().
+	EnableRequestCapture bool `json:"enable_request_capture"`
+
+	// For websocket client configuration only
+	//
+	// If provided when configuring websocket client, cookies from server are
+	// put in here.  This allows cookies to be stored and then sent back to the
+	// server in subsequent websocket connections.  Cookies may be used to
+	// identify returning clients, and can be used to authenticate clients.
+	Jar http.CookieJar
 }
 
 // websocketPeer implements the Peer interface, connecting the Send and Recv
@@ -86,6 +131,8 @@ func ConnectWebsocketPeer(url string, serialization serialize.Serialization, tls
 		dialer.EnableCompression = wsCfg.EnableCompression
 		//dialer.EnableContextTakeover = wsCfg.EnableContextTakeover
 		//dialer.CompressionLevel = wsCfg.CompressionLevel
+
+		dialer.Jar = wsCfg.Jar
 	}
 
 	conn, _, err := dialer.Dial(url, nil)
@@ -210,7 +257,7 @@ func (w *websocketPeer) recvHandler() {
 				w.wr <- nil
 				<-w.writerDone
 			}
-			// The error is only one of these erors.  It is generally not
+			// The error is only one of these errors.  It is generally not
 			// helpful to log this, so keeping this commented out.
 			// websocket: close sent
 			// websocket: close 1000 (normal): goodbye

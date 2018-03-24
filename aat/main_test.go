@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"io"
 	"log"
+	"net/http/cookiejar"
 	"os"
 	"path"
 	"testing"
@@ -102,7 +103,9 @@ func TestMain(m *testing.M) {
 	cliLogger = log.New(os.Stdout, "CLIENT> ", log.LstdFlags)
 	rtrLogger = log.New(os.Stdout, "ROUTER> ", log.LstdFlags)
 
-	sks := &serverKeyStore{"UserDB"}
+	sks := &serverKeyStore{
+		provider: "UserDB",
+	}
 	crAuth := auth.NewCRAuthenticator(sks, time.Second)
 
 	// Create router instance.
@@ -142,19 +145,29 @@ func TestMain(m *testing.M) {
 	case "ws":
 		s := router.NewWebsocketServer(nxr)
 		sockDesc = "WEBSOCKETS"
+		wsCfg := transport.WebsocketConfig{
+			EnableTrackingCookie: true,
+			EnableRequestCapture: true,
+		}
 		// Set optional websocket config.
 		if compress {
-			s.SetConfig(transport.WebsocketConfig{EnableCompression: true})
+			wsCfg.EnableCompression = true
 			sockDesc += " + compression"
 		}
+		s.SetConfig(wsCfg)
 		closer, err = s.ListenAndServe(tcpAddr)
 	case "wss":
 		s := router.NewWebsocketServer(nxr)
 		sockDesc = "WEBSOCKETS + TLS"
+		wsCfg := transport.WebsocketConfig{
+			EnableTrackingCookie: true,
+			EnableRequestCapture: true,
+		}
 		if compress {
-			s.SetConfig(transport.WebsocketConfig{EnableCompression: true})
+			wsCfg.EnableCompression = true
 			sockDesc += " + compression"
 		}
+		s.SetConfig(wsCfg)
 		closer, err = s.ListenAndServeTLS(tcpAddr, nil, certPath, keyPath)
 	case "tcp":
 		s := router.NewRawSocketServer(nxr, 0, 0)
@@ -242,27 +255,54 @@ func connectClientCfg(cfg client.ClientConfig) (*client.Client, error) {
 		cfg.WsCfg.EnableCompression = true
 	}
 
+	var addr string
 	switch scheme {
 	case "ws", "tcp":
-		addr := fmt.Sprintf("%s://%s/", scheme, tcpAddr)
+		addr = fmt.Sprintf("%s://%s/", scheme, tcpAddr)
 		cli, err = client.ConnectNet(addr, cfg)
 	case "wss", "tcps":
 		// If TLS requested, set up TLS configuration to skip verification.
 		cfg.TlsCfg = &tls.Config{
 			InsecureSkipVerify: true,
 		}
-		addr := fmt.Sprintf("%s://%s/", scheme, tcpAddr)
+		addr = fmt.Sprintf("%s://%s/", scheme, tcpAddr)
 		cli, err = client.ConnectNet(addr, cfg)
 	case "unix":
-		addr := fmt.Sprintf("%s://%s/", scheme, unixAddr)
+		addr = fmt.Sprintf("%s://%s/", scheme, unixAddr)
 		cli, err = client.ConnectNet(addr, cfg)
 	default:
 		cli, err = client.ConnectLocal(nxr, cfg)
-
 	}
 	if err != nil {
 		cliLogger.Println("Failed to create client:", err)
 		return nil, err
+	}
+
+	if cfg.WsCfg.Jar != nil {
+		if scheme != "ws" && scheme != "wss" {
+			// Programming error in test.
+			panic("CookieJar provided for non-websocket client")
+		}
+
+		cookieURL, err := client.CookieURL(addr)
+		if err != nil {
+			return nil, err
+		}
+		cookies := cfg.WsCfg.Jar.Cookies(cookieURL)
+		cliLogger.Println("Client received cookies from router:", cookies)
+		var found bool
+		for i := range cookies {
+			if cookies[i].Name == "nexus-wamp-cookie" {
+				found = true
+				break
+			}
+		}
+		if !found {
+			cli.Close()
+			err = errors.New("did not get expected cookie from router")
+			cliLogger.Println(err)
+			return nil, err
+		}
 	}
 
 	//cli.SetDebug(true)
@@ -284,7 +324,22 @@ func connectClient() (*client.Client, error) {
 
 func TestHandshake(t *testing.T) {
 	defer leaktest.Check(t)()
-	cli, err := connectClient()
+
+	cfg := client.ClientConfig{
+		Realm:           testRealm,
+		ResponseTimeout: time.Second,
+	}
+
+	if scheme == "ws" || scheme == "wss" {
+		jar, err := cookiejar.New(nil)
+		if err != nil {
+			fmt.Fprintln(os.Stderr, err)
+			os.Exit(1)
+		}
+		cfg.WsCfg.Jar = jar
+	}
+
+	cli, err := connectClientCfg(cfg)
 	if err != nil {
 		t.Fatal("Failed to connect client:", err)
 	}
