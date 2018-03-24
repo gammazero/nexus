@@ -22,7 +22,9 @@ type WebsocketConfig struct {
 	EnableContextTakeover bool `json:"enable_context_takeover"`
 	CompressionLevel      int  `json:"compression_level"`
 
-	// For WebsocketServer configuration only
+	// For WebsocketServer configuration only.  These options are configured
+	// for the router by passing WebsocketConfig to
+	// WebsocketServer.SetConfig().
 	//
 	// EnableTrackingCookie tells the server to send a random-value cookie to
 	// the websocket client.  A returning client may identify itself by sending
@@ -49,14 +51,12 @@ type WebsocketConfig struct {
 	//     }
 	//
 	// The "cookie" and "nextcookie" values are retrieved similarly.
-	EnableTrackingCookie bool `json:"enable_tracking_cookie"`
+	//
 	// EnableRequestCapture tells the server to include the upgrade HTTP
 	// request in the HELLO and session details.  It is stored in
 	// Details.transport.auth.request|*http.Request and is available to
 	// auth/authz logic.
-	//
-	// EnableTrackingCookie and EnableRequestCapture is configured for the
-	// server by passing WebsocketConfig to WebsocketServer.SetConfig().
+	EnableTrackingCookie bool `json:"enable_tracking_cookie"`
 	EnableRequestCapture bool `json:"enable_request_capture"`
 
 	// For websocket client configuration only
