@@ -36,14 +36,16 @@ func TestWSHandshakeJSON(t *testing.T) {
 	defer r.Close()
 
 	s := NewWebsocketServer(r)
-	wsCfg := transport.WebsocketConfig{EnableCompression: true}
-	s.SetConfig(wsCfg)
+	s.Upgrader.EnableCompression = true
 	closer, err := s.ListenAndServe(wsAddr)
 	if err != nil {
 		t.Fatal(err)
 	}
 	defer closer.Close()
 
+	wsCfg := transport.WebsocketConfig{
+		EnableCompression: true,
+	}
 	client, err := transport.ConnectWebsocketPeer(
 		fmt.Sprintf("ws://%s/", wsAddr), serialize.JSON, nil, nil, r.Logger(), &wsCfg)
 	if err != nil {
