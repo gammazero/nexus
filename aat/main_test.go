@@ -7,7 +7,6 @@ import (
 	"fmt"
 	"io"
 	"log"
-	"net/http"
 	"net/http/cookiejar"
 	"os"
 	"path"

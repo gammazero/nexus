@@ -9,9 +9,6 @@ import (
 	"io"
 	"net"
 	"net/http"
-	"net/url"
-	"path/filepath"
-	"strings"
 
 	"github.com/gammazero/nexus/stdlog"
 	"github.com/gammazero/nexus/transport"
@@ -120,29 +117,6 @@ func (s *WebsocketServer) SetConfig(wsCfg transport.WebsocketConfig) {
 
 	s.EnableTrackingCookie = wsCfg.EnableTrackingCookie
 	s.EnableRequestCapture = wsCfg.EnableRequestCapture
-}
-
-// AllowOrigin sets the WebsocketServer.Upgrader.CheckOrigin to a function that
-// returns true if: the origin is not set, is equal to the request host, or
-// matches one of the allowed patterns.  A pattern is in the form of a shell
-// glob as described here: https://golang.org/pkg/path/filepath/#Match
-func (s *WebsocketServer) AllowOrigins(patterns []string) error {
-	if len(patterns) == 0 {
-		s.Upgrader.CheckOrigin = nil
-		return nil
-	}
-	for _, o := range patterns {
-		if _, err := filepath.Match(o, o); err != nil {
-			return fmt.Errorf("error allowing origin, %s: %s", err, o)
-		}
-		s.log.Println("Websocket server allowing origin matching:", o)
-	}
-	patsCopy := make([]string, len(patterns))
-	copy(patsCopy, patterns)
-	s.Upgrader.CheckOrigin = func(r *http.Request) bool {
-		return checkOrigin(patsCopy, r)
-	}
-	return nil
 }
 
 // ListenAndServe listens on the specified TCP address and starts a goroutine
@@ -297,26 +271,4 @@ func (s *WebsocketServer) handleWebsocket(conn *websocket.Conn, transportDetails
 	if err := s.router.AttachClient(peer, transportDetails); err != nil {
 		s.log.Println("Error attaching to router:", err)
 	}
-}
-
-// checkOrigin returns true if the origin is not set, is equal to the request
-// host, or matches one of the allowed patterns.
-func checkOrigin(patterns []string, r *http.Request) bool {
-	origin := r.Header["Origin"]
-	if len(origin) == 0 {
-		return true
-	}
-	u, err := url.Parse(origin[0])
-	if err != nil {
-		return false
-	}
-	if strings.EqualFold(u.Host, r.Host) {
-		return true
-	}
-	for i := range patterns {
-		if ok, _ := filepath.Match(patterns[i], u.Host); ok {
-			return true
-		}
-	}
-	return false
 }

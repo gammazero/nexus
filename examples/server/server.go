@@ -12,7 +12,6 @@ import (
 	"path"
 
 	"github.com/gammazero/nexus/router"
-	"github.com/gammazero/nexus/transport"
 	"github.com/gammazero/nexus/wamp"
 )
 
