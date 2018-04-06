@@ -346,17 +346,3 @@ func TestHandshake(t *testing.T) {
 		t.Fatal("Expected error if client already closed")
 	}
 }
-
-func testCheckOrigin(r *http.Request) bool {
-	u, ok := r.Header["Upgrade"]
-	if ok {
-		fmt.Println("---> Upgrade header:", u)
-	}
-	origin, ok := r.Header["Origin"]
-	if ok {
-		fmt.Println("---> Origin header:", origin)
-	} else {
-		fmt.Println("---> No origin header")
-	}
-	return true
-}

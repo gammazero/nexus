@@ -25,6 +25,9 @@ type Config struct {
 		EnableTrackingCookie bool `json:"enable_tracking_cookie"`
 		// Enable reading HTTP header from client requests.
 		EnableRequestCapture bool `json:"enable_request_capture"`
+		// Allow origins that match these glob patterns when an origin header
+		// is present in the websocket upgrade request.
+		AllowOrigins []string `json:"allow_origins"`
 	}
 
 	// RawSocket configuration parameters.

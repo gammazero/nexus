@@ -72,7 +72,13 @@ func main() {
 			wss.EnableRequestCapture = true
 			logger.Printf("Request capture enabled - not currently used")
 		}
-
+		if len(conf.WebSocket.AllowOrigins) != 0 {
+			err = wss.AllowOrigins(conf.WebSocket.AllowOrigins)
+			if err != nil {
+				logger.Print(err)
+				os.Exit(1)
+			}
+		}
 		var closer io.Closer
 		var sockDesc string
 		if conf.WebSocket.CertFile != "" && conf.WebSocket.KeyFile != "" {

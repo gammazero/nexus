@@ -37,6 +37,12 @@ func TestWSHandshakeJSON(t *testing.T) {
 
 	s := NewWebsocketServer(r)
 	s.Upgrader.EnableCompression = true
+	if err = s.AllowOrigins([]string{"foo.bar.com", "*.bar.net"}); err != nil {
+		t.Fatal(err)
+	}
+	if err = s.AllowOrigins([]string{"foo.bar.co["}); err == nil {
+		t.Fatal("Expected error")
+	}
 	closer, err := s.ListenAndServe(wsAddr)
 	if err != nil {
 		t.Fatal(err)
