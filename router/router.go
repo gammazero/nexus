@@ -279,7 +279,7 @@ func (r *router) AttachClient(client wamp.Peer, transportDetails wamp.Dict) erro
 	}
 
 	if err := realm.handleSession(sess); err != nil {
-		// N.B. assume, for now, that any error is a shutdown error
+		// Any error returned here is a shutdown error.
 		sendAbort(wamp.ErrSystemShutdown, nil)
 		return err
 	}

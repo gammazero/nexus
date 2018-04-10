@@ -17,10 +17,10 @@
     "router": {
         "realms": [
             {
-                "uri": "nexus.reaml1",
+                "uri": "nexus.realm1",
                 "strict_uri": false,
                 "allow_disclose": true,
-                "allow_anonymous": true
+                "anonymous_auth": true
             }
         ],
         "debug": false
