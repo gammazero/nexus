@@ -13,14 +13,14 @@ import (
 	"github.com/gammazero/nexus/wamp"
 )
 
-const address = "127.0.0.1:8000"
+const address = "127.0.0.1:8080"
 
 func main() {
 	// Create router instance.
 	routerConfig := &router.RouterConfig{
 		RealmConfigs: []*router.RealmConfig{
 			&router.RealmConfig{
-				URI:           wamp.URI("nexus.examples"),
+				URI:           wamp.URI("nexus.realm1"),
 				AnonymousAuth: true,
 			},
 		},
