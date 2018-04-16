@@ -3,7 +3,8 @@
         "address": ":8080",
         "cert_file": "",
         "key_file": "",
-        "enable_compression": false
+        "enable_compression": false,
+        "allow_origins": []
     },
     "rawsocket": {
         "tcp_address": "",
@@ -17,10 +18,10 @@
     "router": {
         "realms": [
             {
-                "uri": "nexus.reaml1",
+                "uri": "nexus.realm1",
                 "strict_uri": false,
                 "allow_disclose": true,
-                "allow_anonymous": true
+                "anonymous_auth": true
             }
         ],
         "debug": false

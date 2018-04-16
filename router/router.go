@@ -279,7 +279,7 @@ func (r *router) AttachClient(client wamp.Peer, transportDetails wamp.Dict) erro
 	}
 
 	if err := realm.handleSession(sess); err != nil {
-		// N.B. assume, for now, that any error is a shutdown error
+		// Any error returned here is a shutdown error.
 		sendAbort(wamp.ErrSystemShutdown, nil)
 		return err
 	}
@@ -327,14 +327,15 @@ func (r *router) AddRealm(config *RealmConfig) error {
 
 // RemoveRealm will close and then remove a realm from this router, if the realm exists.
 func (r *router) RemoveRealm(name wamp.URI) {
-	// Because we want to force atomicity as briefly as possible, the atomic func will be used purely to attempt to
-	// locate the realm
+	// Because we want to force atomicity as briefly as possible, the atomic
+	// func will be used purely to attempt to locate the realm
 	var realm *realm
 	var ok bool
 	sync := make(chan struct{})
 	r.actionChan <- func() {
 		if realm, ok = r.realms[name]; ok {
-			// if found, go ahead and remove the realm from the router to prevent new clients from joining it.
+			// if found, go ahead and remove the realm from the router to
+			// prevent new clients from joining it.
 			delete(r.realms, name)
 			r.log.Printf("Removed realm: %s", name)
 		}
@@ -342,14 +343,15 @@ func (r *router) RemoveRealm(name wamp.URI) {
 	}
 	// wait until the atomic func has completed
 	<-sync
-	// if the realm was found within the router, close it outside of the atomic func while still blocking the caller
+	// if the realm was found within the router, close it outside of the atomic
+	// func while still blocking the caller
 	if ok {
 		realm.close()
 		r.log.Printf("Realm %s completed shutdown", name)
 	}
 }
 
-// addRealm perform the process of attempting to create and add a realm to this router.
+// addRealm attempts to create and add a realm to this router.
 //
 // this method should ONLY be called from within an atomic func
 func (r *router) addRealm(config *RealmConfig) (*realm, error) {

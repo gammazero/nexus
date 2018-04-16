@@ -11,10 +11,11 @@ import (
 	"log"
 	"os"
 	"os/signal"
+	"strings"
 	"time"
 
+	"github.com/gammazero/nexus/nexusd/wsutil"
 	"github.com/gammazero/nexus/router"
-	"github.com/gammazero/nexus/transport"
 )
 
 func usage() {
@@ -60,26 +61,29 @@ func main() {
 	if conf.WebSocket.Address != "" {
 		// Create a new websocket server with the router.
 		wss := router.NewWebsocketServer(r)
-		if conf.WebSocket.EnableCompression || conf.WebSocket.EnableTrackingCookie {
-			var wsCfg transport.WebsocketConfig
-			if conf.WebSocket.EnableCompression {
-				logger.Printf("Compression enabled")
-				wsCfg.EnableCompression = true
-				wsCfg.EnableContextTakeover = conf.WebSocket.EnableContextTakeover
-				wsCfg.CompressionLevel = conf.WebSocket.CompressionLevel
-			}
-			if conf.WebSocket.EnableTrackingCookie {
-				logger.Printf("Tracking cookie enabled - not currently used")
-				//wsCfg.EnableTrackingCookie = true
-			}
-			if conf.WebSocket.EnableRequestCapture {
-				logger.Printf("Request capture enabled - not currently used")
-				//wsCfg.EnableRequestCapture = true
-			}
-			// Set optional websocket config.
-			wss.SetConfig(wsCfg)
+		if conf.WebSocket.EnableCompression {
+			wss.Upgrader.EnableCompression = true
+			//wss.Upgrader.AllowServerContextTakeover = conf.WebSocket.AllowContextTakeover
+			logger.Printf("Compression enabled")
 		}
-
+		if conf.WebSocket.EnableTrackingCookie {
+			wss.EnableTrackingCookie = true
+			logger.Printf("Tracking cookie enabled - not currently used")
+		}
+		if conf.WebSocket.EnableRequestCapture {
+			wss.EnableRequestCapture = true
+			logger.Printf("Request capture enabled - not currently used")
+		}
+		if len(conf.WebSocket.AllowOrigins) != 0 {
+			check, e := wsutil.AllowOrigins(conf.WebSocket.AllowOrigins)
+			if e != nil {
+				logger.Print(e)
+				os.Exit(1)
+			}
+			logger.Println("Allowing origins matching:",
+				strings.Join(conf.WebSocket.AllowOrigins, "|"))
+			wss.Upgrader.CheckOrigin = check
+		}
 		var closer io.Closer
 		var sockDesc string
 		if conf.WebSocket.CertFile != "" && conf.WebSocket.KeyFile != "" {

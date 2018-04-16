@@ -14,12 +14,12 @@ const exampleTopic = "example.hello"
 func main() {
 	logger := log.New(os.Stdout, "", 0)
 	cfg := client.ClientConfig{
-		Realm:  "nexus.examples",
+		Realm:  "nexus.realm1",
 		Logger: logger,
 	}
 
 	// Connect subscriber session.
-	subscriber, err := client.ConnectNet("ws://localhost:8000/", cfg)
+	subscriber, err := client.ConnectNet("ws://localhost:8080/", cfg)
 	if err != nil {
 		logger.Fatal(err)
 	}

@@ -12,7 +12,6 @@ import (
 	"path"
 
 	"github.com/gammazero/nexus/router"
-	"github.com/gammazero/nexus/transport"
 	"github.com/gammazero/nexus/wamp"
 )
 
@@ -44,13 +43,14 @@ func main() {
 	}
 	defer nxr.Close()
 
-	// Create websocket and rawsocket servers.  Websocket comopression enabled,
-	// will be used if clients request it.
+	// Create websocket server.
 	wss := router.NewWebsocketServer(nxr)
-	wss.SetConfig(transport.WebsocketConfig{
-		EnableCompression:    true,
-		EnableTrackingCookie: true,
-	})
+	// Enable websocket compression, which will be used if clients request it.
+	wss.Upgrader.EnableCompression = true
+	// Configure server to send and look for client tracking cookie.
+	wss.EnableTrackingCookie = true
+
+	// Create rawsocket server.
 	rss := router.NewRawSocketServer(nxr, 0, 0)
 
 	// ---- Start servers ----

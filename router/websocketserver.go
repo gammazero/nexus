@@ -29,6 +29,9 @@ type protocol struct {
 
 // WebsocketServer handles websocket connections.
 type WebsocketServer struct {
+	// Upgrader specifies parameters for upgrading an HTTP connection to a
+	// WebSocket connection.  See:
+	// https://godoc.org/github.com/gorilla/websocket#Upgrader
 	Upgrader *websocket.Upgrader
 
 	// Serializer for text frames.  Defaults to JSONSerializer.
@@ -41,12 +44,47 @@ type WebsocketServer struct {
 	protocols map[string]protocol
 	log       stdlog.StdLog
 
-	enableTrackingCookie bool
-	enableRequestCapture bool
+	// EnableTrackingCookie tells the server to send a random-value cookie to
+	// the websocket client.  A returning client may identify itself by sending
+	// a previously issued tracking cookie in a websocket request.  If a
+	// request header received by the server contains the tracking cookie, then
+	// the cookie is included in the HELLO and session details.  The new
+	// tracking cookie that gets sent to the client (the cookie to expect for
+	// subsequent connections) is also stored in HELLO and session details.
+	//
+	// The cookie from the request, and the next cookie to expect, are
+	// stored in the HELLO and session details, respectively, as:
+	//
+	//     Details.transport.auth.cookie|*http.Cookie
+	//     Details.transport.auth.nextcookie|*http.Cookie
+	//
+	// This information is available to auth/authz logic, and can be retrieved
+	// from details as follows:
+	//
+	//     req *http.Request
+	//     path := []string{"transport", "auth", "request"}
+	//     v, err := wamp.DictValue(details, path)
+	//     if err == nil {
+	//         req = v.(*http.Request)
+	//     }
+	//
+	// The "cookie" and "nextcookie" values are retrieved similarly.
+	EnableTrackingCookie bool
+	// EnableRequestCapture tells the server to include the upgrade HTTP
+	// request in the HELLO and session details.  It is stored in
+	// Details.transport.auth.request|*http.Request and is available to
+	// auth/authz logic.
+	EnableRequestCapture bool
 }
 
 // NewWebsocketServer takes a router instance and creates a new websocket
-// server.  To run the websocket server, call one of the server's
+// server.
+//
+// Optional websocket server configuration can be set, after creating the
+// server instance, by setting WebsocketServer.Upgrader and WebsocketServer
+// members directly.
+//
+// To run the websocket server, call one of the server's
 // ListenAndServe methods:
 //
 //     s := NewWebsocketServer(r)
@@ -76,16 +114,15 @@ func NewWebsocketServer(r Router) *WebsocketServer {
 	return s
 }
 
-// SetConfig applies optional configuration settings to the websocket server.
+// DEPRICATED - Set WebsocketServer.Upgrader and WebsockServer.EnableX members
+// directly.
 func (s *WebsocketServer) SetConfig(wsCfg transport.WebsocketConfig) {
-	if wsCfg.EnableCompression {
-		s.Upgrader.EnableCompression = true
-		// Uncomment after https://github.com/gorilla/websocket/pull/342
-		//s.Upgrader.CompressionLevel = wsCfg.CompressionLevel
-		//s.Upgrader.EnableContextTakeover = wsCfg.EnableContextTakeover
-	}
-	s.enableTrackingCookie = wsCfg.EnableTrackingCookie
-	s.enableRequestCapture = wsCfg.EnableRequestCapture
+	s.Upgrader.EnableCompression = wsCfg.EnableCompression
+	// Uncomment after https://github.com/gorilla/websocket/pull/342
+	//s.Upgrader.AllowServerContextTakeover = wsCfg.EnableContextTakeover
+
+	s.EnableTrackingCookie = wsCfg.EnableTrackingCookie
+	s.EnableRequestCapture = wsCfg.EnableRequestCapture
 }
 
 // ListenAndServe listens on the specified TCP address and starts a goroutine
@@ -156,7 +193,7 @@ func (s *WebsocketServer) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	// If tracking cookie is enabled, then read the tracking cookie from the
 	// request header, if it contains the cookie.  Generate a new tracking
 	// cookie for next time and put it in the response header.
-	if s.enableTrackingCookie {
+	if s.EnableTrackingCookie {
 		if authDict == nil {
 			authDict = wamp.Dict{}
 		}
@@ -182,7 +219,7 @@ func (s *WebsocketServer) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 
 	// If request capture is enabled, then the HTTP upgrade http.Request in the
 	// HELLO and session details as transport.auth details.request.
-	if s.enableRequestCapture {
+	if s.EnableRequestCapture {
 		if authDict == nil {
 			authDict = wamp.Dict{}
 		}

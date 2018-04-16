@@ -18,7 +18,6 @@ import (
 	"github.com/gammazero/nexus/router"
 	"github.com/gammazero/nexus/router/auth"
 	"github.com/gammazero/nexus/stdlog"
-	"github.com/gammazero/nexus/transport"
 	"github.com/gammazero/nexus/transport/serialize"
 	"github.com/gammazero/nexus/wamp"
 )
@@ -145,29 +144,23 @@ func TestMain(m *testing.M) {
 	case "ws":
 		s := router.NewWebsocketServer(nxr)
 		sockDesc = "WEBSOCKETS"
-		wsCfg := transport.WebsocketConfig{
-			EnableTrackingCookie: true,
-			EnableRequestCapture: true,
-		}
 		// Set optional websocket config.
 		if compress {
-			wsCfg.EnableCompression = true
+			s.Upgrader.EnableCompression = true
 			sockDesc += " + compression"
 		}
-		s.SetConfig(wsCfg)
+		s.EnableTrackingCookie = true
+		s.EnableRequestCapture = true
 		closer, err = s.ListenAndServe(tcpAddr)
 	case "wss":
 		s := router.NewWebsocketServer(nxr)
 		sockDesc = "WEBSOCKETS + TLS"
-		wsCfg := transport.WebsocketConfig{
-			EnableTrackingCookie: true,
-			EnableRequestCapture: true,
-		}
 		if compress {
-			wsCfg.EnableCompression = true
+			s.Upgrader.EnableCompression = true
 			sockDesc += " + compression"
 		}
-		s.SetConfig(wsCfg)
+		s.EnableTrackingCookie = true
+		s.EnableRequestCapture = true
 		closer, err = s.ListenAndServeTLS(tcpAddr, nil, certPath, keyPath)
 	case "tcp":
 		s := router.NewRawSocketServer(nxr, 0, 0)
