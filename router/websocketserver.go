@@ -78,7 +78,13 @@ type WebsocketServer struct {
 }
 
 // NewWebsocketServer takes a router instance and creates a new websocket
-// server.  To run the websocket server, call one of the server's
+// server.
+//
+// Optional websocket server configuration can be set, after creating the
+// server instance, by setting WebsocketServer.Upgrader and WebsocketServer
+// members directly.
+//
+// To run the websocket server, call one of the server's
 // ListenAndServe methods:
 //
 //     s := NewWebsocketServer(r)

@@ -14,10 +14,9 @@ import (
 	"github.com/gorilla/websocket"
 )
 
+// WebsockerConfig is used to provide configuration client websocker settings.
 type WebsocketConfig struct {
-	// Enable per message write compression.
-	// When configuring server: allows compression, used if clients request
-	// When configuring client: requests compression, used if server allows
+	// Request per message write compression, if allowed by server.
 	EnableCompression     bool `json:"enable_compression"`
 	EnableContextTakeover bool `json:"enable_context_takeover"`
 

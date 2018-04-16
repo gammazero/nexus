@@ -63,7 +63,7 @@ func main() {
 		wss := router.NewWebsocketServer(r)
 		if conf.WebSocket.EnableCompression {
 			wss.Upgrader.EnableCompression = true
-			//wss.Upgrader.AllowServerContextTakeover = conf.WebSocket.EnableContextTakeover
+			//wss.Upgrader.AllowServerContextTakeover = conf.WebSocket.AllowContextTakeover
 			logger.Printf("Compression enabled")
 		}
 		if conf.WebSocket.EnableTrackingCookie {

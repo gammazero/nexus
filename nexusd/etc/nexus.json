@@ -3,7 +3,8 @@
         "address": ":8080",
         "cert_file": "",
         "key_file": "",
-        "enable_compression": false
+        "enable_compression": false,
+        "allow_origins": []
     },
     "rawsocket": {
         "tcp_address": "",
