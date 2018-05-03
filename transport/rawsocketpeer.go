@@ -38,6 +38,8 @@ const (
 	// Serializers
 	rawsocketJSON    = 1
 	rawsocketMsgpack = 2
+	// compatibility with crossbar.io router.
+	rawsocketCBOR    = 3
 
 	// RawSocket header ID.
 	magic = 0x7f
@@ -369,6 +371,8 @@ func clientHandshake(conn net.Conn, logger stdlog.StdLog, protocol byte, recvLim
 		serializer = &serialize.JSONSerializer{}
 	case rawsocketMsgpack:
 		serializer = &serialize.MessagePackSerializer{}
+	case rawsocketCBOR:
+		serializer = &serialize.CBORSerializer{}
 	}
 
 	sendLimit := byteToLength(buf[1] >> 4)
@@ -400,6 +404,8 @@ func serverHandshake(conn net.Conn, logger stdlog.StdLog, recvLimit int) (*rawSo
 		serializer = &serialize.JSONSerializer{}
 	case rawsocketMsgpack:
 		serializer = &serialize.MessagePackSerializer{}
+	case rawsocketCBOR:
+		serializer = &serialize.CBORSerializer{}
 	default:
 		conn.Write([]byte{magic, byte(0x1 << 4), 0, 0})
 		return nil, errors.New("serializer unsupported")
@@ -470,6 +476,8 @@ func getProtoByte(serialization serialize.Serialization) (byte, error) {
 		return rawsocketJSON, nil
 	case serialize.MSGPACK:
 		return rawsocketMsgpack, nil
+	case serialize.CBOR:
+		return rawsocketCBOR, nil
 	default:
 		return 0, errors.New("serialization not supported by rawsocket")
 	}

@@ -19,6 +19,8 @@ const (
 	JSON Serialization = iota
 	// Use msgpack-encoded strings as a payload.
 	MSGPACK
+	// Use CBOR encoding as a payload
+	CBOR
 )
 
 // Serialization indicates the data serialization format used in a WAMP session

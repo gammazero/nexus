@@ -79,6 +79,62 @@ func TestJSONDeserialize(t *testing.T) {
 	}
 }
 
+func TestCBORSerialize(t *testing.T) {
+	details := detailRolesFeatures()
+	hello := &wamp.Hello{Realm: "nexus.realm", Details: details}
+
+	s := &CBORSerializer{}
+	b, err := s.Serialize(hello)
+	if err != nil {
+		t.Fatal("Serialization error: ", err)
+	}
+	if len(b) == 0 {
+		t.Fatal("no serialized data")
+	}
+
+	msg, err := s.Deserialize(b)
+	if err != nil {
+		t.Fatal("desrialization error: ", err)
+	}
+	if msg.MessageType() != wamp.HELLO {
+		t.Fatal("desrialization to wrong message type: ", msg.MessageType())
+	}
+	if !hasFeature(hello.Details, "publisher", "subscriber_blackwhite_listing") {
+		t.Fatal("did not deserialize message details")
+	}
+}
+
+func CBORDeserialize(t *testing.T) {
+	s := &CBORSerializer{}
+
+	// this is the CBOR representation of the message above
+	data := []byte{
+		0x83, 0x01, 0x6b, 0x6e, 0x65, 0x78, 0x75, 0x73, 0x2e, 0x72, 0x65, 0x61,
+		0x6c, 0x6d, 0xa1, 0x65, 0x72, 0x6f, 0x6c, 0x65, 0x73, 0xa4, 0x6a, 0x73,
+		0x75, 0x62, 0x73, 0x63, 0x72, 0x69, 0x62, 0x65, 0x72, 0xa0, 0x66, 0x63,
+		0x61, 0x6c, 0x6c, 0x65, 0x65, 0xa0, 0x66, 0x63, 0x61, 0x6c, 0x6c, 0x65,
+		0x72, 0xa0, 0x69, 0x70, 0x75, 0x62, 0x6c, 0x69, 0x73, 0x68, 0x65, 0x72,
+		0xa1, 0x68, 0x66, 0x65, 0x61, 0x74, 0x75, 0x72, 0x65, 0x73, 0xa1, 0x78,
+		0x1d, 0x73, 0x75, 0x62, 0x73, 0x63, 0x72, 0x69, 0x62, 0x65, 0x72, 0x5f,
+		0x62, 0x6c, 0x61, 0x63, 0x6b, 0x77, 0x68, 0x69, 0x74, 0x65, 0x5f, 0x6c,
+		0x69, 0x73, 0x74, 0x69, 0x6e, 0x67, 0xf5,
+	}
+	details := detailRolesFeatures()
+	expect := &wamp.Hello{Realm: "nexus.realm", Details: details}
+
+	msg, err := s.Deserialize(data)
+	if err != nil {
+		t.Fatalf("Error decoding good data: %s, %x", err, data)
+	}
+	if msg.MessageType() != expect.MessageType() {
+		t.Fatalf("Incorrect message type: have %s, want %s", msg.MessageType(),
+			expect.MessageType())
+	}
+	if !reflect.DeepEqual(msg, expect) {
+		t.Fatalf("got %+v, expected %+v", msg, expect)
+	}
+}
+
 func TestMessagePackSerialize(t *testing.T) {
 	hello := &wamp.Hello{Realm: "nexus.realm", Details: detailRolesFeatures()}
 

@@ -78,6 +78,7 @@ type ClientConfig struct {
 const (
 	JSON    = serialize.JSON
 	MSGPACK = serialize.MSGPACK
+	CBOR    = serialize.CBOR
 )
 
 // Features supported by nexus client.
