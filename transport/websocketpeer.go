@@ -14,58 +14,22 @@ import (
 	"github.com/gorilla/websocket"
 )
 
+// WebsocketConfig is used to provide configuration client websocket settings.
 type WebsocketConfig struct {
-	// Enable per message write compression.
-	// When configuring server: allows compression, used if clients request
-	// When configuring client: requests compression, used if server allows
+	// Request per message write compression, if allowed by server.
 	EnableCompression     bool `json:"enable_compression"`
 	EnableContextTakeover bool `json:"enable_context_takeover"`
-	CompressionLevel      int  `json:"compression_level"`
 
-	// For WebsocketServer configuration only.  These options are configured
-	// for the router by passing WebsocketConfig to
-	// WebsocketServer.SetConfig().
-	//
-	// EnableTrackingCookie tells the server to send a random-value cookie to
-	// the websocket client.  A returning client may identify itself by sending
-	// a previously issued tracking cookie in a websocket request.  If a
-	// request header received by the server contains the tracking cookie, then
-	// the cookie is included in the HELLO and session details.  The new
-	// tracking cookie that gets sent to the client (the cookie to expect for
-	// subsequent connections) is also stored in HELLO and session details.
-	//
-	// The cookie from the request, and the next cookie to expect, are
-	// stored in the HELLO and session details, respectively, as:
-	//
-	//     Details.transport.auth.cookie|*http.Cookie
-	//     Details.transport.auth.nextcookie|*http.Cookie
-	//
-	// This information is available to auth/authz logic, and can be retrieved
-	// from details as follows:
-	//
-	//     req *http.Request
-	//     path := []string{"transport", "auth", "request"}
-	//     v, err := wamp.DictValue(details, path)
-	//     if err == nil {
-	//         req = v.(*http.Request)
-	//     }
-	//
-	// The "cookie" and "nextcookie" values are retrieved similarly.
-	//
-	// EnableRequestCapture tells the server to include the upgrade HTTP
-	// request in the HELLO and session details.  It is stored in
-	// Details.transport.auth.request|*http.Request and is available to
-	// auth/authz logic.
-	EnableTrackingCookie bool `json:"enable_tracking_cookie"`
-	EnableRequestCapture bool `json:"enable_request_capture"`
-
-	// For websocket client configuration only
-	//
 	// If provided when configuring websocket client, cookies from server are
 	// put in here.  This allows cookies to be stored and then sent back to the
 	// server in subsequent websocket connections.  Cookies may be used to
 	// identify returning clients, and can be used to authenticate clients.
 	Jar http.CookieJar
+
+	// Deprecated server config options.
+	// See: https://godoc.org/github.com/gammazero/nexus/router#WebsocketServer
+	EnableTrackingCookie bool `json:"enable_tracking_cookie"`
+	EnableRequestCapture bool `json:"enable_request_capture"`
 }
 
 // websocketPeer implements the Peer interface, connecting the Send and Recv
@@ -100,8 +64,9 @@ const (
 
 type DialFunc func(network, addr string) (net.Conn, error)
 
-// ConnectWebsocketPeer creates a new websocketPeer with the specified config,
-// and connects it to the websocket server at the specified URL.
+// ConnectWebsocketPeer creates a new websocket client with the specified
+// config, connects the client to the websocket server at the specified URL,
+// and returns the connected websocket peer.
 func ConnectWebsocketPeer(url string, serialization serialize.Serialization, tlsConfig *tls.Config, dial DialFunc, logger stdlog.StdLog, wsCfg *WebsocketConfig) (wamp.Peer, error) {
 	var (
 		protocol    string
@@ -133,11 +98,10 @@ func ConnectWebsocketPeer(url string, serialization serialize.Serialization, tls
 		NetDial:         dial,
 	}
 	if wsCfg != nil {
-		dialer.EnableCompression = wsCfg.EnableCompression
-		//dialer.EnableContextTakeover = wsCfg.EnableContextTakeover
-		//dialer.CompressionLevel = wsCfg.CompressionLevel
-
 		dialer.Jar = wsCfg.Jar
+		dialer.EnableCompression = true
+		// Uncomment after https://github.com/gorilla/websocket/pull/342
+		//dialer.AllowClientContextTakeover = wsCfg.EnableContextTakeover
 	}
 
 	conn, _, err := dialer.Dial(url, nil)
