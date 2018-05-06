@@ -179,6 +179,7 @@ func TestMessagePackDeserialize(t *testing.T) {
 func TestBinaryData(t *testing.T) {
 	orig := []byte("hellowamp")
 
+	// Calls the customer encoder: BinaryData.MarshalJSON()
 	bin, err := json.Marshal(BinaryData(orig))
 	if err != nil {
 		t.Fatal("Error marshalling BinaryData: ", err)
@@ -191,6 +192,7 @@ func TestBinaryData(t *testing.T) {
 	}
 
 	var b BinaryData
+	// Calls the customer decoder: BinaryData.UnmarshalJSON()
 	err = json.Unmarshal(bin, &b)
 	if err != nil {
 		t.Fatal("Error unmarshalling marshalled BinaryData: ", err)
@@ -342,5 +344,24 @@ func TestMsgPackToJSON(t *testing.T) {
 	a, _ := wamp.AsString(e2.Arguments[0])
 	if string(a) != arg {
 		t.Fatal("JSON deserialize error: did not get argument, got:", e2.Arguments[0])
+	}
+}
+
+func BenchmarkJSON(b *testing.B) {
+	details := detailRolesFeatures()
+	hello := &wamp.Hello{Realm: "nexus.realm", Details: details}
+	s := &JSONSerializer{}
+
+	b.ResetTimer()
+	for i := 0; i < b.N; i++ {
+		data, err := s.Serialize(hello)
+		if err != nil {
+			panic("serialization error: " + err.Error())
+		}
+
+		_, err = s.Deserialize(data)
+		if err != nil {
+			panic("desrialization error: " + err.Error())
+		}
 	}
 }
