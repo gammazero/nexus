@@ -2,7 +2,6 @@ package serialize
 
 import (
 	"encoding/base64"
-	"encoding/json"
 	"errors"
 
 	"github.com/gammazero/nexus/wamp"
@@ -57,12 +56,15 @@ type BinaryData []byte
 
 func (b BinaryData) MarshalJSON() ([]byte, error) {
 	s := base64.StdEncoding.EncodeToString([]byte(b))
-	return json.Marshal("\x00" + s)
+	var out []byte
+	jsh := &codec.JsonHandle{}
+	return out, codec.NewEncoderBytes(&out, jsh).Encode("\x00" + s)
 }
 
 func (b *BinaryData) UnmarshalJSON(v []byte) error {
 	var s string
-	err := json.Unmarshal(v, &s)
+	jsh := &codec.JsonHandle{}
+	err := codec.NewDecoderBytes(v, jsh).Decode(&s)
 	if err != nil {
 		return nil
 	}
