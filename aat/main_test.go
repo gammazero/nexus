@@ -77,11 +77,11 @@ func TestMain(m *testing.M) {
 	flag.StringVar(&scheme, "scheme", "",
 		"-scheme=[ws, wss, tcp, tcps, unix] or none for local (in-process)")
 	flag.StringVar(&serType, "serialize", "",
-		"-serialize[json, msgpack] default is json")
+		"-serialize[json, msgpack, cbor] default is json")
 	flag.BoolVar(&compress, "compress", false, "enable compression")
 	flag.Parse()
 
-	if serType != "" && serType != "json" && serType != "msgpack" {
+	if serType != "" && serType != "json" && serType != "msgpack" && serType != "cbor" {
 		fmt.Fprintln(os.Stderr, "invalid serialize value")
 		flag.Usage()
 		os.Exit(1)
@@ -241,6 +241,8 @@ func connectClientCfg(cfg client.ClientConfig) (*client.Client, error) {
 		cfg.Serialization = serialize.JSON
 	case "msgpack":
 		cfg.Serialization = serialize.MSGPACK
+	case "cbor":
+		cfg.Serialization = serialize.CBOR
 	}
 	cfg.Logger = cliLogger
 

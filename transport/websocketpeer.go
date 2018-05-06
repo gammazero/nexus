@@ -14,7 +14,7 @@ import (
 	"github.com/gorilla/websocket"
 )
 
-// WebsockerConfig is used to provide configuration client websocker settings.
+// WebsocketConfig is used to provide configuration client websocket settings.
 type WebsocketConfig struct {
 	// Request per message write compression, if allowed by server.
 	EnableCompression     bool `json:"enable_compression"`
@@ -26,7 +26,7 @@ type WebsocketConfig struct {
 	// identify returning clients, and can be used to authenticate clients.
 	Jar http.CookieJar
 
-	// Depricated server config options.
+	// Deprecated server config options.
 	// See: https://godoc.org/github.com/gammazero/nexus/router#WebsocketServer
 	EnableTrackingCookie bool `json:"enable_tracking_cookie"`
 	EnableRequestCapture bool `json:"enable_request_capture"`
@@ -56,6 +56,7 @@ const (
 	// modes:
 	jsonWebsocketProtocol    = "wamp.2.json"
 	msgpackWebsocketProtocol = "wamp.2.msgpack"
+	cborWebsocketProtocol    = "wamp.2.cbor"
 
 	outQueueSize = 16
 	ctrlTimeout  = 5 * time.Second
@@ -82,6 +83,10 @@ func ConnectWebsocketPeer(url string, serialization serialize.Serialization, tls
 		protocol = msgpackWebsocketProtocol
 		payloadType = websocket.BinaryMessage
 		serializer = &serialize.MessagePackSerializer{}
+	case serialize.CBOR:
+		protocol = cborWebsocketProtocol
+		payloadType = websocket.BinaryMessage
+		serializer = &serialize.CBORSerializer{}
 	default:
 		return nil, fmt.Errorf("unsupported serialization: %v", serialization)
 	}

@@ -19,6 +19,8 @@ test:
 	go test -race ./aat -scheme=unix
 	go test ./aat -scheme=ws -serialize=msgpack
 	go test ./aat -scheme=tcp -serialize=msgpack
+	go test ./aat -scheme=ws -serialize=cbor
+	go test ./aat -scheme=tcp -serialize=cbor
 	go test ./aat -scheme=wss
 	go test ./aat -scheme=tcps
 

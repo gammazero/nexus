@@ -20,6 +20,7 @@ import (
 const (
 	jsonWebsocketProtocol    = "wamp.2.json"
 	msgpackWebsocketProtocol = "wamp.2.msgpack"
+	cborWebsocketProtocol    = "wamp.2.cbor"
 )
 
 type protocol struct {
@@ -110,6 +111,8 @@ func NewWebsocketServer(r Router) *WebsocketServer {
 		&serialize.JSONSerializer{})
 	s.addProtocol(msgpackWebsocketProtocol, websocket.BinaryMessage,
 		&serialize.MessagePackSerializer{})
+	s.addProtocol(cborWebsocketProtocol, websocket.BinaryMessage,
+		&serialize.CBORSerializer{})
 
 	return s
 }
@@ -264,6 +267,9 @@ func (s *WebsocketServer) handleWebsocket(conn *websocket.Conn, transportDetails
 			payloadType = websocket.TextMessage
 		case msgpackWebsocketProtocol:
 			serializer = &serialize.MessagePackSerializer{}
+			payloadType = websocket.BinaryMessage
+		case cborWebsocketProtocol:
+			serializer = &serialize.CBORSerializer{}
 			payloadType = websocket.BinaryMessage
 		default:
 			conn.Close()

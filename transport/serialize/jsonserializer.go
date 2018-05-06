@@ -2,32 +2,43 @@ package serialize
 
 import (
 	"encoding/base64"
-	"encoding/json"
 	"errors"
 
 	"github.com/gammazero/nexus/wamp"
+	"github.com/ugorji/go/codec"
 )
 
-// JSONSerializer is an implementation of Serializer that handles serializing
-// and deserializing JSON encoded payloads.
+// JSONSerializer is an implementation of Serializer that handles
+// serializing and deserializing json encoded payloads.
 type JSONSerializer struct{}
 
-// Serialize encodes a message into a JSON payload.
+// Serialize encodes a Message into a json payload.
 func (s *JSONSerializer) Serialize(msg wamp.Message) ([]byte, error) {
-	return json.Marshal(msgToList(msg))
+	var b []byte
+	jsh := &codec.JsonHandle{
+
+	}
+	return b, codec.NewEncoderBytes(&b, jsh).Encode(
+		msgToList(msg))
 }
 
-// Deserialize decodes a JSON payload into a message.
+// Deserialize decodes a json payload into a Message.
 func (s *JSONSerializer) Deserialize(data []byte) (wamp.Message, error) {
 	var v []interface{}
-	if err := json.Unmarshal(data, &v); err != nil {
+	jsh := &codec.JsonHandle{
+
+	}
+	err := codec.NewDecoderBytes(data, jsh).Decode(&v)
+	if err != nil {
 		return nil, err
 	}
 	if len(v) == 0 {
 		return nil, errors.New("invalid message")
 	}
 
-	typ, ok := v[0].(float64)
+	// json deserializer gives us an uint64 instead of an int64, whyever
+	// it doesn't matter here, because valid values are only within an 8bit range.
+	typ, ok := v[0].(uint64)
 	if !ok {
 		return nil, errors.New("unsupported message format")
 	}
@@ -45,12 +56,15 @@ type BinaryData []byte
 
 func (b BinaryData) MarshalJSON() ([]byte, error) {
 	s := base64.StdEncoding.EncodeToString([]byte(b))
-	return json.Marshal("\x00" + s)
+	var out []byte
+	jsh := &codec.JsonHandle{}
+	return out, codec.NewEncoderBytes(&out, jsh).Encode("\x00" + s)
 }
 
 func (b *BinaryData) UnmarshalJSON(v []byte) error {
 	var s string
-	err := json.Unmarshal(v, &s)
+	jsh := &codec.JsonHandle{}
+	err := codec.NewDecoderBytes(v, jsh).Decode(&s)
 	if err != nil {
 		return nil
 	}
