@@ -15,19 +15,14 @@ type JSONSerializer struct{}
 // Serialize encodes a Message into a json payload.
 func (s *JSONSerializer) Serialize(msg wamp.Message) ([]byte, error) {
 	var b []byte
-	jsh := &codec.JsonHandle{
-
-	}
-	return b, codec.NewEncoderBytes(&b, jsh).Encode(
-		msgToList(msg))
+	jsh := &codec.JsonHandle{}
+	return b, codec.NewEncoderBytes(&b, jsh).Encode(msgToList(msg))
 }
 
 // Deserialize decodes a json payload into a Message.
 func (s *JSONSerializer) Deserialize(data []byte) (wamp.Message, error) {
 	var v []interface{}
-	jsh := &codec.JsonHandle{
-
-	}
+	jsh := &codec.JsonHandle{}
 	err := codec.NewDecoderBytes(data, jsh).Decode(&v)
 	if err != nil {
 		return nil, err
@@ -36,8 +31,8 @@ func (s *JSONSerializer) Deserialize(data []byte) (wamp.Message, error) {
 		return nil, errors.New("invalid message")
 	}
 
-	// json deserializer gives us an uint64 instead of an int64, whyever
-	// it doesn't matter here, because valid values are only within an 8bit range.
+	// json deserializer gives us an uint64 instead of an int64, whyever it
+	// doesn't matter here, because valid values are only within an 8bit range.
 	typ, ok := v[0].(uint64)
 	if !ok {
 		return nil, errors.New("unsupported message format")
