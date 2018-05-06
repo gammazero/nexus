@@ -194,6 +194,7 @@ func (w *websocketPeer) sendHandler() {
 		b, err := w.serializer.Serialize(msg.(wamp.Message))
 		if err != nil {
 			w.log.Print(err)
+			continue
 		}
 
 		if err = w.conn.WriteMessage(w.payloadType, b); err != nil {
