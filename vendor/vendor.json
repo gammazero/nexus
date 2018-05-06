@@ -9,10 +9,10 @@
 			"revisionTime": "2017-07-18T20:23:41Z"
 		},
 		{
-			"checksumSHA1": "0FCBLTqGOxgifAKfS0360iLTZR4=",
+			"checksumSHA1": "kdas0zQNtQqfUMEMFGkUF1OcgPc=",
 			"path": "github.com/ugorji/go/codec",
-			"revision": "8c0409fcbb70099c748d71f714529204975f6c3f",
-			"revisionTime": "2017-08-26T15:59:43Z"
+			"revision": "f3cacc17c85ecb7f1b6a9e373ee85d1480919868",
+			"revisionTime": "2018-04-07T10:30:00Z"
 		},
 		{
 			"checksumSHA1": "1MGpGDQqnUoRpv7VEcQrXOBydXE=",
