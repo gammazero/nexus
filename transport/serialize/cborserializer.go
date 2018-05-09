@@ -2,6 +2,7 @@ package serialize
 
 import (
 	"errors"
+	"reflect"
 
 	"github.com/gammazero/nexus/wamp"
 	"github.com/ugorji/go/codec"
@@ -15,6 +16,7 @@ type CBORSerializer struct{}
 func (s *CBORSerializer) Serialize(msg wamp.Message) ([]byte, error) {
 	var b []byte
 	cbh := &codec.CborHandle{}
+	cbh.MapType = reflect.TypeOf(map[string]interface{}(nil))
 	return b, codec.NewEncoderBytes(&b, cbh).Encode(msgToList(msg))
 }
 
@@ -22,6 +24,7 @@ func (s *CBORSerializer) Serialize(msg wamp.Message) ([]byte, error) {
 func (s *CBORSerializer) Deserialize(data []byte) (wamp.Message, error) {
 	var v []interface{}
 	cbh := &codec.CborHandle{}
+	cbh.MapType = reflect.TypeOf(map[string]interface{}(nil))
 	err := codec.NewDecoderBytes(data, cbh).Decode(&v)
 	if err != nil {
 		return nil, err

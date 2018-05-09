@@ -2,6 +2,7 @@ package serialize
 
 import (
 	"errors"
+	"reflect"
 
 	"github.com/gammazero/nexus/wamp"
 	"github.com/ugorji/go/codec"
@@ -17,6 +18,7 @@ func (s *MessagePackSerializer) Serialize(msg wamp.Message) ([]byte, error) {
 	mph := &codec.MsgpackHandle{
 		RawToString: true,
 	}
+	mph.MapType = reflect.TypeOf(map[string]interface{}(nil))
 	return b, codec.NewEncoderBytes(&b, mph).Encode(
 		msgToList(msg))
 }
@@ -27,6 +29,7 @@ func (s *MessagePackSerializer) Deserialize(data []byte) (wamp.Message, error) {
 	mph := &codec.MsgpackHandle{
 		RawToString: true,
 	}
+	mph.MapType = reflect.TypeOf(map[string]interface{}(nil))
 	err := codec.NewDecoderBytes(data, mph).Decode(&v)
 	if err != nil {
 		return nil, err
