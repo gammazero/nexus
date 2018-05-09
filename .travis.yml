@@ -8,6 +8,7 @@ go:
 
 before_script:
   - go get github.com/fortytw2/leaktest
+  - go get github.com/davecgh/go-spew/spew
   - go tool vet -all -composites=false -shadow=true aat client transport examples nexusd transport wamp router
 
 script:
