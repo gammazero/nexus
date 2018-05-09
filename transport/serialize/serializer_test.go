@@ -8,6 +8,7 @@ import (
 	"reflect"
 	"testing"
 
+	"github.com/davecgh/go-spew/spew"
 	"github.com/gammazero/nexus/wamp"
 )
 
@@ -289,10 +290,13 @@ func TestMsgToList(t *testing.T) {
 
 func TestMsgPackToJSON(t *testing.T) {
 	arg := "this is a test"
+	arg2 := map[string]interface{}{
+		"hello": "world",
+	}
 	pub := &wamp.Publish{
 		Request:   123,
 		Topic:     "msgpack.to.json",
-		Arguments: wamp.List{arg},
+		Arguments: wamp.List{arg, arg2},
 	}
 	ms := &MessagePackSerializer{}
 	b, err := ms.Serialize(pub)
@@ -338,12 +342,17 @@ func TestMsgPackToJSON(t *testing.T) {
 	if e2.Publication != wamp.ID(123) {
 		t.Fatal("JSON deserialization error: wrong publication ID")
 	}
-	if len(e2.Arguments) != 1 {
+	if len(e2.Arguments) != 2 {
 		t.Fatal("JSON deserialization error: wrong number of arguments")
 	}
 	a, _ := wamp.AsString(e2.Arguments[0])
 	if string(a) != arg {
 		t.Fatal("JSON deserialize error: did not get argument, got:", e2.Arguments[0])
+	}
+	arr, ok := e2.Arguments[1].(map[string]interface{})
+	if !ok || !reflect.DeepEqual(arr, arg2) {
+		spew.Dump(e2.Arguments[1])
+		t.Fatal("JSON deserialize error, expected dict, got: ", e2.Arguments[1])
 	}
 }
 

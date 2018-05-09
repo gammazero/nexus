@@ -3,6 +3,7 @@ package serialize
 import (
 	"encoding/base64"
 	"errors"
+	"reflect"
 
 	"github.com/gammazero/nexus/wamp"
 	"github.com/ugorji/go/codec"
@@ -16,6 +17,7 @@ type JSONSerializer struct{}
 func (s *JSONSerializer) Serialize(msg wamp.Message) ([]byte, error) {
 	var b []byte
 	jsh := &codec.JsonHandle{}
+	jsh.MapType = reflect.TypeOf(map[string]interface{}(nil))
 	return b, codec.NewEncoderBytes(&b, jsh).Encode(msgToList(msg))
 }
 
@@ -23,6 +25,7 @@ func (s *JSONSerializer) Serialize(msg wamp.Message) ([]byte, error) {
 func (s *JSONSerializer) Deserialize(data []byte) (wamp.Message, error) {
 	var v []interface{}
 	jsh := &codec.JsonHandle{}
+	jsh.MapType = reflect.TypeOf(map[string]interface{}(nil))
 	err := codec.NewDecoderBytes(data, jsh).Decode(&v)
 	if err != nil {
 		return nil, err
