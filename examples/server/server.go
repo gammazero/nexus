@@ -10,6 +10,7 @@ import (
 	"os"
 	"os/signal"
 	"path"
+	"time"
 
 	"github.com/gammazero/nexus/router"
 	"github.com/gammazero/nexus/wamp"
@@ -45,10 +46,12 @@ func main() {
 
 	// Create websocket server.
 	wss := router.NewWebsocketServer(nxr)
-	// Enable websocket compression, which will be used if clients request it.
+	// Enable websocket compression, which is used if clients request it.
 	wss.Upgrader.EnableCompression = true
 	// Configure server to send and look for client tracking cookie.
 	wss.EnableTrackingCookie = true
+	// Set keep-alive period to 30 seconds.
+	wss.KeepAlive = 30 * time.Second
 
 	// Create rawsocket server.
 	rss := router.NewRawSocketServer(nxr, 0, 0)
