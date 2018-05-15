@@ -17,16 +17,16 @@ type RawSocketServer struct {
 
 	log       stdlog.StdLog
 	recvLimit int
-	keepalive time.Duration
+	keepAlive time.Duration
 }
 
 // NewRawSocketServer takes a router instance and creates a new socket server.
-func NewRawSocketServer(r Router, recvLimit int, keepalive time.Duration) *RawSocketServer {
+func NewRawSocketServer(r Router, recvLimit int, keepAlive time.Duration) *RawSocketServer {
 	return &RawSocketServer{
 		router:    r,
 		log:       r.Logger(),
 		recvLimit: recvLimit,
-		keepalive: keepalive,
+		keepAlive: keepAlive,
 	}
 }
 
@@ -87,9 +87,9 @@ func (s *RawSocketServer) requestHandler(l net.Listener) {
 			return
 		}
 		if tcpConn, ok := conn.(*net.TCPConn); ok {
-			if s.keepalive != 0 {
+			if s.keepAlive != 0 {
 				tcpConn.SetKeepAlive(true)
-				tcpConn.SetKeepAlivePeriod(s.keepalive)
+				tcpConn.SetKeepAlivePeriod(s.keepAlive)
 			} else {
 				tcpConn.SetKeepAlive(false)
 			}

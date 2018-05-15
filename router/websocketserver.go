@@ -9,6 +9,7 @@ import (
 	"io"
 	"net"
 	"net/http"
+	"time"
 
 	"github.com/gammazero/nexus/stdlog"
 	"github.com/gammazero/nexus/transport"
@@ -76,6 +77,10 @@ type WebsocketServer struct {
 	// Details.transport.auth.request|*http.Request and is available to
 	// auth/authz logic.
 	EnableRequestCapture bool
+
+	// KeepAlive is the time passed to TCPConn.SetKeepAlivePeriod().  If not
+	// specified, default system keep-alive settings are used.
+	KeepAlive time.Duration
 }
 
 // NewWebsocketServer takes a router instance and creates a new websocket
@@ -117,7 +122,7 @@ func NewWebsocketServer(r Router) *WebsocketServer {
 	return s
 }
 
-// DEPRICATED - Set WebsocketServer.Upgrader and WebsockServer.EnableX members
+// DEPRICATED - Set WebsocketServer.Upgrader and WebsockServer.Xxx members
 // directly.
 func (s *WebsocketServer) SetConfig(wsCfg transport.WebsocketConfig) {
 	s.Upgrader.EnableCompression = wsCfg.EnableCompression
@@ -235,6 +240,12 @@ func (s *WebsocketServer) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, err.Error(), http.StatusBadRequest)
 		return
 	}
+
+	if s.KeepAlive != 0 {
+		conn.UnderlyingConn().(*net.TCPConn).SetKeepAlive(true)
+		conn.UnderlyingConn().(*net.TCPConn).SetKeepAlivePeriod(s.KeepAlive)
+	}
+
 	s.handleWebsocket(conn, wamp.Dict{"auth": authDict})
 }
 
