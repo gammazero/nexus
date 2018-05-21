@@ -568,8 +568,6 @@ func disclosePublisher(pub *wamp.Session, details wamp.Dict) {
 	features := []string{
 		"authrole",
 		"authid",
-		"authmethod",
-		"authextra",
 	}
 	for _, f := range features {
 		val, ok := pub.Details[f]
