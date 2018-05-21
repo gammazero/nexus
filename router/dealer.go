@@ -582,7 +582,7 @@ func (d *Dealer) call(caller *wamp.Session, msg *wamp.Call) {
 	// If the callee has requested disclosure of caller identity when the
 	// registration was created, and this was allowed by the dealer.
 	if reg.disclose {
-		details[roleCaller] = caller.ID
+		discloseCaller(caller, details)
 	} else {
 		// A Caller MAY request the disclosure of its identity (its WAMP
 		// session ID) to endpoints of a routed call.  This is indicated by the
@@ -598,7 +598,7 @@ func (d *Dealer) call(caller *wamp.Session, msg *wamp.Call) {
 				})
 			}
 			if callee.HasFeature(roleCallee, featureCallerIdent) {
-				details[roleCaller] = caller.ID
+				discloseCaller(caller, details)
 			}
 		}
 	}
@@ -1092,4 +1092,20 @@ func (d *Dealer) trySend(sess *wamp.Session, msg wamp.Message) bool {
 		return false
 	}
 	return true
+}
+
+func discloseCaller(caller *wamp.Session, details wamp.Dict) {
+	details[roleCaller] = caller.ID
+	features := []string{
+		"authrole",
+		"authid",
+		"authmethod",
+		"authextra",
+	}
+	for _, f := range features {
+		val, ok := caller.Details[f]
+		if ok {
+			details[fmt.Sprintf("%s_%s", roleCaller, f)] = val
+		}
+	}
 }

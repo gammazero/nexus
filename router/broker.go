@@ -457,7 +457,7 @@ func (b *Broker) pubEvent(pub *wamp.Session, msg *wamp.Publish, pubID wamp.ID, s
 		}
 
 		if disclose && sub.HasFeature(roleSub, featurePubIdent) {
-			details[rolePub] = pub.ID
+			disclosePublisher(pub, details)
 		}
 
 		// TODO: Handle publication trust levels
@@ -561,4 +561,20 @@ func (b *Broker) trySend(sess *wamp.Session, msg wamp.Message) bool {
 		return false
 	}
 	return true
+}
+
+func disclosePublisher(pub *wamp.Session, details wamp.Dict) {
+	details[rolePub] = pub.ID
+	features := []string{
+		"authrole",
+		"authid",
+		"authmethod",
+		"authextra",
+	}
+	for _, f := range features {
+		val, ok := pub.Details[f]
+		if ok {
+			details[fmt.Sprintf("%s_%s", rolePub, f)] = val
+		}
+	}
 }
