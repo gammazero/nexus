@@ -563,11 +563,12 @@ func (b *Broker) trySend(sess *wamp.Session, msg wamp.Message) bool {
 	return true
 }
 
+// disclosePublisher adds publisher identity information to EVENT.Details.
 func disclosePublisher(pub *wamp.Session, details wamp.Dict) {
 	details[rolePub] = pub.ID
 	features := []string{
-		"authrole",
 		"authid",
+		"authrole",
 	}
 	for _, f := range features {
 		val, ok := pub.Details[f]

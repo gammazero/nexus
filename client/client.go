@@ -361,7 +361,7 @@ func (c *Client) Unsubscribe(topic string) error {
 // where xxx is the name of any session attribute, typically supplied with the
 // HELLO message.
 //
-// To request that publisher's identity is disclosed to subscribers, set:
+// To request that this publisher's identity is disclosed to subscribers, set:
 //   options["disclose_me"] = true
 //
 // NOTE: Use consts defined in wamp/options.go instead of raw strings.
@@ -429,7 +429,7 @@ type InvocationHandler func(context.Context, wamp.List, wamp.Dict, wamp.Dict) (r
 // To request a shared registration pattern set:
 //   options["invoke"] = "single", "roundrobin", "random", "first", "last"
 //
-// To request that caller identification is disclosed to callees:
+// To request that caller identification is disclosed to this callee, set:
 //   options["disclose_caller"] = true
 //
 // NOTE: Use consts defined in wamp/options.go instead of raw strings.
@@ -586,7 +586,7 @@ func (c *Client) Unregister(procedure string) error {
 // A caller may request the disclosure of its identity (its WAMP session ID) to
 // callees, if allowed by the dealer.
 //
-// To request that this caller's identity by disclosed:
+// To request that this caller's identity disclosed to callees, set:
 //   options["disclose_me"] = true
 //
 // NOTE: Use consts defined in wamp/options.go instead of raw strings.

@@ -200,8 +200,8 @@ func (d *Dealer) Register(callee *wamp.Session, msg *wamp.Register) {
 
 	// If callee requests disclosure of caller identity, but dealer does not
 	// allow, then send error as registration response.
-	discloseCaller := wamp.OptionFlag(msg.Options, wamp.OptDiscloseCaller)
-	if !d.allowDisclose && discloseCaller {
+	disclose := wamp.OptionFlag(msg.Options, wamp.OptDiscloseCaller)
+	if !d.allowDisclose && disclose {
 		d.trySend(callee, &wamp.Error{
 			Type:    msg.MessageType(),
 			Request: msg.Request,
@@ -213,7 +213,7 @@ func (d *Dealer) Register(callee *wamp.Session, msg *wamp.Register) {
 
 	invoke := wamp.OptionString(msg.Options, wamp.OptInvoke)
 	d.actionChan <- func() {
-		d.register(callee, msg, match, invoke, discloseCaller, wampURI)
+		d.register(callee, msg, match, invoke, disclose, wampURI)
 	}
 }
 
@@ -313,7 +313,7 @@ func (d *Dealer) run() {
 	}
 }
 
-func (d *Dealer) register(callee *wamp.Session, msg *wamp.Register, match, invokePolicy string, discloseCaller, wampURI bool) {
+func (d *Dealer) register(callee *wamp.Session, msg *wamp.Register, match, invokePolicy string, disclose, wampURI bool) {
 	var reg *registration
 	switch match {
 	default:
@@ -337,7 +337,7 @@ func (d *Dealer) register(callee *wamp.Session, msg *wamp.Register, match, invok
 			created:   created,
 			match:     match,
 			policy:    invokePolicy,
-			disclose:  discloseCaller,
+			disclose:  disclose,
 			callees:   []*wamp.Session{callee},
 		}
 		d.registrations[regID] = reg
@@ -1094,11 +1094,12 @@ func (d *Dealer) trySend(sess *wamp.Session, msg wamp.Message) bool {
 	return true
 }
 
+// discloseCaller adds caller identity information to INVOCATION.Details.
 func discloseCaller(caller *wamp.Session, details wamp.Dict) {
 	details[roleCaller] = caller.ID
 	features := []string{
-		"authrole",
 		"authid",
+		"authrole",
 	}
 	for _, f := range features {
 		val, ok := caller.Details[f]
