@@ -3,10 +3,10 @@
 	"ignore": "test",
 	"package": [
 		{
-			"checksumSHA1": "8KawKW6FJguwWz5cPvMg/ChmepE=",
+			"checksumSHA1": "mB5P3/XIC7r4Jc0/K86NA9Jq2CA=",
 			"path": "github.com/gorilla/websocket",
-			"revision": "a69d9f6de432e2c6b296a947d8a5ee88f68522cf",
-			"revisionTime": "2017-07-18T20:23:41Z"
+			"revision": "21ab95fa12b9bdd8fecf5fa3586aad941cc98785",
+			"revisionTime": "2018-04-20T17:16:12Z"
 		},
 		{
 			"checksumSHA1": "kdas0zQNtQqfUMEMFGkUF1OcgPc=",
