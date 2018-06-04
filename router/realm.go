@@ -776,77 +776,86 @@ func (r *realm) sessionGet(msg *wamp.Invocation) wamp.Message {
 }
 
 func (r *realm) testamentFlush(msg *wamp.Invocation) wamp.Message {
-	caller, ok := msg.Details["caller"].(uint64)
-	if !ok {
+	makeErr := func(uri wamp.URI) *wamp.Error {
 		return &wamp.Error{
-			Error: wamp.ErrInvalidArgument,
+			Type:    wamp.INVOCATION,
+			Request: msg.Request,
+			Details: wamp.Dict{},
+			Error:   uri,
 		}
 	}
-	scope, ok := msg.ArgumentsKw["scope"].(string)
+
+	caller, ok := wamp.AsID(msg.Details["caller"])
+	if !ok {
+		return makeErr(wamp.ErrInvalidArgument)
+	}
+	scope, ok := wamp.AsString(msg.ArgumentsKw["scope"])
 	if !ok || (scope != "destroyed" && scope != "detached") {
 		scope = "destroyed"
 	}
-	testaments, ok := r.testaments[wamp.ID(caller)]
+	testaments, ok := r.testaments[caller]
 	if ok {
 		if scope == "destroyed" {
 			testaments.destroyed = nil
 		} else {
 			testaments.detached = nil
 		}
-		r.testaments[wamp.ID(caller)] = testaments
+		r.testaments[caller] = testaments
 	}
 	return &wamp.Yield{Request: msg.Request}
 }
 
 func (r *realm) testamentAdd(msg *wamp.Invocation) wamp.Message {
-	caller, ok := msg.Details["caller"].(uint64)
+	makeErr := func(uri wamp.URI) *wamp.Error {
+		return &wamp.Error{
+			Type:    wamp.INVOCATION,
+			Request: msg.Request,
+			Details: wamp.Dict{},
+			Error:   uri,
+		}
+	}
+
+	caller, ok := wamp.AsID(msg.Details["caller"])
 	if !ok || len(msg.Arguments) < 3 {
-		return &wamp.Error{
-			Error: wamp.ErrInvalidArgument,
-		}
+		return makeErr(wamp.ErrInvalidArgument)
 	}
-	topic, ok := msg.Arguments[0].(string)
+	topic, ok := wamp.AsURI(msg.Arguments[0])
 	if !ok {
-		return &wamp.Error{
-			Error: wamp.ErrInvalidArgument,
-		}
+		fmt.Printf("invalid topic")
+		return makeErr(wamp.ErrInvalidArgument)
 	}
-	args, ok := msg.Arguments[1].([]interface{})
+	args, ok := wamp.AsList(msg.Arguments[1])
 	if !ok {
-		return &wamp.Error{
-			Error: wamp.ErrInvalidArgument,
-		}
+		fmt.Printf("invalid args")
+		return makeErr(wamp.ErrInvalidArgument)
 	}
-	kwargs, ok := msg.Arguments[2].(map[string]interface{})
+	kwargs, ok := wamp.AsDict(msg.Arguments[2])
 	if !ok {
-		return &wamp.Error{
-			Error: wamp.ErrInvalidArgument,
-		}
+		return makeErr(wamp.ErrInvalidArgument)
 	}
-	options, ok := msg.ArgumentsKw["publish_options"].(map[string]interface{})
+	options, ok := wamp.AsDict(msg.ArgumentsKw["publish_options"])
 	if !ok {
-		options = map[string]interface{}{}
+		options = wamp.Dict{}
 	}
-	scope, ok := msg.ArgumentsKw["scope"].(string)
+	scope, ok := wamp.AsString(msg.ArgumentsKw["scope"])
 	if !ok || (scope != "destroyed" && scope != "detached") {
 		scope = "destroyed"
 	}
-	cid := wamp.ID(caller)
 	// a map returns the "zero value" if a key doesn't exist, so there are nils for the arrays
 	// which are equal to empty arrays
-	testaments := r.testaments[cid]
+	testaments := r.testaments[caller]
 	t := testament{
-		args:    wamp.List(args),
-		kwargs:  wamp.Dict(kwargs),
-		options: wamp.Dict(options),
-		topic:   wamp.URI(topic),
+		args:    args,
+		kwargs:  kwargs,
+		options: options,
+		topic:   topic,
 	}
 	if scope == "destroyed" {
 		testaments.destroyed = append(testaments.destroyed, t)
 	} else {
 		testaments.detached = append(testaments.detached, t)
 	}
-	r.testaments[cid] = testaments
+	r.testaments[caller] = testaments
 	return &wamp.Yield{Request: msg.Request}
 }
 
