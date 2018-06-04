@@ -201,7 +201,8 @@ func (d *Dealer) Register(callee *wamp.Session, msg *wamp.Register) {
 	// If callee requests disclosure of caller identity, but dealer does not
 	// allow, then send error as registration response.
 	disclose := wamp.OptionFlag(msg.Options, wamp.OptDiscloseCaller)
-	if !d.allowDisclose && disclose {
+	// allow disclose for trusted clients
+	if !d.allowDisclose && disclose && authrole != "trusted" {
 		d.trySend(callee, &wamp.Error{
 			Type:    msg.MessageType(),
 			Request: msg.Request,

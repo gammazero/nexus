@@ -31,6 +31,17 @@ type RealmConfig struct {
 	RequireLocalAuth bool `json:"require_local_auth"`
 }
 
+type testament struct {
+	topic   wamp.URI
+	args    wamp.List
+	kwargs  wamp.Dict
+	options wamp.Dict
+}
+type testamentBucket struct {
+	detached  []testament
+	destroyed []testament
+}
+
 // A Realm is a WAMP routing and administrative domain, optionally protected by
 // authentication and authorization.  WAMP messages are only routed within a
 // Realm.
@@ -44,7 +55,9 @@ type realm struct {
 	authenticators map[string]auth.Authenticator
 
 	// session ID -> Session
-	clients    map[wamp.ID]*wamp.Session
+	clients map[wamp.ID]*wamp.Session
+	// session ID -> testament
+	testaments map[wamp.ID]testamentBucket
 	clientStop chan struct{}
 
 	metaPeer  wamp.Peer
@@ -82,6 +95,7 @@ func newRealm(config *RealmConfig, broker *Broker, dealer *Dealer, logger stdlog
 		dealer:      dealer,
 		authorizer:  config.Authorizer,
 		clients:     map[wamp.ID]*wamp.Session{},
+		testaments:  map[wamp.ID]testamentBucket{},
 		clientStop:  make(chan struct{}),
 		actionChan:  make(chan func()),
 		metaIDGen:   new(wamp.IDGen),
@@ -201,6 +215,10 @@ func (r *realm) run() {
 	r.registerMetaProcedure(wamp.MetaProcRegListCallees, r.dealer.RegListCallees)
 	r.registerMetaProcedure(wamp.MetaProcRegCountCallees, r.dealer.RegCountCallees)
 
+	// Register to handle testament meta procedures.
+	r.registerMetaProcedure(wamp.MetaProcSessionAddTestament, r.testamentAdd)
+	r.registerMetaProcedure(wamp.MetaProcSessionFlushTestaments, r.testamentFlush)
+
 	go r.metaProcedureHandler()
 
 	for action := range r.actionChan {
@@ -291,6 +309,27 @@ func (r *realm) onLeave(sess *wamp.Session, shutdown bool) {
 	<-sync
 
 	if !shutdown {
+		if testaments, ok := r.testaments[sess.ID]; ok {
+			for _, testament := range testaments.detached {
+				r.metaPeer.Send(&wamp.Publish{
+					Request:     wamp.GlobalID(),
+					Topic:       testament.topic,
+					Arguments:   testament.args,
+					ArgumentsKw: testament.kwargs,
+					Options:     testament.options,
+				})
+			}
+			for _, testament := range testaments.destroyed {
+				r.metaPeer.Send(&wamp.Publish{
+					Request:     wamp.GlobalID(),
+					Topic:       testament.topic,
+					Arguments:   testament.args,
+					ArgumentsKw: testament.kwargs,
+					Options:     testament.options,
+				})
+			}
+			delete(r.testaments, sess.ID)
+		}
 		r.metaPeer.Send(&wamp.Publish{
 			Request:   wamp.GlobalID(),
 			Topic:     wamp.MetaEventSessionOnLeave,
@@ -564,7 +603,10 @@ func (r *realm) getAuthenticator(methods []string) (auth auth.Authenticator, aut
 
 func (r *realm) registerMetaProcedure(procedure wamp.URI, f func(*wamp.Invocation) wamp.Message) {
 	r.metaPeer.Send(&wamp.Register{
-		Request:   r.metaIDGen.Next(),
+		Request: r.metaIDGen.Next(),
+		Options: wamp.Dict{
+			"disclose_caller": true,
+		},
 		Procedure: procedure,
 	})
 	msg := <-r.metaPeer.Recv()
@@ -731,6 +773,81 @@ func (r *realm) sessionGet(msg *wamp.Invocation) wamp.Message {
 		Request:   msg.Request,
 		Arguments: wamp.List{output},
 	}
+}
+
+func (r *realm) testamentFlush(msg *wamp.Invocation) wamp.Message {
+	caller, ok := msg.Details["caller"].(uint64)
+	if !ok {
+		return &wamp.Error{
+			Error: wamp.ErrInvalidArgument,
+		}
+	}
+	scope, ok := msg.ArgumentsKw["scope"].(string)
+	if !ok || (scope != "destroyed" && scope != "detached") {
+		scope = "destroyed"
+	}
+	testaments, ok := r.testaments[wamp.ID(caller)]
+	if ok {
+		if scope == "destroyed" {
+			testaments.destroyed = nil
+		} else {
+			testaments.detached = nil
+		}
+		r.testaments[wamp.ID(caller)] = testaments
+	}
+	return &wamp.Yield{Request: msg.Request}
+}
+
+func (r *realm) testamentAdd(msg *wamp.Invocation) wamp.Message {
+	caller, ok := msg.Details["caller"].(uint64)
+	if !ok || len(msg.Arguments) < 3 {
+		return &wamp.Error{
+			Error: wamp.ErrInvalidArgument,
+		}
+	}
+	topic, ok := msg.Arguments[0].(string)
+	if !ok {
+		return &wamp.Error{
+			Error: wamp.ErrInvalidArgument,
+		}
+	}
+	args, ok := msg.Arguments[1].([]interface{})
+	if !ok {
+		return &wamp.Error{
+			Error: wamp.ErrInvalidArgument,
+		}
+	}
+	kwargs, ok := msg.Arguments[2].(map[string]interface{})
+	if !ok {
+		return &wamp.Error{
+			Error: wamp.ErrInvalidArgument,
+		}
+	}
+	options, ok := msg.ArgumentsKw["publish_options"].(map[string]interface{})
+	if !ok {
+		options = map[string]interface{}{}
+	}
+	scope, ok := msg.ArgumentsKw["scope"].(string)
+	if !ok || (scope != "destroyed" && scope != "detached") {
+		scope = "destroyed"
+	}
+	cid := wamp.ID(caller)
+	// a map returns the "zero value" if a key doesn't exist, so there are nils for the arrays
+	// which are equal to empty arrays
+	testaments := r.testaments[cid]
+	t := testament{
+		args:    wamp.List(args),
+		kwargs:  wamp.Dict(kwargs),
+		options: wamp.Dict(options),
+		topic:   wamp.URI(topic),
+	}
+	if scope == "destroyed" {
+		testaments.destroyed = append(testaments.destroyed, t)
+	} else {
+		testaments.detached = append(testaments.detached, t)
+	}
+	r.testaments[cid] = testaments
+	return &wamp.Yield{Request: msg.Request}
 }
 
 // cleanSessionDetails removes transport.auth from the details.  This is done
