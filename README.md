@@ -25,7 +25,7 @@ Nexus is a software package that provides a WAMP router library, client library,
  - The router library can be used to build custom WAMP routers or to embed a WAMP router in an application.
  - The client library can be used to build clients that connect to any WAMP server, or to communicate in-process with a WAMP router embedded in the same application.
  - The router service can be run as-is to provide WAMP routing.
- 
+
 ### Nexus Features
 
 - **Concurrent Asynchronous I/O** Nexus supports large numbers of clients concurrently sending and receiving messages, and never blocks on I/O, even if a client becomes unresponsive.  See [Router Concurrency](https://github.com/gammazero/nexus/wiki/Router-Concurrency) for details.
@@ -69,7 +69,6 @@ These features listed here are being added.  If there are are specific items nee
 - more stress tests and benchmarks
 - more documentation
 - more advanced profile examples
-- testament_meta_api
 - event history
 - call trust levels
 - publisher trust levels
@@ -84,15 +83,15 @@ These features listed here are being added.  If there are are specific items nee
 | progressive_calls | No |
 | call_timeout | Yes |
 | call_canceling | Yes |
-| caller_identification | Yes | 
+| caller_identification | Yes |
 | call_trustlevels | No |
 | registration_meta_api | Yes
-| pattern_based_registration | Yes | 
+| pattern_based_registration | Yes |
 | shared_registration | Yes |
 | sharded_registration | No |
 | registration_revocation | No |
 | procedure_reflection | No |
- 
+
 ### PubSub Features
 
 | Feature | Supported |
@@ -106,12 +105,13 @@ These features listed here are being added.  If there are are specific items nee
 | sharded_subscription | No |
 | event_history | No |
 | topic_reflection | No |
+| testament_meta_api | Yes |
 
 ### Other Advanced Features
 
 | Feature | Supported |
 | ------- | --------- |
-| challenge-response authentication | Yes | 
+| challenge-response authentication | Yes |
 | cookie authentication | Yes |
 | ticket authentication | Yes |
 | rawsocket transport | Yes |
