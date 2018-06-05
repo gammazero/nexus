@@ -25,6 +25,12 @@ func TestMetaEventRegOnCreateRegOnRegister(t *testing.T) {
 		t.Fatal("Failed to connect client:", err)
 	}
 
+	// Check for feature support in router.
+	const featureRegMetaAPI = "registration_meta_api"
+	if !subscriber.HasFeature("dealer", featureRegMetaAPI) {
+		t.Error("Dealer does not have", featureRegMetaAPI, "feature")
+	}
+
 	var onCreateID, onCreateSessID wamp.ID
 	errChanC := make(chan error)
 	onCreateHandler := func(args wamp.List, kwargs wamp.Dict, details wamp.Dict) {

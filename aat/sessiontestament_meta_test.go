@@ -23,6 +23,12 @@ func TestAddTestament(t *testing.T) {
 		t.Fatal("Failed to connect client:", err)
 	}
 
+	// Check for feature support in router.
+	const featureTestamentMetaAPI = "testament_meta_api"
+	if !subscriber.HasFeature("dealer", featureTestamentMetaAPI) {
+		t.Error("Dealer does not have", featureTestamentMetaAPI, "feature")
+	}
+
 	errChan := make(chan error)
 	evtHandler := func(args wamp.List, kwargs wamp.Dict, details wamp.Dict) {
 		if len(args) == 0 {

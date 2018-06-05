@@ -125,6 +125,12 @@ func TestRPCCancelCall(t *testing.T) {
 		t.Fatal("Failed to connect client:", err)
 	}
 
+	// Check for feature support in router.
+	const featureCallCanceling = "call_canceling"
+	if !callee.HasFeature("dealer", featureCallCanceling) {
+		t.Error("Dealer does not have", featureCallCanceling, "feature")
+	}
+
 	invkCanceled := make(chan struct{}, 1)
 	// Register procedure that waits.
 	handler := func(ctx context.Context, args wamp.List, kwargs, details wamp.Dict) *client.InvokeResult {
@@ -208,6 +214,12 @@ func TestRPCTimeoutCall(t *testing.T) {
 	callee, err := connectClient()
 	if err != nil {
 		t.Fatal("Failed to connect client:", err)
+	}
+
+	// Check for feature support in router.
+	const featureCallTimeout = "call_timeout"
+	if !callee.HasFeature("dealer", featureCallTimeout) {
+		t.Error("Dealer does not have", featureCallTimeout, "feature")
 	}
 
 	invkCanceled := make(chan struct{}, 1)

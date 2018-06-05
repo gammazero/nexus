@@ -21,6 +21,12 @@ func TestRPCProgressiveCallResults(t *testing.T) {
 		t.Fatal("Failed to connect client:", err)
 	}
 
+	// Check for feature support in router.
+	const featureProgCallResults = "progressive_call_results"
+	if !callee.HasFeature("dealer", featureProgCallResults) {
+		t.Error("Dealer does not have", featureProgCallResults, "feature")
+	}
+
 	// Handler sends progressive results.
 	handler := func(ctx context.Context, args wamp.List, kwargs, details wamp.Dict) *client.InvokeResult {
 		e := callee.SendProgress(ctx, wamp.List{"Alpha"}, nil)
