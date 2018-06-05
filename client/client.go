@@ -223,6 +223,12 @@ type AuthFunc func(challenge *wamp.Challenge) (signature string, details wamp.Di
 // RealmDetails returns the realm information received in the WELCOME message.
 func (c *Client) RealmDetails() wamp.Dict { return c.sess.Details }
 
+// HasFeature returns true if the session has the specified feature for the
+// specified role.
+func (c *Client) HasFeature(role, feature string) bool {
+	return c.sess.HasFeature(role, feature)
+}
+
 // EventHandler is a function that handles a publish event.
 type EventHandler func(args wamp.List, kwargs wamp.Dict, details wamp.Dict)
 
