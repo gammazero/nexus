@@ -308,36 +308,32 @@ func (r *realm) onLeave(sess *wamp.Session, shutdown bool) {
 	}
 	<-sync
 
-	if !shutdown {
-		if testaments, ok := r.testaments[sess.ID]; ok {
-			for _, testament := range testaments.detached {
-				r.metaPeer.Send(&wamp.Publish{
-					Request:     wamp.GlobalID(),
-					Topic:       testament.topic,
-					Arguments:   testament.args,
-					ArgumentsKw: testament.kwargs,
-					Options:     testament.options,
-				})
-			}
-			for _, testament := range testaments.destroyed {
-				r.metaPeer.Send(&wamp.Publish{
-					Request:     wamp.GlobalID(),
-					Topic:       testament.topic,
-					Arguments:   testament.args,
-					ArgumentsKw: testament.kwargs,
-					Options:     testament.options,
-				})
-			}
-			delete(r.testaments, sess.ID)
-		}
-		r.metaPeer.Send(&wamp.Publish{
-			Request:   wamp.GlobalID(),
-			Topic:     wamp.MetaEventSessionOnLeave,
-			Arguments: wamp.List{sess.ID},
-		})
-	}
+	defer r.waitHandlers.Done()
 
-	r.waitHandlers.Done()
+	if shutdown {
+		return
+	}
+	if testaments, ok := r.testaments[sess.ID]; ok {
+		sendTestaments := func(testaments []testament) {
+			for i := range testaments {
+				r.metaPeer.Send(&wamp.Publish{
+					Request:     wamp.GlobalID(),
+					Topic:       testaments[i].topic,
+					Arguments:   testaments[i].args,
+					ArgumentsKw: testaments[i].kwargs,
+					Options:     testaments[i].options,
+				})
+			}
+		}
+		sendTestaments(testaments.detached)
+		sendTestaments(testaments.destroyed)
+		delete(r.testaments, sess.ID)
+	}
+	r.metaPeer.Send(&wamp.Publish{
+		Request:   wamp.GlobalID(),
+		Topic:     wamp.MetaEventSessionOnLeave,
+		Arguments: wamp.List{sess.ID},
+	})
 }
 
 // HandleSession starts a session attached to this realm.
@@ -775,6 +771,8 @@ func (r *realm) sessionGet(msg *wamp.Invocation) wamp.Message {
 	}
 }
 
+// testamentFlush removes all testaments for the invoking client.
+// it optionally takes a keyword argument "scope" set to "detached" or "destroyed"
 func (r *realm) testamentFlush(msg *wamp.Invocation) wamp.Message {
 	makeErr := func(uri wamp.URI) *wamp.Error {
 		return &wamp.Error{
@@ -790,8 +788,11 @@ func (r *realm) testamentFlush(msg *wamp.Invocation) wamp.Message {
 		return makeErr(wamp.ErrInvalidArgument)
 	}
 	scope, ok := wamp.AsString(msg.ArgumentsKw["scope"])
-	if !ok || (scope != "destroyed" && scope != "detached") {
+	if !ok || scope == "" {
 		scope = "destroyed"
+	}
+	if scope != "destroyed" && scope != "detached" {
+		return makeErr(wamp.ErrInvalidArgument)
 	}
 	testaments, ok := r.testaments[caller]
 	if ok {
@@ -805,6 +806,9 @@ func (r *realm) testamentFlush(msg *wamp.Invocation) wamp.Message {
 	return &wamp.Yield{Request: msg.Request}
 }
 
+// testamentAdd adds a new publication which is executed when the client is
+// detached (when session resumption is implemented) or destroyed (when the
+// transport is lost).
 func (r *realm) testamentAdd(msg *wamp.Invocation) wamp.Message {
 	makeErr := func(uri wamp.URI) *wamp.Error {
 		return &wamp.Error{
@@ -838,8 +842,11 @@ func (r *realm) testamentAdd(msg *wamp.Invocation) wamp.Message {
 		options = wamp.Dict{}
 	}
 	scope, ok := wamp.AsString(msg.ArgumentsKw["scope"])
-	if !ok || (scope != "destroyed" && scope != "detached") {
+	if !ok || scope == "" {
 		scope = "destroyed"
+	}
+	if scope != "destroyed" && scope != "detached" {
+		return makeErr(wamp.ErrInvalidArgument)
 	}
 	// a map returns the "zero value" if a key doesn't exist, so there are nils for the arrays
 	// which are equal to empty arrays
