@@ -16,7 +16,6 @@ const (
 	featurePubExclusion         = "publisher_exclusion"
 	featurePubIdent             = "publisher_identification"
 	featureSubMetaAPI           = "subscription_meta_api"
-	featureTestamentMetaAPI     = "testament_meta_api"
 
 	detailTopic = "topic"
 )
@@ -29,7 +28,6 @@ var brokerRole = wamp.Dict{
 		featurePubExclusion:         true,
 		featurePubIdent:             true,
 		featureSubMetaAPI:           true,
-		featureTestamentMetaAPI:     true,
 	},
 }
 

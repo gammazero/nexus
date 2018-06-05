@@ -14,25 +14,27 @@ const (
 	roleCallee = "callee"
 	roleCaller = "caller"
 
-	featureCallCanceling   = "call_canceling"
-	featureCallTimeout     = "call_timeout"
-	featureCallerIdent     = "caller_identification"
-	featurePatternBasedReg = "pattern_based_registration"
-	featureProgCallResults = "progressive_call_results"
-	featureSharedReg       = "shared_registration"
-	featureRegMetaAPI      = "registration_meta_api"
+	featureCallCanceling    = "call_canceling"
+	featureCallTimeout      = "call_timeout"
+	featureCallerIdent      = "caller_identification"
+	featurePatternBasedReg  = "pattern_based_registration"
+	featureProgCallResults  = "progressive_call_results"
+	featureSharedReg        = "shared_registration"
+	featureRegMetaAPI       = "registration_meta_api"
+	featureTestamentMetaAPI = "testament_meta_api"
 )
 
 // Role information for this broker.
 var dealerRole = wamp.Dict{
 	"features": wamp.Dict{
-		featureCallCanceling:   true,
-		featureCallTimeout:     true,
-		featureCallerIdent:     true,
-		featurePatternBasedReg: true,
-		featureProgCallResults: true,
-		featureSharedReg:       true,
-		featureRegMetaAPI:      true,
+		featureCallCanceling:    true,
+		featureCallTimeout:      true,
+		featureCallerIdent:      true,
+		featurePatternBasedReg:  true,
+		featureProgCallResults:  true,
+		featureSharedReg:        true,
+		featureRegMetaAPI:       true,
+		featureTestamentMetaAPI: true,
 	},
 }
 
