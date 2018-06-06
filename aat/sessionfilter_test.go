@@ -128,6 +128,13 @@ func TestBlacklistAttribute(t *testing.T) {
 	if err != nil {
 		t.Fatal("Failed to connect client:", err)
 	}
+
+	// Check for feature support in router.
+	const featureSubBlackWhiteListing = "subscriber_blackwhite_listing"
+	if !subscriber1.HasFeature("broker", featureSubBlackWhiteListing) {
+		t.Error("Broker does not have", featureSubBlackWhiteListing, "feature")
+	}
+
 	sync1 := make(chan struct{})
 	evtHandler1 := func(args wamp.List, kwargs wamp.Dict, details wamp.Dict) {
 		sync1 <- struct{}{}

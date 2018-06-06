@@ -28,6 +28,15 @@ func TestMetaEventOnJoin(t *testing.T) {
 		t.Fatal("Failed to connect client:", err)
 	}
 
+	// Check for feature support in router.
+	const featureSessionMetaAPI = "session_meta_api"
+	if !subscriber.HasFeature("broker", featureSessionMetaAPI) {
+		t.Error("Broker does not have", featureSessionMetaAPI, "feature")
+	}
+	if !subscriber.HasFeature("dealer", featureSessionMetaAPI) {
+		t.Error("Dealer does not have", featureSessionMetaAPI, "feature")
+	}
+
 	var onJoinID wamp.ID
 	errChan := make(chan error)
 	evtHandler := func(args wamp.List, kwargs wamp.Dict, details wamp.Dict) {

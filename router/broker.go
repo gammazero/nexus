@@ -8,13 +8,13 @@ import (
 )
 
 const (
-	roleSub = "subscriber"
 	rolePub = "publisher"
+	roleSub = "subscriber"
 
-	featureSubBlackWhiteListing = "subscriber_blackwhite_listing"
 	featurePatternSub           = "pattern_based_subscription"
 	featurePubExclusion         = "publisher_exclusion"
 	featurePubIdent             = "publisher_identification"
+	featureSubBlackWhiteListing = "subscriber_blackwhite_listing"
 	featureSubMetaAPI           = "subscription_meta_api"
 
 	detailTopic = "topic"
@@ -23,10 +23,11 @@ const (
 // Role information for this broker.
 var brokerRole = wamp.Dict{
 	"features": wamp.Dict{
-		featureSubBlackWhiteListing: true,
 		featurePatternSub:           true,
 		featurePubExclusion:         true,
 		featurePubIdent:             true,
+		featureSessionMetaAPI:       true,
+		featureSubBlackWhiteListing: true,
 		featureSubMetaAPI:           true,
 	},
 }

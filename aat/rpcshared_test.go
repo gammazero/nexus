@@ -17,6 +17,13 @@ func TestRPCSharedRoundRobin(t *testing.T) {
 	if err != nil {
 		t.Fatal("Failed to connect client:", err)
 	}
+
+	// Check for feature support in router.
+	const featureSharedReg = "shared_registration"
+	if !callee1.HasFeature("dealer", featureSharedReg) {
+		t.Error("Dealer does not have", featureSharedReg, "feature")
+	}
+
 	testProc1 := func(ctx context.Context, args wamp.List, kwargs, details wamp.Dict) *client.InvokeResult {
 		return &client.InvokeResult{Args: wamp.List{1}}
 	}

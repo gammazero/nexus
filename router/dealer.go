@@ -19,6 +19,7 @@ const (
 	featureCallerIdent      = "caller_identification"
 	featurePatternBasedReg  = "pattern_based_registration"
 	featureProgCallResults  = "progressive_call_results"
+	featureSessionMetaAPI   = "session_meta_api"
 	featureSharedReg        = "shared_registration"
 	featureRegMetaAPI       = "registration_meta_api"
 	featureTestamentMetaAPI = "testament_meta_api"
@@ -32,6 +33,7 @@ var dealerRole = wamp.Dict{
 		featureCallerIdent:      true,
 		featurePatternBasedReg:  true,
 		featureProgCallResults:  true,
+		featureSessionMetaAPI:   true,
 		featureSharedReg:        true,
 		featureRegMetaAPI:       true,
 		featureTestamentMetaAPI: true,

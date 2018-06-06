@@ -23,6 +23,12 @@ func TestMetaEventOnCreateOnSubscribe(t *testing.T) {
 		t.Fatal("Failed to connect client:", err)
 	}
 
+	// Check for feature support in router.
+	const featureSubMetaAPI = "subscription_meta_api"
+	if !subscriber.HasFeature("broker", featureSubMetaAPI) {
+		t.Error("Broker does not have", featureSubMetaAPI, "feature")
+	}
+
 	var onCreateID, onCreateSessID wamp.ID
 	errChanC := make(chan error)
 	onCreateHandler := func(args wamp.List, kwargs wamp.Dict, details wamp.Dict) {

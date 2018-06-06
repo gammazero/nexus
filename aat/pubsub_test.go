@@ -87,6 +87,12 @@ func TestPubSubWildcard(t *testing.T) {
 		t.Fatal("Failed to connect client:", err)
 	}
 
+	// Check for feature support in router.
+	const featurePatternSub = "pattern_based_subscription"
+	if !subscriber.HasFeature("broker", featurePatternSub) {
+		t.Error("Broker does not have", featurePatternSub, "feature")
+	}
+
 	errChan := make(chan error)
 	evtHandler := func(args wamp.List, kwargs wamp.Dict, details wamp.Dict) {
 		arg, _ := wamp.AsString(args[0])
