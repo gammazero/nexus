@@ -27,8 +27,12 @@ type RealmConfig struct {
 	// Authorizer called for each message.
 	Authorizer Authorizer
 	// Require authentication for local clients.  Normally local clients are
-	// always trusted.  Setting this treats local clients same as others.
+	// always trusted.  Setting this treats local clients the same as remote.
 	RequireLocalAuth bool `json:"require_local_auth"`
+	// Require authorization for local clients.  Normally local clients are
+	// always authorized, even when the router has an authorizer.  Setting this
+	// treats local clients the same as remote.
+	RequireLocalAuthz bool `json:"require_local_authz"`
 }
 
 type testament struct {
@@ -80,7 +84,8 @@ type realm struct {
 	log   stdlog.StdLog
 	debug bool
 
-	localAuth bool
+	localAuth  bool
+	localAuthz bool
 }
 
 // newRealm creates a new realm with the given RealmConfig, broker and dealer.
@@ -105,6 +110,7 @@ func newRealm(config *RealmConfig, broker *Broker, dealer *Dealer, logger stdlog
 		log:         logger,
 		debug:       debug,
 		localAuth:   config.RequireLocalAuth,
+		localAuthz:  config.RequireLocalAuthz,
 	}
 
 	r.authenticators = map[string]auth.Authenticator{}
@@ -467,6 +473,12 @@ func (r *realm) handleInboundMessages(sess *wamp.Session) (bool, error) {
 // authorization fails or if the session is not authorized, then an error
 // response is returned to the client, and this method returns false.
 func (r *realm) authzMessage(sess *wamp.Session, msg wamp.Message) bool {
+	// If the client is local, then do not check authorization, unless
+	// requested in config.
+	if transport.IsLocal(sess.Peer) && !r.localAuthz {
+		return true
+	}
+
 	isAuthz, err := r.authorizer.Authorize(sess, msg)
 	if !isAuthz {
 		errRsp := &wamp.Error{Type: msg.MessageType()}
