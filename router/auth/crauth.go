@@ -142,7 +142,7 @@ func (cr *CRAuthenticator) makeChallengeStr(session wamp.ID, authid, authrole st
 		cr.AuthMethod(), int(session)), nil
 }
 
-// nonce generates 16 randome bytes as a base64 encoded string.
+// nonce generates 16 random bytes as a base64 encoded string.
 func nonce() (string, error) {
 	b := make([]byte, 16)
 	_, err := rand.Read(b)

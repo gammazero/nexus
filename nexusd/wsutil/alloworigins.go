@@ -23,8 +23,12 @@ func AllowOrigins(origins []string) (func(r *http.Request) bool, error) {
 	}
 	var exacts, globs []string
 	for _, o := range origins {
-		// Do exact matching whenever possible, since it is more efficient and
-		// does not produce garbage.
+		// If allowing any origins, then return simple "true" function.
+		if o == "*" {
+			return func(r *http.Request) bool { return true }, nil
+		}
+
+		// Do exact matching whenever possible, since it is more efficient.
 		if strings.ContainsAny(o, "*?[]^") {
 			if _, err := filepath.Match(o, o); err != nil {
 				return nil, fmt.Errorf("error allowing origin, %s: %s", err, o)
