@@ -225,7 +225,7 @@ func (ks *serverKeyStore) AuthKey(authid, authmethod string) ([]byte, error) {
 	}
 	switch authmethod {
 	case "wampcra":
-		// Lookup the user'es key.
+		// Lookup the user's key.
 		pw := []byte(password)
 		salt := []byte(pwSalt)
 		return pbkdf2.Key(pw, salt, iterations, keylen, sha256.New), nil
