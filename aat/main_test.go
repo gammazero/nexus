@@ -172,6 +172,7 @@ func TestMain(m *testing.M) {
 		closer, err = s.ListenAndServeTLS("tcp", tcpAddr, nil, certPath, keyPath)
 		sockDesc = "TCP RAWSOCKETS + TLS"
 	case "unix":
+		os.Remove(unixAddr)
 		s := router.NewRawSocketServer(nxr, 0, 0)
 		closer, err = s.ListenAndServe(scheme, unixAddr)
 		addr = unixAddr

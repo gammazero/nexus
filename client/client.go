@@ -194,8 +194,7 @@ func NewClient(p wamp.Peer, cfg ClientConfig) (*Client, error) {
 		log:   cfg.Logger,
 		debug: cfg.Debug,
 	}
-	go c.run()
-	go c.receiveFromRouter()
+	go c.run() // start the core goroutine
 	return c, nil
 }
 
@@ -230,14 +229,14 @@ func (c *Client) HasFeature(role, feature string) bool {
 }
 
 // EventHandler is a function that handles a publish event.
-type EventHandler func(args wamp.List, kwargs wamp.Dict, details wamp.Dict)
+type EventHandler func(args wamp.List, kwargs, details wamp.Dict)
 
 // Subscribe subscribes the client to the specified topic or topic pattern.
 //
 // The specified EventHandler is registered to be called every time an event is
 // received for the topic.  The subscription can specify an exact event URI to
-// match or it can specify a URI pattern to match multiple events for the same
-// handler.
+// match, or it can specify a URI pattern to match multiple events for the same
+// handler by specifying the pattern type in options.
 //
 // Options
 //
@@ -264,7 +263,7 @@ func (c *Client) Subscribe(topic string, fn EventHandler, options wamp.Dict) err
 	}
 	switch msg := msg.(type) {
 	case *wamp.Subscribed:
-		// Register the event handler for this subscription.
+		// Register the event channel for this subscription.
 		sync := make(chan struct{})
 		c.actionChan <- func() {
 			c.eventHandlers[msg.Subscription] = fn
@@ -728,6 +727,28 @@ func (c *Client) Close() error {
 	return nil
 }
 
+func (c *Client) SendProgress(ctx context.Context, args wamp.List, kwArgs wamp.Dict) error {
+	reqChan := make(chan wamp.ID)
+	c.actionChan <- func() {
+		r, ok := c.progGate[ctx]
+		if ok {
+			reqChan <- r
+		} else {
+			close(reqChan)
+		}
+	}
+	req, canSendProg := <-reqChan
+	if !canSendProg {
+		return errors.New("caller not accepting progressive results")
+	}
+	return c.sess.Send(&wamp.Yield{
+		Request:     req,
+		Options:     wamp.Dict{wamp.OptProgress: true},
+		Arguments:   args,
+		ArgumentsKw: kwArgs,
+	})
+}
+
 // joinRealm joins a WAMP realm, handling challenge/response authentication if
 // needed.  The authHandlers portion of cfg supplies a map of WAMP authmethod
 // names to functions that handle each auth type.  This can be nil if router is
@@ -785,25 +806,19 @@ func joinRealm(peer wamp.Peer, cfg ClientConfig) (*wamp.Welcome, error) {
 // router.
 func (c *Client) leaveRealm() {
 	// Send GOODBYE to router.  The router will respond with a GOODBYE message
-	// which is handled by receiveFromRouter, and causes it to exit.
+	// which is handled by receiveFromRouter, and causes run() to exit.
 	c.sess.Send(&wamp.Goodbye{
 		Details: wamp.Dict{},
 		Reason:  wamp.ErrCloseRealm,
 	})
 
-	// Close the peer.  This causes receiveFromRouter to exit if it has not
-	// already done so after receiving GOODBYE from router.
+	// Close the peer.  This causes run() to exit if it has not already done so
+	// after receiving GOODBYE from router.
 	c.sess.Close()
 
-	// Wait for receiveFromRouter to exit.
+	// Wait for run() to exit.
 	<-c.done
 	// Elvis has left the building!
-}
-
-func (c *Client) run() {
-	for action := range c.actionChan {
-		action()
-	}
 }
 
 func handleCRAuth(peer wamp.Peer, challenge *wamp.Challenge, authHandlers map[string]AuthFunc, rspTimeout time.Duration) (wamp.Message, error) {
@@ -911,243 +926,6 @@ func unexpectedMsgError(msg wamp.Message, expected wamp.MessageType) error {
 	return errors.New(s)
 }
 
-// receiveFromRouter handles messages from the router until client closes.
-func (c *Client) receiveFromRouter() {
-	defer close(c.done)
-	if c.debug {
-		defer c.log.Println("Client", c.sess, "closed")
-	}
-	for msg := range c.sess.Recv() {
-		if c.debug {
-			c.log.Println("Client", c.sess, "received", msg.MessageType())
-		}
-		switch msg := msg.(type) {
-		case *wamp.Event:
-			c.handleEvent(msg)
-
-		case *wamp.Invocation:
-			c.handleInvocation(msg)
-		case *wamp.Interrupt:
-			c.handleInterrupt(msg)
-
-		case *wamp.Registered:
-			c.signalReply(msg, msg.Request)
-		case *wamp.Subscribed:
-			c.signalReply(msg, msg.Request)
-		case *wamp.Unsubscribed:
-			c.signalReply(msg, msg.Request)
-		case *wamp.Unregistered:
-			c.signalReply(msg, msg.Request)
-		case *wamp.Result:
-			c.signalReply(msg, msg.Request)
-		case *wamp.Published:
-			c.signalReply(msg, msg.Request)
-		case *wamp.Error:
-			c.signalReply(msg, msg.Request)
-
-		case *wamp.Goodbye:
-			return
-
-		default:
-			c.log.Println("Unhandled message from router:", msg.MessageType(), msg)
-		}
-	}
-}
-
-// handleEvent calls the event handler function a subscriber designated for
-// handling EVENT messages.
-//
-// The eventHandlers are called serially so that they execute in the same order
-// as the messages are received in.  This could not be guaranteed if executing
-// concurrently.
-func (c *Client) handleEvent(msg *wamp.Event) {
-	var handler EventHandler
-	var ok bool
-	sync := make(chan struct{})
-	c.actionChan <- func() {
-		handler, ok = c.eventHandlers[msg.Subscription]
-		close(sync)
-	}
-	<-sync
-	if !ok {
-		c.log.Println("No handler registered for subscription:",
-			msg.Subscription)
-		return
-	}
-	handler(msg.Arguments, msg.ArgumentsKw, msg.Details)
-}
-
-func (c *Client) SendProgress(ctx context.Context, args wamp.List, kwArgs wamp.Dict) error {
-	reqChan := make(chan wamp.ID)
-	c.actionChan <- func() {
-		r, ok := c.progGate[ctx]
-		if ok {
-			reqChan <- r
-		} else {
-			close(reqChan)
-		}
-	}
-	req, canSendProg := <-reqChan
-	if !canSendProg {
-		return errors.New("caller not accepting progressive results")
-	}
-	return c.sess.Send(&wamp.Yield{
-		Request:     req,
-		Options:     wamp.Dict{wamp.OptProgress: true},
-		Arguments:   args,
-		ArgumentsKw: kwArgs,
-	})
-}
-
-func (c *Client) handleInvocation(msg *wamp.Invocation) {
-	c.actionChan <- func() {
-		handler, ok := c.invHandlers[msg.Registration]
-		if !ok {
-			errMsg := fmt.Sprintf("Client has no handler for registration %v",
-				msg.Registration)
-			// The dealer has a procedure registered to this client, but this
-			// client does not recognize the registration ID.  This is not
-			// reported as ErrNoSuchProcedure, since the dealer has a procedure
-			// registered.  It is reported as ErrInvalidArgument to denote that
-			// the client has a problem with the registration ID argument.
-			c.sess.Send(&wamp.Error{
-				Type:      wamp.INVOCATION,
-				Request:   msg.Request,
-				Details:   wamp.Dict{},
-				Error:     wamp.ErrInvalidArgument,
-				Arguments: wamp.List{errMsg},
-			})
-			c.log.Print(errMsg)
-			return
-		}
-
-		// Create a kill switch so that invocation can be canceled.
-		var cancel context.CancelFunc
-		var ctx context.Context
-		timeout := wamp.OptionInt64(msg.Details, wamp.OptTimeout)
-		if timeout > 0 {
-			// The caller specified a timeout, in milliseconds.
-			ctx, cancel = context.WithTimeout(context.Background(),
-				time.Millisecond*time.Duration(timeout))
-		} else {
-			ctx, cancel = context.WithCancel(context.Background())
-		}
-		c.invHandlerKill[msg.Request] = cancel
-		c.activeInvHandlers.Add(1)
-
-		// If caller is accepting progressive results, create map entry to
-		// allow progress to be sent.
-		if wamp.OptionFlag(msg.Details, wamp.OptReceiveProgress) {
-			c.progGate[ctx] = msg.Request
-		}
-
-		go func() {
-			defer cancel()
-
-			// Create channel to hold result.  Channel must be buffered.
-			// Otherwise, canceling the call will leak the goroutine that is
-			// blocked forever waiting to send the result to the channel.
-			resChan := make(chan *InvokeResult, 1)
-			go func() {
-				// The Context is passed into the handler to tell the client
-				// application to stop whatever it is doing if it cares to pay
-				// attention.
-				resChan <- handler(ctx, msg.Arguments, msg.ArgumentsKw,
-					msg.Details)
-			}()
-
-			// Remove the kill switch when done processing invocation.
-			defer func() {
-				c.actionChan <- func() {
-					delete(c.invHandlerKill, msg.Request)
-					c.activeInvHandlers.Done()
-					delete(c.progGate, ctx)
-				}
-			}()
-
-			// Wait for the handler to finish or for the call be to canceled.
-			var result *InvokeResult
-			select {
-			case result = <-resChan:
-			case <-c.stopping:
-				c.log.Print("Client stopping, invocation handler canceled")
-				// Return without sending response to server.  This will also
-				// cancel the context.
-				return
-			case <-ctx.Done():
-				// Received an INTERRUPT message from the router.
-				// Note: handler is also just as likely to return on INTERRUPT.
-				result = &InvokeResult{Err: wamp.ErrCanceled}
-				c.log.Println("INVOCATION", msg.Request, "canceled")
-			}
-
-			if result.Err != "" {
-				// If the cancel is already deleted, this is the signal that
-				// kill mode was "killnowait", in which case do not send a
-				// response to the router.  Check is done here since a cancel
-				// can cause either the handler to return or ctx.Done() to
-				// close, indeterminately .
-				okChan := make(chan bool)
-				c.actionChan <- func() {
-					_, ok := c.invHandlerKill[msg.Request]
-					okChan <- ok
-				}
-				ok := <-okChan
-				if !ok {
-					return
-				}
-
-				c.sess.Send(&wamp.Error{
-					Type:        wamp.INVOCATION,
-					Request:     msg.Request,
-					Details:     wamp.Dict{},
-					Arguments:   result.Args,
-					ArgumentsKw: result.Kwargs,
-					Error:       result.Err,
-				})
-				return
-			}
-			c.sess.Send(&wamp.Yield{
-				Request:     msg.Request,
-				Options:     wamp.Dict{},
-				Arguments:   result.Args,
-				ArgumentsKw: result.Kwargs,
-			})
-		}()
-	}
-}
-
-// handleInterrupt processes an INTERRUPT message from the from the router
-// requesting that a pending call be canceled.
-func (c *Client) handleInterrupt(msg *wamp.Interrupt) {
-	c.actionChan <- func() {
-		cancel, ok := c.invHandlerKill[msg.Request]
-		if !ok {
-			c.log.Print("Received INTERRUPT for message that no longer exists")
-			return
-		}
-		// If the interrupt mode is "killnowait", then the router is not
-		// waiting for a response, so do not send one.  This is indicated by
-		// deleting the cancel for the invocation early.
-		if wamp.OptionString(msg.Options, wamp.OptMode) == wamp.CancelModeKillNoWait {
-			delete(c.invHandlerKill, msg.Request)
-		}
-		cancel()
-	}
-}
-
-func (c *Client) signalReply(msg wamp.Message, requestID wamp.ID) {
-	c.actionChan <- func() {
-		w, ok := c.awaitingReply[requestID]
-		if !ok {
-			c.log.Println("Received", msg.MessageType(), requestID,
-				"that client is no longer waiting for")
-			return
-		}
-		w <- msg
-	}
-}
-
 func (c *Client) expectReply(id wamp.ID) {
 	wait := make(chan wamp.Message, 1)
 	sync := make(chan struct{})
@@ -1231,4 +1009,236 @@ CollectResults:
 		delete(c.awaitingReply, id)
 	}
 	return msg, err
+}
+
+// run is the core client goroutine.  This handles messsages received from the
+// router and serializes access to all mutable state.
+func (c *Client) run() {
+	defer close(c.done)
+	if c.debug {
+		defer c.log.Println("Client", c.sess, "closed")
+	}
+	recvChan := c.sess.Recv()
+	for {
+		select {
+		case action, ok := <-c.actionChan:
+			if !ok {
+				return
+			}
+			action()
+		case msg, ok := <-recvChan:
+			if !ok {
+				return
+			}
+			if c.runReceiveFromRouter(msg) {
+				return
+			}
+		}
+	}
+}
+
+// ----------------------------------------------------------------------------
+// All functions below access internal mutable state and must be excuted by the
+// run() goroutine
+//
+
+// runReceiveFromRouter handles messages from the router.  Returns true if
+// client needs to close due to receiving GOODBYE from router.
+func (c *Client) runReceiveFromRouter(msg wamp.Message) bool {
+	if c.debug {
+		c.log.Println("Client", c.sess, "received", msg.MessageType())
+	}
+	switch msg := msg.(type) {
+	case *wamp.Event:
+		c.runHandleEvent(msg)
+
+	case *wamp.Invocation:
+		c.runHandleInvocation(msg)
+	case *wamp.Interrupt:
+		c.runHandleInterrupt(msg)
+
+	case *wamp.Registered:
+		c.runSignalReply(msg, msg.Request)
+	case *wamp.Subscribed:
+		c.runSignalReply(msg, msg.Request)
+	case *wamp.Unsubscribed:
+		c.runSignalReply(msg, msg.Request)
+	case *wamp.Unregistered:
+		c.runSignalReply(msg, msg.Request)
+	case *wamp.Result:
+		c.runSignalReply(msg, msg.Request)
+	case *wamp.Published:
+		c.runSignalReply(msg, msg.Request)
+	case *wamp.Error:
+		c.runSignalReply(msg, msg.Request)
+
+	case *wamp.Goodbye:
+		return true
+
+	default:
+		c.log.Println("Unhandled message from router:", msg.MessageType(), msg)
+	}
+	return false
+}
+
+// runHandleEvent calls the event handler function a subscriber designated for
+// handling EVENT messages.
+//
+// The eventHandlers are called serially so that they execute in the same order
+// as the messages are received in.  This could not be guaranteed if executing
+// concurrently in separate goroutines.
+func (c *Client) runHandleEvent(msg *wamp.Event) {
+	handler, ok := c.eventHandlers[msg.Subscription]
+	if !ok {
+		c.log.Println("No handler registered for subscription:",
+			msg.Subscription)
+		return
+	}
+	handler(msg.Arguments, msg.ArgumentsKw, msg.Details)
+}
+
+// runHandleInvocation processes an INVOCATION message from the from the
+// router requesting a call to a registered RPC procedure.
+func (c *Client) runHandleInvocation(msg *wamp.Invocation) {
+	handler, ok := c.invHandlers[msg.Registration]
+	if !ok {
+		errMsg := fmt.Sprintf("Client has no handler for registration %v",
+			msg.Registration)
+		// The dealer has a procedure registered to this client, but this
+		// client does not recognize the registration ID.  This is not
+		// reported as ErrNoSuchProcedure, since the dealer has a procedure
+		// registered.  It is reported as ErrInvalidArgument to denote that
+		// the client has a problem with the registration ID argument.
+		c.sess.Send(&wamp.Error{
+			Type:      wamp.INVOCATION,
+			Request:   msg.Request,
+			Details:   wamp.Dict{},
+			Error:     wamp.ErrInvalidArgument,
+			Arguments: wamp.List{errMsg},
+		})
+		c.log.Print(errMsg)
+		return
+	}
+
+	// Create a kill switch so that invocation can be canceled.
+	var cancel context.CancelFunc
+	var ctx context.Context
+	timeout := wamp.OptionInt64(msg.Details, wamp.OptTimeout)
+	if timeout > 0 {
+		// The caller specified a timeout, in milliseconds.
+		ctx, cancel = context.WithTimeout(context.Background(),
+			time.Millisecond*time.Duration(timeout))
+	} else {
+		ctx, cancel = context.WithCancel(context.Background())
+	}
+	c.invHandlerKill[msg.Request] = cancel
+	c.activeInvHandlers.Add(1)
+
+	// If caller is accepting progressive results, create map entry to
+	// allow progress to be sent.
+	if wamp.OptionFlag(msg.Details, wamp.OptReceiveProgress) {
+		c.progGate[ctx] = msg.Request
+	}
+
+	// Start a goroutine to run the user-defined invocation handler.
+	go func() {
+		defer cancel()
+
+		// Create channel to hold result.  Channel must be buffered.
+		// Otherwise, canceling the call will leak the goroutine that is
+		// blocked forever waiting to send the result to the channel.
+		resChan := make(chan *InvokeResult, 1)
+		go func() {
+			// The Context is passed into the handler to tell the client
+			// application to stop whatever it is doing if it cares to pay
+			// attention.
+			resChan <- handler(ctx, msg.Arguments, msg.ArgumentsKw,
+				msg.Details)
+		}()
+
+		// Remove the kill switch when done processing invocation.
+		defer func() {
+			c.actionChan <- func() {
+				delete(c.invHandlerKill, msg.Request)
+				c.activeInvHandlers.Done()
+				delete(c.progGate, ctx)
+			}
+		}()
+
+		// Wait for the handler to finish or for the call be to canceled.
+		var result *InvokeResult
+		select {
+		case result = <-resChan:
+		case <-c.stopping:
+			c.log.Print("Client stopping, invocation handler canceled")
+			// Return without sending response to server.  This will also
+			// cancel the context.
+			return
+		case <-ctx.Done():
+			// Received an INTERRUPT message from the router.
+			// Note: handler is also just as likely to return on INTERRUPT.
+			result = &InvokeResult{Err: wamp.ErrCanceled}
+			c.log.Println("INVOCATION", msg.Request, "canceled")
+		}
+
+		if result.Err != "" {
+			// If the cancel is already deleted, this is the signal that
+			// kill mode was "killnowait", in which case do not send a
+			// response to the router.  Check is done here since a cancel
+			// can cause either the handler to return or ctx.Done() to
+			// close, indeterminately .
+			okChan := make(chan bool)
+			c.actionChan <- func() {
+				_, ok := c.invHandlerKill[msg.Request]
+				okChan <- ok
+			}
+			ok := <-okChan
+			if !ok {
+				return
+			}
+
+			c.sess.Send(&wamp.Error{
+				Type:        wamp.INVOCATION,
+				Request:     msg.Request,
+				Details:     wamp.Dict{},
+				Arguments:   result.Args,
+				ArgumentsKw: result.Kwargs,
+				Error:       result.Err,
+			})
+			return
+		}
+		c.sess.Send(&wamp.Yield{
+			Request:     msg.Request,
+			Options:     wamp.Dict{},
+			Arguments:   result.Args,
+			ArgumentsKw: result.Kwargs,
+		})
+	}()
+}
+
+// runHandleInterrupt processes an INTERRUPT message from the from the router
+// requesting that a pending call be canceled.
+func (c *Client) runHandleInterrupt(msg *wamp.Interrupt) {
+	cancel, ok := c.invHandlerKill[msg.Request]
+	if !ok {
+		c.log.Print("Received INTERRUPT for message that no longer exists")
+		return
+	}
+	// If the interrupt mode is "killnowait", then the router is not
+	// waiting for a response, so do not send one.  This is indicated by
+	// deleting the cancel for the invocation early.
+	if wamp.OptionString(msg.Options, wamp.OptMode) == wamp.CancelModeKillNoWait {
+		delete(c.invHandlerKill, msg.Request)
+	}
+	cancel()
+}
+
+func (c *Client) runSignalReply(msg wamp.Message, requestID wamp.ID) {
+	w, ok := c.awaitingReply[requestID]
+	if !ok {
+		c.log.Println("Received", msg.MessageType(), requestID,
+			"that client is no longer waiting for")
+		return
+	}
+	w <- msg
 }
