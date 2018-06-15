@@ -267,7 +267,7 @@ func (c *Client) Subscribe(topic string, fn EventHandler, options wamp.Dict) err
 	}
 	switch msg := msg.(type) {
 	case *wamp.Subscribed:
-		// Register the event channel for this subscription.
+		// Register the event handler for this subscription.
 		sync := make(chan struct{})
 		c.actionChan <- func() {
 			c.eventHandlers[msg.Subscription] = fn
@@ -822,7 +822,6 @@ func (c *Client) leaveRealm() {
 
 	// Wait for run() to exit.
 	<-c.done
-	// Elvis has left the building!
 }
 
 func handleCRAuth(peer wamp.Peer, challenge *wamp.Challenge, authHandlers map[string]AuthFunc, rspTimeout time.Duration) (wamp.Message, error) {
