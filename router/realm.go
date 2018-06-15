@@ -33,10 +33,16 @@ type RealmConfig struct {
 	// always authorized, even when the router has an authorizer.  Setting this
 	// treats local clients the same as remote.
 	RequireLocalAuthz bool `json:"require_local_authz"`
-	// Session details to publish with on_join event or session_get response,
-	// that are in addition to the base set specified by the WAMP specification
-	// (session, authid, authrole, authmethod, authmethod, transport).
-	ExtraSessionMetaDetails []string
+
+	// When true, only include standard session details in on_join event and
+	// session_get response.  Standard details include: session, authid,
+	// authrole, authmethod, authmethod, transport.  When false, all session
+	// details are included.
+	MetaStrict bool
+	// When MetaStrict is true, MetaIncludeSessionDetails specifies session
+	// details to include that are in addition to the standard details
+	// specified by the WAMP specification.  This
+	MetaIncludeSessionDetails []string
 }
 
 type testament struct {
@@ -91,7 +97,8 @@ type realm struct {
 	localAuth  bool
 	localAuthz bool
 
-	extraSessMetaDetails []string
+	metaStrict     bool
+	metaIncDetails []string
 }
 
 // newRealm creates a new realm with the given RealmConfig, broker and dealer.
@@ -117,11 +124,12 @@ func newRealm(config *RealmConfig, broker *Broker, dealer *Dealer, logger stdlog
 		debug:       debug,
 		localAuth:   config.RequireLocalAuth,
 		localAuthz:  config.RequireLocalAuthz,
+		metaStrict:  config.MetaStrict,
 	}
 
-	if len(config.ExtraSessionMetaDetails) != 0 {
-		r.extraSessMetaDetails = make([]string, len(config.ExtraSessionMetaDetails))
-		copy(r.extraSessMetaDetails, config.ExtraSessionMetaDetails)
+	if r.metaStrict && len(config.MetaIncludeSessionDetails) != 0 {
+		r.metaIncDetails = make([]string, len(config.MetaIncludeSessionDetails))
+		copy(r.metaIncDetails, config.MetaIncludeSessionDetails)
 	}
 
 	r.authenticators = map[string]auth.Authenticator{}
@@ -889,26 +897,31 @@ func (r *realm) testamentAdd(msg *wamp.Invocation) wamp.Message {
 	return &wamp.Yield{Request: msg.Request}
 }
 
-// cleanSessionDetails removes transport.auth from the details.  This is done
-// because the data in transport.auth may not be serializable and to prevent
-// exposing auth information to session meta.
+// cleanSessionDetails returns a dictionary that only contains allowed session
+// details. transport.auth is never allowed, because the data in transport.auth
+// may not be serializable and may expose auth information to session meta.
 func (r *realm) cleanSessionDetails(details wamp.Dict) wamp.Dict {
-	items := []string{"authid", "authrole", "authmethod", "authprovider"}
+	var clean wamp.Dict
+	// If in strict mode, only include allowed values.
+	if r.metaStrict {
+		stdItems := []string{"session", "authid", "authrole", "authmethod",
+			"authprovider", "transport"}
 
-	// If additional items are to be published were specified in realm config,
-	// then add these to the list of details to copy.
-	for _, k := range r.extraSessMetaDetails {
-		items = append(items, k)
-	}
-
-	clean := make(wamp.Dict, len(items)+1)
-	clean["session"] = details["session"]
-
-	// Copy the base and any extra details into the output.
-	for _, k := range items {
-		if v := wamp.OptionString(details, k); v != "" {
-			clean[k] = v
+		clean = make(wamp.Dict, len(stdItems)+len(r.metaIncDetails))
+		// Copy standard details.
+		for _, k := range stdItems {
+			if v, ok := details[k]; ok {
+				clean[k] = v
+			}
 		}
+		// Copy additional includes.
+		for _, k := range r.metaIncDetails {
+			if v, ok := details[k]; ok {
+				clean[k] = v
+			}
+		}
+	} else {
+		clean = details
 	}
 
 	// If there is no transport detail, all done.
@@ -920,12 +933,19 @@ func (r *realm) cleanSessionDetails(details wamp.Dict) wamp.Dict {
 	// If transport detail does not have auth, then use transport as-is.
 	authDict := wamp.DictChild(transDict, "auth")
 	if authDict == nil {
-		clean["transport"] = transDict
 		return clean
 	}
 
-	// If details.transport.auth does not exist, then provide version of
-	// transport detail without auth.
+	// If a copy was not previously needed, it is now.
+	if !r.metaStrict {
+		clean = make(wamp.Dict, len(details))
+		for k, v := range details {
+			clean[k] = v
+		}
+	}
+
+	// If details.transport.auth exista, then provide version of transport
+	// detail without auth.
 	var altTrans wamp.Dict
 	for n, v := range transDict {
 		if n == "auth" {

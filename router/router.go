@@ -265,6 +265,9 @@ func (r *router) AttachClient(client wamp.Peer, transportDetails wamp.Dict) erro
 	// only.
 	sessDetails := make(wamp.Dict, len(hello.Details)+len(welcome.Details))
 	for k, v := range hello.Details {
+		if k == "authmethods" {
+			continue
+		}
 		sessDetails[k] = v
 	}
 	for k, v := range welcome.Details {
