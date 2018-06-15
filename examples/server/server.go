@@ -64,7 +64,7 @@ func main() {
 		log.Fatal(err)
 	}
 	defer wsCloser.Close()
-	log.Printf("Websocket server listening on http://%s/", wsAddr)
+	log.Printf("Websocket server listening on ws://%s/", wsAddr)
 
 	// Run TCP rawsocket server.
 	tcpCloser, err := rss.ListenAndServe("tcp", tcpAddr)
@@ -99,7 +99,7 @@ func main() {
 		log.Fatal(err)
 	}
 	defer wsTlsCloser.Close()
-	log.Printf("TLS Websocket server listening on https://%s/", wsAddrTLS)
+	log.Printf("TLS Websocket server listening on wss://%s/", wsAddrTLS)
 
 	// Run TLS TCP rawsocket server.
 	tcpTlsCloser, err := rss.ListenAndServeTLS("tcp", tcpAddrTLS, nil, certPath, keyPath)

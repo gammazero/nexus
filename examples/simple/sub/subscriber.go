@@ -19,7 +19,7 @@ func main() {
 	}
 
 	// Connect subscriber session.
-	subscriber, err := client.ConnectNet("http://localhost:8080/", cfg)
+	subscriber, err := client.ConnectNet("ws://localhost:8080/", cfg)
 	if err != nil {
 		logger.Fatal(err)
 	}

@@ -42,7 +42,15 @@ func ConnectNet(routerURL string, cfg Config) (*Client, error) {
 	}
 	var p wamp.Peer
 	switch u.Scheme {
-	case "http", "https", "ws", "wss":
+	case "http", "https":
+		if u.Scheme == "http" {
+			u.Scheme = "ws"
+		} else {
+			u.Scheme = "wss"
+		}
+		routerURL = u.String()
+		fallthrough
+	case "ws", "wss":
 		p, err = transport.ConnectWebsocketPeer(routerURL, cfg.Serialization,
 			cfg.TlsCfg, cfg.Dial, cfg.Logger, &cfg.WsCfg)
 	case "tcp":

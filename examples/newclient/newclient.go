@@ -30,8 +30,8 @@ const (
 func NewClient(logger *log.Logger) (*client.Client, error) {
 	var skipVerify, compress bool
 	var scheme, serType, caFile, certFile, keyFile string
-	flag.StringVar(&scheme, "scheme", "http",
-		"-scheme=[http, https, ws, wss, tcp, tcps, unix].  Default is http (websocket no tls)")
+	flag.StringVar(&scheme, "scheme", "ws",
+		"-scheme=[ws, wss, tcp, tcps, unix].  Default is ws (websocket no tls)")
 	flag.StringVar(&serType, "serialize", "json",
 		"-serialize[json, msgpack] or none for socket default")
 	flag.BoolVar(&skipVerify, "skipverify", false,
@@ -120,15 +120,15 @@ func NewClient(logger *log.Logger) (*client.Client, error) {
 	var err error
 	switch scheme {
 	case "http", "ws":
-		addr = fmt.Sprintf("%s://%s/", scheme, wsAddr)
+		addr = fmt.Sprintf("ws://%s/", wsAddr)
 	case "https", "wss":
-		addr = fmt.Sprintf("%s://%s/", scheme, wssAddr)
+		addr = fmt.Sprintf("wss://%s/", wssAddr)
 	case "tcp":
-		addr = fmt.Sprintf("%s://%s/", scheme, tcpAddr)
+		addr = fmt.Sprintf("tcp://%s/", tcpAddr)
 	case "tcps":
-		addr = fmt.Sprintf("%s://%s/", scheme, tcpsAddr)
+		addr = fmt.Sprintf("tcps://%s/", tcpsAddr)
 	case "unix":
-		addr = fmt.Sprintf("%s://%s", scheme, unixAddr)
+		addr = fmt.Sprintf("unix://%s", unixAddr)
 	default:
 		return nil, errors.New("scheme must be one of: http, https, ws, wss, tcp, tcps, unix")
 	}

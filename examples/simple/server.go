@@ -36,7 +36,7 @@ func main() {
 	if err != nil {
 		log.Fatal(err)
 	}
-	log.Printf("Websocket server listening on http://%s/", address)
+	log.Printf("Websocket server listening on ws://%s/", address)
 
 	// Wait for SIGINT (CTRL-c), then close server and exit.
 	shutdown := make(chan os.Signal, 1)
