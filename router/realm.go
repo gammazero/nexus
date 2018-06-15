@@ -33,6 +33,10 @@ type RealmConfig struct {
 	// always authorized, even when the router has an authorizer.  Setting this
 	// treats local clients the same as remote.
 	RequireLocalAuthz bool `json:"require_local_authz"`
+	// Session details to publish with on_join event or session_get response,
+	// that are in addition to the base set specified by the WAMP specification
+	// (session, authid, authrole, authmethod, authmethod, transport).
+	ExtraSessionMetaDetails []string
 }
 
 type testament struct {
@@ -86,6 +90,8 @@ type realm struct {
 
 	localAuth  bool
 	localAuthz bool
+
+	extraSessMetaDetails []string
 }
 
 // newRealm creates a new realm with the given RealmConfig, broker and dealer.
@@ -111,6 +117,11 @@ func newRealm(config *RealmConfig, broker *Broker, dealer *Dealer, logger stdlog
 		debug:       debug,
 		localAuth:   config.RequireLocalAuth,
 		localAuthz:  config.RequireLocalAuthz,
+	}
+
+	if len(config.ExtraSessionMetaDetails) != 0 {
+		r.extraSessMetaDetails = make([]string, len(config.ExtraSessionMetaDetails))
+		copy(r.extraSessMetaDetails, config.ExtraSessionMetaDetails)
 	}
 
 	r.authenticators = map[string]auth.Authenticator{}
@@ -279,7 +290,7 @@ func (r *realm) onJoin(sess *wamp.Session) {
 	// WAMP spec only specifies publishing "session", "authid", "authrole",
 	// "authmethod", "authprovider", "transport".  This implementation
 	// publishes all details except transport.auth.
-	output := cleanSessionDetails(sess.Details)
+	output := r.cleanSessionDetails(sess.Details)
 	r.metaPeer.Send(&wamp.Publish{
 		Request:   wamp.GlobalID(),
 		Topic:     wamp.MetaEventSessionOnJoin,
@@ -772,7 +783,7 @@ func (r *realm) sessionGet(msg *wamp.Invocation) wamp.Message {
 		return makeErr()
 	}
 
-	output := cleanSessionDetails(sess.Details)
+	output := r.cleanSessionDetails(sess.Details)
 
 	// WAMP spec only specifies returning "session", "authid", "authrole",
 	// "authmethod", "authprovider", and "transport".  All details are returned
@@ -881,14 +892,42 @@ func (r *realm) testamentAdd(msg *wamp.Invocation) wamp.Message {
 // cleanSessionDetails removes transport.auth from the details.  This is done
 // because the data in transport.auth may not be serializable and to prevent
 // exposing auth information to session meta.
-func cleanSessionDetails(details wamp.Dict) wamp.Dict {
-	_, err := wamp.DictValue(details, []string{"transport", "auth"})
-	if err != nil {
-		return details
+func (r *realm) cleanSessionDetails(details wamp.Dict) wamp.Dict {
+	items := []string{"authid", "authrole", "authmethod", "authprovider"}
+
+	// If additional items are to be published were specified in realm config,
+	// then add these to the list of details to copy.
+	for _, k := range r.extraSessMetaDetails {
+		items = append(items, k)
 	}
 
+	clean := make(wamp.Dict, len(items)+1)
+	clean["session"] = details["session"]
+
+	// Copy the base and any extra details into the output.
+	for _, k := range items {
+		if v := wamp.OptionString(details, k); v != "" {
+			clean[k] = v
+		}
+	}
+
+	// If there is no transport detail, all done.
+	transDict := wamp.DictChild(details, "transport")
+	if transDict == nil {
+		return clean
+	}
+
+	// If transport detail does not have auth, then use transport as-is.
+	authDict := wamp.DictChild(transDict, "auth")
+	if authDict == nil {
+		clean["transport"] = transDict
+		return clean
+	}
+
+	// If details.transport.auth does not exist, then provide version of
+	// transport detail without auth.
 	var altTrans wamp.Dict
-	for n, v := range wamp.DictChild(details, "transport") {
+	for n, v := range transDict {
 		if n == "auth" {
 			continue
 		}
@@ -897,16 +936,7 @@ func cleanSessionDetails(details wamp.Dict) wamp.Dict {
 		}
 		altTrans[n] = v
 	}
+	clean["transport"] = altTrans
 
-	output := wamp.Dict{}
-	for n, v := range details {
-		if n == "transport" {
-			if len(altTrans) > 0 {
-				output[n] = altTrans
-			}
-			continue
-		}
-		output[n] = v
-	}
-	return output
+	return clean
 }
