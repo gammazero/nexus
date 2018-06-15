@@ -27,9 +27,13 @@ const (
 	helloRoles       = "roles"
 )
 
-// ClientConfig configures a client with everything needed to begin a session
+// ClientConfig is a type alias for the deprecated ClientConfig.
+// client.Config replaces client.ClientConfig
+type ClientConfig = Config
+
+// Config configures a client with everything needed to begin a session
 // with a WAMP router.
-type ClientConfig struct {
+type Config struct {
 	// Realm is the URI of the realm the client will join.
 	Realm string
 
@@ -157,7 +161,7 @@ type Client struct {
 // NOTE: This method is exported for clients that use a Peer implementation not
 // provided with the nexus package.  Generally, clients are created using
 // ConnectNet() or ConnectLocal().
-func NewClient(p wamp.Peer, cfg ClientConfig) (*Client, error) {
+func NewClient(p wamp.Peer, cfg Config) (*Client, error) {
 	if cfg.ResponseTimeout == 0 {
 		cfg.ResponseTimeout = defaultResponseTimeout
 	}
@@ -215,8 +219,8 @@ func (c *Client) ID() wamp.ID { return c.sess.ID }
 // encountered within AuthFunc, then an empty signature should be returned
 // since the client cannot give a valid signature response.
 //
-// This is used in the AuthHandler map, in a ClientConfig, and is used when
-// the client joins a realm.
+// This is used in the AuthHandler map, in a Config, and is used when the
+// client joins a realm.
 type AuthFunc func(challenge *wamp.Challenge) (signature string, details wamp.Dict)
 
 // RealmDetails returns the realm information received in the WELCOME message.
@@ -753,7 +757,7 @@ func (c *Client) SendProgress(ctx context.Context, args wamp.List, kwArgs wamp.D
 // needed.  The authHandlers portion of cfg supplies a map of WAMP authmethod
 // names to functions that handle each auth type.  This can be nil if router is
 // expected to allow anonymous authentication.
-func joinRealm(peer wamp.Peer, cfg ClientConfig) (*wamp.Welcome, error) {
+func joinRealm(peer wamp.Peer, cfg Config) (*wamp.Welcome, error) {
 	if cfg.Realm == "" {
 		return nil, errors.New("realm not specified")
 	}

@@ -64,7 +64,7 @@ const (
 //     }
 //
 //     // Configure and create new client.
-//     cfg := client.ClientConfig{
+//     cfg := client.Config{
 //         ...
 //         AuthHandlers: map[string]client.AuthFunc{
 //             "wampcra": clientCRAuthFunc,

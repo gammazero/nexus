@@ -20,9 +20,13 @@ import (
 
 const helloTimeout = 5 * time.Second
 
-// RouterConfig configures the router with realms, and optionally a template
-// for creating new realms.
-type RouterConfig struct {
+// RouterConfig is a type alias for the deprecated RouterConfig.
+// router.Config replaces router.RouterConfig
+type RouterConfig = Config
+
+// Config configures the router with realms, and optionally a template for
+// creating new realms.
+type Config struct {
 	// RealmConfigs defines the configurations for realms within the router.
 	RealmConfigs []*RealmConfig `json:"realms"`
 
@@ -76,7 +80,7 @@ type router struct {
 }
 
 // NewRouter creates a WAMP router instance.
-func NewRouter(config *RouterConfig, logger stdlog.StdLog) (Router, error) {
+func NewRouter(config *Config, logger stdlog.StdLog) (Router, error) {
 	// If logger not provided, create one.
 	if logger == nil {
 		logger = log.New(os.Stdout, "", log.LstdFlags)

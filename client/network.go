@@ -13,11 +13,12 @@ import (
 
 // ConnectNet creates a new client connected a WAMP router over a websocket,
 // TCP socket, or unix socket.  The new client joins the realm specified in the
-// ClientConfig.
+// Config.
 //
 // For websocket clients, the routerURL has the form "ws://host:port/" or
 // "wss://host:port/", for websocket or websocket with TLS respectively.  The
-// host:port portion is the same as for a TCP clients.
+// scheme "http" is interchangeable with "ws" and "https" is interchangeable
+// with "wss".  The host:port portion is the same as for a TCP client.
 //
 // For TCP clients, the router URL has the form "tcp://host:port/" or
 // "tcps://host:port/", for TCP socket or TCP socket with TLS respectively.
@@ -30,7 +31,7 @@ import (
 // For Unix socket clients, the routerURL has the form "unix://path".  The path
 // portion specifies a path on the local file system where the Unix socket is
 // created.  TLS is not used for unix socket.
-func ConnectNet(routerURL string, cfg ClientConfig) (*Client, error) {
+func ConnectNet(routerURL string, cfg Config) (*Client, error) {
 	if cfg.Logger == nil {
 		cfg.Logger = log.New(os.Stderr, "", 0)
 	}
@@ -41,7 +42,7 @@ func ConnectNet(routerURL string, cfg ClientConfig) (*Client, error) {
 	}
 	var p wamp.Peer
 	switch u.Scheme {
-	case "ws", "wss":
+	case "http", "https", "ws", "wss":
 		p, err = transport.ConnectWebsocketPeer(routerURL, cfg.Serialization,
 			cfg.TlsCfg, cfg.Dial, cfg.Logger, &cfg.WsCfg)
 	case "tcp":
@@ -65,7 +66,7 @@ func ConnectNet(routerURL string, cfg ClientConfig) (*Client, error) {
 
 // CookieURL takes a websocket URL string and outputs a url.URL that can be
 // used to retrieve cookies from a http.CookieJar as may be provided in
-// ClientConfig.WsCfg.Jar.
+// Config.WsCfg.Jar.
 func CookieURL(routerURL string) (*url.URL, error) {
 	u, err := url.Parse(routerURL)
 	if err != nil {

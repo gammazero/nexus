@@ -27,7 +27,7 @@ func (a *testAuthz) Authorize(sess *wamp.Session, msg wamp.Message) (bool, error
 // Test that Authorize is being called for messages received by router and is
 // able to determine whether or not a message is allowed.
 func TestAuthorizer(t *testing.T) {
-	config := &RouterConfig{
+	config := &Config{
 		RealmConfigs: []*RealmConfig{
 			{
 				URI:               testRealm,
@@ -68,7 +68,7 @@ func TestAuthorizer(t *testing.T) {
 // Test that authroizer is not called with a local session and config does not
 // specify RequireLocalAuthz=true.
 func TestAuthorizerBypassLocal(t *testing.T) {
-	config := &RouterConfig{
+	config := &Config{
 		RealmConfigs: []*RealmConfig{
 			{
 				URI:        testRealm,

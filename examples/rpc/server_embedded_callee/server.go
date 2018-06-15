@@ -16,7 +16,7 @@ const wsAddr = "127.0.0.1:8000"
 
 func main() {
 	// Create router instance.
-	routerConfig := &router.RouterConfig{
+	routerConfig := &router.Config{
 		RealmConfigs: []*router.RealmConfig{
 			&router.RealmConfig{
 				URI:           wamp.URI("nexus.examples"),
@@ -32,7 +32,7 @@ func main() {
 	defer nxr.Close()
 
 	logger := log.New(os.Stdout, "CALLEE> ", log.LstdFlags)
-	cfg := client.ClientConfig{
+	cfg := client.Config{
 		Realm:  "nexus.examples",
 		Logger: logger,
 	}
@@ -55,7 +55,7 @@ func main() {
 	if err != nil {
 		log.Fatal(err)
 	}
-	log.Printf("Websocket server listening on ws://%s/", wsAddr)
+	log.Printf("Websocket server listening on http://%s/", wsAddr)
 
 	// Wait for SIGINT (CTRL-c), then close server and exit.
 	shutdown := make(chan os.Signal, 1)

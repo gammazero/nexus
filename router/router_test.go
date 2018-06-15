@@ -54,7 +54,7 @@ var clientRoles = wamp.Dict{
 }
 
 func newTestRouter() (Router, error) {
-	config := &RouterConfig{
+	config := &Config{
 		RealmConfigs: []*RealmConfig{
 			{
 				URI:           testRealm,
