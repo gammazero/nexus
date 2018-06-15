@@ -41,7 +41,7 @@ var (
 	err error
 
 	// scheme determines the transport and use of TLS.  Value must be one of
-	// the following: "ws", "wss", "tcp", "tcps", "unix", "".
+	// the following: "http", "https", "ws", "wss", "tcp", "tcps", "unix", "".
 	// Empty indicates direct (in proc) connection to router.  TLS is not
 	// available for "" or "unix".
 	scheme string
@@ -75,7 +75,7 @@ func (a *testAuthz) Authorize(sess *wamp.Session, msg wamp.Message) (bool, error
 func TestMain(m *testing.M) {
 	// ----- Setup environment -----
 	flag.StringVar(&scheme, "scheme", "",
-		"-scheme=[ws, wss, tcp, tcps, unix] or none for local (in-process)")
+		"-scheme=[http, https, ws, wss, tcp, tcps, unix] or none for local (in-process)")
 	flag.StringVar(&serType, "serialize", "",
 		"-serialize[json, msgpack, cbor] default is json")
 	flag.BoolVar(&compress, "compress", false, "enable compression")
@@ -88,7 +88,7 @@ func TestMain(m *testing.M) {
 	}
 
 	var certPath, keyPath string
-	if scheme == "wss" || scheme == "tcps" {
+	if scheme == "https" || scheme == "wss" || scheme == "tcps" {
 		if _, err = os.Stat(certFile); os.IsNotExist(err) {
 			certPath = path.Join("aat", certFile)
 			keyPath = path.Join("aat", keyFile)
@@ -108,7 +108,7 @@ func TestMain(m *testing.M) {
 	crAuth := auth.NewCRAuthenticator(sks, time.Second)
 
 	// Create router instance.
-	routerConfig := &router.RouterConfig{
+	routerConfig := &router.Config{
 		RealmConfigs: []*router.RealmConfig{
 			{
 				URI:           wamp.URI(testRealm),
@@ -142,7 +142,7 @@ func TestMain(m *testing.M) {
 	case "":
 		serType = ""
 		sockDesc = "LOCAL CONNECTIONS"
-	case "ws":
+	case "http", "ws":
 		s := router.NewWebsocketServer(nxr)
 		sockDesc = "WEBSOCKETS"
 		// Set optional websocket config.
@@ -153,7 +153,7 @@ func TestMain(m *testing.M) {
 		s.EnableTrackingCookie = true
 		s.EnableRequestCapture = true
 		closer, err = s.ListenAndServe(tcpAddr)
-	case "wss":
+	case "https", "wss":
 		s := router.NewWebsocketServer(nxr)
 		sockDesc = "WEBSOCKETS + TLS"
 		if compress {
@@ -172,6 +172,7 @@ func TestMain(m *testing.M) {
 		closer, err = s.ListenAndServeTLS("tcp", tcpAddr, nil, certPath, keyPath)
 		sockDesc = "TCP RAWSOCKETS + TLS"
 	case "unix":
+		os.Remove(unixAddr)
 		s := router.NewRawSocketServer(nxr, 0, 0)
 		closer, err = s.ListenAndServe(scheme, unixAddr)
 		addr = unixAddr
@@ -208,7 +209,7 @@ func TestMain(m *testing.M) {
 		fmt.Fprintln(os.Stderr, "Failed to disconnect client:", err)
 		os.Exit(1)
 	}
-	cfg := client.ClientConfig{
+	cfg := client.Config{
 		Realm:           testAuthRealm,
 		ResponseTimeout: time.Second,
 	}
@@ -233,7 +234,7 @@ func TestMain(m *testing.M) {
 	os.Exit(rc)
 }
 
-func connectClientCfg(cfg client.ClientConfig) (*client.Client, error) {
+func connectClientCfg(cfg client.Config) (*client.Client, error) {
 	var cli *client.Client
 	var err error
 
@@ -253,10 +254,10 @@ func connectClientCfg(cfg client.ClientConfig) (*client.Client, error) {
 
 	var addr string
 	switch scheme {
-	case "ws", "tcp":
+	case "http", "ws", "tcp":
 		addr = fmt.Sprintf("%s://%s/", scheme, tcpAddr)
 		cli, err = client.ConnectNet(addr, cfg)
-	case "wss", "tcps":
+	case "https", "wss", "tcps":
 		// If TLS requested, set up TLS configuration to skip verification.
 		cfg.TlsCfg = &tls.Config{
 			InsecureSkipVerify: true,
@@ -275,7 +276,10 @@ func connectClientCfg(cfg client.ClientConfig) (*client.Client, error) {
 	}
 
 	if cfg.WsCfg.Jar != nil {
-		if scheme != "ws" && scheme != "wss" {
+		switch scheme {
+		case "http", "https", "ws", "wss":
+			// OK, websocket scheme.
+		default:
 			// Programming error in test.
 			panic("CookieJar provided for non-websocket client")
 		}
@@ -307,7 +311,7 @@ func connectClientCfg(cfg client.ClientConfig) (*client.Client, error) {
 }
 
 func connectClient() (*client.Client, error) {
-	cfg := client.ClientConfig{
+	cfg := client.Config{
 		Realm:           testRealm,
 		ResponseTimeout: time.Second,
 	}
@@ -321,12 +325,13 @@ func connectClient() (*client.Client, error) {
 func TestHandshake(t *testing.T) {
 	defer leaktest.Check(t)()
 
-	cfg := client.ClientConfig{
+	cfg := client.Config{
 		Realm:           testRealm,
 		ResponseTimeout: time.Second,
 	}
 
-	if scheme == "ws" || scheme == "wss" {
+	switch scheme {
+	case "http", "https", "ws", "wss":
 		jar, err := cookiejar.New(nil)
 		if err != nil {
 			fmt.Fprintln(os.Stderr, err)

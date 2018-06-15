@@ -28,7 +28,7 @@ const (
 func TestJoinRealmWithCRAuth(t *testing.T) {
 	defer leaktest.Check(t)()
 
-	cfg := client.ClientConfig{
+	cfg := client.Config{
 		Realm: testAuthRealm,
 		HelloDetails: wamp.Dict{
 			"authid": "jdoe",
@@ -53,7 +53,7 @@ func TestJoinRealmWithCRAuth(t *testing.T) {
 }
 
 func TestJoinRealmWithCRCookieAuth(t *testing.T) {
-	cfg := client.ClientConfig{
+	cfg := client.Config{
 		Realm: testAuthRealm,
 		HelloDetails: wamp.Dict{
 			"authid": "jdoe",
@@ -106,7 +106,7 @@ func TestJoinRealmWithCRCookieAuth(t *testing.T) {
 func TestJoinRealmWithCRAuthBad(t *testing.T) {
 	defer leaktest.Check(t)()
 
-	cfg := client.ClientConfig{
+	cfg := client.Config{
 		Realm: testAuthRealm,
 		HelloDetails: wamp.Dict{
 			"authid": "malory",
@@ -132,7 +132,7 @@ func TestJoinRealmWithCRAuthBad(t *testing.T) {
 func TestAuthz(t *testing.T) {
 	defer leaktest.Check(t)()
 
-	cfg := client.ClientConfig{
+	cfg := client.Config{
 		Realm:           testAuthRealm,
 		ResponseTimeout: time.Second,
 	}

@@ -48,7 +48,7 @@ type Config struct {
 	LogPath string `json:"log_path"`
 	// Router configuration parameters.
 	// See https://godoc.org/github.com/gammazero/nexus#RouterConfig
-	Router router.RouterConfig
+	Router router.Config
 }
 
 func LoadConfig(path string) *Config {

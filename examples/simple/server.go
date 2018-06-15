@@ -17,7 +17,7 @@ const address = "127.0.0.1:8080"
 
 func main() {
 	// Create router instance.
-	routerConfig := &router.RouterConfig{
+	routerConfig := &router.Config{
 		RealmConfigs: []*router.RealmConfig{
 			&router.RealmConfig{
 				URI:           wamp.URI("nexus.realm1"),
@@ -36,7 +36,7 @@ func main() {
 	if err != nil {
 		log.Fatal(err)
 	}
-	log.Printf("Websocket server listening on ws://%s/", address)
+	log.Printf("Websocket server listening on http://%s/", address)
 
 	// Wait for SIGINT (CTRL-c), then close server and exit.
 	shutdown := make(chan os.Signal, 1)

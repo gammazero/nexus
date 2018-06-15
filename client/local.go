@@ -12,8 +12,8 @@ import (
 // This is used to connect clients, embedded in the same application as the
 // router, to the router.  Doing this eliminates the need for any socket of
 // serialization overhead, and does not require authentication.  The new client
-// joins the realm specified in the ClientConfig.
-func ConnectLocal(router router.Router, cfg ClientConfig) (*Client, error) {
+// joins the realm specified in the Config.
+func ConnectLocal(router router.Router, cfg Config) (*Client, error) {
 	if cfg.Logger == nil {
 		cfg.Logger = log.New(os.Stderr, "", 0)
 	}

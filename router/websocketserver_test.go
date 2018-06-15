@@ -11,7 +11,7 @@ import (
 )
 
 var (
-	routerConfig = &RouterConfig{
+	routerConfig = &Config{
 		RealmConfigs: []*RealmConfig{
 			{
 				URI:           testRealm,

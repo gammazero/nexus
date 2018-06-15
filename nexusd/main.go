@@ -100,7 +100,7 @@ func main() {
 			os.Exit(1)
 		}
 		closers = append(closers, closer)
-		logger.Printf("Listening for %s connections on ws://%s/", sockDesc,
+		logger.Printf("Listening for %s connections on http://%s/", sockDesc,
 			conf.WebSocket.Address)
 	}
 	if conf.RawSocket.TCPAddress != "" || conf.RawSocket.UnixAddress != "" {

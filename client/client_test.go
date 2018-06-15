@@ -36,7 +36,7 @@ func getTestPeer(r router.Router) wamp.Peer {
 }
 
 func getTestRouter(realmConfig *router.RealmConfig) (router.Router, error) {
-	config := &router.RouterConfig{
+	config := &router.Config{
 		RealmConfigs: []*router.RealmConfig{realmConfig},
 	}
 	return router.NewRouter(config, logger)
@@ -67,7 +67,7 @@ func connectedTestClients() (*Client, *Client, router.Router, error) {
 }
 
 func newTestClient(r router.Router) (*Client, error) {
-	cfg := ClientConfig{
+	cfg := Config{
 		Realm:           testRealm,
 		ResponseTimeout: 500 * time.Millisecond,
 		Logger:          logger,
@@ -138,7 +138,7 @@ func TestJoinRealm(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	cfg := ClientConfig{
+	cfg := Config{
 		Realm:           "nexus.testnoanon",
 		ResponseTimeout: 500 * time.Millisecond,
 		Logger:          logger,
@@ -167,7 +167,7 @@ func TestClientJoinRealmWithCRAuth(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	cfg := ClientConfig{
+	cfg := Config{
 		Realm: "nexus.test.auth",
 		HelloDetails: wamp.Dict{
 			"authid": "jdoe",

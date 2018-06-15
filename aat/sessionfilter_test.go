@@ -10,7 +10,7 @@ import (
 
 func TestWhitelistAttribute(t *testing.T) {
 	// Setup subscriber1
-	cfg := client.ClientConfig{
+	cfg := client.Config{
 		Realm:           testRealm,
 		HelloDetails:    wamp.Dict{"org_id": "zcorp"},
 		ResponseTimeout: time.Second,
@@ -29,7 +29,7 @@ func TestWhitelistAttribute(t *testing.T) {
 	}
 
 	// Setup subscriber2
-	cfg = client.ClientConfig{
+	cfg = client.Config{
 		Realm:        testRealm,
 		HelloDetails: wamp.Dict{"org_id": "other"},
 	}
@@ -119,7 +119,7 @@ func TestWhitelistAttribute(t *testing.T) {
 
 func TestBlacklistAttribute(t *testing.T) {
 	// Setup subscriber1
-	cfg := client.ClientConfig{
+	cfg := client.Config{
 		Realm:           testRealm,
 		HelloDetails:    wamp.Dict{"org_id": "zcorp"},
 		ResponseTimeout: time.Second,
@@ -145,7 +145,7 @@ func TestBlacklistAttribute(t *testing.T) {
 	}
 
 	// Setup subscriber2
-	cfg = client.ClientConfig{
+	cfg = client.Config{
 		Realm:        testRealm,
 		HelloDetails: wamp.Dict{"org_id": "other"},
 	}
