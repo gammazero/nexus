@@ -125,6 +125,9 @@ func TestMain(m *testing.M) {
 				Authorizer:        &testAuthz{},
 				RequireLocalAuth:  true,
 				RequireLocalAuthz: true,
+
+				MetaStrict:                true,
+				MetaIncludeSessionDetails: []string{"foobar"},
 			},
 		},
 		//Debug: true,
