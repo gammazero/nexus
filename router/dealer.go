@@ -169,7 +169,7 @@ func (d *Dealer) Register(callee *wamp.Session, msg *wamp.Register) {
 	// Validate procedure URI.  For REGISTER, must be valid URI (either strict
 	// or loose), and all URI components must be non-empty other than for
 	// wildcard or prefix matched procedures.
-	match := wamp.OptionString(msg.Options, wamp.OptMatch)
+	match, _ := wamp.AsString(msg.Options[wamp.OptMatch])
 	if !msg.Procedure.ValidURI(d.strictURI, match) {
 		errMsg := fmt.Sprintf(
 			"register for invalid procedure URI %v (URI strict checking %v)",
@@ -187,7 +187,7 @@ func (d *Dealer) Register(callee *wamp.Session, msg *wamp.Register) {
 
 	// Disallow registration of procedures starting with "wamp.", except for
 	// trusted sessions that are built into router.
-	authrole := wamp.OptionString(callee.Details, "authrole")
+	authrole, _ := wamp.AsString(callee.Details["authrole"])
 	if authrole != "" && authrole != "trusted" {
 		if wampURI {
 			errMsg := fmt.Sprintf("register for restricted procedure URI %v",
@@ -204,7 +204,7 @@ func (d *Dealer) Register(callee *wamp.Session, msg *wamp.Register) {
 
 	// If callee requests disclosure of caller identity, but dealer does not
 	// allow, then send error as registration response.
-	disclose := wamp.OptionFlag(msg.Options, wamp.OptDiscloseCaller)
+	disclose, _ := wamp.AsBool(msg.Options[wamp.OptDiscloseCaller])
 	// allow disclose for trusted clients
 	if !d.allowDisclose && disclose && authrole != "trusted" {
 		d.trySend(callee, &wamp.Error{
@@ -216,7 +216,7 @@ func (d *Dealer) Register(callee *wamp.Session, msg *wamp.Register) {
 		return
 	}
 
-	invoke := wamp.OptionString(msg.Options, wamp.OptInvoke)
+	invoke, _ := wamp.AsString(msg.Options[wamp.OptInvoke])
 	d.actionChan <- func() {
 		d.register(callee, msg, match, invoke, disclose, wampURI)
 	}
@@ -570,7 +570,7 @@ func (d *Dealer) call(caller *wamp.Session, msg *wamp.Call) {
 	//
 	// A timeout allows to automatically cancel a call after a specified time
 	// either at the Callee or at the Dealer.
-	timeout := wamp.OptionInt64(msg.Options, wamp.OptTimeout)
+	timeout, _ := wamp.AsInt64(msg.Options[wamp.OptTimeout])
 	if timeout > 0 {
 		// Check that callee supports call_timeout.
 		if callee.HasFeature(roleCallee, featureCallTimeout) {
@@ -592,7 +592,7 @@ func (d *Dealer) call(caller *wamp.Session, msg *wamp.Call) {
 		// A Caller MAY request the disclosure of its identity (its WAMP
 		// session ID) to endpoints of a routed call.  This is indicated by the
 		// "disclose_me" flag in the message options.
-		if wamp.OptionFlag(msg.Options, wamp.OptDiscloseMe) {
+		if opt, _ := wamp.AsBool(msg.Options[wamp.OptDiscloseMe]); opt {
 			// Dealer MAY deny a Caller's request to disclose its identity.
 			if !d.allowDisclose {
 				d.trySend(caller, &wamp.Error{
@@ -610,7 +610,7 @@ func (d *Dealer) call(caller *wamp.Session, msg *wamp.Call) {
 
 	// A Caller indicates its willingness to receive progressive results by
 	// setting CALL.Options.receive_progress|bool := true
-	if wamp.OptionFlag(msg.Options, wamp.OptReceiveProgress) {
+	if opt, _ := wamp.AsBool(msg.Options[wamp.OptReceiveProgress]); opt {
 		// If the Callee supports progressive calls, the Dealer will
 		// forward the Caller's willingness to receive progressive
 		// results by setting.
@@ -681,7 +681,7 @@ func (d *Dealer) cancel(caller *wamp.Session, msg *wamp.Cancel) {
 	invk.canceled = true
 
 	// Cancel mode should be one of: "skip", "kill", "killnowait"
-	mode := wamp.OptionString(msg.Options, wamp.OptMode)
+	mode, _ := wamp.AsString(msg.Options[wamp.OptMode])
 	if mode == wamp.CancelModeKillNoWait || mode == wamp.CancelModeKill {
 		// Check that callee supports call canceling to see if it is alright to
 		// send INTERRUPT to callee.
@@ -744,7 +744,7 @@ func (d *Dealer) yield(callee *wamp.Session, msg *wamp.Yield) {
 
 	details := wamp.Dict{}
 
-	progress := wamp.OptionFlag(msg.Options, wamp.OptProgress)
+	progress, _ := wamp.AsBool(msg.Options[wamp.OptProgress])
 	if !progress {
 		delete(d.invocations, msg.Request)
 		// Delete callID -> invocation.
@@ -933,7 +933,7 @@ func (d *Dealer) RegLookup(msg *wamp.Invocation) wamp.Message {
 			var match string
 			if len(msg.Arguments) > 1 {
 				opts := msg.Arguments[1].(wamp.Dict)
-				match = wamp.OptionString(opts, wamp.OptMatch)
+				match, _ = wamp.AsString(opts[wamp.OptMatch])
 			}
 			sync := make(chan wamp.ID)
 			d.actionChan <- func() {

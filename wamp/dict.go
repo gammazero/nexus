@@ -192,6 +192,12 @@ func AsFloat64(v interface{}) (float64, bool) {
 	}
 	return 0.0, false
 }
+
+func AsBool(v interface{}) (bool, bool) {
+	b, ok := v.(bool)
+	return b, ok
+}
+
 func AsDict(v interface{}) (Dict, bool) {
 	n := NormalizeDict(v)
 	return n, n != nil
@@ -219,51 +225,35 @@ func AsList(v interface{}) (List, bool) {
 // If the option is not present or is not a string type, an empty string is
 // returned.
 func OptionString(opts Dict, optionName string) string {
-	var opt string
-	if _opt, ok := opts[optionName]; ok && _opt != nil {
-		opt, _ = AsString(_opt)
-	}
+	opt, _ := AsString(opts[optionName])
 	return opt
 }
 
 // OptionURI returns the URI value of the option with the specified name.
 // If the option is not present, an empty URI is returned.
 func OptionURI(opts Dict, optionName string) URI {
-	var opt URI
-	if _opt, ok := opts[optionName]; ok && _opt != nil {
-		opt, _ = AsURI(_opt)
-	}
+	opt, _ := AsURI(opts[optionName])
 	return opt
 }
 
 // OptionID returns the ID value of the option with the specified name.
 // If the option is not present, an ID 0 is returned.
 func OptionID(opts Dict, optionName string) ID {
-	var opt ID
-	if _opt, ok := opts[optionName]; ok && _opt != nil {
-		opt, _ = AsID(_opt)
-	}
+	opt, _ := AsID(opts[optionName])
 	return opt
 }
 
 // OptionInt64 returns the int64 value of the option with the specified name.
 // If the option is not present, a value of 0 is returned.
 func OptionInt64(opts Dict, optionName string) int64 {
-	if opt, ok := opts[optionName]; ok && opt != nil {
-		if i64, ok := AsInt64(opt); ok {
-			return i64
-		}
-	}
-	return 0
+	opt, _ := AsInt64(opts[optionName])
+	return opt
 }
 
 // OptionString returns the boolean value of the option with the specified
 // name.  If the option is not present, false is returned.
 func OptionFlag(opts Dict, optionName string) bool {
-	var opt bool
-	if _opt, ok := opts[optionName]; ok && _opt != nil {
-		opt, _ = _opt.(bool)
-	}
+	opt, _ := AsBool(opts[optionName])
 	return opt
 }
 

@@ -138,7 +138,7 @@ func (b *Broker) Publish(pub *wamp.Session, msg *wamp.Publish) {
 	// do so when the Broker configuration (for the publication topic) is
 	// set up to do so.  TODO: Currently no broker config for this.
 	var disclose bool
-	if wamp.OptionFlag(msg.Options, wamp.OptDiscloseMe) {
+	if opt, _ := wamp.AsBool(msg.Options[wamp.OptDiscloseMe]); opt {
 		// Broker MAY deny a publisher's request to disclose its identity.
 		if !b.allowDisclose {
 			b.trySend(pub, &wamp.Error{
@@ -183,7 +183,7 @@ func (b *Broker) Subscribe(sub *wamp.Session, msg *wamp.Subscribe) {
 	// loose), and all URI components must be non-empty for normal
 	// subscriptions, may be empty for wildcard subscriptions and must be
 	// non-empty for all but the last component for prefix subscriptions.
-	match := wamp.OptionString(msg.Options, wamp.OptMatch)
+	match, _ := wamp.AsString(msg.Options[wamp.OptMatch])
 	if !msg.Topic.ValidURI(b.strictURI, match) {
 		errMsg := fmt.Sprintf(
 			"subscribe for invalid topic URI %v (URI strict checking %v)",
