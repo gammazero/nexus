@@ -848,7 +848,7 @@ func handleCRAuth(peer wamp.Peer, challenge *wamp.Challenge, authHandlers map[st
 	// If router sent back ABORT in response to client's authentication attempt
 	// return error.
 	if abort, ok := msg.(*wamp.Abort); ok {
-		authErr := wamp.OptionString(abort.Details, wamp.OptError)
+		authErr, _ := wamp.AsString(abort.Details[wamp.OptError])
 		if authErr == "" {
 			authErr = "authentication failed"
 		}
@@ -1002,10 +1002,11 @@ CollectResults:
 	}
 	// If this is a progressive result.
 	if progChan != nil {
-		result, ok := msg.(*wamp.Result)
-		if ok && wamp.OptionFlag(result.Details, wamp.OptProgress) {
-			progChan <- result
-			goto CollectResults
+		if result, ok := msg.(*wamp.Result); ok {
+			if ok, _ = wamp.AsBool(result.Details[wamp.OptProgress]); ok {
+				progChan <- result
+				goto CollectResults
+			}
 		}
 	}
 	c.actionChan <- func() {
@@ -1126,7 +1127,7 @@ func (c *Client) runHandleInvocation(msg *wamp.Invocation) {
 	// Create a kill switch so that invocation can be canceled.
 	var cancel context.CancelFunc
 	var ctx context.Context
-	timeout := wamp.OptionInt64(msg.Details, wamp.OptTimeout)
+	timeout, _ := wamp.AsInt64(msg.Details[wamp.OptTimeout])
 	if timeout > 0 {
 		// The caller specified a timeout, in milliseconds.
 		ctx, cancel = context.WithTimeout(context.Background(),
@@ -1139,7 +1140,7 @@ func (c *Client) runHandleInvocation(msg *wamp.Invocation) {
 
 	// If caller is accepting progressive results, create map entry to
 	// allow progress to be sent.
-	if wamp.OptionFlag(msg.Details, wamp.OptReceiveProgress) {
+	if ok, _ = wamp.AsBool(msg.Details[wamp.OptReceiveProgress]); ok {
 		c.progGate[ctx] = msg.Request
 	}
 
@@ -1230,7 +1231,8 @@ func (c *Client) runHandleInterrupt(msg *wamp.Interrupt) {
 	// If the interrupt mode is "killnowait", then the router is not
 	// waiting for a response, so do not send one.  This is indicated by
 	// deleting the cancel for the invocation early.
-	if wamp.OptionString(msg.Options, wamp.OptMode) == wamp.CancelModeKillNoWait {
+	mode, _ := wamp.AsString(msg.Options[wamp.OptMode])
+	if mode == wamp.CancelModeKillNoWait {
 		delete(c.invHandlerKill, msg.Request)
 	}
 	cancel()

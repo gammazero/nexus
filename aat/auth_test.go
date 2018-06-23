@@ -45,7 +45,7 @@ func TestJoinRealmWithCRAuth(t *testing.T) {
 	}
 
 	realmDetails := cli.RealmDetails()
-	if wamp.OptionString(realmDetails, "authrole") != "user" {
+	if s, _ := wamp.AsString(realmDetails["authrole"]); s != "user" {
 		t.Fatal("missing or incorrect authrole")
 	}
 
@@ -80,7 +80,7 @@ func TestJoinRealmWithCRCookieAuth(t *testing.T) {
 	details := cli.RealmDetails()
 
 	// Client should not have be authenticated by cookie first time.
-	if wamp.OptionFlag(details, "authbycookie") {
+	if ok, _ := wamp.AsBool(details["authbycookie"]); ok {
 		t.Fatal("authbycookie set incorrectly to true")
 	}
 
@@ -93,11 +93,11 @@ func TestJoinRealmWithCRCookieAuth(t *testing.T) {
 
 	// If websocket, then should be authenticated by cookie this time.
 	if cfg.WsCfg.Jar != nil {
-		if !wamp.OptionFlag(details, "authbycookie") {
+		if ok, _ := wamp.AsBool(details["authbycookie"]); !ok {
 			t.Fatal("should have been authenticated by cookie")
 		}
 	} else {
-		if wamp.OptionFlag(details, "authbycookie") {
+		if ok, _ := wamp.AsBool(details["authbycookie"]); ok {
 			t.Fatal("authbycookie set incorrectly to true")
 		}
 	}
@@ -159,7 +159,7 @@ func TestAuthz(t *testing.T) {
 		t.Fatal("Call error:", err)
 	}
 	dict, _ := wamp.AsDict(result.Arguments[0])
-	if wamp.OptionString(dict, "foobar") != "" {
+	if _, ok := dict["foobar"]; ok {
 		t.Fatal("Should not have special info in session")
 	}
 
@@ -183,7 +183,7 @@ func TestAuthz(t *testing.T) {
 		t.Fatal("Call error:", err)
 	}
 	dict, _ = wamp.AsDict(result.Arguments[0])
-	if wamp.OptionString(dict, "foobar") != "baz" {
+	if s, _ := wamp.AsString(dict["foobar"]); s != "baz" {
 		t.Fatal("Missing special info in session")
 	}
 

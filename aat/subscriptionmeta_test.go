@@ -46,14 +46,13 @@ func TestMetaEventOnCreateOnSubscribe(t *testing.T) {
 			errChanC <- errors.New("argument 0 (session) was not wamp.ID")
 			return
 		}
-		onCreateID = wamp.OptionID(dict, "id")
-		if wamp.OptionURI(dict, "uri") != wamp.URI("some.topic") {
+		onCreateID, _ = wamp.AsID(dict["id"])
+		if u, _ := wamp.AsURI(dict["uri"]); u != wamp.URI("some.topic") {
 			errChanC <- fmt.Errorf(
-				"on_create had wrong topic, got '%v' want 'some.topic'",
-				wamp.OptionURI(dict, "uri"))
+				"on_create had wrong topic, got '%v' want 'some.topic'", u)
 			return
 		}
-		if wamp.OptionString(dict, "created") == "" {
+		if s, _ := wamp.AsString(dict["created"]); s == "" {
 			errChanC <- errors.New("on_create missing created time")
 			return
 		}

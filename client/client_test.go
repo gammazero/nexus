@@ -202,7 +202,7 @@ func TestSubscribe(t *testing.T) {
 			errChan <- errors.New("event missing or bad args")
 			return
 		}
-		origTopic := wamp.OptionURI(details, "topic")
+		origTopic, _ := wamp.AsURI(details["topic"])
 		if origTopic != wamp.URI(testTopic) {
 			errChan <- errors.New("wrong original topic")
 			return

@@ -48,14 +48,13 @@ func TestMetaEventRegOnCreateRegOnRegister(t *testing.T) {
 			errChanC <- errors.New("argument 0 (session) was not wamp.ID")
 			return
 		}
-		onCreateID = wamp.OptionID(dict, "id")
-		if wamp.OptionURI(dict, "uri") != wamp.URI("some.proc") {
+		onCreateID, _ = wamp.AsID(dict["id"])
+		if u, _ := wamp.AsURI(dict["uri"]); u != wamp.URI("some.proc") {
 			errChanC <- fmt.Errorf(
-				"on_create had wrong procedure, got '%v' want 'some.proc'",
-				wamp.OptionURI(dict, "uri"))
+				"on_create had wrong procedure, got '%v' want 'some.proc'", u)
 			return
 		}
-		if wamp.OptionString(dict, "created") == "" {
+		if s, _ := wamp.AsString(dict["created"]); s == "" {
 			errChanC <- errors.New("on_create missing created time")
 			return
 		}

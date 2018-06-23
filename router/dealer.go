@@ -988,9 +988,8 @@ func (d *Dealer) RegMatch(msg *wamp.Invocation) wamp.Message {
 func (d *Dealer) RegGet(msg *wamp.Invocation) wamp.Message {
 	var dict wamp.Dict
 	if len(msg.Arguments) != 0 {
-		if i64, ok := wamp.AsInt64(msg.Arguments[0]); ok {
+		if regID, ok := wamp.AsID(msg.Arguments[0]); ok {
 			sync := make(chan struct{})
-			regID := wamp.ID(i64)
 			d.actionChan <- func() {
 				if reg, ok := d.registrations[regID]; ok {
 					dict = wamp.Dict{
@@ -1025,9 +1024,8 @@ func (d *Dealer) RegGet(msg *wamp.Invocation) wamp.Message {
 func (d *Dealer) RegListCallees(msg *wamp.Invocation) wamp.Message {
 	var calleeIDs []wamp.ID
 	if len(msg.Arguments) != 0 {
-		if i64, ok := wamp.AsInt64(msg.Arguments[0]); ok {
+		if regID, ok := wamp.AsID(msg.Arguments[0]); ok {
 			sync := make(chan struct{})
-			regID := wamp.ID(i64)
 			d.actionChan <- func() {
 				if reg, ok := d.registrations[regID]; ok {
 					calleeIDs = make([]wamp.ID, len(reg.callees))
@@ -1060,10 +1058,9 @@ func (d *Dealer) RegCountCallees(msg *wamp.Invocation) wamp.Message {
 	var count int
 	var ok bool
 	if len(msg.Arguments) != 0 {
-		var i64 int64
-		if i64, ok = wamp.AsInt64(msg.Arguments[0]); ok {
+		var regID wamp.ID
+		if regID, ok = wamp.AsID(msg.Arguments[0]); ok {
 			sync := make(chan int)
-			regID := wamp.ID(i64)
 			d.actionChan <- func() {
 				if reg, found := d.registrations[regID]; found {
 					sync <- len(reg.callees)

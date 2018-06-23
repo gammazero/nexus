@@ -153,13 +153,13 @@ func TestTicketAuth(t *testing.T) {
 	if welcome.MessageType() != wamp.WELCOME {
 		t.Fatal("expected WELCOME message, got: ", welcome.MessageType())
 	}
-	if wamp.OptionString(welcome.Details, "authmethod") != "ticket" {
+	if s, _ := wamp.AsString(welcome.Details["authmethod"]); s != "ticket" {
 		t.Fatal("invalid authmethod in welcome details")
 	}
-	if wamp.OptionString(welcome.Details, "authrole") != "user" {
+	if s, _ := wamp.AsString(welcome.Details["authrole"]); s != "user" {
 		t.Fatal("incorrect authrole in welcome details")
 	}
-	if wamp.OptionFlag(welcome.Details, "authbycookie") {
+	if ok, _ := wamp.AsBool(welcome.Details["authbycookie"]); ok {
 		t.Fatal("authbycookie set incorrectly to true")
 	}
 	tks.ticket = "bad"
@@ -182,7 +182,7 @@ func TestTicketAuth(t *testing.T) {
 		t.Fatal("challenge failed: ", err.Error())
 	}
 	// Client should be authenticated by cookie.
-	if !wamp.OptionFlag(welcome.Details, "authbycookie") {
+	if ok, _ := wamp.AsBool(welcome.Details["authbycookie"]); !ok {
 		t.Fatal("authbycookie set incorrectly to false")
 	}
 }
@@ -226,10 +226,10 @@ func TestCRAuth(t *testing.T) {
 	if welcome.MessageType() != wamp.WELCOME {
 		t.Fatal("expected WELCOME message, got: ", welcome.MessageType())
 	}
-	if wamp.OptionString(welcome.Details, "authmethod") != "wampcra" {
+	if s, _ := wamp.AsString(welcome.Details["authmethod"]); s != "wampcra" {
 		t.Fatal("invalid authmethod in welcome details")
 	}
-	if wamp.OptionString(welcome.Details, "authrole") != "user" {
+	if s, _ := wamp.AsString(welcome.Details["authrole"]); s != "user" {
 		t.Fatal("incorrect authrole in welcome details")
 	}
 

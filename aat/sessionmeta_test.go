@@ -49,7 +49,7 @@ func TestMetaEventOnJoin(t *testing.T) {
 			errChan <- errors.New("argument was not wamp.Dict")
 			return
 		}
-		onJoinID = wamp.OptionID(details, "session")
+		onJoinID, _ = wamp.AsID(details["session"])
 		errChan <- nil
 	}
 
@@ -436,7 +436,7 @@ func TestMetaProcSessionGet(t *testing.T) {
 	if !ok {
 		t.Fatal("Could not convert result to wamp.Dict")
 	}
-	resultID := wamp.OptionID(dict, "session")
+	resultID, _ := wamp.AsID(dict["session"])
 	if resultID != sess.ID() {
 		t.Fatal("Wrong session ID in result")
 	}

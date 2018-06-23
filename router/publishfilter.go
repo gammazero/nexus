@@ -95,7 +95,7 @@ func (f *publishFilter) publishAllowed(sub *wamp.Session) bool {
 	// Check blacklists to see if session has a value in any blacklist.
 	for attr, vals := range f.blMap {
 		// Get the session attribute value to compare with blacklist.
-		sessAttr := wamp.OptionString(sub.Details, attr)
+		sessAttr, _ := wamp.AsString(sub.Details[attr])
 		if sessAttr == "" {
 			continue
 		}
@@ -124,7 +124,7 @@ func (f *publishFilter) publishAllowed(sub *wamp.Session) bool {
 	// Check whitelists to make sure session has value in each whitelist.
 	for attr, vals := range f.wlMap {
 		// Get the session attribute value to compare with whitelist.
-		sessAttr := wamp.OptionString(sub.Details, attr)
+		sessAttr, _ := wamp.AsString(sub.Details[attr])
 		if sessAttr == "" {
 			// Session does not have whitelisted value, so deny.
 			return false
