@@ -19,8 +19,16 @@ func TestRPCRegisterAndCall(t *testing.T) {
 		t.Fatal("Failed to connect client:", err)
 	}
 
+	proceed := make(chan struct{})
+
 	// Test registering a valid procedure.
 	handler := func(ctx context.Context, args wamp.List, kwargs, details wamp.Dict) *client.InvokeResult {
+		wait, _ := wamp.AsBool(kwargs["wait"])
+		if wait {
+			<-proceed // wait until other call finishes
+		} else {
+			defer close(proceed)
+		}
 		var sum int64
 		for i := range args {
 			n, ok := wamp.AsInt64(args[i])
@@ -49,54 +57,33 @@ func TestRPCRegisterAndCall(t *testing.T) {
 		t.Fatal("Failed to connect client:", err)
 	}
 
-	// Connect third caller session.
-	caller3, err := connectClient()
-	if err != nil {
-		t.Fatal("Failed to connect client:", err)
-	}
-
 	// Test calling the procedure.
 	callArgs := wamp.List{1, 2, 3, 4, 5, 6, 7, 8, 9, 10}
-	var result1, result2, result3 *wamp.Result
-	var err1, err2, err3 error
-	var ready, allDone sync.WaitGroup
-	release := make(chan struct{})
-	ready.Add(3)
-	allDone.Add(3)
+	var result1, result2 *wamp.Result
+	var err1, err2 error
+	var allDone sync.WaitGroup
+	allDone.Add(2)
 	go func() {
 		defer allDone.Done()
-		ready.Done()
-		<-release
 		ctx, cancel := context.WithTimeout(context.Background(), time.Second)
 		defer cancel()
-		result1, err1 = caller.Call(ctx, procName, nil, callArgs, nil, "")
+		kwArgs := wamp.Dict{
+			"wait": true,
+		}
+		result1, err1 = caller.Call(ctx, procName, nil, callArgs, kwArgs, "")
 	}()
 	go func() {
 		defer allDone.Done()
-		// Call it with caller2.
-		ready.Done()
-		<-release
 		ctx, cancel := context.WithTimeout(context.Background(), time.Second)
 		defer cancel()
 		result2, err2 = caller2.Call(ctx, procName, nil, callArgs, nil, "")
 	}()
-	go func() {
-		// Call it with caller3.
-		defer allDone.Done()
-		ready.Done()
-		<-release
-		ctx, cancel := context.WithTimeout(context.Background(), time.Second)
-		defer cancel()
-		result3, err3 = caller3.Call(ctx, procName, nil, callArgs, nil, "")
-	}()
 
-	ready.Wait()
-	close(release)
 	allDone.Wait()
 
-	errs := []error{err1, err2, err3}
-	results := []*wamp.Result{result1, result2, result3}
-	for i := 0; i < 3; i++ {
+	errs := []error{err1, err2}
+	results := []*wamp.Result{result1, result2}
+	for i := 0; i < len(errs); i++ {
 		if errs[i] != nil {
 			t.Error("Caller", i, "failed to call procedure:", errs[i])
 		} else {
@@ -120,11 +107,6 @@ func TestRPCRegisterAndCall(t *testing.T) {
 	}
 
 	err = caller2.Close()
-	if err != nil {
-		t.Error("Failed to disconnect client:", err)
-	}
-
-	err = caller3.Close()
 	if err != nil {
 		t.Error("Failed to disconnect client:", err)
 	}
