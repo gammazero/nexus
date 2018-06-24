@@ -143,7 +143,6 @@ type Client struct {
 	progGate       map[context.Context]wamp.ID
 
 	actionChan chan func()
-	idGen      *wamp.SyncIDGen
 
 	stopping          chan struct{}
 	activeInvHandlers sync.WaitGroup
@@ -191,7 +190,6 @@ func NewClient(p wamp.Peer, cfg Config) (*Client, error) {
 		progGate:       map[context.Context]wamp.ID{},
 
 		actionChan: make(chan func()),
-		idGen:      new(wamp.SyncIDGen),
 		stopping:   make(chan struct{}),
 		done:       make(chan struct{}),
 
@@ -252,7 +250,7 @@ func (c *Client) Subscribe(topic string, fn EventHandler, options wamp.Dict) err
 	if options == nil {
 		options = wamp.Dict{}
 	}
-	id := c.idGen.Next()
+	id := wamp.GlobalID()
 	c.expectReply(id)
 	c.sess.Send(&wamp.Subscribe{
 		Request: id,
@@ -322,7 +320,7 @@ func (c *Client) Unsubscribe(topic string) error {
 		return err
 	}
 
-	id := c.idGen.Next()
+	id := wamp.GlobalID()
 	c.expectReply(id)
 	c.sess.Send(&wamp.Unsubscribe{
 		Request:      id,
@@ -382,7 +380,7 @@ func (c *Client) Publish(topic string, options wamp.Dict, args wamp.List, kwargs
 	// Check if the client is asking for a PUBLISHED response.
 	pubAck, _ := options[wamp.OptAcknowledge].(bool)
 
-	id := c.idGen.Next()
+	id := wamp.GlobalID()
 	if pubAck {
 		c.expectReply(id)
 	}
@@ -443,7 +441,7 @@ type InvocationHandler func(context.Context, wamp.List, wamp.Dict, wamp.Dict) (r
 //
 // NOTE: Use consts defined in wamp/options.go instead of raw strings.
 func (c *Client) Register(procedure string, fn InvocationHandler, options wamp.Dict) error {
-	id := c.idGen.Next()
+	id := wamp.GlobalID()
 	c.expectReply(id)
 	c.sess.Send(&wamp.Register{
 		Request:   id,
@@ -517,7 +515,7 @@ func (c *Client) Unregister(procedure string) error {
 		return err
 	}
 
-	id := c.idGen.Next()
+	id := wamp.GlobalID()
 	c.expectReply(id)
 	c.sess.Send(&wamp.Unregister{
 		Request:      id,
@@ -657,7 +655,7 @@ func (c *Client) CallProgress(ctx context.Context, procedure string, options wam
 		}()
 	}
 
-	id := c.idGen.Next()
+	id := wamp.GlobalID()
 	c.expectReply(id)
 	c.sess.Send(&wamp.Call{
 		Request:     id,
