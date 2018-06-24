@@ -368,6 +368,10 @@ func (c *Client) Unsubscribe(topic string) error {
 // where xxx is the name of any session attribute, typically supplied with the
 // HELLO message.
 //
+// To receive a published event, the subscriber session must not have any
+// values that appear in a blacklist, and must have a value from each
+// whitelist.
+//
 // To request that this publisher's identity is disclosed to subscribers, set:
 //   options["disclose_me"] = true
 //
