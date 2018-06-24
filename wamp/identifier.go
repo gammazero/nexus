@@ -31,8 +31,8 @@ var (
 	strictURIEmpty = regexp.MustCompile(`^(([0-9a-z_]+\.)|\.)*([0-9a-z_]+)?$`)
 )
 
-// ValidURI returs true if the URI complies with formatting rules determined by
-// the strict flag and match type.
+// ValidURI returns true if the URI complies with formatting rules determined
+// by the strict flag and match type.
 func (u URI) ValidURI(strict bool, match string) bool {
 	if strict {
 		if match == MatchWildcard {

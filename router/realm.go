@@ -272,7 +272,7 @@ func (r *realm) createMetaSession() {
 	}
 
 	// Run the handler for messages from the meta session.
-	go r.handleInboundMessages(r.metaSess)
+	go r.handleInboundMessages(r.metaSess, r.metaStop)
 	if r.debug {
 		r.log.Println("Started meta-session", r.metaSess)
 	}
@@ -384,7 +384,7 @@ func (r *realm) handleSession(sess *wamp.Session) error {
 		r.log.Println("Started session", sess)
 	}
 	go func() {
-		shutdown, err := r.handleInboundMessages(sess)
+		shutdown, err := r.handleInboundMessages(sess, r.clientStop)
 		if err != nil {
 			abortMsg := wamp.Abort{
 				Reason:  wamp.ErrProtocolViolation,
@@ -402,13 +402,9 @@ func (r *realm) handleSession(sess *wamp.Session) error {
 
 // handleInboundMessages handles the messages sent from a client session to
 // the router.
-func (r *realm) handleInboundMessages(sess *wamp.Session) (bool, error) {
+func (r *realm) handleInboundMessages(sess *wamp.Session, stopChan <-chan struct{}) (bool, error) {
 	if r.debug {
 		defer r.log.Println("Ended session", sess)
-	}
-	stopChan := r.clientStop
-	if sess == r.metaSess {
-		stopChan = r.metaStop
 	}
 	recvChan := sess.Recv()
 	for {
@@ -629,6 +625,8 @@ func (r *realm) getAuthenticator(methods []string) (auth auth.Authenticator, aut
 }
 
 func (r *realm) registerMetaProcedure(procedure wamp.URI, f func(*wamp.Invocation) wamp.Message) {
+	// Register the meta procedure.  The "disclose_caller" option must be
+	// enabled for the testament API and the meta session API.
 	r.metaPeer.Send(&wamp.Register{
 		Request: r.metaIDGen.Next(),
 		Options: wamp.Dict{
@@ -708,7 +706,7 @@ func (r *realm) sessionCount(msg *wamp.Invocation) wamp.Message {
 		r.actionChan <- func() {
 			var nclients int
 			for _, sess := range r.clients {
-				authrole := wamp.OptionString(sess.Details, "authrole")
+				authrole, _ := wamp.AsString(sess.Details["authrole"])
 				for j := range filter {
 					if filter[j] == authrole {
 						nclients++
@@ -747,7 +745,7 @@ func (r *realm) sessionList(msg *wamp.Invocation) wamp.Message {
 		r.actionChan <- func() {
 			var ids []wamp.ID
 			for sessID, sess := range r.clients {
-				authrole := wamp.OptionString(sess.Details, "authrole")
+				authrole, _ := wamp.AsString(sess.Details["authrole"])
 				for j := range filter {
 					if filter[j] == authrole {
 						ids = append(ids, sessID)
@@ -763,32 +761,23 @@ func (r *realm) sessionList(msg *wamp.Invocation) wamp.Message {
 }
 
 func (r *realm) sessionGet(msg *wamp.Invocation) wamp.Message {
-	makeErr := func() *wamp.Error {
-		return &wamp.Error{
-			Type:    wamp.INVOCATION,
-			Request: msg.Request,
-			Details: wamp.Dict{},
-			Error:   wamp.ErrNoSuchSession,
-		}
-	}
-
 	if len(msg.Arguments) == 0 {
-		return makeErr()
+		return makeError(msg.Request, wamp.ErrNoSuchSession)
 	}
 
-	sessID, ok := wamp.AsInt64(msg.Arguments[0])
+	sessID, ok := wamp.AsID(msg.Arguments[0])
 	if !ok {
-		return makeErr()
+		return makeError(msg.Request, wamp.ErrNoSuchSession)
 	}
 
 	retChan := make(chan *wamp.Session)
 	r.actionChan <- func() {
-		sess, _ := r.clients[wamp.ID(sessID)]
+		sess, _ := r.clients[sessID]
 		retChan <- sess
 	}
 	sess := <-retChan
 	if sess == nil {
-		return makeErr()
+		return makeError(msg.Request, wamp.ErrNoSuchSession)
 	}
 
 	output := r.cleanSessionDetails(sess.Details)
@@ -802,28 +791,20 @@ func (r *realm) sessionGet(msg *wamp.Invocation) wamp.Message {
 	}
 }
 
-// testamentFlush removes all testaments for the invoking client.
-// it optionally takes a keyword argument "scope" set to "detached" or "destroyed"
+// testamentFlush removes all testaments for the invoking client.  It takes an
+// optional keyword argument "scope" that has the value "detached" or
+// "destroyed"
 func (r *realm) testamentFlush(msg *wamp.Invocation) wamp.Message {
-	makeErr := func(uri wamp.URI) *wamp.Error {
-		return &wamp.Error{
-			Type:    wamp.INVOCATION,
-			Request: msg.Request,
-			Details: wamp.Dict{},
-			Error:   uri,
-		}
-	}
-
 	caller, ok := wamp.AsID(msg.Details["caller"])
 	if !ok {
-		return makeErr(wamp.ErrInvalidArgument)
+		return makeError(msg.Request, wamp.ErrInvalidArgument)
 	}
 	scope, ok := wamp.AsString(msg.ArgumentsKw["scope"])
 	if !ok || scope == "" {
 		scope = "destroyed"
 	}
 	if scope != "destroyed" && scope != "detached" {
-		return makeErr(wamp.ErrInvalidArgument)
+		return makeError(msg.Request, wamp.ErrInvalidArgument)
 	}
 	testaments, ok := r.testaments[caller]
 	if ok {
@@ -841,32 +822,23 @@ func (r *realm) testamentFlush(msg *wamp.Invocation) wamp.Message {
 // detached (when session resumption is implemented) or destroyed (when the
 // transport is lost).
 func (r *realm) testamentAdd(msg *wamp.Invocation) wamp.Message {
-	makeErr := func(uri wamp.URI) *wamp.Error {
-		return &wamp.Error{
-			Type:    wamp.INVOCATION,
-			Request: msg.Request,
-			Details: wamp.Dict{},
-			Error:   uri,
-		}
-	}
-
 	caller, ok := wamp.AsID(msg.Details["caller"])
 	if !ok || len(msg.Arguments) < 3 {
-		return makeErr(wamp.ErrInvalidArgument)
+		return makeError(msg.Request, wamp.ErrInvalidArgument)
 	}
 	topic, ok := wamp.AsURI(msg.Arguments[0])
 	if !ok {
 		fmt.Printf("invalid topic")
-		return makeErr(wamp.ErrInvalidArgument)
+		return makeError(msg.Request, wamp.ErrInvalidArgument)
 	}
 	args, ok := wamp.AsList(msg.Arguments[1])
 	if !ok {
 		fmt.Printf("invalid args")
-		return makeErr(wamp.ErrInvalidArgument)
+		return makeError(msg.Request, wamp.ErrInvalidArgument)
 	}
 	kwargs, ok := wamp.AsDict(msg.Arguments[2])
 	if !ok {
-		return makeErr(wamp.ErrInvalidArgument)
+		return makeError(msg.Request, wamp.ErrInvalidArgument)
 	}
 	options, ok := wamp.AsDict(msg.ArgumentsKw["publish_options"])
 	if !ok {
@@ -877,10 +849,10 @@ func (r *realm) testamentAdd(msg *wamp.Invocation) wamp.Message {
 		scope = "destroyed"
 	}
 	if scope != "destroyed" && scope != "detached" {
-		return makeErr(wamp.ErrInvalidArgument)
+		return makeError(msg.Request, wamp.ErrInvalidArgument)
 	}
-	// a map returns the "zero value" if a key doesn't exist, so there are nils for the arrays
-	// which are equal to empty arrays
+	// a map returns the "zero value" if a key doesn't exist, so there are nils
+	// for the arrays which are equal to empty arrays
 	testaments := r.testaments[caller]
 	t := testament{
 		args:    args,
@@ -959,4 +931,14 @@ func (r *realm) cleanSessionDetails(details wamp.Dict) wamp.Dict {
 	clean["transport"] = altTrans
 
 	return clean
+}
+
+// makeError returns a wamp.Error message with the given URI.
+func makeError(req wamp.ID, uri wamp.URI) *wamp.Error {
+	return &wamp.Error{
+		Type:    wamp.INVOCATION,
+		Request: req,
+		Details: wamp.Dict{},
+		Error:   uri,
+	}
 }

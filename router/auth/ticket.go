@@ -35,7 +35,7 @@ func (t *TicketAuthenticator) Authenticate(sid wamp.ID, details wamp.Dict, clien
 	// The HELLO.Details.authid|string is the authentication ID (e.g. username)
 	// the client wishes to authenticate as. For Ticket-based authentication,
 	// this MUST be provided.
-	authID := wamp.OptionString(details, "authid")
+	authID, _ := wamp.AsString(details["authid"])
 	if authID == "" {
 		return nil, errors.New("missing authid")
 	}

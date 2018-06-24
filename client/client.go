@@ -143,7 +143,6 @@ type Client struct {
 	progGate       map[context.Context]wamp.ID
 
 	actionChan chan func()
-	idGen      *wamp.SyncIDGen
 
 	stopping          chan struct{}
 	activeInvHandlers sync.WaitGroup
@@ -191,7 +190,6 @@ func NewClient(p wamp.Peer, cfg Config) (*Client, error) {
 		progGate:       map[context.Context]wamp.ID{},
 
 		actionChan: make(chan func()),
-		idGen:      new(wamp.SyncIDGen),
 		stopping:   make(chan struct{}),
 		done:       make(chan struct{}),
 
@@ -252,7 +250,7 @@ func (c *Client) Subscribe(topic string, fn EventHandler, options wamp.Dict) err
 	if options == nil {
 		options = wamp.Dict{}
 	}
-	id := c.idGen.Next()
+	id := wamp.GlobalID()
 	c.expectReply(id)
 	c.sess.Send(&wamp.Subscribe{
 		Request: id,
@@ -322,7 +320,7 @@ func (c *Client) Unsubscribe(topic string) error {
 		return err
 	}
 
-	id := c.idGen.Next()
+	id := wamp.GlobalID()
 	c.expectReply(id)
 	c.sess.Send(&wamp.Unsubscribe{
 		Request:      id,
@@ -382,7 +380,7 @@ func (c *Client) Publish(topic string, options wamp.Dict, args wamp.List, kwargs
 	// Check if the client is asking for a PUBLISHED response.
 	pubAck, _ := options[wamp.OptAcknowledge].(bool)
 
-	id := c.idGen.Next()
+	id := wamp.GlobalID()
 	if pubAck {
 		c.expectReply(id)
 	}
@@ -443,7 +441,7 @@ type InvocationHandler func(context.Context, wamp.List, wamp.Dict, wamp.Dict) (r
 //
 // NOTE: Use consts defined in wamp/options.go instead of raw strings.
 func (c *Client) Register(procedure string, fn InvocationHandler, options wamp.Dict) error {
-	id := c.idGen.Next()
+	id := wamp.GlobalID()
 	c.expectReply(id)
 	c.sess.Send(&wamp.Register{
 		Request:   id,
@@ -517,7 +515,7 @@ func (c *Client) Unregister(procedure string) error {
 		return err
 	}
 
-	id := c.idGen.Next()
+	id := wamp.GlobalID()
 	c.expectReply(id)
 	c.sess.Send(&wamp.Unregister{
 		Request:      id,
@@ -657,7 +655,7 @@ func (c *Client) CallProgress(ctx context.Context, procedure string, options wam
 		}()
 	}
 
-	id := c.idGen.Next()
+	id := wamp.GlobalID()
 	c.expectReply(id)
 	c.sess.Send(&wamp.Call{
 		Request:     id,
@@ -848,7 +846,7 @@ func handleCRAuth(peer wamp.Peer, challenge *wamp.Challenge, authHandlers map[st
 	// If router sent back ABORT in response to client's authentication attempt
 	// return error.
 	if abort, ok := msg.(*wamp.Abort); ok {
-		authErr := wamp.OptionString(abort.Details, wamp.OptError)
+		authErr, _ := wamp.AsString(abort.Details[wamp.OptError])
 		if authErr == "" {
 			authErr = "authentication failed"
 		}
@@ -1002,10 +1000,11 @@ CollectResults:
 	}
 	// If this is a progressive result.
 	if progChan != nil {
-		result, ok := msg.(*wamp.Result)
-		if ok && wamp.OptionFlag(result.Details, wamp.OptProgress) {
-			progChan <- result
-			goto CollectResults
+		if result, ok := msg.(*wamp.Result); ok {
+			if ok, _ = wamp.AsBool(result.Details[wamp.OptProgress]); ok {
+				progChan <- result
+				goto CollectResults
+			}
 		}
 	}
 	c.actionChan <- func() {
@@ -1126,7 +1125,7 @@ func (c *Client) runHandleInvocation(msg *wamp.Invocation) {
 	// Create a kill switch so that invocation can be canceled.
 	var cancel context.CancelFunc
 	var ctx context.Context
-	timeout := wamp.OptionInt64(msg.Details, wamp.OptTimeout)
+	timeout, _ := wamp.AsInt64(msg.Details[wamp.OptTimeout])
 	if timeout > 0 {
 		// The caller specified a timeout, in milliseconds.
 		ctx, cancel = context.WithTimeout(context.Background(),
@@ -1139,7 +1138,7 @@ func (c *Client) runHandleInvocation(msg *wamp.Invocation) {
 
 	// If caller is accepting progressive results, create map entry to
 	// allow progress to be sent.
-	if wamp.OptionFlag(msg.Details, wamp.OptReceiveProgress) {
+	if ok, _ = wamp.AsBool(msg.Details[wamp.OptReceiveProgress]); ok {
 		c.progGate[ctx] = msg.Request
 	}
 
@@ -1230,7 +1229,8 @@ func (c *Client) runHandleInterrupt(msg *wamp.Interrupt) {
 	// If the interrupt mode is "killnowait", then the router is not
 	// waiting for a response, so do not send one.  This is indicated by
 	// deleting the cancel for the invocation early.
-	if wamp.OptionString(msg.Options, wamp.OptMode) == wamp.CancelModeKillNoWait {
+	mode, _ := wamp.AsString(msg.Options[wamp.OptMode])
+	if mode == wamp.CancelModeKillNoWait {
 		delete(c.invHandlerKill, msg.Request)
 	}
 	cancel()

@@ -29,7 +29,7 @@ func NewCRAuthenticator(keyStore KeyStore, timeout time.Duration) *CRAuthenticat
 func (cr *CRAuthenticator) AuthMethod() string { return "wampcra" }
 
 func (cr *CRAuthenticator) Authenticate(sid wamp.ID, details wamp.Dict, client wamp.Peer) (*wamp.Welcome, error) {
-	authid := wamp.OptionString(details, "authid")
+	authid, _ := wamp.AsString(details["authid"])
 	if authid == "" {
 		return nil, errors.New("missing authid")
 	}

@@ -73,12 +73,12 @@ const (
 //     cli, err = client.ConnectNet(routerAddr, cfg)
 //
 func RespondChallenge(pass string, c *wamp.Challenge, h func() hash.Hash) string {
-	ch := wamp.OptionString(c.Extra, "challenge")
+	ch, _ := wamp.AsString(c.Extra["challenge"])
 	// If the client needed to lookup a user's key, this would require decoding
 	// the JSON-encoded challenge string and getting the authid.  For this
 	// example assume that client only operates as one user and knows the key
 	// to use.
-	saltStr := wamp.OptionString(c.Extra, "salt")
+	saltStr, _ := wamp.AsString(c.Extra["salt"])
 	// If no salt given, use raw password as key.
 	if saltStr == "" {
 		return SignChallenge(ch, []byte(pass))
@@ -86,8 +86,8 @@ func RespondChallenge(pass string, c *wamp.Challenge, h func() hash.Hash) string
 
 	// If salting info give, then compute a derived key using PBKDF2.
 	salt := []byte(saltStr)
-	iters := int(wamp.OptionInt64(c.Extra, "iterations"))
-	keylen := int(wamp.OptionInt64(c.Extra, "keylen"))
+	iters, _ := wamp.AsInt64(c.Extra["iterations"])
+	keylen, _ := wamp.AsInt64(c.Extra["keylen"])
 
 	if iters == 0 {
 		iters = defaultIters
@@ -99,7 +99,7 @@ func RespondChallenge(pass string, c *wamp.Challenge, h func() hash.Hash) string
 		h = sha256.New
 	}
 	// Compute derived key.
-	dk := pbkdf2.Key([]byte(pass), salt, iters, keylen, h)
+	dk := pbkdf2.Key([]byte(pass), salt, int(iters), int(keylen), h)
 
 	// Sign challenge using derived key.
 	return SignChallenge(ch, dk)

@@ -173,7 +173,7 @@ func TestProtocolViolation(t *testing.T) {
 		if abort.Reason != wamp.ErrProtocolViolation {
 			t.Fatal("Expected reason to be", wamp.ErrProtocolViolation)
 		}
-		//errMsg := wamp.OptionString(abort.Details, "error")
+		//errMsg, _ := wamp.AsString(abort.Details["error"])
 		//fmt.Println("===> Abort error:", errMsg)
 	}
 
@@ -197,7 +197,7 @@ func TestProtocolViolation(t *testing.T) {
 		if abort.Reason != wamp.ErrProtocolViolation {
 			t.Fatal("Expected reason to be", wamp.ErrProtocolViolation)
 		}
-		//errMsg := wamp.OptionString(abort.Details, "error")
+		//errMsg, _ := wamp.AsString(abort.Details["error"])
 		//fmt.Println("===> Abort error:", errMsg)
 	}
 }
@@ -527,7 +527,7 @@ func TestSessionMetaProcedures(t *testing.T) {
 	if !ok {
 		t.Fatal("expected dict type arg")
 	}
-	sid := wamp.ID(wamp.OptionInt64(dict, "session"))
+	sid, _ := wamp.AsID(dict["session"])
 	if sid != sessID {
 		t.Fatal("wrong session ID")
 	}
@@ -753,11 +753,11 @@ func TestRegistrationMetaProcedures(t *testing.T) {
 	if !ok {
 		t.Fatal("expected wamp.Dict")
 	}
-	regID = wamp.OptionID(dict, "id")
+	regID, _ = wamp.AsID(dict["id"])
 	if regID != registrationID {
 		t.Fatal("received wrong registration")
 	}
-	uri := wamp.OptionURI(dict, "uri")
+	uri, _ := wamp.AsURI(dict["uri"])
 	if uri != testProcedure {
 		t.Fatal("registration has wrong uri:", uri)
 	}

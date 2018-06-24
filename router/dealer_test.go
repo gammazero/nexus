@@ -205,7 +205,7 @@ func TestBasicCall(t *testing.T) {
 	if rslt.Request != 125 {
 		t.Fatal("wrong request ID in RESULT")
 	}
-	if wamp.OptionFlag(rslt.Details, "progress") {
+	if ok, _ = wamp.AsBool(rslt.Details["progress"]); ok {
 		t.Fatal("progress flag should not be set for response")
 	}
 
@@ -358,7 +358,7 @@ func TestCancelCallModeKill(t *testing.T) {
 	if len(rslt.Details) == 0 {
 		t.Fatal("expected details in message")
 	}
-	if wamp.OptionString(rslt.Details, "reason") != "callee canceled" {
+	if s, _ := wamp.AsString(rslt.Details["reason"]); s != "callee canceled" {
 		t.Fatal("Did not get error message from caller")
 	}
 }
@@ -1095,7 +1095,7 @@ func TestCallerIdentification(t *testing.T) {
 	}
 
 	// Test that invocation contains caller ID.
-	if wamp.OptionID(inv.Details, "caller") != callerID {
+	if id, _ := wamp.AsID(inv.Details["caller"]); id != callerID {
 		fmt.Println("===> details:", inv.Details)
 		t.Fatal("Did not get expected caller ID")
 	}
