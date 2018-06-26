@@ -85,6 +85,10 @@ func newPublishFilter(msg *wamp.Publish) *publishFilter {
 // publishAllowed determines if a message is allowed to be published to a
 // subscriber, by looking at any blacklists and whitelists provided with the
 // publish message.
+//
+// To receive a published event, the subscriber session must not have any
+// values that appear in a blacklist, and must have a value from each
+// whitelist.
 func (f *publishFilter) publishAllowed(sub *wamp.Session) bool {
 	// Check each blacklisted ID to see if session ID is blacklisted.
 	for i := range f.blIDs {
