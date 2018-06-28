@@ -17,7 +17,7 @@ For the API: [![GoDoc](https://godoc.org/github.com/gammazero/nexus?status.svg)]
 ## What is WAMP and nexus
 
 The Web Application Messaging Protocol (WAMP) is an open standard WebSocket subprotocol that provides two application messaging patterns in one unified protocol:
-[Remote Procedure Calls](http://wamp-proto.org/faq/#rpc) and [Publish & Subscribe](http://wamp-proto.org/faq/#pubsub)
+[Remote Procedure Calls](http://wamp-proto.org/faq/index.html#rpc) and [Publish & Subscribe](http://wamp-proto.org/faq/index.html#pubsub)
 
 Using WAMP you can build distributed systems out of application components which are loosely coupled and communicate in (soft) real-time.
 
