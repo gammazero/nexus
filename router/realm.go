@@ -288,7 +288,6 @@ func (r *realm) onJoin(sess *wamp.Session) {
 	sync := make(chan struct{})
 	r.actionChan <- func() {
 		r.clients[sess.ID] = sess
-		r.testaments[sess.ID] = testamentBucket{}
 		close(sync)
 	}
 	<-sync
@@ -322,11 +321,14 @@ func (r *realm) onJoin(sess *wamp.Session) {
 // is not called for the meta client.
 func (r *realm) onLeave(sess *wamp.Session, shutdown bool) {
 	var testaments testamentBucket
+	var hasTstm bool
 	sync := make(chan struct{})
 	r.actionChan <- func() {
 		delete(r.clients, sess.ID)
-		testaments = r.testaments[sess.ID]
-		delete(r.testaments, sess.ID)
+		testaments, hasTstm = r.testaments[sess.ID]
+		if hasTstm {
+			delete(r.testaments, sess.ID)
+		}
 
 		// If realm is shutdown, do not bother to remove session from broker
 		// and dealer.  They will be closed after sessions are closed.
@@ -343,7 +345,7 @@ func (r *realm) onLeave(sess *wamp.Session, shutdown bool) {
 	if shutdown {
 		return
 	}
-	if len(testaments.destroyed) != 0 || len(testaments.detached) != 0 {
+	if hasTstm {
 		sendTestaments := func(testaments []testament) {
 			for i := range testaments {
 				r.metaPeer.Send(&wamp.Publish{
@@ -549,7 +551,7 @@ func (r *realm) authClient(sid wamp.ID, client wamp.Peer, details wamp.Dict) (*w
 		// Create welcome details for local client.
 		authid, _ := wamp.AsString(details["authid"])
 		if authid == "" {
-			authid = string(wamp.GlobalID())
+			authid = fmt.Sprint(wamp.GlobalID())
 		}
 		details = wamp.Dict{
 			"authid":       authid,
@@ -810,12 +812,23 @@ func (r *realm) testamentFlush(msg *wamp.Invocation) wamp.Message {
 	if scope != "destroyed" && scope != "detached" {
 		return makeError(msg.Request, wamp.ErrInvalidArgument)
 	}
-	testaments, ok := r.testaments[caller]
-	if ok {
+	if r.debug {
+		r.log.Println("Flushing", scope, "testaments for session", caller)
+	}
+
+	r.actionChan <- func() {
+		testaments, ok := r.testaments[caller]
+		if !ok {
+			return
+		}
 		if scope == "destroyed" {
 			testaments.destroyed = nil
 		} else {
 			testaments.detached = nil
+		}
+		if testaments.destroyed == nil && testaments.detached == nil {
+			delete(r.testaments, caller)
+			return
 		}
 		r.testaments[caller] = testaments
 	}
@@ -855,21 +868,27 @@ func (r *realm) testamentAdd(msg *wamp.Invocation) wamp.Message {
 	if scope != "destroyed" && scope != "detached" {
 		return makeError(msg.Request, wamp.ErrInvalidArgument)
 	}
-	// a map returns the "zero value" if a key doesn't exist, so there are nils
-	// for the arrays which are equal to empty arrays
-	testaments := r.testaments[caller]
-	t := testament{
-		args:    args,
-		kwargs:  kwargs,
-		options: options,
-		topic:   topic,
+	if r.debug {
+		r.log.Println("Adding", scope, "testament for session", caller)
 	}
-	if scope == "destroyed" {
-		testaments.destroyed = append(testaments.destroyed, t)
-	} else {
-		testaments.detached = append(testaments.detached, t)
+
+	r.actionChan <- func() {
+		// A map returns the "zero value" if a key doesn't exist, so there are
+		// nils for the arrays which are equal to empty arrays
+		testaments := r.testaments[caller]
+		t := testament{
+			args:    args,
+			kwargs:  kwargs,
+			options: options,
+			topic:   topic,
+		}
+		if scope == "destroyed" {
+			testaments.destroyed = append(testaments.destroyed, t)
+		} else {
+			testaments.detached = append(testaments.detached, t)
+		}
+		r.testaments[caller] = testaments
 	}
-	r.testaments[caller] = testaments
 	return &wamp.Yield{Request: msg.Request}
 }
 
