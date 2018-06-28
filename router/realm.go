@@ -288,6 +288,7 @@ func (r *realm) onJoin(sess *wamp.Session) {
 	sync := make(chan struct{})
 	r.actionChan <- func() {
 		r.clients[sess.ID] = sess
+		r.testaments[sess.ID] = testamentBucket{}
 		close(sync)
 	}
 	<-sync
@@ -320,9 +321,13 @@ func (r *realm) onJoin(sess *wamp.Session) {
 // Note: onLeave() must be called from outside handleInboundMessages so that it
 // is not called for the meta client.
 func (r *realm) onLeave(sess *wamp.Session, shutdown bool) {
+	var testaments testamentBucket
 	sync := make(chan struct{})
 	r.actionChan <- func() {
 		delete(r.clients, sess.ID)
+		testaments = r.testaments[sess.ID]
+		delete(r.testaments, sess.ID)
+
 		// If realm is shutdown, do not bother to remove session from broker
 		// and dealer.  They will be closed after sessions are closed.
 		if !shutdown {
@@ -338,7 +343,7 @@ func (r *realm) onLeave(sess *wamp.Session, shutdown bool) {
 	if shutdown {
 		return
 	}
-	if testaments, ok := r.testaments[sess.ID]; ok {
+	if len(testaments.destroyed) != 0 || len(testaments.detached) != 0 {
 		sendTestaments := func(testaments []testament) {
 			for i := range testaments {
 				r.metaPeer.Send(&wamp.Publish{
@@ -352,7 +357,6 @@ func (r *realm) onLeave(sess *wamp.Session, shutdown bool) {
 		}
 		sendTestaments(testaments.detached)
 		sendTestaments(testaments.destroyed)
-		delete(r.testaments, sess.ID)
 	}
 	r.metaPeer.Send(&wamp.Publish{
 		Request:   wamp.GlobalID(),
