@@ -815,7 +815,7 @@ func (c *Client) leaveRealm() {
 	// which is handled by receiveFromRouter, and causes run() to exit.
 	c.sess.Send(&wamp.Goodbye{
 		Details: wamp.Dict{},
-		Reason:  wamp.ErrCloseRealm,
+		Reason:  wamp.CloseRealm,
 	})
 
 	// Close the peer.  This causes run() to exit if it has not already done so
