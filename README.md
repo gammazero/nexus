@@ -37,10 +37,12 @@ Nexus is a software package that provides a WAMP router library, client library,
 
 ### Installation
 ```
-go get github.com/gammazero/nexus
+go get github.com/gammazero/nexus/...
 ```
 
 ### Build, Configure, and Run Router Service
+The nexus router library is generally used to build a WAMP router or embed one in your server.  A very basic stand-alone router, nexusd, is provided and can be built and run as follows:
+
 ```
 cd nexusd
 go build
