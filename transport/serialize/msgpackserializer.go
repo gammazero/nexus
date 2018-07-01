@@ -8,14 +8,31 @@ import (
 	"github.com/ugorji/go/codec"
 )
 
+const BinaryDataMsgpackExt byte = 42
+
+var mh *codec.MsgpackHandle
+
+func encodeBinData(value reflect.Value) ([]byte, error) {
+	return value.Bytes(), nil
+}
+func decodeBinData(value reflect.Value, data []byte) error {
+	value.Elem().SetBytes(data)
+	return nil
+}
+
 func init() {
 	mh = &codec.MsgpackHandle{
 		RawToString: true,
+		WriteExt:    true,
 	}
 	mh.MapType = reflect.TypeOf(map[string]interface{}(nil))
+	mh.AddExt(
+		reflect.TypeOf(BinaryData{}),
+		BinaryDataMsgpackExt,
+		encodeBinData,
+		decodeBinData,
+	)
 }
-
-var mh *codec.MsgpackHandle
 
 // MessagePackSerializer is an implementation of Serializer that handles
 // serializing and deserializing msgpack encoded payloads.

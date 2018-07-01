@@ -177,7 +177,7 @@ func TestMessagePackDeserialize(t *testing.T) {
 	}
 }
 
-func TestBinaryData(t *testing.T) {
+func TestBinaryDataJSON(t *testing.T) {
 	orig := []byte("hellowamp")
 
 	// Calls the customer encoder: BinaryData.MarshalJSON()
@@ -200,6 +200,35 @@ func TestBinaryData(t *testing.T) {
 	}
 	if !bytes.Equal([]byte(b), orig) {
 		t.Fatalf("got %s, expected %s", string(b), string(orig))
+	}
+}
+
+func TestBinaryDataMsgpack(t *testing.T) {
+	orig := []byte("hellowamp")
+	msg := &wamp.Welcome{
+		ID: wamp.ID(123),
+		Details: wamp.Dict{
+			"extra": BinaryData(orig),
+		},
+	}
+	ser := MessagePackSerializer{}
+	// Calls the customer encoder: BinaryData.MarshalJSON()
+	bin, err := ser.Serialize(msg)
+	if err != nil {
+		t.Fatal("Error marshalling msg: ", err)
+	}
+	fmt.Printf("%v\n", bin)
+	expect := []byte{147, 2, 123, 129, 165, 101, 120, 116, 114, 97, 199, 9, 42, 104, 101, 108, 108, 111, 119, 97, 109, 112}
+	if !bytes.Equal(expect, bin) {
+		t.Fatalf("got %v, expected %v", bin, expect)
+	}
+
+	c, err := ser.Deserialize(bin)
+	if err != nil {
+		t.Fatal("Error deserializing msg: ", err)
+	}
+	if !reflect.DeepEqual(msg, c) {
+		t.Fatalf("Values are not equal: expected: %v, got: %v", msg, c)
 	}
 }
 
@@ -334,8 +363,8 @@ func TestMsgPackToJSON(t *testing.T) {
 		t.Fatal("JSON desrialization to wrong message type: ", msg.MessageType())
 	}
 	e2 := msg.(*wamp.Event)
-	fmt.Printf("Before:\n%+v\n", event)
-	fmt.Printf("After:\n%+v\n", e2)
+	//fmt.Printf("Before:\n%+v\n", event)
+	//fmt.Printf("After:\n%+v\n", e2)
 	if e2.Subscription != wamp.ID(987) {
 		t.Fatal("JSON deserialization error: wrong subscription ID")
 	}
