@@ -203,7 +203,16 @@ func TestBinaryDataJSON(t *testing.T) {
 	}
 }
 
-func TestBinaryDataMsgpack(t *testing.T) {
+func TestMsgpackExtensions(t *testing.T) {
+	encode := func(value reflect.Value) ([]byte, error) {
+		return value.Bytes(), nil
+	}
+	decode := func(value reflect.Value, data []byte) error {
+		value.Elem().SetBytes(data)
+		return nil
+	}
+	MsgpackRegisterExtension(reflect.TypeOf(BinaryData{}), 42, encode, decode)
+
 	orig := []byte("hellowamp")
 	msg := &wamp.Welcome{
 		ID: wamp.ID(123),
@@ -211,6 +220,7 @@ func TestBinaryDataMsgpack(t *testing.T) {
 			"extra": BinaryData(orig),
 		},
 	}
+
 	ser := MessagePackSerializer{}
 	// Calls the customer encoder: BinaryData.MarshalJSON()
 	bin, err := ser.Serialize(msg)
@@ -259,6 +269,22 @@ func TestAssignSlice(t *testing.T) {
 		if pubMsg.Arguments[i] != pubArgs[i] {
 			t.Fatalf("argument %d has wrong value", i)
 		}
+	}
+}
+
+func TestMsgpackDeserializeFail(t *testing.T) {
+	ser := MessagePackSerializer{}
+	res, err := ser.Deserialize(nil)
+	if err == nil {
+		t.Fatalf("Expected error, got result: %v", res)
+	}
+	res, err = ser.Deserialize([]byte{144}) // pass in a serialized empty array
+	if err == nil {
+		t.Fatalf("Expected error, got result: %v", res)
+	}
+	res, err = ser.Deserialize([]byte{145, 161, 102}) // array containing string
+	if err == nil {
+		t.Fatalf("Expected error, got result: %v", res)
 	}
 }
 
