@@ -56,11 +56,12 @@ func newTestRouter() (Router, error) {
 	config := &Config{
 		RealmConfigs: []*RealmConfig{
 			{
-				URI:            testRealm,
-				StrictURI:      false,
-				AnonymousAuth:  true,
-				AllowDisclose:  false,
-				EnableMetaKill: true,
+				URI:              testRealm,
+				StrictURI:        false,
+				AnonymousAuth:    true,
+				AllowDisclose:    false,
+				EnableMetaKill:   true,
+				EnableMetaModify: true,
 			},
 		},
 		Debug: debug,

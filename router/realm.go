@@ -48,6 +48,10 @@ type RealmConfig struct {
 	// These are desabled by default to avoid requiring Authorizer logic when
 	// it may not be needed otherwise.
 	EnableMetaKill bool
+	// EnableMetaModify enables the wamp.session.modify_details session meta
+	// procedure.  This is desabled by default to avoid requiring Authorizer
+	// logic when it may not be needed otherwise.
+	EnableMetaModify bool
 }
 
 // Special ID for meta session.
@@ -80,7 +84,6 @@ type realm struct {
 	clients map[wamp.ID]*session
 	// session ID -> testament
 	testaments map[wamp.ID]testamentBucket
-	killChans  map[wamp.ID]chan *wamp.Goodbye
 	clientStop chan struct{}
 
 	metaPeer  wamp.Peer
@@ -94,7 +97,6 @@ type realm struct {
 
 	// Session meta-procedure registration ID -> handler map.
 	metaProcMap map[wamp.ID]func(*wamp.Invocation) wamp.Message
-	metaStop    chan struct{}
 	metaDone    chan struct{}
 
 	closed    bool
@@ -108,7 +110,9 @@ type realm struct {
 
 	metaStrict     bool
 	metaIncDetails []string
-	enableMetaKill bool
+
+	enableMetaKill   bool
+	enableMetaModify bool
 }
 
 // newRealm creates a new realm with the given RealmConfig, broker and dealer.
@@ -124,11 +128,9 @@ func newRealm(config *RealmConfig, broker *Broker, dealer *Dealer, logger stdlog
 		authorizer:  config.Authorizer,
 		clients:     map[wamp.ID]*session{},
 		testaments:  map[wamp.ID]testamentBucket{},
-		killChans:   map[wamp.ID]chan *wamp.Goodbye{},
 		clientStop:  make(chan struct{}),
 		actionChan:  make(chan func()),
 		metaIDGen:   new(wamp.IDGen),
-		metaStop:    make(chan struct{}),
 		metaDone:    make(chan struct{}),
 		metaProcMap: make(map[wamp.ID]func(*wamp.Invocation) wamp.Message, 9),
 		log:         logger,
@@ -137,7 +139,8 @@ func newRealm(config *RealmConfig, broker *Broker, dealer *Dealer, logger stdlog
 		localAuthz:  config.RequireLocalAuthz,
 		metaStrict:  config.MetaStrict,
 
-		enableMetaKill: config.EnableMetaKill,
+		enableMetaKill:   config.EnableMetaKill,
+		enableMetaModify: config.EnableMetaModify,
 	}
 
 	if r.metaStrict && len(config.MetaIncludeSessionDetails) != 0 {
@@ -218,7 +221,7 @@ func (r *realm) close() {
 	// the meta client receives GOODBYE from the meta session, the meta
 	// session is done and will not try to publish anything more to the
 	// broker, and it is finally safe to exit and close the broker.
-	close(r.metaStop)
+	r.metaSess.kill(nil)
 	<-r.metaDone
 
 	// handleInboundMessages() and metaProcedureHandler() are the only things
@@ -249,9 +252,10 @@ func (r *realm) run() {
 		r.registerMetaProcedure(wamp.MetaProcSessionKillByAuthid, r.sessionKillByAuthid)
 		r.registerMetaProcedure(wamp.MetaProcSessionKillByAuthrole, r.sessionKillByAuthrole)
 		r.registerMetaProcedure(wamp.MetaProcSessionKillAll, r.sessionKillAll)
+	}
+	if r.enableMetaModify {
 		r.registerMetaProcedure(wamp.MetaProcSessionModifyDetails, r.sessionModifyDetails)
 	}
-
 	// Register to handle registration meta procedures.
 	r.registerMetaProcedure(wamp.MetaProcRegList, r.dealer.RegList)
 	r.registerMetaProcedure(wamp.MetaProcRegLookup, r.dealer.RegLookup)
@@ -287,7 +291,7 @@ func (r *realm) createMetaSession() {
 	r.metaSess = newSession(rtr, metaID, wamp.Dict{"authrole": "trusted"})
 
 	// Run the handler for messages from the meta session.
-	go r.handleInboundMessages(r.metaSess, r.metaStop, nil)
+	go r.handleInboundMessages(r.metaSess, nil)
 	if r.debug {
 		r.log.Println("Started meta-session", r.metaSess)
 	}
@@ -298,12 +302,11 @@ func (r *realm) createMetaSession() {
 //
 // Note: onJoin() is called from handleSession, not handleInboundMessages, so
 // that it is not called for the meta client.
-func (r *realm) onJoin(sess *session, killChan chan *wamp.Goodbye) {
+func (r *realm) onJoin(sess *session) {
 	r.waitHandlers.Add(1)
 	sync := make(chan struct{})
 	r.actionChan <- func() {
 		r.clients[sess.ID] = sess
-		r.killChans[sess.ID] = killChan
 		close(sync)
 	}
 	<-sync
@@ -343,7 +346,6 @@ func (r *realm) onLeave(sess *session, shutdown, killAll bool) {
 	sync := make(chan struct{})
 	r.actionChan <- func() {
 		delete(r.clients, sess.ID)
-		delete(r.killChans, sess.ID)
 		testaments, hasTstm = r.testaments[sess.ID]
 		if hasTstm {
 			delete(r.testaments, sess.ID)
@@ -401,17 +403,15 @@ func (r *realm) handleSession(sess *session) error {
 		return err
 	}
 
-	killChan := make(chan *wamp.Goodbye)
-
 	// Ensure session is capable of receiving exit signal before releasing lock
-	r.onJoin(sess, killChan)
+	r.onJoin(sess)
 	r.closeLock.Unlock()
 
 	if r.debug {
 		r.log.Println("Started session", sess)
 	}
 	go func() {
-		shutdown, killAll, err := r.handleInboundMessages(sess, r.clientStop, killChan)
+		shutdown, killAll, err := r.handleInboundMessages(sess, r.clientStop)
 		if err != nil {
 			abortMsg := wamp.Abort{
 				Reason:  wamp.ErrProtocolViolation,
@@ -429,10 +429,11 @@ func (r *realm) handleSession(sess *session) error {
 
 // handleInboundMessages handles the messages sent from a client session to
 // the router.
-func (r *realm) handleInboundMessages(sess *session, stopChan <-chan struct{}, killChan <-chan *wamp.Goodbye) (bool, bool, error) {
+func (r *realm) handleInboundMessages(sess *session, stopChan <-chan struct{}) (bool, bool, error) {
 	if r.debug {
 		defer r.log.Println("Ended session", sess)
 	}
+	killChan := sess.killChan
 	recvChan := sess.Recv()
 	for {
 		var msg wamp.Message
@@ -452,7 +453,17 @@ func (r *realm) handleInboundMessages(sess *session, stopChan <-chan struct{}, k
 				Details: wamp.Dict{},
 			})
 			return true, false, nil
-		case goodbye := <-killChan:
+		case goodbye, open := <-killChan:
+			if !open {
+				if r.debug {
+					r.log.Printf("Stop session %s: system shutdown", sess)
+				}
+				sess.TrySend(&wamp.Goodbye{
+					Reason:  wamp.ErrSystemShutdown,
+					Details: wamp.Dict{},
+				})
+				return true, false, nil
+			}
 			if r.debug {
 				r.log.Printf("Kill session %s: %s", sess, goodbye.Reason)
 			}
@@ -1195,13 +1206,12 @@ func (r *realm) killSession(sid wamp.ID, reason wamp.URI, message string) error 
 	goodbye := makeGoodbye(reason, message)
 	errChan := make(chan error)
 	r.actionChan <- func() {
-		killChan, ok := r.killChans[sid]
+		sess, ok := r.clients[sid]
 		if !ok {
 			errChan <- errors.New("no such session")
 			return
 		}
-		delete(r.killChans, sid) // prevent subsequent kill from using chan
-		killChan <- goodbye
+		sess.kill(goodbye)
 		close(errChan)
 	}
 	return <-errChan
@@ -1227,10 +1237,9 @@ func (r *realm) killSessionsByDetail(key, value string, reason wamp.URI, message
 			if !ok || val != value {
 				continue
 			}
-			killChan := r.killChans[sid]
-			delete(r.killChans, sid) // prevent subsequent kill from using chan
-			killChan <- goodbye
-			kills++
+			if sess.kill(goodbye) {
+				kills++
+			}
 		}
 		retChan <- kills
 	}
@@ -1246,15 +1255,15 @@ func (r *realm) killAllSessions(reason wamp.URI, message string, exclude wamp.ID
 	goodbye.Details["all"] = nil
 	r.actionChan <- func() {
 		var kills int
-		for sid, killChan := range r.killChans {
+		for sid, sess := range r.clients {
 			// Skip excluded session.  MetaSession does not have a kill channel
 			// so not need to explicitly exclude.
 			if sid == exclude {
 				continue
 			}
-			delete(r.killChans, sid) // prevent subsequent kill from using chan
-			killChan <- goodbye
-			kills++
+			if sess.kill(goodbye) {
+				kills++
+			}
 		}
 		retChan <- kills
 	}

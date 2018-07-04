@@ -128,6 +128,9 @@ func TestMain(m *testing.M) {
 
 				MetaStrict:                true,
 				MetaIncludeSessionDetails: []string{"foobar"},
+
+				EnableMetaKill:   true,
+				EnableMetaModify: true,
 			},
 		},
 		//Debug: true,
