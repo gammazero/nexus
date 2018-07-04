@@ -43,6 +43,11 @@ type RealmConfig struct {
 	// details to include that are in addition to the standard details
 	// specified by the WAMP specification.  This
 	MetaIncludeSessionDetails []string
+
+	// EnableMetaKill enables the wamp.session.kill* session meta procedures.
+	// These are desabled by default to avoid requiring Authorizer logic when
+	// it may not be needed otherwise.
+	EnableMetaKill bool
 }
 
 // Special ID for meta session.
@@ -103,6 +108,7 @@ type realm struct {
 
 	metaStrict     bool
 	metaIncDetails []string
+	enableMetaKill bool
 }
 
 // newRealm creates a new realm with the given RealmConfig, broker and dealer.
@@ -130,6 +136,8 @@ func newRealm(config *RealmConfig, broker *Broker, dealer *Dealer, logger stdlog
 		localAuth:   config.RequireLocalAuth,
 		localAuthz:  config.RequireLocalAuthz,
 		metaStrict:  config.MetaStrict,
+
+		enableMetaKill: config.EnableMetaKill,
 	}
 
 	if r.metaStrict && len(config.MetaIncludeSessionDetails) != 0 {
@@ -236,11 +244,13 @@ func (r *realm) run() {
 	r.registerMetaProcedure(wamp.MetaProcSessionCount, r.sessionCount)
 	r.registerMetaProcedure(wamp.MetaProcSessionList, r.sessionList)
 	r.registerMetaProcedure(wamp.MetaProcSessionGet, r.sessionGet)
-	r.registerMetaProcedure(wamp.MetaProcSessionKill, r.sessionKill)
-	r.registerMetaProcedure(wamp.MetaProcSessionKillByAuthid, r.sessionKillByAuthid)
-	r.registerMetaProcedure(wamp.MetaProcSessionKillByAuthrole, r.sessionKillByAuthrole)
-	r.registerMetaProcedure(wamp.MetaProcSessionKillAll, r.sessionKillAll)
-	r.registerMetaProcedure(wamp.MetaProcSessionModifyDetails, r.sessionModifyDetails)
+	if r.enableMetaKill {
+		r.registerMetaProcedure(wamp.MetaProcSessionKill, r.sessionKill)
+		r.registerMetaProcedure(wamp.MetaProcSessionKillByAuthid, r.sessionKillByAuthid)
+		r.registerMetaProcedure(wamp.MetaProcSessionKillByAuthrole, r.sessionKillByAuthrole)
+		r.registerMetaProcedure(wamp.MetaProcSessionKillAll, r.sessionKillAll)
+		r.registerMetaProcedure(wamp.MetaProcSessionModifyDetails, r.sessionModifyDetails)
+	}
 
 	// Register to handle registration meta procedures.
 	r.registerMetaProcedure(wamp.MetaProcRegList, r.dealer.RegList)
@@ -521,8 +531,15 @@ func (r *realm) authzMessage(sess *session, msg wamp.Message) bool {
 		return true
 	}
 
+	// Create a safe session to prevent access to the session.Peer.
+	safeSession := wamp.Session{
+		ID:      sess.ID,
+		Details: sess.Details,
+	}
+	// Write-lock the session, becuase there is no telling what the Authorizer
+	// will do to the session details.
 	sess.lock()
-	isAuthz, err := r.authorizer.Authorize(&sess.Session, msg)
+	isAuthz, err := r.authorizer.Authorize(&safeSession, msg)
 	sess.unlock()
 
 	if !isAuthz {
@@ -964,6 +981,10 @@ func (r *realm) sessionModifyDetails(msg *wamp.Invocation) wamp.Message {
 	}
 	delta, ok := wamp.AsDict(msg.Arguments[1])
 	if !ok {
+		return makeError(msg.Request, wamp.ErrInvalidArgument)
+	}
+	// Not allowed to modify session ID.
+	if _, ok = delta["session"]; ok {
 		return makeError(msg.Request, wamp.ErrInvalidArgument)
 	}
 

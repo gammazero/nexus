@@ -239,3 +239,75 @@ func TestSessionKillByAuthid(t *testing.T) {
 		t.Fatal("Expected timeout")
 	}
 }
+
+func TestSessionModifyDetails(t *testing.T) {
+	defer leaktest.Check(t)()
+	r, err := newTestRouter()
+	if err != nil {
+		t.Error(err)
+	}
+	defer r.Close()
+
+	caller, err := testClient(r)
+	if err != nil {
+		t.Fatal(err)
+	}
+	sessID := caller.ID
+
+	// Call session meta-procedure to get session information.
+	callID := wamp.GlobalID()
+	delta := wamp.Dict{"xyzzy": nil, "pi": 3.14, "authid": "bob"}
+	caller.Send(&wamp.Call{
+		Request:   callID,
+		Procedure: wamp.MetaProcSessionModifyDetails,
+		Arguments: wamp.List{caller.ID, delta},
+	})
+	msg, err := wamp.RecvTimeout(caller, time.Second)
+	if err != nil {
+		t.Fatal(err)
+	}
+	result, ok := msg.(*wamp.Result)
+	if !ok {
+		t.Fatal("expected RESULT, got", msg.MessageType())
+	}
+	if result.Request != callID {
+		t.Fatal("wrong result ID")
+	}
+
+	// Call session meta-procedure to get session information.
+	callID = wamp.GlobalID()
+	caller.Send(&wamp.Call{
+		Request:   callID,
+		Procedure: wamp.MetaProcSessionGet,
+		Arguments: wamp.List{sessID},
+	})
+	msg, err = wamp.RecvTimeout(caller, time.Second)
+	if err != nil {
+		t.Fatal(err)
+	}
+	result, ok = msg.(*wamp.Result)
+	if !ok {
+		t.Fatal("expected RESULT, got", msg.MessageType())
+	}
+	if result.Request != callID {
+		t.Fatal("wrong result ID")
+	}
+	if len(result.Arguments) == 0 {
+		t.Fatal("missing expected arguemnt")
+	}
+	details, ok := result.Arguments[0].(wamp.Dict)
+	if !ok {
+		t.Fatal("expected dict type arg")
+	}
+	authid, _ := wamp.AsString(details["authid"])
+	if authid != "bob" {
+		t.Error("expected bob, got", authid)
+	}
+	if _, ok = details["xyzzy"]; ok {
+		t.Error("xyzzy should have been delete from details")
+	}
+	val, _ := wamp.AsFloat64(details["pi"])
+	if val != 3.14 {
+		t.Error("Did not get correct value for pi")
+	}
+}

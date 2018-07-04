@@ -56,10 +56,11 @@ func newTestRouter() (Router, error) {
 	config := &Config{
 		RealmConfigs: []*RealmConfig{
 			{
-				URI:           testRealm,
-				StrictURI:     false,
-				AnonymousAuth: true,
-				AllowDisclose: false,
+				URI:            testRealm,
+				StrictURI:      false,
+				AnonymousAuth:  true,
+				AllowDisclose:  false,
+				EnableMetaKill: true,
 			},
 		},
 		Debug: debug,
@@ -501,11 +502,11 @@ func TestSessionMetaProcedures(t *testing.T) {
 	if len(result.Arguments) == 0 {
 		t.Fatal("missing expected arguemnt")
 	}
-	dict, ok := result.Arguments[0].(wamp.Dict)
+	details, ok := result.Arguments[0].(wamp.Dict)
 	if !ok {
 		t.Fatal("expected dict type arg")
 	}
-	sid, _ := wamp.AsID(dict["session"])
+	sid, _ := wamp.AsID(details["session"])
 	if sid != sessID {
 		t.Fatal("wrong session ID")
 	}
