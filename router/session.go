@@ -30,6 +30,9 @@ func (s *session) rUnlock() { s.rwlock.RUnlock() }
 func (s *session) lock()    { s.rwlock.Lock() }
 func (s *session) unlock()  { s.rwlock.Unlock() }
 
+// String returns the session ID as a string.
+func (s *session) String() string { return s.Session.String() }
+
 // HasRole returns true if the session supports the specified role.
 func (s *session) HasRole(role string) bool {
 	s.rwlock.RLock()

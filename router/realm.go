@@ -1252,13 +1252,13 @@ func (r *realm) modifySessionDetails(sess *session, delta wamp.Dict) {
 
 	for k, v := range delta {
 		if v == nil {
-			if r.debug || true {
+			if r.debug {
 				r.log.Println("Deleted", k, "from session details")
 			}
 			delete(sess.Details, k)
 			continue
 		}
-		if r.debug || true {
+		if r.debug {
 			r.log.Println("Updated", k, "in session details")
 		}
 		sess.Details[k] = v
