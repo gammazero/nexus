@@ -44,7 +44,7 @@ go get github.com/gammazero/nexus/...
 The nexus router library is generally used to build a WAMP router or embed one in your server.  A very basic stand-alone router, nexusd, is provided and can be built and run as follows:
 
 ```
-cd nexusd
+cd $GOPATH/src/github.com/gammazero/nexus/nexusd/
 go build
 vi etc/nexus.json
 ./nexusd
