@@ -811,9 +811,17 @@ func joinRealm(peer wamp.Peer, cfg Config) (*wamp.Welcome, error) {
 // leaveRealm leaves the current realm without closing the connection to the
 // router.
 func (c *Client) leaveRealm() {
+	select {
+	case <-c.done: // run already exited, client already disconnected
+		return
+	default:
+	}
+
 	// Send GOODBYE to router.  The router will respond with a GOODBYE message
 	// which is handled by receiveFromRouter, and causes run() to exit.
-	c.sess.Send(&wamp.Goodbye{
+	//
+	// Make an effort to say goodbye, but do not wait around if blocked.
+	c.sess.TrySend(&wamp.Goodbye{
 		Details: wamp.Dict{},
 		Reason:  wamp.CloseRealm,
 	})

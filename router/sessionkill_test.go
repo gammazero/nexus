@@ -34,6 +34,7 @@ func TestSessionKill(t *testing.T) {
 	reason := wamp.URI("foo.bar.baz")
 	message := "this is a test"
 
+	// Request that client-3 be killed.
 	cli1.Send(&wamp.Call{Request: wamp.GlobalID(), Procedure: wamp.MetaProcSessionKill, Arguments: wamp.List{cli3.ID}, ArgumentsKw: wamp.Dict{"reason": reason, "message": message}})
 
 	msg, err := wamp.RecvTimeout(cli1, time.Second)
@@ -45,6 +46,7 @@ func TestSessionKill(t *testing.T) {
 		t.Fatal("Expected RESULT, got", msg.MessageType())
 	}
 
+	// Check that client-3 received GOODBYE.
 	msg, err = wamp.RecvTimeout(cli3, time.Second)
 	if err != nil {
 		t.Fatal(err)
@@ -60,6 +62,7 @@ func TestSessionKill(t *testing.T) {
 		t.Error("Wrong message in GOODBYE, got", m, "expected", message)
 	}
 
+	// Check that client-2 did not get anything.
 	_, err = wamp.RecvTimeout(cli2, time.Millisecond)
 	if err == nil {
 		t.Fatal("Expected timeout")

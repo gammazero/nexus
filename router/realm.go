@@ -143,6 +143,14 @@ func newRealm(config *RealmConfig, broker *Broker, dealer *Dealer, logger stdlog
 		enableMetaModify: config.EnableMetaModify,
 	}
 
+	if debug {
+		if r.enableMetaKill {
+			r.log.Println("Session meta kill procedures enabled")
+		}
+		if r.enableMetaKill {
+			r.log.Println("Session meta modify_details procedure enabled")
+		}
+	}
 	if r.metaStrict && len(config.MetaIncludeSessionDetails) != 0 {
 		r.metaIncDetails = make([]string, len(config.MetaIncludeSessionDetails))
 		copy(r.metaIncDetails, config.MetaIncludeSessionDetails)

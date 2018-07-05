@@ -115,6 +115,9 @@ func TestMain(m *testing.M) {
 				StrictURI:     false,
 				AnonymousAuth: true,
 				AllowDisclose: false,
+
+				EnableMetaKill:   true,
+				EnableMetaModify: true,
 			},
 			{
 				URI:               wamp.URI(testAuthRealm),
