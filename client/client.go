@@ -150,8 +150,9 @@ type Client struct {
 	log   stdlog.StdLog
 	debug bool
 
-	closed int32
-	done   chan struct{}
+	closed        int32
+	done          chan struct{}
+	routerGoodbye *wamp.Goodbye
 }
 
 // NewClient takes a connected Peer, joins the realm specified in cfg, and if
@@ -575,7 +576,7 @@ func (c *Client) Unregister(procedure string) error {
 // case the caller may receive RESULT or ERROR depending whether the callee
 // finishes processing the invocation or the interrupt first.
 //
-// "killnowait": The pending call is canceled and ERROR is send immediately
+// "killnowait": The pending call is canceled and ERROR is sent immediately
 // back to the caller.  INTERRUPT is sent to the callee and any response to the
 // invocation or interrupt from the callee is discarded when received.
 //
@@ -733,6 +734,21 @@ func (c *Client) Close() error {
 	return nil
 }
 
+// RouterGoodbye returns the GOODBYE message received from the router, if one
+// was received.  The client must be disconnected from the router first, so
+// first check that the channel returned by client.Done() is closed before
+// calling this function.
+func (c *Client) RouterGoodbye() *wamp.Goodbye {
+	select {
+	case <-c.done:
+	default:
+		// Client not disconnected from router yet.
+		return nil
+	}
+	return c.routerGoodbye
+}
+
+// SendProgress is used by a Callee client to return progressive RPC results.
 func (c *Client) SendProgress(ctx context.Context, args wamp.List, kwArgs wamp.Dict) error {
 	reqChan := make(chan wamp.ID)
 	c.actionChan <- func() {
@@ -1025,7 +1041,7 @@ CollectResults:
 	return msg, err
 }
 
-// run is the core client goroutine.  This handles messsages received from the
+// run is the core client goroutine.  This handles messages received from the
 // router and serializes access to all mutable state.
 func (c *Client) run() {
 	defer close(c.done)
@@ -1052,8 +1068,8 @@ func (c *Client) run() {
 }
 
 // ----------------------------------------------------------------------------
-// All functions below access internal mutable state and must be excuted by the
-// run() goroutine
+// All functions below access internal mutable state and must be executed by
+// the run() goroutine.
 //
 
 // runReceiveFromRouter handles messages from the router.  Returns true if
@@ -1087,6 +1103,7 @@ func (c *Client) runReceiveFromRouter(msg wamp.Message) bool {
 		c.runSignalReply(msg, msg.Request)
 
 	case *wamp.Goodbye:
+		c.routerGoodbye = msg
 		return true
 
 	default:
