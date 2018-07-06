@@ -21,7 +21,11 @@
                 "uri": "nexus.realm1",
                 "strict_uri": false,
                 "allow_disclose": true,
-                "anonymous_auth": true
+                "anonymous_auth": true,
+                "meta_strict": false,
+                "meta_include_session_details": [],
+                "enable_meta_kill": false,
+                "enable_meta_modify": false
             }
         ],
         "debug": false

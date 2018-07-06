@@ -22,6 +22,7 @@ The example clients are located in the following locations:
 - `pubsub/publisher/`
 - `rpc/callee/`
 - `rpc/caller/`
+- `session_meta_api/`
 
 When connecting a client, set the URL scheme with `-scheme=` to specify the type of transport, and whether or not to use TLS:
 
@@ -33,7 +34,7 @@ When connecting a client, set the URL scheme with `-scheme=` to specify the type
 
 If no scheme is specified, then the default is `ws` (websocket without TLS).
 
-When using TLS ("wss" or "tcps" schemes), certificate verification fails when using a certificate that cannot be verified.  For verification of the server's certificate to work, it is necessary to trust the server's certificate by specifying `-trust=server/cert.pem`.  Verification can also be skippen using the `-skipverify` flag.  Example running subscriber client:
+When using TLS ("wss" or "tcps" schemes), certificate verification fails when using a certificate that cannot be verified.  For verification of the server's certificate to work, it is necessary to trust the server's certificate by specifying `-trust=server/cert.pem`.  Verification can also be skipped using the `-skipverify` flag.  Example running subscriber client:
 ```
 go run pubsub/subscriber/subscriber.go -scheme=wss -trust=server/cert.pem
 ```
@@ -72,6 +73,15 @@ The pub/sub example provides a subscriber client and a publisher client that con
 1. Run the server with `go run server/server.go`
 2. Run the subscriber with `go run pubsub/subscriber/subscriber.go`
 3. Run the publisher with `go run pubsub/publisher/publisher.go`
+
+## Session Meta API Example
+
+The session meta API example provides a client that subscribes to session meta events and calls session meta procedures to demonstrate the session meta API.
+
+### Run the Session Meta Client Example
+
+1. Run the server with `go run server/server.go`
+2. Run the client with `go run session_meta_api/session_meta_client.go`
 
 ## Multiple Transport Example
 

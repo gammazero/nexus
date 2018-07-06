@@ -227,7 +227,7 @@ func TestMsgpackExtensions(t *testing.T) {
 	if err != nil {
 		t.Fatal("Error marshalling msg: ", err)
 	}
-	fmt.Printf("%v\n", bin)
+	//fmt.Printf("%v\n", bin)
 	expect := []byte{147, 2, 123, 129, 165, 101, 120, 116, 114, 97, 199, 9, 42, 104, 101, 108, 108, 111, 119, 97, 109, 112}
 	if !bytes.Equal(expect, bin) {
 		t.Fatalf("got %v, expected %v", bin, expect)

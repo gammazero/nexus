@@ -11,9 +11,7 @@ import (
 )
 
 func BenchmarkRpcIntegerList(b *testing.B) {
-
 	args := wamp.List{make([]int, 128)}
-
 	benchmarkRpc(b, sum, args, func(result *wamp.Result) {
 		v, ok := wamp.AsInt64(result.Arguments[0])
 		if !ok {
@@ -22,13 +20,10 @@ func BenchmarkRpcIntegerList(b *testing.B) {
 		if v != 0 {
 			panic(fmt.Sprintf("Wrong result!: %d", v))
 		}
-
 	})
-
 }
 
 func BenchmarkRpcShortString(b *testing.B) {
-
 	shortString := randomString(128)
 	benchmarkRpc(b, identify, wamp.List{shortString}, func(result *wamp.Result) {
 		v, ok := wamp.AsString(result.Arguments[0])
@@ -38,13 +33,10 @@ func BenchmarkRpcShortString(b *testing.B) {
 		if v != shortString {
 			panic(fmt.Sprintf("Wrong result!: %v", v))
 		}
-
 	})
-
 }
 
 func BenchmarkRpcLargeString(b *testing.B) {
-
 	largeString := randomString(4096)
 	benchmarkRpc(b, identify, wamp.List{largeString}, func(result *wamp.Result) {
 		v, ok := wamp.AsString(result.Arguments[0])
@@ -54,13 +46,10 @@ func BenchmarkRpcLargeString(b *testing.B) {
 		if v != largeString {
 			panic(fmt.Sprintf("Wrong result!: %v", v))
 		}
-
 	})
-
 }
 
 func BenchmarkRpcDict(b *testing.B) {
-
 	dict := wamp.Dict{}
 	for i := 0; i < 8; i++ {
 		dict[randomString(8)] = randomString(8)
@@ -80,7 +69,6 @@ func BenchmarkRpcDict(b *testing.B) {
 }
 
 func benchmarkRpc(b *testing.B, action client.InvocationHandler, callArgs wamp.List, verify func(*wamp.Result)) {
-
 	server, err := connectClient()
 	if err != nil {
 		panic("Failed to connect client: " + err.Error())
@@ -96,20 +84,19 @@ func benchmarkRpc(b *testing.B, action client.InvocationHandler, callArgs wamp.L
 	}
 
 	ctx := context.Background()
+	var result *wamp.Result
 
 	b.ResetTimer()
 
 	for i := 0; i < b.N; i++ {
-
-		result, err := client.Call(ctx, "action", nil, callArgs, nil, "")
+		result, err = client.Call(ctx, "action", nil, callArgs, nil, "")
 		if err != nil {
 			panic(err)
 		}
-		if i < 2 {
-			verify(result)
-		}
-
 	}
+
+	b.StopTimer()
+	verify(result)
 
 	client.Close()
 	server.Close()
@@ -127,14 +114,11 @@ func sum(ctx context.Context, args wamp.List, kwargs, details wamp.Dict) *client
 }
 
 func identify(ctx context.Context, args wamp.List, kwargs, details wamp.Dict) *client.InvokeResult {
-
 	return &client.InvokeResult{Args: args}
-
 }
 
 func randomString(n int) string {
 	var letter = []rune("abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789")
-
 	b := make([]rune, n)
 	for i := range b {
 		b[i] = letter[rand.Intn(len(letter))]

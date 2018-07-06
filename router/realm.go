@@ -36,22 +36,23 @@ type RealmConfig struct {
 
 	// When true, only include standard session details in on_join event and
 	// session_get response.  Standard details include: session, authid,
-	// authrole, authmethod, authmethod, transport.  When false, all session
-	// details are included.
-	MetaStrict bool
+	// authrole, authmethod, transport.  When false, all session details are
+	// included, except transport.auth.
+	MetaStrict bool `json:"meta_strict"`
 	// When MetaStrict is true, MetaIncludeSessionDetails specifies session
 	// details to include that are in addition to the standard details
-	// specified by the WAMP specification.  This
-	MetaIncludeSessionDetails []string
+	// specified by the WAMP specification.  This is a list of the names of
+	// additional session details values to include.
+	MetaIncludeSessionDetails []string `json:"meta_include_session_details"`
 
 	// EnableMetaKill enables the wamp.session.kill* session meta procedures.
-	// These are desabled by default to avoid requiring Authorizer logic when
+	// These are disabled by default to avoid requiring Authorizer logic when
 	// it may not be needed otherwise.
-	EnableMetaKill bool
+	EnableMetaKill bool `json:"enable_meta_kill"`
 	// EnableMetaModify enables the wamp.session.modify_details session meta
-	// procedure.  This is desabled by default to avoid requiring Authorizer
+	// procedure.  This is disabled by default to avoid requiring Authorizer
 	// logic when it may not be needed otherwise.
-	EnableMetaModify bool
+	EnableMetaModify bool `json:"enable_meta_modify"`
 }
 
 // Special ID for meta session.
