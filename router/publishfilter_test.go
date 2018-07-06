@@ -37,27 +37,18 @@ func TestFilterBlacklist(t *testing.T) {
 		"authrole": allowedAuthrole,
 		"misc":     "other",
 	}
-	sess := &wamp.Session{
-		ID:      allowedID,
-		Details: details,
-	}
+	sess := newSession(nil, allowedID, details)
 	if !pf.publishAllowed(sess) {
 		t.Error(shouldAllowMsg)
 	}
 
-	sess = &wamp.Session{
-		ID:      blacklistID,
-		Details: details,
-	}
+	sess = newSession(nil, blacklistID, details)
 	// Check that session is denied by ID.
 	if pf.publishAllowed(sess) {
 		t.Error(shouldDenyMsg)
 	}
 
-	sess = &wamp.Session{
-		ID:      allowedID,
-		Details: details,
-	}
+	sess = newSession(nil, allowedID, details)
 	// Check that session is denied by authid.
 	sess.Details["authid"] = blacklistAuthid
 	if pf.publishAllowed(sess) {
@@ -109,27 +100,18 @@ func TestFilterWhitelist(t *testing.T) {
 		"authrole": allowedAuthrole,
 		"misc":     "other",
 	}
-	sess := &wamp.Session{
-		ID:      allowedID,
-		Details: details,
-	}
+	sess := newSession(nil, allowedID, details)
 	if !pf.publishAllowed(sess) {
 		t.Error(shouldAllowMsg)
 	}
 
-	sess = &wamp.Session{
-		ID:      deniedID,
-		Details: details,
-	}
+	sess = newSession(nil, deniedID, details)
 	// Check that session is denied by ID.
 	if pf.publishAllowed(sess) {
 		t.Error(shouldDenyMsg)
 	}
 
-	sess = &wamp.Session{
-		ID:      allowedID,
-		Details: details,
-	}
+	sess = newSession(nil, allowedID, details)
 	// Check that session is denied by authid.
 	sess.Details["authid"] = deniedAuthid
 	if pf.publishAllowed(sess) {
@@ -185,27 +167,18 @@ func TestFilterBlackWhitelistPrecedence(t *testing.T) {
 		"misc":     "other",
 	}
 
-	sess := &wamp.Session{
-		ID:      allowedID,
-		Details: details,
-	}
+	sess := newSession(nil, allowedID, details)
 	if !pf.publishAllowed(sess) {
 		t.Error(shouldAllowMsg)
 	}
 
-	sess = &wamp.Session{
-		ID:      blacklistID,
-		Details: details,
-	}
+	sess = newSession(nil, blacklistID, details)
 	// Check that session is denied by ID even thought ID is also in whitelist.
 	if pf.publishAllowed(sess) {
 		t.Error(shouldDenyMsg)
 	}
-	sess = &wamp.Session{
-		ID:      allowedID,
-		Details: details,
-	}
 
+	sess = newSession(nil, allowedID, details)
 	// Check that session is denied by authid even though also whitelisted.
 	sess.Details["authid"] = blacklistAuthid
 	if pf.publishAllowed(sess) {

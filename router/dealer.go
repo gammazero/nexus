@@ -52,13 +52,13 @@ type registration struct {
 
 	// Multiple sessions can register as callees depending on invocation policy
 	// resulting in multiple procedures for the same registration ID.
-	callees []*wamp.Session
+	callees []*session
 }
 
 // invocation tracks in-progress invocation
 type invocation struct {
 	callID   wamp.ID
-	callee   *wamp.Session
+	callee   *session
 	canceled bool
 }
 
@@ -73,7 +73,7 @@ type Dealer struct {
 	registrations map[wamp.ID]*registration
 
 	// call ID -> caller session
-	calls map[wamp.ID]*wamp.Session
+	calls map[wamp.ID]*session
 
 	// invocation ID -> {call ID, callee, canceled}
 	invocations map[wamp.ID]*invocation
@@ -83,7 +83,7 @@ type Dealer struct {
 
 	// callee session -> registration ID set.
 	// Used to lookup registrations when removing a callee session.
-	calleeRegIDSet map[*wamp.Session]map[wamp.ID]struct{}
+	calleeRegIDSet map[*session]map[wamp.ID]struct{}
 
 	actionChan chan func()
 
@@ -120,10 +120,10 @@ func NewDealer(logger stdlog.StdLog, strictURI, allowDisclose, debug bool) *Deal
 
 		registrations: map[wamp.ID]*registration{},
 
-		calls:            map[wamp.ID]*wamp.Session{},
+		calls:            map[wamp.ID]*session{},
 		invocations:      map[wamp.ID]*invocation{},
 		invocationByCall: map[wamp.ID]wamp.ID{},
-		calleeRegIDSet:   map[*wamp.Session]map[wamp.ID]struct{}{},
+		calleeRegIDSet:   map[*session]map[wamp.ID]struct{}{},
 
 		// The action handler should be nearly always runable, since it is the
 		// critical section that does the only routing.  So, and unbuffered
@@ -161,7 +161,7 @@ func (d *Dealer) Role() wamp.Dict {
 // If the shared_registration feature is supported, and if allowed by the
 // invocation policy, multiple callees may register to handle the same
 // procedure.
-func (d *Dealer) Register(callee *wamp.Session, msg *wamp.Register) {
+func (d *Dealer) Register(callee *session, msg *wamp.Register) {
 	if callee == nil || msg == nil {
 		panic("dealer.Register with nil session or message")
 	}
@@ -185,35 +185,37 @@ func (d *Dealer) Register(callee *wamp.Session, msg *wamp.Register) {
 
 	wampURI := strings.HasPrefix(string(msg.Procedure), "wamp.")
 
-	// Disallow registration of procedures starting with "wamp.", except for
-	// trusted sessions that are built into router.
-	authrole, _ := wamp.AsString(callee.Details["authrole"])
-	if authrole != "" && authrole != "trusted" {
-		if wampURI {
-			errMsg := fmt.Sprintf("register for restricted procedure URI %v",
-				msg.Procedure)
-			d.trySend(callee, &wamp.Error{
-				Type:      msg.MessageType(),
-				Request:   msg.Request,
-				Error:     wamp.ErrInvalidURI,
-				Arguments: wamp.List{errMsg},
-			})
-			return
-		}
+	// Disallow registration of procedures starting with "wamp." by sessions
+	// other then the meta session.
+	if wampURI && callee.ID != metaID {
+		errMsg := fmt.Sprintf("register for restricted procedure URI %v",
+			msg.Procedure)
+		d.trySend(callee, &wamp.Error{
+			Type:      msg.MessageType(),
+			Request:   msg.Request,
+			Error:     wamp.ErrInvalidURI,
+			Arguments: wamp.List{errMsg},
+		})
+		return
 	}
 
 	// If callee requests disclosure of caller identity, but dealer does not
 	// allow, then send error as registration response.
 	disclose, _ := wamp.AsBool(msg.Options[wamp.OptDiscloseCaller])
 	// allow disclose for trusted clients
-	if !d.allowDisclose && disclose && authrole != "trusted" {
-		d.trySend(callee, &wamp.Error{
-			Type:    msg.MessageType(),
-			Request: msg.Request,
-			Details: wamp.Dict{},
-			Error:   wamp.ErrOptionDisallowedDiscloseMe,
-		})
-		return
+	if !d.allowDisclose && disclose {
+		callee.rLock()
+		authrole, _ := wamp.AsString(callee.Details["authrole"])
+		callee.rUnlock()
+		if authrole != "trusted" {
+			d.trySend(callee, &wamp.Error{
+				Type:    msg.MessageType(),
+				Request: msg.Request,
+				Details: wamp.Dict{},
+				Error:   wamp.ErrOptionDisallowedDiscloseMe,
+			})
+			return
+		}
 	}
 
 	invoke, _ := wamp.AsString(msg.Options[wamp.OptInvoke])
@@ -223,7 +225,7 @@ func (d *Dealer) Register(callee *wamp.Session, msg *wamp.Register) {
 }
 
 // Unregister removes a remote procedure previously registered by the callee.
-func (d *Dealer) Unregister(callee *wamp.Session, msg *wamp.Unregister) {
+func (d *Dealer) Unregister(callee *session, msg *wamp.Unregister) {
 	if callee == nil || msg == nil {
 		panic("dealer.Unregister with nil session or message")
 	}
@@ -233,7 +235,7 @@ func (d *Dealer) Unregister(callee *wamp.Session, msg *wamp.Unregister) {
 }
 
 // Call invokes a registered remote procedure.
-func (d *Dealer) Call(caller *wamp.Session, msg *wamp.Call) {
+func (d *Dealer) Call(caller *session, msg *wamp.Call) {
 	if caller == nil || msg == nil {
 		panic("dealer.Call with nil session or message")
 	}
@@ -260,7 +262,7 @@ func (d *Dealer) Call(caller *wamp.Session, msg *wamp.Call) {
 // invocation or interrupt from the callee is discarded when received.
 //
 // If the callee does not support call canceling, then behavior is "skip".
-func (d *Dealer) Cancel(caller *wamp.Session, msg *wamp.Cancel) {
+func (d *Dealer) Cancel(caller *session, msg *wamp.Cancel) {
 	if caller == nil || msg == nil {
 		panic("dealer.Cancel with nil session or message")
 	}
@@ -271,7 +273,7 @@ func (d *Dealer) Cancel(caller *wamp.Session, msg *wamp.Cancel) {
 
 // Yield handles the result of successfully processing and finishing the
 // execution of a call, send from callee to dealer.
-func (d *Dealer) Yield(callee *wamp.Session, msg *wamp.Yield) {
+func (d *Dealer) Yield(callee *session, msg *wamp.Yield) {
 	if callee == nil || msg == nil {
 		panic("dealer.Yield with nil session or message")
 	}
@@ -294,7 +296,7 @@ func (d *Dealer) Error(msg *wamp.Error) {
 // realm by sending a GOODBYE message or by disconnecting from the router.  If
 // there are any registrations for this session wamp.registration.on_unregister
 // and wamp.registration.on_delete meta events are published for each.
-func (d *Dealer) RemoveSession(sess *wamp.Session) {
+func (d *Dealer) RemoveSession(sess *session) {
 	if sess == nil {
 		// No session specified, no session removed.
 		return
@@ -318,7 +320,7 @@ func (d *Dealer) run() {
 	}
 }
 
-func (d *Dealer) register(callee *wamp.Session, msg *wamp.Register, match, invokePolicy string, disclose, wampURI bool) {
+func (d *Dealer) register(callee *session, msg *wamp.Register, match, invokePolicy string, disclose, wampURI bool) {
 	var reg *registration
 	switch match {
 	default:
@@ -343,7 +345,7 @@ func (d *Dealer) register(callee *wamp.Session, msg *wamp.Register, match, invok
 			match:     match,
 			policy:    invokePolicy,
 			disclose:  disclose,
-			callees:   []*wamp.Session{callee},
+			callees:   []*session{callee},
 		}
 		d.registrations[regID] = reg
 		switch match {
@@ -440,7 +442,7 @@ func (d *Dealer) register(callee *wamp.Session, msg *wamp.Register, match, invok
 	}
 }
 
-func (d *Dealer) unregister(callee *wamp.Session, msg *wamp.Unregister) {
+func (d *Dealer) unregister(callee *session, msg *wamp.Unregister) {
 	// Delete the registration ID from the callee's set of registrations.
 	if _, ok := d.calleeRegIDSet[callee]; ok {
 		delete(d.calleeRegIDSet[callee], msg.Registration)
@@ -522,7 +524,7 @@ func (d *Dealer) matchProcedure(procedure wamp.URI) (*registration, bool) {
 	return reg, ok
 }
 
-func (d *Dealer) call(caller *wamp.Session, msg *wamp.Call) {
+func (d *Dealer) call(caller *session, msg *wamp.Call) {
 	reg, ok := d.matchProcedure(msg.Procedure)
 	if !ok || len(reg.callees) == 0 {
 		// If no registered procedure, send error.
@@ -535,7 +537,7 @@ func (d *Dealer) call(caller *wamp.Session, msg *wamp.Call) {
 		return
 	}
 
-	var callee *wamp.Session
+	var callee *session
 
 	// If there are multiple callees, then select a callee based invocation
 	// policy.
@@ -587,6 +589,9 @@ func (d *Dealer) call(caller *wamp.Session, msg *wamp.Call) {
 	// If the callee has requested disclosure of caller identity when the
 	// registration was created, and this was allowed by the dealer.
 	if reg.disclose {
+		if callee.ID == metaID {
+			details[roleCaller] = caller.ID
+		}
 		discloseCaller(caller, details)
 	} else {
 		// A Caller MAY request the disclosure of its identity (its WAMP
@@ -646,7 +651,7 @@ func (d *Dealer) call(caller *wamp.Session, msg *wamp.Call) {
 	}
 }
 
-func (d *Dealer) cancel(caller *wamp.Session, msg *wamp.Cancel) {
+func (d *Dealer) cancel(caller *session, msg *wamp.Cancel) {
 	procCaller, ok := d.calls[msg.Request]
 	if !ok {
 		// There is no pending call to cancel.
@@ -729,7 +734,7 @@ func (d *Dealer) cancel(caller *wamp.Session, msg *wamp.Cancel) {
 	})
 }
 
-func (d *Dealer) yield(callee *wamp.Session, msg *wamp.Yield) {
+func (d *Dealer) yield(callee *session, msg *wamp.Yield) {
 	// Find and delete pending invocation.
 	invk, ok := d.invocations[msg.Request]
 	if !ok {
@@ -809,7 +814,7 @@ func (d *Dealer) error(msg *wamp.Error) {
 	})
 }
 
-func (d *Dealer) removeSession(callee *wamp.Session) {
+func (d *Dealer) removeSession(callee *session) {
 	for regID := range d.calleeRegIDSet[callee] {
 		delReg, err := d.delCalleeReg(callee, regID)
 		if err != nil {
@@ -850,7 +855,7 @@ func (d *Dealer) removeSession(callee *wamp.Session) {
 // If there are no more callees for the registration, then the registration is
 // removed and true is returned to indicate that the last registration was
 // deleted.
-func (d *Dealer) delCalleeReg(callee *wamp.Session, regID wamp.ID) (bool, error) {
+func (d *Dealer) delCalleeReg(callee *session, regID wamp.ID) (bool, error) {
 	reg, ok := d.registrations[regID]
 	if !ok {
 		// The registration doesn't exist
@@ -1088,7 +1093,7 @@ func (d *Dealer) RegCountCallees(msg *wamp.Invocation) wamp.Message {
 	}
 }
 
-func (d *Dealer) trySend(sess *wamp.Session, msg wamp.Message) bool {
+func (d *Dealer) trySend(sess *session, msg wamp.Message) bool {
 	if err := sess.TrySend(msg); err != nil {
 		d.log.Println("!!! dealer dropped", msg.MessageType(), "message:", err)
 		return false
@@ -1097,16 +1102,15 @@ func (d *Dealer) trySend(sess *wamp.Session, msg wamp.Message) bool {
 }
 
 // discloseCaller adds caller identity information to INVOCATION.Details.
-func discloseCaller(caller *wamp.Session, details wamp.Dict) {
+func discloseCaller(caller *session, details wamp.Dict) {
 	details[roleCaller] = caller.ID
-	features := []string{
-		"authid",
-		"authrole",
-	}
-	for _, f := range features {
-		val, ok := caller.Details[f]
-		if ok {
+	// These values are not required by the specification, but are here for
+	// compatibility with Crossbar.
+	caller.rLock()
+	for _, f := range []string{"authid", "authrole"} {
+		if val, ok := caller.Details[f]; ok {
 			details[fmt.Sprintf("%s_%s", roleCaller, f)] = val
 		}
 	}
+	caller.rUnlock()
 }
