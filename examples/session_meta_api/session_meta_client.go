@@ -50,7 +50,7 @@ func subscribeMetaOnLeave(subscriber *client.Client, logger *log.Logger) {
 			logger.Println("A client left the realm")
 			return
 		}
-		logger.Printf("Client", id, "left realm")
+		logger.Println("Client", id, "left realm")
 	}
 
 	// Subscribe to on_join topic.
