@@ -8,6 +8,13 @@ import (
 	"github.com/ugorji/go/codec"
 )
 
+var ch *codec.CborHandle
+
+func init() {
+	ch = &codec.CborHandle{}
+	ch.MapType = reflect.TypeOf(map[string]interface{}(nil))
+}
+
 // CBORSerializer is an implementation of Serializer that handles
 // serializing and deserializing cbor encoded payloads.
 type CBORSerializer struct{}
@@ -15,17 +22,13 @@ type CBORSerializer struct{}
 // Serialize encodes a Message into a cbor payload.
 func (s *CBORSerializer) Serialize(msg wamp.Message) ([]byte, error) {
 	var b []byte
-	cbh := &codec.CborHandle{}
-	cbh.MapType = reflect.TypeOf(map[string]interface{}(nil))
-	return b, codec.NewEncoderBytes(&b, cbh).Encode(msgToList(msg))
+	return b, codec.NewEncoderBytes(&b, ch).Encode(msgToList(msg))
 }
 
 // Deserialize decodes a cbor payload into a Message.
 func (s *CBORSerializer) Deserialize(data []byte) (wamp.Message, error) {
 	var v []interface{}
-	cbh := &codec.CborHandle{}
-	cbh.MapType = reflect.TypeOf(map[string]interface{}(nil))
-	err := codec.NewDecoderBytes(data, cbh).Decode(&v)
+	err := codec.NewDecoderBytes(data, ch).Decode(&v)
 	if err != nil {
 		return nil, err
 	}
