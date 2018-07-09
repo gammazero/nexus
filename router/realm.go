@@ -18,7 +18,8 @@ type RealmConfig struct {
 	URI wamp.URI
 	// Enforce strict URI format validation.
 	StrictURI bool `json:"strict_uri"`
-	// Allow anonymous authentication.  Does not require any Authenticators.
+	// Allow anonymous authentication.  If an auth.AnonymousAuth Authenticator
+	// if not supplied, then router supplies on with AuthRole of "anonymous".
 	AnonymousAuth bool `json:"anonymous_auth"`
 	// Allow publisher and caller identity disclosure when requested.
 	AllowDisclose bool `json:"allow_disclose"`
@@ -162,12 +163,13 @@ func newRealm(config *RealmConfig, broker *Broker, dealer *Dealer, logger stdlog
 		r.authenticators[auth.AuthMethod()] = auth
 	}
 
-	// If allowing anonymous authentication, then install the anonymous
-	// authenticator.  Install this first so that it is replaced in case a
-	// custom anonymous authenticator is supplied.
+	// If allowing anonymous authentication, then install an anonymous
+	// authenticator if one has not already been provided in the config.
 	if config.AnonymousAuth {
 		if _, ok := r.authenticators["anonymous"]; !ok {
-			r.authenticators["anonymous"] = auth.AnonymousAuth
+			r.authenticators["anonymous"] = &auth.AnonymousAuth{
+				AuthRole: "anonymous",
+			}
 		}
 	}
 

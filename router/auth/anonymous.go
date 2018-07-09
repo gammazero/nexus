@@ -1,24 +1,43 @@
 package auth
 
-import "github.com/gammazero/nexus/wamp"
+import (
+	"github.com/gammazero/nexus/wamp"
+)
 
-// anonAuth implements Authenticator interface.
-type anonymousAuth struct{}
+// AnonymousAuth implements Authenticator interface.
+//
+// To use anonymous authentication, supply an anstance of AnonymousAuth with
+// the AuthRole of choice to the RealmConfig:
+//
+//     RealmConfigs: []*router.RealmConfig{
+//         {
+//             Authenticators:  []auth.Authenticator{
+//                 &auth.AnonymousAuth{ AuthRole: "guest" },
+//             },
+//             ...
+//         },
+//
+// Or, set AnonymousAuth=ture in the RealmConfig and let the router create an
+// instance with the AuthRole of "anonymous".
+type AnonymousAuth struct {
+	AuthRole string
+}
 
-// Static instance of anonAuth.  Used to enable anonymous anutentication.
-var AnonymousAuth Authenticator = &anonymousAuth{}
-
-func (a *anonymousAuth) AuthMethod() string { return "anonymous" }
+// AuthMethod retruns description of authentication method.
+func (a *AnonymousAuth) AuthMethod() string {
+	return "anonymous"
+}
 
 // Authenticate an anonymous client.  This always succeeds, and provides the
 // authmethod and authrole for the WELCOME message.
-func (a *anonymousAuth) Authenticate(sid wamp.ID, details wamp.Dict, client wamp.Peer) (*wamp.Welcome, error) {
+func (a *AnonymousAuth) Authenticate(sid wamp.ID, details wamp.Dict, client wamp.Peer) (*wamp.Welcome, error) {
 	// Create welcome details containing auth info.
-	details = wamp.Dict{
-		"authid":       string(wamp.GlobalID()),
-		"authmethod":   a.AuthMethod(),
-		"authrole":     "anonymous",
-		"authprovider": "static",
-	}
-	return &wamp.Welcome{Details: details}, nil
+	return &wamp.Welcome{
+		Details: wamp.Dict{
+			"authid":       string(wamp.GlobalID()),
+			"authrole":     a.AuthRole,
+			"authprovider": "static",
+			"authmethod":   a.AuthMethod(),
+		},
+	}, nil
 }
