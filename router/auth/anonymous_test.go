@@ -7,7 +7,9 @@ import (
 )
 
 func TestAnonAuth(t *testing.T) {
-	anonAuth := AnonymousAuth
+	anonAuth := AnonymousAuth{
+		AuthRole: "guest",
+	}
 
 	details := wamp.Dict{
 		"authid":      "someone",
@@ -27,7 +29,7 @@ func TestAnonAuth(t *testing.T) {
 	if s, _ := wamp.AsString(welcome.Details["authmethod"]); s != "anonymous" {
 		t.Fatal("invalid authmethod in welcome details")
 	}
-	if s, _ := wamp.AsString(welcome.Details["authrole"]); s != "anonymous" {
+	if s, _ := wamp.AsString(welcome.Details["authrole"]); s != "guest" {
 		t.Fatal("incorrect authrole in welcome details")
 	}
 }

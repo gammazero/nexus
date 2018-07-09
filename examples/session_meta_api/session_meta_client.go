@@ -53,7 +53,7 @@ func subscribeMetaOnLeave(subscriber *client.Client, logger *log.Logger) {
 		logger.Println("Client", id, "left realm")
 	}
 
-	// Subscribe to on_join topic.
+	// Subscribe to on_leave topic.
 	err := subscriber.Subscribe(metaOnLeave, onLeave, nil)
 	if err != nil {
 		logger.Fatal("subscribe error:", err)
@@ -92,9 +92,11 @@ func main() {
 		logger.Fatal("Dealer does not have", featureSessionMetaAPI, "feature")
 	}
 
+	// Subscribe to session meta events.
 	subscribeMetaOnJoin(cli, logger)
 	subscribeMetaOnLeave(cli, logger)
 
+	// Get current sessions from session meta API.
 	getSessionCount(cli, logger)
 
 	// Wait for CTRL-c or client close while handling events.
