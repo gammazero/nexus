@@ -48,5 +48,63 @@ func TestAllowOrigins(t *testing.T) {
 			t.Error("Should have allowed:", allowed)
 		}
 	}
+}
 
+func TestAllowOriginsWithPorts(t *testing.T) {
+	r, err := http.NewRequest("GET", "http://nowhere.net:", nil)
+	if err != nil {
+		t.Fatal("Failed to create request:", err)
+	}
+
+	// Test single port
+	check, err := AllowOrigins([]string{"*.somewhere.com:8080"})
+	if err != nil {
+		t.Error(err)
+	}
+	allowed := "http://happy.somewhere.com:8080"
+	r.Header.Set("Origin", allowed)
+	if !check(r) {
+		t.Error("Should have allowed:", allowed)
+	}
+
+	denied := "http://happy.somewhere.com:8081"
+	r.Header.Set("Origin", denied)
+	if check(r) {
+		t.Error("Should have denied:", denied)
+	}
+
+	// Test multiple ports
+	check, err = AllowOrigins([]string{
+		"*.somewhere.com:8080",
+		"*.somewhere.com:8905",
+		"*.somewhere.com:8908",
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, allowed := range []string{"http://larry.somewhere.com:8080",
+		"http://moe.somewhere.com:8905", "http://curley.somewhere.com:8908"} {
+		r.Header.Set("Origin", allowed)
+		if !check(r) {
+			t.Error("Should have allowed:", allowed)
+		}
+	}
+	for _, denied := range []string{"http://larry.somewhere.com:9080",
+		"http://moe.somewhere.com:8906", "http://curley.somewhere.com:8708"} {
+		r.Header.Set("Origin", denied)
+		if check(r) {
+			t.Error("Should have denied:", denied)
+		}
+	}
+
+	// Test any port
+	check, err = AllowOrigins([]string{"*.somewhere.com:*"})
+	if err != nil {
+		t.Error(err)
+	}
+	allowed = "http://happy.somewhere.com:1313"
+	r.Header.Set("Origin", allowed)
+	if !check(r) {
+		t.Error("Should have allowed:", allowed)
+	}
 }
