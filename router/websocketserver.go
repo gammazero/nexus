@@ -30,6 +30,24 @@ type protocol struct {
 }
 
 // WebsocketServer handles websocket connections.
+//
+// Origin Considerations
+//
+// Web browsers allow Javascript applications to open a WebSocket connection to
+// any host.  It is up to the server to enforce an origin policy using the
+// Origin request header sent by the browser.
+//
+// The WebsocketServer calls the function specified in the
+// WebsocketServer.Upgrader.CheckOrigin field to check the origin.  If the
+// CheckOrigin function returns false, then the WebSocket handshake fails with
+// HTTP status 403.  To supply a CheckOrigin function:
+//
+//     s := NewWebsocketServer(r)
+//     s.Upgrader.CheckOrigin = func(r *http.Request) bool { ... }
+//
+// If the CheckOrigin field is nil, then a safe default is used: fail
+// the handshake if the Origin request header is present and the Origin host is
+// not equal to the Host request header.
 type WebsocketServer struct {
 	// Upgrader specifies parameters for upgrading an HTTP connection to a
 	// WebSocket connection.  See:
