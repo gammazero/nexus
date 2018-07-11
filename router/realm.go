@@ -54,6 +54,13 @@ type RealmConfig struct {
 	// procedure.  This is disabled by default to avoid requiring Authorizer
 	// logic when it may not be needed otherwise.
 	EnableMetaModify bool `json:"enable_meta_modify"`
+
+	// PublishFilterFactory is a function used to create a PublishFilter to check
+	// which sessions a publication should be sent to.
+	// Since it is a function pointer, it should not be set via json config, but
+	// being configured when embedding nexus.
+	// A value of nil means, the default filtering is used.
+	PublishFilterFactory FilterFactory
 }
 
 // Special ID for meta session.
@@ -232,7 +239,7 @@ func (r *realm) close() {
 	// the meta client receives GOODBYE from the meta session, the meta
 	// session is done and will not try to publish anything more to the
 	// broker, and it is finally safe to exit and close the broker.
-	r.metaSess.kill(nil)
+	r.metaSess.Kill(nil)
 	<-r.metaDone
 
 	// handleInboundMessages() and metaProcedureHandler() are the only things
@@ -336,9 +343,9 @@ func (r *realm) onJoin(sess *session) {
 	// WAMP spec only specifies publishing "session", "authid", "authrole",
 	// "authmethod", "authprovider", "transport".  This implementation
 	// publishes all details except transport.auth.
-	sess.rLock()
+	sess.RLock()
 	output := r.cleanSessionDetails(sess.Details)
-	sess.rUnlock()
+	sess.RUnlock()
 	r.metaPeer.Send(&wamp.Publish{
 		Request:   wamp.GlobalID(),
 		Topic:     wamp.MetaEventSessionOnJoin,
@@ -571,9 +578,9 @@ func (r *realm) authzMessage(sess *session, msg wamp.Message) bool {
 	}
 	// Write-lock the session, becuase there is no telling what the Authorizer
 	// will do to the session details.
-	sess.lock()
+	sess.Lock()
 	isAuthz, err := r.authorizer.Authorize(&safeSession, msg)
-	sess.unlock()
+	sess.Unlock()
 
 	if !isAuthz {
 		errRsp := &wamp.Error{Type: msg.MessageType()}
@@ -790,9 +797,9 @@ func (r *realm) sessionCount(msg *wamp.Invocation) wamp.Message {
 		r.actionChan <- func() {
 			var nclients int
 			for _, sess := range r.clients {
-				sess.rLock()
+				sess.RLock()
 				authrole, _ := wamp.AsString(sess.Details["authrole"])
-				sess.rUnlock()
+				sess.RUnlock()
 				for j := range filter {
 					if filter[j] == authrole {
 						nclients++
@@ -833,9 +840,9 @@ func (r *realm) sessionList(msg *wamp.Invocation) wamp.Message {
 		r.actionChan <- func() {
 			var ids []wamp.ID
 			for sid, sess := range r.clients {
-				sess.rLock()
+				sess.RLock()
 				authrole, _ := wamp.AsString(sess.Details["authrole"])
-				sess.rUnlock()
+				sess.RUnlock()
 				for j := range filter {
 					if filter[j] == authrole {
 						ids = append(ids, sid)
@@ -876,9 +883,9 @@ func (r *realm) sessionGet(msg *wamp.Invocation) wamp.Message {
 	// "authmethod", "authprovider", and "transport".  All details are returned
 	// in this implementation, except transport.auth, unless Config.MetaStrict
 	// is set to true.
-	sess.rLock()
+	sess.RLock()
 	output := r.cleanSessionDetails(sess.Details)
-	sess.rUnlock()
+	sess.RUnlock()
 
 	return &wamp.Yield{
 		Request:   msg.Request,
@@ -1235,7 +1242,7 @@ func (r *realm) killSession(sid wamp.ID, reason wamp.URI, message string) error 
 			errChan <- errors.New("no such session")
 			return
 		}
-		sess.kill(goodbye)
+		sess.Kill(goodbye)
 		close(errChan)
 	}
 	return <-errChan
@@ -1254,14 +1261,14 @@ func (r *realm) killSessionsByDetail(key, value string, reason wamp.URI, message
 				continue
 			}
 
-			sess.rLock()
+			sess.RLock()
 			val, ok := wamp.AsString(sess.Details[key])
-			sess.rUnlock()
+			sess.RUnlock()
 
 			if !ok || val != value {
 				continue
 			}
-			if sess.kill(goodbye) {
+			if sess.Kill(goodbye) {
 				kills++
 			}
 		}
@@ -1285,7 +1292,7 @@ func (r *realm) killAllSessions(reason wamp.URI, message string, exclude wamp.ID
 			if sid == exclude {
 				continue
 			}
-			if sess.kill(goodbye) {
+			if sess.Kill(goodbye) {
 				kills++
 			}
 		}
@@ -1301,8 +1308,8 @@ func (r *realm) killAllSessions(reason wamp.URI, message string, exclude wamp.ID
 // updating that item in the session details.  An item with a nil value in the
 // delta wamp.Dict specifies deleting that item from the session details.
 func (r *realm) modifySessionDetails(sess *session, delta wamp.Dict) {
-	sess.lock()
-	defer sess.unlock()
+	sess.Lock()
+	defer sess.Unlock()
 
 	for k, v := range delta {
 		if v == nil {

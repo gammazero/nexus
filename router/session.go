@@ -6,7 +6,7 @@ import (
 	"github.com/gammazero/nexus/wamp"
 )
 
-// session is a wrapper around a wamp.Session to provide the router with a
+// session is a wrapper around a wamp.session to provide the router with a
 // lockable killable session.
 type session struct {
 	wamp.Session
@@ -27,12 +27,12 @@ func newSession(peer wamp.Peer, sid wamp.ID, details wamp.Dict) *session {
 	}
 }
 
-func (s *session) rLock()   { s.rwlock.RLock() }
-func (s *session) rUnlock() { s.rwlock.RUnlock() }
-func (s *session) lock()    { s.rwlock.Lock() }
-func (s *session) unlock()  { s.rwlock.Unlock() }
+func (s *session) RLock()   { s.rwlock.RLock() }
+func (s *session) RUnlock() { s.rwlock.RUnlock() }
+func (s *session) Lock()    { s.rwlock.Lock() }
+func (s *session) Unlock()  { s.rwlock.Unlock() }
 
-func (s *session) kill(goodbye *wamp.Goodbye) bool {
+func (s *session) Kill(goodbye *wamp.Goodbye) bool {
 	if s.killChan == nil {
 		return false
 	}
