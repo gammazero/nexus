@@ -393,9 +393,12 @@ func (r *realm) onLeave(sess *session, shutdown, killAll bool) {
 		sendTestaments(testaments.destroyed)
 	}
 	r.metaPeer.Send(&wamp.Publish{
-		Request:   wamp.GlobalID(),
-		Topic:     wamp.MetaEventSessionOnLeave,
-		Arguments: wamp.List{sess.ID},
+		Request: wamp.GlobalID(),
+		Topic:   wamp.MetaEventSessionOnLeave,
+		Arguments: wamp.List{
+			sess.ID,
+			sess.Details["authid"],
+			sess.Details["authrole"]},
 	})
 }
 

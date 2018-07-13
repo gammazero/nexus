@@ -218,6 +218,21 @@ func (d *Dealer) Register(callee *session, msg *wamp.Register) {
 		}
 	}
 
+	// If the callee supports progressive call results, but does not support
+	// call cancelling, then disable the callee's progressive call results
+	// feature.  Call cancelling is necessary to stop progressive results if
+	// the caller session is closed during progressive result delivery.
+	if callee.HasFeature(roleCallee, featureProgCallResults) {
+		if !callee.HasFeature(roleCallee, featureCallCanceling) {
+			dict := wamp.DictChild(callee.Details, "roles")
+			dict = wamp.DictChild(dict, roleCallee)
+			dict = wamp.DictChild(dict, "features")
+			delete(dict, featureProgCallResults)
+			d.log.Println("disabling", featureProgCallResults, "for callee",
+				callee, "that does not support", featureCallCanceling)
+		}
+	}
+
 	invoke, _ := wamp.AsString(msg.Options[wamp.OptInvoke])
 	d.actionChan <- func() {
 		d.register(callee, msg, match, invoke, disclose, wampURI)
@@ -735,12 +750,33 @@ func (d *Dealer) cancel(caller *session, msg *wamp.Cancel) {
 }
 
 func (d *Dealer) yield(callee *session, msg *wamp.Yield) {
+	progress, _ := wamp.AsBool(msg.Options[wamp.OptProgress])
+
 	// Find and delete pending invocation.
 	invk, ok := d.invocations[msg.Request]
 	if !ok {
-		// WAMP does not allow sending error in response to YIELD message.
-		d.log.Println("YIELD received with unknown invocation request ID:",
-			msg.Request)
+		// The pending invocation is gone, which means the caller has left the
+		// realm or canceled the call.
+		//
+		// Send INTERRUPT to cancel progressive results.
+		if progress {
+			// It is alright to send an INTERRUPT to the callee, since the
+			// callee's progressive call results feature would have been
+			// disabled at registration time if the callee did not support call
+			// cancelling.
+			if d.trySend(callee, &wamp.Interrupt{
+				Request: msg.Request,
+				Options: wamp.Dict{"mode": wamp.CancelModeKillNoWait},
+			}) {
+				d.log.Println("Dealer sent INTERRUPT to cancel progressive",
+					"results for request", msg.Request, "to callee", callee)
+			}
+		} else {
+			// WAMP does not allow sending INTERRUPT in response to normal or
+			// final YIELD message.
+			d.log.Println("YIELD received with unknown invocation request ID:",
+				msg.Request)
+		}
 		return
 	}
 	callID := invk.callID
@@ -749,7 +785,6 @@ func (d *Dealer) yield(callee *session, msg *wamp.Yield) {
 
 	details := wamp.Dict{}
 
-	progress, _ := wamp.AsBool(msg.Options[wamp.OptProgress])
 	if !progress {
 		delete(d.invocations, msg.Request)
 		// Delete callID -> invocation.
@@ -814,9 +849,10 @@ func (d *Dealer) error(msg *wamp.Error) {
 	})
 }
 
-func (d *Dealer) removeSession(callee *session) {
-	for regID := range d.calleeRegIDSet[callee] {
-		delReg, err := d.delCalleeReg(callee, regID)
+func (d *Dealer) removeSession(sess *session) {
+	// Remove and remaining registrations for the removed session.
+	for regID := range d.calleeRegIDSet[sess] {
+		delReg, err := d.delCalleeReg(sess, regID)
 		if err != nil {
 			panic("!!! Callee had ID of nonexistent registration")
 		}
@@ -830,7 +866,7 @@ func (d *Dealer) removeSession(callee *session) {
 		d.metaPeer.Send(&wamp.Publish{
 			Request:   wamp.GlobalID(),
 			Topic:     wamp.MetaEventRegOnUnregister,
-			Arguments: wamp.List{callee.ID, regID},
+			Arguments: wamp.List{sess.ID, regID},
 		})
 
 		if !delReg {
@@ -843,10 +879,25 @@ func (d *Dealer) removeSession(callee *session) {
 		d.metaPeer.Send(&wamp.Publish{
 			Request:   wamp.GlobalID(),
 			Topic:     wamp.MetaEventRegOnDelete,
-			Arguments: wamp.List{callee.ID, regID},
+			Arguments: wamp.List{sess.ID, regID},
 		})
 	}
-	delete(d.calleeRegIDSet, callee)
+	delete(d.calleeRegIDSet, sess)
+
+	// Remove any pending calls for the removed session
+	for req, caller := range d.calls {
+		if caller != sess {
+			continue
+		}
+		// Removed session has pending call.
+		delete(d.calls, req)
+
+		// If there is a pending invocation for the call, remove it.
+		if invkID, ok := d.invocationByCall[req]; ok {
+			delete(d.invocationByCall, req)
+			delete(d.invocations, invkID)
+		}
+	}
 }
 
 // delCalleeReg deletes the the callee from the specified registration and
