@@ -850,7 +850,7 @@ func (d *Dealer) error(msg *wamp.Error) {
 }
 
 func (d *Dealer) removeSession(sess *session) {
-	// Remove and remaining registrations for the removed session.
+	// Remove any remaining registrations for the removed session.
 	for regID := range d.calleeRegIDSet[sess] {
 		delReg, err := d.delCalleeReg(sess, regID)
 		if err != nil {
@@ -884,7 +884,7 @@ func (d *Dealer) removeSession(sess *session) {
 	}
 	delete(d.calleeRegIDSet, sess)
 
-	// Remove any pending calls for the removed session
+	// Remove any pending calls for the removed session.
 	for req, caller := range d.calls {
 		if caller != sess {
 			continue

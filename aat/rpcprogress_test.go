@@ -167,6 +167,9 @@ func TestRPCProgressiveCallInterrupt(t *testing.T) {
 		e = callee.SendProgress(ctx, wamp.List{"Delta"}, nil)
 		if e != nil && e.Error() != "caller not accepting progressive results" {
 			sendProgErr = fmt.Errorf("error sending progress: %s", e)
+			// Normally the callee should cancel the call, but this test makes
+			// sure a callee that keeps trying to send is handled correctly.
+			//return &client.InvokeResult{Err: wamp.ErrCanceled}
 		}
 
 		// This progressive result receives the same error as the previous.
