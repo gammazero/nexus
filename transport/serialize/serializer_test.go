@@ -34,6 +34,7 @@ func detailRolesFeatures() wamp.Dict {
 			"callee":     wamp.Dict{},
 			"caller":     wamp.Dict{},
 		},
+		"nothere": nil,
 	}
 }
 
@@ -59,6 +60,14 @@ func TestJSONSerialize(t *testing.T) {
 	}
 	if !hasFeature(hello.Details, "publisher", "subscriber_blackwhite_listing") {
 		t.Fatal("did not deserialize message details")
+	}
+
+	val, ok := hello.Details["nothere"]
+	if !ok {
+		t.Fatal("nil value item 'nothere' is missing")
+	}
+	if val != nil {
+		t.Fatal("expected nil value item 'nothere'")
 	}
 }
 
@@ -102,6 +111,14 @@ func TestCBORSerialize(t *testing.T) {
 	}
 	if !hasFeature(hello.Details, "publisher", "subscriber_blackwhite_listing") {
 		t.Fatal("did not deserialize message details")
+	}
+
+	val, ok := hello.Details["nothere"]
+	if !ok {
+		t.Fatal("nil value item 'nothere' is missing")
+	}
+	if val != nil {
+		t.Fatal("expected nil value item 'nothere'")
 	}
 }
 
@@ -156,6 +173,14 @@ func TestMessagePackSerialize(t *testing.T) {
 	}
 	if !hasFeature(hello.Details, "publisher", "subscriber_blackwhite_listing") {
 		t.Fatal("did not deserialize message details")
+	}
+
+	val, ok := hello.Details["nothere"]
+	if !ok {
+		t.Fatal("nil value item 'nothere' is missing")
+	}
+	if val != nil {
+		t.Fatal("expected nil value item 'nothere'")
 	}
 }
 

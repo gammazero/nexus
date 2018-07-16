@@ -725,10 +725,14 @@ func (c *Client) Close() error {
 	close(c.stopping)
 	c.activeInvHandlers.Wait()
 
+	// Leave the realm and stop the client's main goroutine.
 	c.leaveRealm()
 
-	// Stop the client's main goroutine.
-	close(c.actionChan)
+	// The run goroutine is guaranteed to have exited when leaveRealm()
+	// returns, so this is safe.
+	for _, ch := range c.awaitingReply {
+		close(ch)
+	}
 
 	c.sess.Peer = nil
 	return nil
@@ -750,17 +754,19 @@ func (c *Client) RouterGoodbye() *wamp.Goodbye {
 
 // SendProgress is used by a Callee client to return progressive RPC results.
 func (c *Client) SendProgress(ctx context.Context, args wamp.List, kwArgs wamp.Dict) error {
-	reqChan := make(chan wamp.ID)
+	// Lookup the request ID using ctx.  If there is no request ID, this means
+	// that the caller is not accepting progressive results, or that the
+	// invocation handler has been closed because the call was canceled.
+	var req wamp.ID
+	var ok bool
+	done := make(chan struct{})
 	c.actionChan <- func() {
-		r, ok := c.progGate[ctx]
-		if ok {
-			reqChan <- r
-		} else {
-			close(reqChan)
-		}
+		req, ok = c.progGate[ctx]
+		close(done)
 	}
-	req, canSendProg := <-reqChan
-	if !canSendProg {
+	<-done
+	if !ok {
+		// Caller is not accepting progressive results or call canceled.
 		return errors.New("caller not accepting progressive results")
 	}
 	return c.sess.Send(&wamp.Yield{
@@ -846,8 +852,14 @@ func (c *Client) leaveRealm() {
 	// after receiving GOODBYE from router.
 	c.sess.Close()
 
-	// Wait for run() to exit.
-	<-c.done
+	// Wait for run() to exit, but do not wait longer that a normal response
+	// timeout.
+	select {
+	case <-c.done:
+	case <-time.After(c.responseTimeout):
+		close(c.actionChan) // force run() to exit
+		<-c.done
+	}
 }
 
 func handleCRAuth(peer wamp.Peer, challenge *wamp.Challenge, authHandlers map[string]AuthFunc, rspTimeout time.Duration) (wamp.Message, error) {
@@ -981,7 +993,11 @@ func (c *Client) waitForReply(id wamp.ID) (wamp.Message, error) {
 	var msg wamp.Message
 	var err error
 	select {
-	case msg = <-wait:
+	case msg, ok = <-wait:
+		if !ok {
+			// Return directly here, since awaitingReply entry already deleted.
+			return nil, errors.New("client closed")
+		}
 	case <-time.After(c.responseTimeout):
 		err = errors.New("timeout while waiting for reply")
 	}
@@ -1011,7 +1027,11 @@ func (c *Client) waitForReplyWithCancel(ctx context.Context, id wamp.ID, mode, p
 	var err error
 CollectResults:
 	select {
-	case msg = <-wait:
+	case msg, ok = <-wait:
+		if !ok {
+			// Return directly here, since awaitingReply entry already deleted.
+			return nil, errors.New("client closed")
+		}
 	case <-ctx.Done():
 		c.log.Printf("Call to '%s' canceled (mode=%s)", procedure, mode)
 		c.sess.Send(&wamp.Cancel{
@@ -1026,8 +1046,9 @@ CollectResults:
 			err = errors.New("timeout while waiting for reply")
 		}
 	}
-	// If this is a progressive result.
-	if progChan != nil {
+	// If this is a progressive result, put the Result message on the progress
+	// channel and go back to waitng for more results.
+	if msg != nil && progChan != nil {
 		if result, ok := msg.(*wamp.Result); ok {
 			if ok, _ = wamp.AsBool(result.Details[wamp.OptProgress]); ok {
 				progChan <- result
@@ -1035,6 +1056,7 @@ CollectResults:
 			}
 		}
 	}
+	// All done with this call, so not waiting for more replies.
 	c.actionChan <- func() {
 		delete(c.awaitingReply, id)
 	}
@@ -1128,8 +1150,8 @@ func (c *Client) runHandleEvent(msg *wamp.Event) {
 	handler(msg.Arguments, msg.ArgumentsKw, msg.Details)
 }
 
-// runHandleInvocation processes an INVOCATION message from the from the
-// router requesting a call to a registered RPC procedure.
+// runHandleInvocation processes an INVOCATION message from the router
+// requesting a call to a registered RPC procedure.
 func (c *Client) runHandleInvocation(msg *wamp.Invocation) {
 	handler, ok := c.invHandlers[msg.Registration]
 	if !ok {
@@ -1247,12 +1269,12 @@ func (c *Client) runHandleInvocation(msg *wamp.Invocation) {
 	}()
 }
 
-// runHandleInterrupt processes an INTERRUPT message from the from the router
+// runHandleInterrupt processes an INTERRUPT message from the router,
 // requesting that a pending call be canceled.
 func (c *Client) runHandleInterrupt(msg *wamp.Interrupt) {
 	cancel, ok := c.invHandlerKill[msg.Request]
 	if !ok {
-		c.log.Print("Received INTERRUPT for message that no longer exists")
+		c.log.Print("Received INTERRUPT for invocation that no longer exists")
 		return
 	}
 	// If the interrupt mode is "killnowait", then the router is not
