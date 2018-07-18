@@ -9,7 +9,7 @@ import (
 	"github.com/gammazero/nexus/wamp"
 )
 
-func ExampleCall() {
+func ExampleClient_Call() {
 	// Configure and connect caller client.
 	logger := log.New(os.Stdout, "", 0)
 	cfg := Config{
@@ -38,7 +38,7 @@ func ExampleCall() {
 	logger.Println("The sum is:", sum)
 }
 
-func ExampleCallProgress() {
+func ExampleClient_CallProgress() {
 	// Configure and connect caller client.
 	logger := log.New(os.Stdout, "", 0)
 	cfg := Config{
@@ -80,7 +80,7 @@ func ExampleCallProgress() {
 	}
 }
 
-func ExampleRegister() {
+func ExampleClient_Register() {
 	// Configure and connect callee client.
 	logger := log.New(os.Stdout, "", 0)
 	cfg := Config{
@@ -112,7 +112,7 @@ func ExampleRegister() {
 	<-callee.Done()
 }
 
-func ExampleRegister_progressive() {
+func ExampleClient_Register_progressive() {
 	// Configure and connect callee client.
 	logger := log.New(os.Stdout, "", 0)
 	cfg := Config{
@@ -136,8 +136,7 @@ func ExampleRegister_progressive() {
 		for percentDone := 0; percentDone < 100; {
 			<-ticker.C
 			percentDone += 20
-			err := callee.SendProgress(ctx, wamp.List{percentDone}, nil)
-			if err != nil {
+			if e := callee.SendProgress(ctx, wamp.List{percentDone}, nil); e != nil {
 				// If send failed, return error saying the call is canceled.
 				return nil
 			}
