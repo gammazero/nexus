@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	"fmt"
+	"runtime"
 	"testing"
 	"time"
 
@@ -277,8 +278,7 @@ func TestProgressStress(t *testing.T) {
 	b := bytes.NewBuffer(data)
 	var sendCount, recvCount int
 
-	// Handler is a closure used to capture the callee, since this is not
-	// provided as a parameter to this callback.
+	// Define invocation handler.
 	handler := func(ctx context.Context, args wamp.List, kwargs, details wamp.Dict) *client.InvokeResult {
 		// Get chunksize requested by caller, use default if not set.
 		var chunkSize int
@@ -296,9 +296,10 @@ func TestProgressStress(t *testing.T) {
 			e := callee.SendProgress(ctx, wamp.List{string(chunk)}, nil)
 			if e != nil {
 				// If send failed, return an error saying the call canceled.
-				return &client.InvokeResult{Err: wamp.ErrCanceled}
+				return nil
 			}
 			sendCount++
+			runtime.Gosched()
 		}
 
 		b.Reset()
