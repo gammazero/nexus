@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	"fmt"
+	"runtime"
 	"testing"
 	"time"
 
@@ -298,6 +299,7 @@ func TestProgressStress(t *testing.T) {
 				return nil
 			}
 			sendCount++
+			runtime.Gosched() // give waiting caller a chance
 		}
 
 		b.Reset()
