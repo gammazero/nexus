@@ -153,7 +153,7 @@ func (w *websocketPeer) TrySend(msg wamp.Message) error {
 
 	select {
 	case w.wr <- msg:
-	case <-time.After(time.Second):
+	case <-time.After(sendTimeout):
 		return errors.New("blocked")
 	}
 	return nil

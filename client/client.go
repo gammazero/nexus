@@ -1032,28 +1032,30 @@ CollectResults:
 			// Return directly here, since awaitingReply entry already deleted.
 			return nil, errors.New("client closed")
 		}
+		// If this is a progressive result, put the Result message on the
+		// progress channel and go back to waitng for more results.
+		if progChan != nil {
+			if result, ok := msg.(*wamp.Result); ok {
+				if ok, _ = wamp.AsBool(result.Details[wamp.OptProgress]); ok {
+					progChan <- result
+					goto CollectResults
+				}
+			}
+		}
 	case <-ctx.Done():
-		c.log.Printf("Call to '%s' canceled (mode=%s)", procedure, mode)
+		if c.debug {
+			c.log.Printf("Call to '%s' canceled (mode=%s)", procedure, mode)
+		}
 		c.sess.Send(&wamp.Cancel{
 			Request: id,
 			Options: wamp.SetOption(nil, wamp.OptMode, mode),
 		})
-	}
-	if msg == nil {
+		// If waiting for callee to cancel, then wait for the ERROR from
+		// the dealer.
 		select {
 		case msg = <-wait:
 		case <-time.After(c.responseTimeout):
-			err = errors.New("timeout while waiting for reply")
-		}
-	}
-	// If this is a progressive result, put the Result message on the progress
-	// channel and go back to waitng for more results.
-	if msg != nil && progChan != nil {
-		if result, ok := msg.(*wamp.Result); ok {
-			if ok, _ = wamp.AsBool(result.Details[wamp.OptProgress]); ok {
-				progChan <- result
-				goto CollectResults
-			}
+			err = errors.New("timeout while waiting for reply after cancel")
 		}
 	}
 	// All done with this call, so not waiting for more replies.
@@ -1222,6 +1224,12 @@ func (c *Client) runHandleInvocation(msg *wamp.Invocation) {
 		var result *InvokeResult
 		select {
 		case result = <-resChan:
+			// If the handler returns a nil result, this means the handler
+			// canceled the call.
+			if result == nil {
+				result = &InvokeResult{Err: wamp.ErrCanceled}
+				c.log.Println("INVOCATION", msg.Request, "canceled")
+			}
 		case <-c.stopping:
 			c.log.Print("Client stopping, invocation handler canceled")
 			// Return without sending response to server.  This will also
@@ -1237,9 +1245,7 @@ func (c *Client) runHandleInvocation(msg *wamp.Invocation) {
 		if result.Err != "" {
 			// If the cancel is already deleted, this is the signal that
 			// kill mode was "killnowait", in which case do not send a
-			// response to the router.  Check is done here since a cancel
-			// can cause either the handler to return or ctx.Done() to
-			// close, indeterminately .
+			// response to the router.
 			okChan := make(chan bool)
 			c.actionChan <- func() {
 				_, ok := c.invHandlerKill[msg.Request]

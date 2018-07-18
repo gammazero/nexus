@@ -1,6 +1,7 @@
 package aat
 
 import (
+	"bytes"
 	"context"
 	"fmt"
 	"testing"
@@ -11,7 +12,10 @@ import (
 	"github.com/gammazero/nexus/wamp"
 )
 
-const progProc = "nexus.test.progproc"
+const (
+	progProc  = "nexus.test.progproc"
+	chunkProc = "example.progress.text"
+)
 
 func TestRPCProgressiveCallResults(t *testing.T) {
 	defer leaktest.Check(t)()
@@ -236,5 +240,127 @@ func TestRPCProgressiveCallInterrupt(t *testing.T) {
 	err = callee.Close()
 	if err != nil {
 		t.Error("Failed to disconnect client:", err)
+	}
+}
+
+func TestProgressStress(t *testing.T) {
+	defer leaktest.Check(t)()
+
+	// Connect callee session.
+	callee, err := connectClient()
+	if err != nil {
+		t.Fatal("Failed to connect client:", err)
+	}
+	defer callee.Close()
+
+	// Populate a slize of data with printable characters.
+	data := make([]byte, 8192)
+	var c int
+	for rep := 0; rep < len(data)/64; rep++ {
+		for i := 0; i < 26; i++ {
+			data[c] = byte(i + int('A'))
+			c++
+			data[c] = byte(i + int('a'))
+			c++
+		}
+		for i := 0; i < 10; i++ {
+			data[c] = byte(i + int('0'))
+			c++
+		}
+		data[c] = byte('?')
+		c++
+		data[c] = byte('/')
+		c++
+	}
+
+	dataLen := len(data)
+	b := bytes.NewBuffer(data)
+	var sendCount, recvCount int
+
+	// Handler is a closure used to capture the callee, since this is not
+	// provided as a parameter to this callback.
+	handler := func(ctx context.Context, args wamp.List, kwargs, details wamp.Dict) *client.InvokeResult {
+		// Get chunksize requested by caller, use default if not set.
+		var chunkSize int
+		if len(args) != 0 {
+			i, _ := wamp.AsInt64(args[0])
+			chunkSize = int(i)
+		}
+		if chunkSize == 0 {
+			chunkSize = 64
+		}
+
+		// Read and send chunks of data until the buffer is empty.
+		for chunk := b.Next(chunkSize); len(chunk) != 0; chunk = b.Next(chunkSize) {
+			// Send a chunk of data.
+			e := callee.SendProgress(ctx, wamp.List{string(chunk)}, nil)
+			if e != nil {
+				// If send failed, return an error saying the call canceled.
+				return &client.InvokeResult{Err: wamp.ErrCanceled}
+			}
+			sendCount++
+		}
+
+		b.Reset()
+		b.Write(data)
+
+		// Send total length as final result.
+		return &client.InvokeResult{Args: wamp.List{dataLen}}
+	}
+
+	// Register procedure.
+	if err = callee.Register(chunkProc, handler, nil); err != nil {
+		t.Fatal("Failed to register procedure:", err)
+	}
+
+	// Connect caller session.
+	caller, err := connectClient()
+	if err != nil {
+		t.Fatal("Failed to connect client:", err)
+	}
+	defer caller.Close()
+
+	// The progress handler accumulates the chunks of data as they arrive.  It
+	// also progressively calculates a sha256 hash of the data as it arrives.
+	var chunks []string
+	var recvLen int
+	progHandler := func(result *wamp.Result) {
+		// Received another chunk of data, computing hash as chunks received.
+		chunk := result.Arguments[0].(string)
+		chunks = append(chunks, chunk)
+		// Uncomment to make the caller slow to receive responses.  This will
+		// cause the dealer to be blocked trying to send to this client.
+		//time.Sleep(20 * time.Millisecond)
+		recvLen += len(chunk)
+		recvCount++
+	}
+
+	ctx := context.Background()
+
+	for i := 16; i <= 256; i += 16 {
+		// Call the example procedure, specifying the size of chunks to send as
+		// progressive results.
+		result, err := caller.CallProgress(
+			ctx, chunkProc, nil, wamp.List{i}, nil, "", progHandler)
+		if err != nil {
+			t.Error("Failed to call procedure:", err)
+		}
+
+		// As a final result, the callee returns the total length the data.
+		totalLen, _ := wamp.AsInt64(result.Arguments[0])
+
+		if sendCount != recvCount {
+			t.Error("Caller received", recvCount, "chunks, expected", sendCount)
+		}
+		// Check if lenth received is correct
+		if recvLen != dataLen {
+			t.Error("Caller received wrong amount of data")
+		}
+		if int(totalLen) != dataLen {
+			t.Error("Length sent by callee is wrong")
+		}
+		sendCount = 0
+		recvCount = 0
+		recvLen = 0
 	}
 }
