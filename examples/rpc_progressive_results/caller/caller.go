@@ -57,9 +57,8 @@ func main() {
 
 	ctx := context.Background()
 
-	// Call the example procedure with args 1..10.  The procedure will
-	// return the result of a different calculation with each progressive
-	// result.
+	// Call the example procedure, specifying the size of chunks to send as
+	// progressive results.
 	result, err := caller.CallProgress(
 		ctx, procedureName, nil, wamp.List{chunkSize}, nil, "", progHandler)
 	if err != nil {

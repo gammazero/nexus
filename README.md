@@ -68,6 +68,7 @@ A stable release of nexus is available with support for most advanced profile fe
 
 These features listed here are being added.  If there are are specific items needed, or if any changes in current functionality are needed, then please open an [issue](https://github.com/gammazero/nexus/issues).
 
+- subscription meta procedures (coming very soon)
 - more stress tests and benchmarks
 - more documentation
 - more advanced profile examples
@@ -87,7 +88,8 @@ These features listed here are being added.  If there are are specific items nee
 | call_canceling | Yes |
 | caller_identification | Yes |
 | call_trustlevels | No |
-| registration_meta_api | Yes
+| registration_meta_events | Yes
+| registration_meta_procedures | Yes
 | pattern_based_registration | Yes |
 | shared_registration | Yes |
 | sharded_registration | No |
@@ -102,7 +104,8 @@ These features listed here are being added.  If there are are specific items nee
 | publisher_exclusion | Yes |
 | publisher_identification | Yes |
 | publication_trustlevels | No|
-| subscription_meta_api | Yes |
+| subscription_meta_events | Yes |
+| subscription_meta_procedures | No |
 | pattern_based_subscription | Yes |
 | sharded_subscription | No |
 | event_history | No |
