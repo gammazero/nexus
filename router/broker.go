@@ -310,7 +310,7 @@ func (b *Broker) subscribe(subscriber *session, msg *wamp.Subscribe, match strin
 	// a subscription is already subscribed to the topic.
 	if existingSub {
 		if _, already := sub.subscribers[subscriber]; already {
-			// Already subscribed, send existing subscription ID.
+			// Already subscribed; send existing subscription ID.
 			b.trySend(subscriber, &wamp.Subscribed{
 				Request:      msg.Request,
 				Subscription: sub.id,
@@ -341,10 +341,10 @@ func (b *Broker) subscribe(subscriber *session, msg *wamp.Subscribe, match strin
 	b.pubSubMeta(wamp.MetaEventSubOnSubscribe, subscriber.ID, sub.id)
 }
 
-// deleteSubscription removes the subscription from the ID->subscription man
-// and from the topic->subscription map.
+// deleteSubscription removes the the ID->subscription mapping and removes the
+// topic->subscription mapping.
 func (b *Broker) delSubscription(sub *subscription) {
-	// Remove subscription.
+	// Remove ID -> subscription.
 	delete(b.subscriptions, sub.id)
 
 	// Delete topic -> subscription
@@ -358,6 +358,7 @@ func (b *Broker) delSubscription(sub *subscription) {
 	}
 }
 
+// unsibsubscribe removes the subscriber from the specified subscribtion.
 func (b *Broker) unsubscribe(subscriber *session, msg *wamp.Unsubscribe) {
 	subID := msg.Subscription
 	sub, ok := b.subscriptions[subID]
@@ -409,6 +410,7 @@ func (b *Broker) unsubscribe(subscriber *session, msg *wamp.Unsubscribe) {
 	}
 }
 
+// removeSession removed all subscriptions for the session.
 func (b *Broker) removeSession(subscriber *session) {
 	subIDSet, ok := b.sessionSubIDSet[subscriber]
 	if !ok {
@@ -417,8 +419,8 @@ func (b *Broker) removeSession(subscriber *session) {
 	delete(b.sessionSubIDSet, subscriber)
 
 	// For each subscription ID, lookup the subscription and remove the
-	// subscriber from the subscription.  If there are no more subscribers on a
-	// subscription, then delete the subscription.
+	// subscriber from the subscription.  If there are no more subscribers on
+	// the subscription, then delete the subscription.
 	var sub *subscription
 	for subID := range subIDSet {
 		sub, ok = b.subscriptions[subID]
@@ -589,7 +591,7 @@ func disclosePublisher(pub *session, details wamp.Dict) {
 	pub.rUnlock()
 }
 
-// ----- Meta Procedure Handlers -----
+// ----- Subscripton Meta Procedure Handlers -----
 
 // SubList retrieves subscription IDs listed according to match policies.
 func (b *Broker) SubList(msg *wamp.Invocation) wamp.Message {
@@ -628,8 +630,9 @@ func (b *Broker) SubLookup(msg *wamp.Invocation) wamp.Message {
 		if topic, ok := wamp.AsURI(msg.Arguments[0]); ok {
 			var match string
 			if len(msg.Arguments) > 1 {
-				opts := msg.Arguments[1].(wamp.Dict)
-				match, _ = wamp.AsString(opts[wamp.OptMatch])
+				if opts, ok := wamp.AsDict(msg.Arguments[1]); ok {
+					match, _ = wamp.AsString(opts[wamp.OptMatch])
+				}
 			}
 			sync := make(chan struct{})
 			b.actionChan <- func() {

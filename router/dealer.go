@@ -989,8 +989,9 @@ func (d *Dealer) RegLookup(msg *wamp.Invocation) wamp.Message {
 		if procedure, ok := wamp.AsURI(msg.Arguments[0]); ok {
 			var match string
 			if len(msg.Arguments) > 1 {
-				opts := msg.Arguments[1].(wamp.Dict)
-				match, _ = wamp.AsString(opts[wamp.OptMatch])
+				if opts, ok := wamp.AsDict(msg.Arguments[1]); ok {
+					match, _ = wamp.AsString(opts[wamp.OptMatch])
+				}
 			}
 			sync := make(chan wamp.ID)
 			d.actionChan <- func() {
