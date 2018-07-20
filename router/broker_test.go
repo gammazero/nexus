@@ -44,50 +44,62 @@ func TestBasicSubscribe(t *testing.T) {
 
 	// Test that subscriber received SUBSCRIBED message
 	rsp := <-sess.Recv()
-	sub, ok := rsp.(*wamp.Subscribed)
+	subMsg, ok := rsp.(*wamp.Subscribed)
 	if !ok {
 		t.Fatal("expected", wamp.SUBSCRIBED, "got:", rsp.MessageType())
 	}
-	subID := sub.Subscription
+	subID := subMsg.Subscription
 	if subID == 0 {
 		t.Fatal("invalid suvscription ID")
 	}
 
 	// Check that broker created subscription.
-	topic, ok := broker.subscriptions[subID]
+	sub, ok := broker.subscriptions[subID]
 	if !ok {
 		t.Fatal("broker missing subscription")
 	}
-	if topic != testTopic {
+	if sub.topic != testTopic {
 		t.Fatal("subscription to wrong topic")
 	}
-	_, ok = broker.topicSubscribers[testTopic]
+	sub2, ok := broker.topicSubscription[testTopic]
 	if !ok {
 		t.Fatal("broker missing subscribers for topic")
 	}
-	_, ok = broker.sessionSubIDSet[sess]
+	if sub.id != sub2.id {
+		t.Fatal("topic->subscription has wrong subscription")
+	}
+	subIDSet, ok := broker.sessionSubIDSet[sess]
 	if !ok {
 		t.Fatal("broker missing subscriber ID for session")
+	}
+	if _, ok = subIDSet[sub.id]; !ok {
+		t.Fatal("broker session's subscriber ID set missing subscription ID")
 	}
 
 	// Test subscribing to same topic again.
 	broker.Subscribe(sess, &wamp.Subscribe{Request: 123, Topic: testTopic})
 	// Test that subscriber received SUBSCRIBED message
 	rsp = <-sess.Recv()
-	sub, ok = rsp.(*wamp.Subscribed)
+	subMsg, ok = rsp.(*wamp.Subscribed)
 	if !ok {
 		t.Fatal("expected", wamp.SUBSCRIBED, "got:", rsp.MessageType())
 	}
 	// Should get same subscription ID.
-	subID2 := sub.Subscription
+	subID2 := subMsg.Subscription
 	if subID2 != subID {
 		t.Fatal("invalid suvscription ID")
 	}
 	if len(broker.subscriptions) != 1 {
 		t.Fatal("broker has too many subscriptions")
 	}
-	if len(broker.topicSubscribers[testTopic]) != 1 {
+	if sub, ok = broker.topicSubscription[testTopic]; !ok {
+		t.Fatal("broker missing topic->subscription")
+	}
+	if len(sub.subscribers) != 1 {
 		t.Fatal("too many subscribers to", testTopic)
+	}
+	if _, ok = sub.subscribers[sess]; !ok {
+		t.Fatal("broker missing subscriber on subscription")
 	}
 	if len(broker.sessionSubIDSet[sess]) != 1 {
 		t.Fatal("too many subscriptions for session")
@@ -98,42 +110,85 @@ func TestBasicSubscribe(t *testing.T) {
 	broker.Subscribe(sess, &wamp.Subscribe{Request: 123, Topic: testTopic2})
 	// Test that subscriber received SUBSCRIBED message
 	rsp = <-sess.Recv()
-	sub, ok = rsp.(*wamp.Subscribed)
+	subMsg, ok = rsp.(*wamp.Subscribed)
 	if !ok {
 		t.Fatal("expected", wamp.SUBSCRIBED, "got:", rsp.MessageType())
 	}
-	subID2 = sub.Subscription
+	subID2 = subMsg.Subscription
 	if subID2 == subID {
 		t.Fatal("wrong suvscription ID")
 	}
 	if len(broker.subscriptions) != 2 {
 		t.Fatal("wrong number of subscriptions")
 	}
-	if len(broker.topicSubscribers[testTopic]) != 1 {
+
+	if sub, ok = broker.topicSubscription[testTopic]; !ok {
+		t.Fatal("broker missing topic->subscription for topic", testTopic)
+	}
+	if len(sub.subscribers) != 1 {
 		t.Fatal("too many subscribers to", testTopic)
 	}
-	if len(broker.topicSubscribers[testTopic2]) != 1 {
+
+	if sub, ok = broker.topicSubscription[testTopic2]; !ok {
+		t.Fatal("broker missing topic->subscription for topic", testTopic2)
+	}
+	if len(sub.subscribers) != 1 {
 		t.Fatal("too many subscribers to", testTopic2)
 	}
+
 	if len(broker.sessionSubIDSet[sess]) != 2 {
 		t.Fatal("wrong number of subscriptions for session")
 	}
 }
 
 func TestUnsubscribe(t *testing.T) {
-	// Subscribe to topic
 	broker := NewBroker(logger, false, true, debug)
-	subscriber := newTestPeer()
-	sess := newSession(subscriber, 0, nil)
 	testTopic := wamp.URI("nexus.test.topic")
-	broker.Subscribe(sess, &wamp.Subscribe{Request: 123, Topic: testTopic})
-	rsp := <-sess.Recv()
+
+	// Subscribe session1 to topic
+	subscriber := newTestPeer()
+	sess1 := newSession(subscriber, 0, nil)
+	broker.Subscribe(sess1, &wamp.Subscribe{Request: 123, Topic: testTopic})
+	rsp := <-sess1.Recv()
 	subID := rsp.(*wamp.Subscribed).Subscription
 
-	// Test unsubscribing from topic.
-	broker.Unsubscribe(sess, &wamp.Unsubscribe{Request: 124, Subscription: subID})
+	// Subscribe session2 to topic
+	subscriber2 := newTestPeer()
+	sess2 := newSession(subscriber2, 0, nil)
+	broker.Subscribe(sess2, &wamp.Subscribe{Request: 567, Topic: testTopic})
+	rsp = <-sess2.Recv()
+	subID2 := rsp.(*wamp.Subscribed).Subscription
+
+	if subID != subID2 {
+		t.Fatal("subscribe to same topic resulted in different subscriptions")
+	}
+
+	// Check that subscription is present and has 2 subscribers.
+	sub, ok := broker.subscriptions[subID]
+	if !ok {
+		t.Fatal("broker missing subscription")
+	}
+	if len(sub.subscribers) != 2 {
+		t.Fatal("subscription should have 2 subecribers")
+	}
+	subIDSet, ok := broker.sessionSubIDSet[sess1]
+	if !ok {
+		t.Fatal("session 1 subscription ID set missing")
+	}
+	if len(subIDSet) != 1 {
+		t.Error("wrong number of subscription ID for session 1")
+	}
+	if subIDSet, ok = broker.sessionSubIDSet[sess2]; !ok {
+		t.Fatal("session 2 subscription ID set missing")
+	}
+	if len(subIDSet) != 1 {
+		t.Error("wrong number of subscription ID for session 2")
+	}
+
+	// Test unsubscribing session1 from topic.
+	broker.Unsubscribe(sess1, &wamp.Unsubscribe{Request: 124, Subscription: subID})
 	// Check that session received UNSUBSCRIBED message.
-	rsp = <-sess.Recv()
+	rsp = <-sess1.Recv()
 	unsub, ok := rsp.(*wamp.Unsubscribed)
 	if !ok {
 		t.Fatal("expected", wamp.UNSUBSCRIBED, "got:", rsp.MessageType())
@@ -142,15 +197,54 @@ func TestUnsubscribe(t *testing.T) {
 	if unsubID == 0 {
 		t.Fatal("invalid unsibscribe ID")
 	}
+
+	// Check that subscription is still present and now has 1 subscriber.
+	sub, ok = broker.subscriptions[subID]
+	if !ok {
+		t.Fatal("broker missing subscription")
+	}
+	if len(sub.subscribers) != 1 {
+		t.Fatal("subscription should have 1 subecribers")
+	}
+	// Check that subscriber 1 is gone and subscriber 2 remains.
+	if _, ok = sub.subscribers[sess1]; ok {
+		t.Fatal("subscription should not have unsubscribed session 1")
+	}
+	if _, ok = sub.subscribers[sess2]; !ok {
+		t.Fatal("subscription missing session 2")
+	}
+	// Check that topic->subscription remains
+	if _, ok = broker.topicSubscription[testTopic]; !ok {
+		t.Fatal("topic subscription was deleted but subscription exists")
+	}
+	if _, ok = broker.sessionSubIDSet[sess1]; ok {
+		t.Fatal("session 1 subscription ID set still exists")
+	}
+	if _, ok = broker.sessionSubIDSet[sess2]; !ok {
+		t.Fatal("session 2 subscription ID set missing")
+	}
+
+	// Test unsubscribing session2 from topic.
+	broker.Unsubscribe(sess2, &wamp.Unsubscribe{Request: 124, Subscription: subID})
+	// Check that session received UNSUBSCRIBED message.
+	rsp = <-sess2.Recv()
+	unsub, ok = rsp.(*wamp.Unsubscribed)
+	if !ok {
+		t.Fatal("expected", wamp.UNSUBSCRIBED, "got:", rsp.MessageType())
+	}
+
 	// Check the broker removed subscription.
 	if _, ok = broker.subscriptions[subID]; ok {
 		t.Fatal("subscription still exists")
 	}
-	if _, ok = broker.topicSubscribers[testTopic]; ok {
-		t.Fatal("topic subscriber still exists")
+	if _, ok = broker.topicSubscription[testTopic]; ok {
+		t.Fatal("topic subscription still exists")
 	}
-	if _, ok = broker.sessionSubIDSet[sess]; ok {
-		t.Fatal("session subscription ID set still exists")
+	if _, ok = broker.sessionSubIDSet[sess1]; ok {
+		t.Fatal("session 1 subscription ID set still exists")
+	}
+	if _, ok = broker.sessionSubIDSet[sess2]; ok {
+		t.Fatal("session 2 subscription ID set still exists")
 	}
 }
 
@@ -183,13 +277,13 @@ func TestRemove(t *testing.T) {
 	if ok {
 		t.Fatal("subscription still exists")
 	}
-	if _, ok = broker.topicSubscribers[testTopic]; ok {
+	if _, ok = broker.topicSubscription[testTopic]; ok {
 		t.Fatal("topic subscriber still exists")
 	}
 	if _, ok = broker.subscriptions[subID2]; ok {
 		t.Fatal("subscription still exists")
 	}
-	if _, ok = broker.topicSubscribers[testTopic2]; ok {
+	if _, ok = broker.topicSubscription[testTopic2]; ok {
 		t.Fatal("topic subscriber still exists")
 	}
 	if _, ok = broker.sessionSubIDSet[sess]; ok {
@@ -251,24 +345,27 @@ func TestPrefxPatternBasedSubscription(t *testing.T) {
 
 	// Test that subscriber received SUBSCRIBED message
 	rsp := <-sess.Recv()
-	sub, ok := rsp.(*wamp.Subscribed)
+	subMsg, ok := rsp.(*wamp.Subscribed)
 	if !ok {
 		t.Fatal("expected", wamp.SUBSCRIBED, "got:", rsp.MessageType())
 	}
-	subID := sub.Subscription
+	subID := subMsg.Subscription
 	if subID == 0 {
 		t.Fatal("invalid suvscription ID")
 	}
 
 	// Check that broker created subscription.
-	topic, ok := broker.pfxSubscriptions[subID]
+	sub, ok := broker.subscriptions[subID]
 	if !ok {
 		t.Fatal("broker missing subscription")
 	}
-	if topic != testTopicPfx {
+	if _, ok = sub.subscribers[sess]; !ok {
+		t.Fatal("broker missing subscriber on subscription")
+	}
+	if sub.topic != testTopicPfx {
 		t.Fatal("subscription to wrong topic")
 	}
-	_, ok = broker.pfxTopicSubscribers[testTopicPfx]
+	_, ok = broker.pfxTopicSubscription[testTopicPfx]
 	if !ok {
 		t.Fatal("broker missing subscribers for topic")
 	}
@@ -289,7 +386,7 @@ func TestPrefxPatternBasedSubscription(t *testing.T) {
 	if !ok {
 		t.Fatalf("event missing topic")
 	}
-	topic = _topic.(wamp.URI)
+	topic := _topic.(wamp.URI)
 	if topic != testTopic {
 		t.Fatal("wrong topic received")
 	}
@@ -311,26 +408,38 @@ func TestWildcardPatternBasedSubscription(t *testing.T) {
 
 	// Test that subscriber received SUBSCRIBED message
 	rsp := <-sess.Recv()
-	sub, ok := rsp.(*wamp.Subscribed)
+	subMsg, ok := rsp.(*wamp.Subscribed)
 	if !ok {
 		t.Fatal("expected", wamp.SUBSCRIBED, "got:", rsp.MessageType())
 	}
-	subID := sub.Subscription
+	subID := subMsg.Subscription
 	if subID == 0 {
 		t.Fatal("invalid suvscription ID")
 	}
 
 	// Check that broker created subscription.
-	topic, ok := broker.wcSubscriptions[subID]
+	sub, ok := broker.subscriptions[subID]
 	if !ok {
 		t.Fatal("broker missing subscription")
 	}
-	if topic != testTopicWc {
+	if sub.id != subID {
+		t.Fatal("broker subscriptions has subscription with wrong ID")
+	}
+	if _, ok = sub.subscribers[sess]; !ok {
+		t.Fatal("broker missing subscriber on subscription")
+	}
+	if sub.topic != testTopicWc {
 		t.Fatal("subscription to wrong topic")
 	}
-	_, ok = broker.wcTopicSubscribers[testTopicWc]
+	if sub.match != "wildcard" {
+		t.Fatal("subscription has wrong match policy")
+	}
+	sub2, ok := broker.wcTopicSubscription[testTopicWc]
 	if !ok {
-		t.Fatal("broker missing subscribers for topic")
+		t.Fatal("broker missing subscription for topic")
+	}
+	if sub2.id != subID {
+		t.Fatal("topic->session has wrong session")
 	}
 	_, ok = broker.sessionSubIDSet[sess]
 	if !ok {
@@ -349,7 +458,7 @@ func TestWildcardPatternBasedSubscription(t *testing.T) {
 	if !ok {
 		t.Fatalf("event missing topic")
 	}
-	topic = _topic.(wamp.URI)
+	topic := _topic.(wamp.URI)
 	if topic != testTopic {
 		t.Fatal("wrong topic received")
 	}

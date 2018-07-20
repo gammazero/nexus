@@ -981,7 +981,8 @@ func (d *Dealer) RegList(msg *wamp.Invocation) wamp.Message {
 	}
 }
 
-// RegLookup retrieves registration IDs listed according to match policies.
+// RegLookup obtains the registration (if any) managing a procedure, according
+// to some match policy.
 func (d *Dealer) RegLookup(msg *wamp.Invocation) wamp.Message {
 	var regID wamp.ID
 	if len(msg.Arguments) != 0 {
@@ -1108,7 +1109,7 @@ func (d *Dealer) RegListCallees(msg *wamp.Invocation) wamp.Message {
 	}
 }
 
-// regCountCallees obtains the number of sessions currently attached to the
+// RegCountCallees obtains the number of sessions currently attached to the
 // registration.
 func (d *Dealer) RegCountCallees(msg *wamp.Invocation) wamp.Message {
 	var count int
@@ -1116,18 +1117,16 @@ func (d *Dealer) RegCountCallees(msg *wamp.Invocation) wamp.Message {
 	if len(msg.Arguments) != 0 {
 		var regID wamp.ID
 		if regID, ok = wamp.AsID(msg.Arguments[0]); ok {
-			sync := make(chan int)
+			sync := make(chan struct{})
 			d.actionChan <- func() {
 				if reg, found := d.registrations[regID]; found {
-					sync <- len(reg.callees)
+					count = len(reg.callees)
 				} else {
-					sync <- -1
+					ok = false
 				}
+				close(sync)
 			}
-			count = <-sync
-			if count == -1 {
-				ok = false
-			}
+			<-sync
 		}
 	}
 	if !ok {
