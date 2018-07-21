@@ -440,7 +440,7 @@ func (r *realm) handleSession(sess *session) error {
 				Details: wamp.Dict{"error": err.Error()},
 			}
 			r.log.Println("Aborting session", sess, ":", err)
-			sess.Send(&abortMsg) // Blocking OK; this is session goroutine.
+			sess.TrySend(&abortMsg)
 		}
 		r.onLeave(sess, shutdown, killAll)
 		sess.Close()

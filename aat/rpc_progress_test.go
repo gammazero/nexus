@@ -4,7 +4,6 @@ import (
 	"bytes"
 	"context"
 	"fmt"
-	"runtime"
 	"testing"
 	"time"
 
@@ -299,7 +298,6 @@ func TestProgressStress(t *testing.T) {
 				return nil
 			}
 			sendCount++
-			runtime.Gosched() // give waiting caller a chance
 		}
 
 		b.Reset()
@@ -323,12 +321,10 @@ func TestProgressStress(t *testing.T) {
 
 	// The progress handler accumulates the chunks of data as they arrive.  It
 	// also progressively calculates a sha256 hash of the data as it arrives.
-	var chunks []string
 	var recvLen int
 	progHandler := func(result *wamp.Result) {
 		// Received another chunk of data, computing hash as chunks received.
 		chunk := result.Arguments[0].(string)
-		chunks = append(chunks, chunk)
 		// Uncomment to make the caller slow to receive responses.  This will
 		// cause the dealer to be blocked trying to send to this client.
 		//time.Sleep(20 * time.Millisecond)
