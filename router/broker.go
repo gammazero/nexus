@@ -142,7 +142,7 @@ func (b *Broker) Publish(pub *session, msg *wamp.Publish) {
 	// do so when the Broker configuration (for the publication topic) is
 	// set up to do so.  TODO: Currently no broker config for this.
 	var disclose bool
-	if opt, _ := wamp.AsBool(msg.Options[wamp.OptDiscloseMe]); opt {
+	if opt, _ := msg.Options[wamp.OptDiscloseMe].(bool); opt {
 		// Broker MAY deny a publisher's request to disclose its identity.
 		if !b.allowDisclose {
 			b.trySend(pub, &wamp.Error{

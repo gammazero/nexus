@@ -27,8 +27,9 @@ const (
 	helloRoles       = "roles"
 )
 
+// Deprecated: replaced by Config
+//
 // ClientConfig is a type alias for the deprecated ClientConfig.
-// client.Config replaces client.ClientConfig
 type ClientConfig = Config
 
 // Config configures a client with everything needed to begin a session
@@ -131,8 +132,8 @@ type Client struct {
 
 	responseTimeout time.Duration
 	awaitingReply   map[wamp.ID]chan wamp.Message
-
-	authHandlers map[string]AuthFunc
+	replyLock       sync.Mutex
+	authHandlers    map[string]AuthFunc
 
 	eventHandlers map[wamp.ID]EventHandler
 	topicSubID    map[string]wamp.ID
@@ -971,24 +972,23 @@ func unexpectedMsgError(msg wamp.Message, expected wamp.MessageType) error {
 }
 
 func (c *Client) expectReply(id wamp.ID) {
-	wait := make(chan wamp.Message, 1)
-	sync := make(chan struct{})
-	c.actionChan <- func() {
-		c.awaitingReply[id] = wait
-		close(sync)
-	}
-	<-sync
+	wait := make(chan wamp.Message)
+	c.replyLock.Lock()
+	c.awaitingReply[id] = wait
+	c.replyLock.Unlock()
 }
 
+// waitForReply waits for an expected reply from the router.
+//
+// IMPORTANT: Must not block on anything requiring run() goroutine, since the
+// run() goroutine may be blocked waiting for a reply to be read from the
+// awaiting reply channel.
 func (c *Client) waitForReply(id wamp.ID) (wamp.Message, error) {
-	sync := make(chan struct{})
 	var wait chan wamp.Message
 	var ok bool
-	c.actionChan <- func() {
-		wait, ok = c.awaitingReply[id]
-		close(sync)
-	}
-	<-sync
+	c.replyLock.Lock()
+	wait, ok = c.awaitingReply[id]
+	c.replyLock.Unlock()
 	if !ok {
 		return nil, fmt.Errorf("not expecting reply for ID: %v", id)
 	}
@@ -1004,24 +1004,28 @@ func (c *Client) waitForReply(id wamp.ID) (wamp.Message, error) {
 	case <-time.After(c.responseTimeout):
 		err = errors.New("timeout while waiting for reply")
 	}
-	c.actionChan <- func() {
-		delete(c.awaitingReply, id)
-	}
+	c.replyLock.Lock()
+	delete(c.awaitingReply, id)
+	c.replyLock.Unlock()
+
 	return msg, err
 }
 
+// waitForReplyWithCancel waits for an expected reply from the router while
+// monitoring the context for call cancellation.
+//
+// IMPORTANT: Must not block on anything requiring run() goroutine, since the
+// run() goroutine may be blocked waiting for a reply to be read from the
+// awaiting reply channel.
 func (c *Client) waitForReplyWithCancel(ctx context.Context, id wamp.ID, mode, procedure string, progChan chan *wamp.Result) (wamp.Message, error) {
 	if progChan != nil {
 		defer close(progChan)
 	}
-	sync := make(chan struct{})
 	var wait chan wamp.Message
 	var ok bool
-	c.actionChan <- func() {
-		wait, ok = c.awaitingReply[id]
-		close(sync)
-	}
-	<-sync
+	c.replyLock.Lock()
+	wait, ok = c.awaitingReply[id]
+	c.replyLock.Unlock()
 	if !ok {
 		return nil, fmt.Errorf("not expecting reply for ID: %v", id)
 	}
@@ -1036,7 +1040,7 @@ CollectResults:
 			return nil, errors.New("client closed")
 		}
 		// If this is a progressive result, put the Result message on the
-		// progress channel and go back to waitng for more results.
+		// progress channel and go back to waiting for more results.
 		if progChan != nil {
 			if result, ok := msg.(*wamp.Result); ok {
 				if ok, _ = result.Details[wamp.OptProgress].(bool); ok {
@@ -1062,9 +1066,10 @@ CollectResults:
 		}
 	}
 	// All done with this call, so not waiting for more replies.
-	c.actionChan <- func() {
-		delete(c.awaitingReply, id)
-	}
+	c.replyLock.Lock()
+	delete(c.awaitingReply, id)
+	c.replyLock.Unlock()
+
 	return msg, err
 }
 
@@ -1139,8 +1144,8 @@ func (c *Client) runReceiveFromRouter(msg wamp.Message) bool {
 	return false
 }
 
-// runHandleEvent calls the event handler function a subscriber designated for
-// handling EVENT messages.
+// runHandleEvent calls the event handler function that a subscriber designated
+// for handling EVENT messages.
 //
 // The eventHandlers are called serially so that they execute in the same order
 // as the messages are received in.  This could not be guaranteed if executing
@@ -1303,7 +1308,11 @@ func (c *Client) runHandleInterrupt(msg *wamp.Interrupt) {
 }
 
 func (c *Client) runSignalReply(msg wamp.Message, requestID wamp.ID) {
-	w, ok := c.awaitingReply[requestID]
+	var w chan wamp.Message
+	var ok bool
+	c.replyLock.Lock()
+	w, ok = c.awaitingReply[requestID]
+	c.replyLock.Unlock()
 	if !ok {
 		c.log.Println("Received", msg.MessageType(), requestID,
 			"that client is no longer waiting for")

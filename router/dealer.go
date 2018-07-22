@@ -201,7 +201,7 @@ func (d *Dealer) Register(callee *session, msg *wamp.Register) {
 
 	// If callee requests disclosure of caller identity, but dealer does not
 	// allow, then send error as registration response.
-	disclose, _ := wamp.AsBool(msg.Options[wamp.OptDiscloseCaller])
+	disclose, _ := msg.Options[wamp.OptDiscloseCaller].(bool)
 	// allow disclose for trusted clients
 	if !d.allowDisclose && disclose {
 		callee.rLock()
@@ -612,7 +612,7 @@ func (d *Dealer) call(caller *session, msg *wamp.Call) {
 		// A Caller MAY request the disclosure of its identity (its WAMP
 		// session ID) to endpoints of a routed call.  This is indicated by the
 		// "disclose_me" flag in the message options.
-		if opt, _ := wamp.AsBool(msg.Options[wamp.OptDiscloseMe]); opt {
+		if opt, _ := msg.Options[wamp.OptDiscloseMe].(bool); opt {
 			// Dealer MAY deny a Caller's request to disclose its identity.
 			if !d.allowDisclose {
 				d.trySend(caller, &wamp.Error{
@@ -630,7 +630,7 @@ func (d *Dealer) call(caller *session, msg *wamp.Call) {
 
 	// A Caller indicates its willingness to receive progressive results by
 	// setting CALL.Options.receive_progress|bool := true
-	if opt, _ := wamp.AsBool(msg.Options[wamp.OptReceiveProgress]); opt {
+	if opt, _ := msg.Options[wamp.OptReceiveProgress].(bool); opt {
 		// If the Callee supports progressive calls, the Dealer will
 		// forward the Caller's willingness to receive progressive
 		// results by setting.
@@ -750,7 +750,7 @@ func (d *Dealer) cancel(caller *session, msg *wamp.Cancel) {
 }
 
 func (d *Dealer) yield(callee *session, msg *wamp.Yield) {
-	progress, _ := wamp.AsBool(msg.Options[wamp.OptProgress])
+	progress, _ := msg.Options[wamp.OptProgress].(bool)
 
 	// Find and delete pending invocation.
 	invk, ok := d.invocations[msg.Request]
