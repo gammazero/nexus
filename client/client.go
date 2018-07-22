@@ -141,6 +141,7 @@ type Client struct {
 	nameProcID     map[string]wamp.ID
 	invHandlerKill map[wamp.ID]context.CancelFunc
 	progGate       map[context.Context]wamp.ID
+	progGateLock   sync.Mutex
 
 	actionChan chan func()
 
@@ -419,7 +420,7 @@ func (c *Client) Publish(topic string, options wamp.Dict, args wamp.List, kwargs
 
 // InvocationHandler handles a remote procedure call.
 //
-// The Context is used to signal that the router issues an INTERRUPT request to
+// The Context is used to signal that the router issued an INTERRUPT request to
 // cancel the call-in-progress.  The client application can use this to
 // abandon what it is doing, if it chooses to pay attention to ctx.Done().
 //
@@ -753,18 +754,20 @@ func (c *Client) RouterGoodbye() *wamp.Goodbye {
 }
 
 // SendProgress is used by a Callee client to return progressive RPC results.
+//
+// IMPORTANT: The context passed into SendProgress MUST be the same context
+// that was passed into the invocation handler.  This context is responsible
+// for associating progressive results with the call in progress.
 func (c *Client) SendProgress(ctx context.Context, args wamp.List, kwArgs wamp.Dict) error {
 	// Lookup the request ID using ctx.  If there is no request ID, this means
 	// that the caller is not accepting progressive results, or that the
 	// invocation handler has been closed because the call was canceled.
 	var req wamp.ID
 	var ok bool
-	done := make(chan struct{})
-	c.actionChan <- func() {
-		req, ok = c.progGate[ctx]
-		close(done)
-	}
-	<-done
+	c.progGateLock.Lock()
+	req, ok = c.progGate[ctx]
+	c.progGateLock.Unlock()
+
 	if !ok {
 		// Caller is not accepting progressive results or call canceled.
 		return errors.New("caller not accepting progressive results")
@@ -1036,7 +1039,7 @@ CollectResults:
 		// progress channel and go back to waitng for more results.
 		if progChan != nil {
 			if result, ok := msg.(*wamp.Result); ok {
-				if ok, _ = wamp.AsBool(result.Details[wamp.OptProgress]); ok {
+				if ok, _ = result.Details[wamp.OptProgress].(bool); ok {
 					progChan <- result
 					goto CollectResults
 				}
@@ -1191,8 +1194,10 @@ func (c *Client) runHandleInvocation(msg *wamp.Invocation) {
 
 	// If caller is accepting progressive results, create map entry to
 	// allow progress to be sent.
-	if ok, _ = wamp.AsBool(msg.Details[wamp.OptReceiveProgress]); ok {
+	if ok, _ = msg.Details[wamp.OptReceiveProgress].(bool); ok {
+		c.progGateLock.Lock()
 		c.progGate[ctx] = msg.Request
+		c.progGateLock.Unlock()
 	}
 
 	// Start a goroutine to run the user-defined invocation handler.
@@ -1213,10 +1218,13 @@ func (c *Client) runHandleInvocation(msg *wamp.Invocation) {
 
 		// Remove the kill switch when done processing invocation.
 		defer func() {
+			c.progGateLock.Lock()
+			delete(c.progGate, ctx)
+			c.progGateLock.Unlock()
+
 			c.actionChan <- func() {
 				delete(c.invHandlerKill, msg.Request)
 				c.activeInvHandlers.Done()
-				delete(c.progGate, ctx)
 			}
 		}()
 
@@ -1246,12 +1254,13 @@ func (c *Client) runHandleInvocation(msg *wamp.Invocation) {
 			// If the cancel is already deleted, this is the signal that
 			// kill mode was "killnowait", in which case do not send a
 			// response to the router.
-			okChan := make(chan bool)
+			sync := make(chan struct{})
+			var ok bool
 			c.actionChan <- func() {
-				_, ok := c.invHandlerKill[msg.Request]
-				okChan <- ok
+				_, ok = c.invHandlerKill[msg.Request]
+				close(sync)
 			}
-			ok := <-okChan
+			<-sync
 			if !ok {
 				return
 			}
