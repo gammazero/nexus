@@ -219,8 +219,8 @@ func (d *Dealer) Register(callee *session, msg *wamp.Register) {
 	}
 
 	// If the callee supports progressive call results, but does not support
-	// call cancelling, then disable the callee's progressive call results
-	// feature.  Call cancelling is necessary to stop progressive results if
+	// call canceling, then disable the callee's progressive call results
+	// feature.  Call canceling is necessary to stop progressive results if
 	// the caller session is closed during progressive result delivery.
 	if callee.HasFeature(roleCallee, featureProgCallResults) {
 		if !callee.HasFeature(roleCallee, featureCallCanceling) {
@@ -763,7 +763,7 @@ func (d *Dealer) yield(callee *session, msg *wamp.Yield) {
 			// It is alright to send an INTERRUPT to the callee, since the
 			// callee's progressive call results feature would have been
 			// disabled at registration time if the callee did not support call
-			// cancelling.
+			// canceling.
 			if d.trySend(callee, &wamp.Interrupt{
 				Request: msg.Request,
 				Options: wamp.Dict{"mode": wamp.CancelModeKillNoWait},

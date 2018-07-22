@@ -32,7 +32,7 @@ type protocol struct {
 // WebsocketServer handles websocket connections.
 type WebsocketServer struct {
 	// Upgrader specifies parameters for upgrading an HTTP connection to a
-	// WebSocket connection.  See:
+	// websocket connection.  See:
 	// https://godoc.org/github.com/gorilla/websocket#Upgrader
 	Upgrader *websocket.Upgrader
 
@@ -122,12 +122,10 @@ func NewWebsocketServer(r Router) *WebsocketServer {
 	return s
 }
 
-// DEPRICATED - Set WebsocketServer.Upgrader and WebsockServer.Xxx members
+// Deprecated: Set WebsocketServer.Upgrader and WebsockServer.Xxx members
 // directly.
 func (s *WebsocketServer) SetConfig(wsCfg transport.WebsocketConfig) {
 	s.Upgrader.EnableCompression = wsCfg.EnableCompression
-	// Uncomment after https://github.com/gorilla/websocket/pull/342
-	//s.Upgrader.AllowServerContextTakeover = wsCfg.EnableContextTakeover
 
 	s.EnableTrackingCookie = wsCfg.EnableTrackingCookie
 	s.EnableRequestCapture = wsCfg.EnableRequestCapture

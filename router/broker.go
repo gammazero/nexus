@@ -358,7 +358,7 @@ func (b *Broker) delSubscription(sub *subscription) {
 	}
 }
 
-// unsibsubscribe removes the subscriber from the specified subscribtion.
+// unsibsubscribe removes the subscriber from the specified subscription.
 func (b *Broker) unsubscribe(subscriber *session, msg *wamp.Unsubscribe) {
 	subID := msg.Subscription
 	sub, ok := b.subscriptions[subID]
@@ -383,7 +383,7 @@ func (b *Broker) unsubscribe(subscriber *session, msg *wamp.Unsubscribe) {
 		delLastSub = true
 	}
 
-	// Clean up subscribre's subscription ID set.
+	// Clean up subscriber's subscription ID set.
 	if subIDSet, ok := b.sessionSubIDSet[subscriber]; !ok {
 		b.log.Print("Error unsubscribing: no subscriptions for sender")
 	} else if _, ok := subIDSet[subID]; !ok {
@@ -591,7 +591,7 @@ func disclosePublisher(pub *session, details wamp.Dict) {
 	pub.rUnlock()
 }
 
-// ----- Subscripton Meta Procedure Handlers -----
+// ----- Subscription Meta Procedure Handlers -----
 
 // SubList retrieves subscription IDs listed according to match policies.
 func (b *Broker) SubList(msg *wamp.Invocation) wamp.Message {
