@@ -727,13 +727,31 @@ func (c *Client) Close() error {
 	close(c.stopping)
 	c.activeInvHandlers.Wait()
 
+	// Stop waiting for replies and clear the reply channel of pending writes.
+	var awaitingReply map[wamp.ID]chan wamp.Message
+	c.replyLock.Lock()
+	awaitingReply = c.awaitingReply
+	c.awaitingReply = nil
+	for _, ch := range awaitingReply {
+		select {
+		case <-ch:
+		default:
+		}
+	}
+	c.replyLock.Unlock()
+
 	// Leave the realm and stop the client's main goroutine.
 	c.leaveRealm()
 
 	// The run goroutine is guaranteed to have exited when leaveRealm()
-	// returns, so this is safe.
-	for _, ch := range c.awaitingReply {
-		close(ch)
+	// returns, so there will be nothing trying to write to the reply channel.
+	// Closing the channels dismisses any possible readers.
+	if len(awaitingReply) != 0 {
+		c.replyLock.Lock()
+		for _, ch := range awaitingReply {
+			close(ch)
+		}
+		c.replyLock.Unlock()
 	}
 
 	c.sess.Peer = nil
