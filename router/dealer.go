@@ -201,7 +201,7 @@ func (d *Dealer) Register(callee *session, msg *wamp.Register) {
 
 	// If callee requests disclosure of caller identity, but dealer does not
 	// allow, then send error as registration response.
-	disclose, _ := wamp.AsBool(msg.Options[wamp.OptDiscloseCaller])
+	disclose, _ := msg.Options[wamp.OptDiscloseCaller].(bool)
 	// allow disclose for trusted clients
 	if !d.allowDisclose && disclose {
 		callee.rLock()
@@ -219,8 +219,8 @@ func (d *Dealer) Register(callee *session, msg *wamp.Register) {
 	}
 
 	// If the callee supports progressive call results, but does not support
-	// call cancelling, then disable the callee's progressive call results
-	// feature.  Call cancelling is necessary to stop progressive results if
+	// call canceling, then disable the callee's progressive call results
+	// feature.  Call canceling is necessary to stop progressive results if
 	// the caller session is closed during progressive result delivery.
 	if callee.HasFeature(roleCallee, featureProgCallResults) {
 		if !callee.HasFeature(roleCallee, featureCallCanceling) {
@@ -612,7 +612,7 @@ func (d *Dealer) call(caller *session, msg *wamp.Call) {
 		// A Caller MAY request the disclosure of its identity (its WAMP
 		// session ID) to endpoints of a routed call.  This is indicated by the
 		// "disclose_me" flag in the message options.
-		if opt, _ := wamp.AsBool(msg.Options[wamp.OptDiscloseMe]); opt {
+		if opt, _ := msg.Options[wamp.OptDiscloseMe].(bool); opt {
 			// Dealer MAY deny a Caller's request to disclose its identity.
 			if !d.allowDisclose {
 				d.trySend(caller, &wamp.Error{
@@ -630,7 +630,7 @@ func (d *Dealer) call(caller *session, msg *wamp.Call) {
 
 	// A Caller indicates its willingness to receive progressive results by
 	// setting CALL.Options.receive_progress|bool := true
-	if opt, _ := wamp.AsBool(msg.Options[wamp.OptReceiveProgress]); opt {
+	if opt, _ := msg.Options[wamp.OptReceiveProgress].(bool); opt {
 		// If the Callee supports progressive calls, the Dealer will
 		// forward the Caller's willingness to receive progressive
 		// results by setting.
@@ -750,7 +750,7 @@ func (d *Dealer) cancel(caller *session, msg *wamp.Cancel) {
 }
 
 func (d *Dealer) yield(callee *session, msg *wamp.Yield) {
-	progress, _ := wamp.AsBool(msg.Options[wamp.OptProgress])
+	progress, _ := msg.Options[wamp.OptProgress].(bool)
 
 	// Find and delete pending invocation.
 	invk, ok := d.invocations[msg.Request]
@@ -763,7 +763,7 @@ func (d *Dealer) yield(callee *session, msg *wamp.Yield) {
 			// It is alright to send an INTERRUPT to the callee, since the
 			// callee's progressive call results feature would have been
 			// disabled at registration time if the callee did not support call
-			// cancelling.
+			// canceling.
 			if d.trySend(callee, &wamp.Interrupt{
 				Request: msg.Request,
 				Options: wamp.Dict{"mode": wamp.CancelModeKillNoWait},
@@ -981,15 +981,17 @@ func (d *Dealer) RegList(msg *wamp.Invocation) wamp.Message {
 	}
 }
 
-// RegLookup retrieves registration IDs listed according to match policies.
+// RegLookup obtains the registration (if any) managing a procedure, according
+// to some match policy.
 func (d *Dealer) RegLookup(msg *wamp.Invocation) wamp.Message {
 	var regID wamp.ID
 	if len(msg.Arguments) != 0 {
 		if procedure, ok := wamp.AsURI(msg.Arguments[0]); ok {
 			var match string
 			if len(msg.Arguments) > 1 {
-				opts := msg.Arguments[1].(wamp.Dict)
-				match, _ = wamp.AsString(opts[wamp.OptMatch])
+				if opts, ok := wamp.AsDict(msg.Arguments[1]); ok {
+					match, _ = wamp.AsString(opts[wamp.OptMatch])
+				}
 			}
 			sync := make(chan wamp.ID)
 			d.actionChan <- func() {
@@ -1108,7 +1110,7 @@ func (d *Dealer) RegListCallees(msg *wamp.Invocation) wamp.Message {
 	}
 }
 
-// regCountCallees obtains the number of sessions currently attached to the
+// RegCountCallees obtains the number of sessions currently attached to the
 // registration.
 func (d *Dealer) RegCountCallees(msg *wamp.Invocation) wamp.Message {
 	var count int
@@ -1116,18 +1118,16 @@ func (d *Dealer) RegCountCallees(msg *wamp.Invocation) wamp.Message {
 	if len(msg.Arguments) != 0 {
 		var regID wamp.ID
 		if regID, ok = wamp.AsID(msg.Arguments[0]); ok {
-			sync := make(chan int)
+			sync := make(chan struct{})
 			d.actionChan <- func() {
 				if reg, found := d.registrations[regID]; found {
-					sync <- len(reg.callees)
+					count = len(reg.callees)
 				} else {
-					sync <- -1
+					ok = false
 				}
+				close(sync)
 			}
-			count = <-sync
-			if count == -1 {
-				ok = false
-			}
+			<-sync
 		}
 	}
 	if !ok {

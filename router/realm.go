@@ -275,6 +275,14 @@ func (r *realm) run() {
 	r.registerMetaProcedure(wamp.MetaProcRegListCallees, r.dealer.RegListCallees)
 	r.registerMetaProcedure(wamp.MetaProcRegCountCallees, r.dealer.RegCountCallees)
 
+	// Register to handle subscription meta procedures.
+	r.registerMetaProcedure(wamp.MetaProcSubList, r.broker.SubList)
+	r.registerMetaProcedure(wamp.MetaProcSubLookup, r.broker.SubLookup)
+	r.registerMetaProcedure(wamp.MetaProcSubMatch, r.broker.SubMatch)
+	r.registerMetaProcedure(wamp.MetaProcSubGet, r.broker.SubGet)
+	r.registerMetaProcedure(wamp.MetaProcSubListSubscribers, r.broker.SubListSubscribers)
+	r.registerMetaProcedure(wamp.MetaProcSubCountSubscribers, r.broker.SubCountSubscribers)
+
 	// Register to handle testament meta procedures.
 	r.registerMetaProcedure(wamp.MetaProcSessionAddTestament, r.testamentAdd)
 	r.registerMetaProcedure(wamp.MetaProcSessionFlushTestaments, r.testamentFlush)
@@ -432,7 +440,7 @@ func (r *realm) handleSession(sess *session) error {
 				Details: wamp.Dict{"error": err.Error()},
 			}
 			r.log.Println("Aborting session", sess, ":", err)
-			sess.Send(&abortMsg) // Blocking OK; this is session goroutine.
+			sess.TrySend(&abortMsg)
 		}
 		r.onLeave(sess, shutdown, killAll)
 		sess.Close()

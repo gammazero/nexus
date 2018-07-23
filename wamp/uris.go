@@ -214,10 +214,10 @@ const (
 
 	// Retrieves a list of session IDs for sessions currently attached to the
 	// subscription.
-	MetaProcSubListCallees = URI("wamp.subscription.list_subscribers")
+	MetaProcSubListSubscribers = URI("wamp.subscription.list_subscribers")
 
 	// Obtains the number of sessions currently attached to the subscription.
-	MetaProcSubCountCallees = URI("wamp.subscription.count_suscribers")
+	MetaProcSubCountSubscribers = URI("wamp.subscription.count_suscribers")
 
 	// -- Testament Meta Procedures --
 

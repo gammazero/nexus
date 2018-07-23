@@ -32,7 +32,7 @@ type protocol struct {
 // WebsocketServer handles websocket connections.
 type WebsocketServer struct {
 	// Upgrader specifies parameters for upgrading an HTTP connection to a
-	// WebSocket connection.  See:
+	// websocket connection.  See:
 	// https://godoc.org/github.com/gorilla/websocket#Upgrader
 	Upgrader *websocket.Upgrader
 

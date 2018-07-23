@@ -1,7 +1,6 @@
 package aat
 
 import (
-	"bytes"
 	"context"
 	"fmt"
 	"testing"
@@ -254,28 +253,9 @@ func TestProgressStress(t *testing.T) {
 	}
 	defer callee.Close()
 
-	// Populate a slize of data with printable characters.
-	data := make([]byte, 8192)
-	var c int
-	for rep := 0; rep < len(data)/64; rep++ {
-		for i := 0; i < 26; i++ {
-			data[c] = byte(i + int('A'))
-			c++
-			data[c] = byte(i + int('a'))
-			c++
-		}
-		for i := 0; i < 10; i++ {
-			data[c] = byte(i + int('0'))
-			c++
-		}
-		data[c] = byte('?')
-		c++
-		data[c] = byte('/')
-		c++
-	}
+	// Total amount of data that is sent as progressive results.
+	const dataLen = 8192
 
-	dataLen := len(data)
-	b := bytes.NewBuffer(data)
 	var sendCount, recvCount int
 
 	// Define invocation handler.
@@ -290,8 +270,16 @@ func TestProgressStress(t *testing.T) {
 			chunkSize = 64
 		}
 
+		// Make a chunk of data to send as a progressive result.
+		chunk := make([]byte, chunkSize)
+		for i := 0; i < chunkSize; i++ {
+			chunk[i] = byte((i % 26) + int('a'))
+		}
+
+		toSend := dataLen
+
 		// Read and send chunks of data until the buffer is empty.
-		for chunk := b.Next(chunkSize); len(chunk) != 0; chunk = b.Next(chunkSize) {
+		for ; toSend >= chunkSize; toSend -= chunkSize {
 			// Send a chunk of data.
 			e := callee.SendProgress(ctx, wamp.List{string(chunk)}, nil)
 			if e != nil {
@@ -300,10 +288,16 @@ func TestProgressStress(t *testing.T) {
 			}
 			sendCount++
 		}
-
-		b.Reset()
-		b.Write(data)
-
+		// If there is any leftover data, send it.
+		if toSend != 0 {
+			chunk = chunk[:toSend]
+			e := callee.SendProgress(ctx, wamp.List{string(chunk)}, nil)
+			if e != nil {
+				// If send failed, return an error saying the call canceled.
+				return nil
+			}
+			sendCount++
+		}
 		// Send total length as final result.
 		return &client.InvokeResult{Args: wamp.List{dataLen}}
 	}
@@ -320,14 +314,11 @@ func TestProgressStress(t *testing.T) {
 	}
 	defer caller.Close()
 
-	// The progress handler accumulates the chunks of data as they arrive.  It
-	// also progressively calculates a sha256 hash of the data as it arrives.
-	var chunks []string
+	// The progress handler accumulates the chunks of data as they arrive.
 	var recvLen int
 	progHandler := func(result *wamp.Result) {
-		// Received another chunk of data, computing hash as chunks received.
+		// Received another chunk of data.
 		chunk := result.Arguments[0].(string)
-		chunks = append(chunks, chunk)
 		// Uncomment to make the caller slow to receive responses.  This will
 		// cause the dealer to be blocked trying to send to this client.
 		//time.Sleep(20 * time.Millisecond)
@@ -335,7 +326,9 @@ func TestProgressStress(t *testing.T) {
 		recvCount++
 	}
 
-	ctx := context.Background()
+	// All results, for all calls, must be recieved by timeout.
+	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+	defer cancel()
 
 	for i := 16; i <= 256; i += 16 {
 		// Call the example procedure, specifying the size of chunks to send as

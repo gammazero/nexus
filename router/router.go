@@ -352,7 +352,7 @@ func (r *router) RemoveRealm(name wamp.URI) {
 	// func while still blocking the caller
 	if ok {
 		realm.close()
-		r.log.Printf("Realm %s completed shutdown", name)
+		r.log.Println("Realm", name, "was removed and completed shutdown")
 	}
 }
 
