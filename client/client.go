@@ -27,6 +27,8 @@ const (
 	helloRoles       = "roles"
 )
 
+// Deprecated: replaced by Config
+//
 // ClientConfig is a type alias for the deprecated ClientConfig.
 // client.Config replaces client.ClientConfig
 type ClientConfig = Config

@@ -78,8 +78,10 @@ type WebsocketServer struct {
 	// auth/authz logic.
 	EnableRequestCapture bool
 
-	// KeepAlive is the time passed to TCPConn.SetKeepAlivePeriod().  If not
-	// specified, default system keep-alive settings are used.
+	// KeepAlive configures a websocket "ping/pong" heartbeat when set to a
+	// non-zero value.  KeepAlive is the interval between websocket "pings".
+	// If a "pong" response is not received after 2 intervals have elapsed then
+	// the websocket connection is closed.
 	KeepAlive time.Duration
 }
 
@@ -122,12 +124,10 @@ func NewWebsocketServer(r Router) *WebsocketServer {
 	return s
 }
 
-// DEPRICATED - Set WebsocketServer.Upgrader and WebsockServer.Xxx members
+// Deprecated: Set WebsocketServer.Upgrader and WebsockServer.Xxx members
 // directly.
 func (s *WebsocketServer) SetConfig(wsCfg transport.WebsocketConfig) {
 	s.Upgrader.EnableCompression = wsCfg.EnableCompression
-	// Uncomment after https://github.com/gorilla/websocket/pull/342
-	//s.Upgrader.AllowServerContextTakeover = wsCfg.EnableContextTakeover
 
 	s.EnableTrackingCookie = wsCfg.EnableTrackingCookie
 	s.EnableRequestCapture = wsCfg.EnableRequestCapture
@@ -241,11 +241,6 @@ func (s *WebsocketServer) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	if s.KeepAlive != 0 {
-		conn.UnderlyingConn().(*net.TCPConn).SetKeepAlive(true)
-		conn.UnderlyingConn().(*net.TCPConn).SetKeepAlivePeriod(s.KeepAlive)
-	}
-
 	s.handleWebsocket(conn, wamp.Dict{"auth": authDict})
 }
 
@@ -290,7 +285,7 @@ func (s *WebsocketServer) handleWebsocket(conn *websocket.Conn, transportDetails
 
 	// Create a websocket peer from the websocket connection and attach the
 	// peer to the router.
-	peer := transport.NewWebsocketPeer(conn, serializer, payloadType, s.log)
+	peer := transport.NewWebsocketPeer(conn, serializer, payloadType, s.log, s.KeepAlive)
 	if err := s.router.AttachClient(peer, transportDetails); err != nil {
 		s.log.Println("Error attaching to router:", err)
 	}

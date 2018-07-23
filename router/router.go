@@ -20,6 +20,8 @@ import (
 
 const helloTimeout = 5 * time.Second
 
+// Deprecated: replaced by Config
+//
 // RouterConfig is a type alias for the deprecated RouterConfig.
 // router.Config replaces router.RouterConfig
 type RouterConfig = Config
@@ -65,7 +67,7 @@ type Router interface {
 	RemoveRealm(wamp.URI)
 }
 
-// DefaultRouter is the default WAMP router implementation.
+// router is the default WAMP router implementation.
 type router struct {
 	realms map[wamp.URI]*realm
 
