@@ -627,8 +627,7 @@ func (d *Dealer) call(caller *session, msg *wamp.Call) {
 					Details: wamp.Dict{},
 					Error:   wamp.ErrOptionDisallowedDiscloseMe,
 				})
-			}
-			if callee.HasFeature(roleCallee, featureCallerIdent) {
+			} else if callee.HasFeature(roleCallee, featureCallerIdent) {
 				discloseCaller(caller, details)
 			}
 		}
