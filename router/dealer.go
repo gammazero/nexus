@@ -516,7 +516,7 @@ func (d *Dealer) matchProcedure(procedure wamp.URI) (*registration, bool) {
 		// No exact match was found.  So, search for a prefix or wildcard
 		// match, and prefer the most specific math (longest matched pattern).
 		// If there is a tie, then prefer the first longest prefix.
-		var matchCount int
+		matchCount := -1 // initialize matchCount to -1 to catch an empty registration.
 		for pfxProc, pfxReg := range d.pfxProcRegMap {
 			if procedure.PrefixMatch(pfxProc) {
 				if len(pfxProc) > matchCount {
@@ -526,6 +526,12 @@ func (d *Dealer) matchProcedure(procedure wamp.URI) (*registration, bool) {
 				}
 			}
 		}
+		// according to the spec, we have to prefer prefix match over wildcard match:
+		// https://wamp-proto.org/static/rfc/draft-oberstet-hybi-crossbar-wamp.html#rfc.section.14.3.8.1.4.2
+		if ok {
+			return reg, ok
+		}
+
 		for wcProc, wcReg := range d.wcProcRegMap {
 			if procedure.WildcardMatch(wcProc) {
 				if len(wcProc) > matchCount {
