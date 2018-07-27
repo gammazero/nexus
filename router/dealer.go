@@ -627,7 +627,10 @@ func (d *Dealer) call(caller *session, msg *wamp.Call) {
 					Details: wamp.Dict{},
 					Error:   wamp.ErrOptionDisallowedDiscloseMe,
 				})
-			} else if callee.HasFeature(roleCallee, featureCallerIdent) {
+				// don't continue a call when discloseMe was disallowed.
+				return
+			}
+			if callee.HasFeature(roleCallee, featureCallerIdent) {
 				discloseCaller(caller, details)
 			}
 		}
@@ -642,6 +645,11 @@ func (d *Dealer) call(caller *session, msg *wamp.Call) {
 		if callee.HasFeature(roleCallee, featureProgCallResults) {
 			details[wamp.OptReceiveProgress] = true
 		}
+	}
+
+	if reg.match != wamp.MatchExact {
+		// according to the spec, a router has to provide the actual procedure to the client.
+		details[wamp.OptProcedure] = msg.Procedure
 	}
 
 	d.calls[msg.Request] = caller
