@@ -962,7 +962,9 @@ func TestPatternBasedRegistration(t *testing.T) {
 		&wamp.Register{
 			Request:   123,
 			Procedure: testProcedureWC,
-			Options:   wamp.Dict{"match": "wildcard"},
+			Options: wamp.Dict{
+				wamp.OptMatch: wamp.MatchWildcard,
+			},
 		})
 	rsp := <-callee.Recv()
 	_, ok := rsp.(*wamp.Registered)
