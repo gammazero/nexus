@@ -9,6 +9,13 @@ import (
 	"github.com/ugorji/go/codec"
 )
 
+var jh *codec.JsonHandle
+
+func init() {
+	jh = &codec.JsonHandle{}
+	jh.MapType = reflect.TypeOf(map[string]interface{}(nil))
+}
+
 // JSONSerializer is an implementation of Serializer that handles
 // serializing and deserializing json encoded payloads.
 type JSONSerializer struct{}
@@ -16,17 +23,13 @@ type JSONSerializer struct{}
 // Serialize encodes a Message into a json payload.
 func (s *JSONSerializer) Serialize(msg wamp.Message) ([]byte, error) {
 	var b []byte
-	jsh := &codec.JsonHandle{}
-	jsh.MapType = reflect.TypeOf(map[string]interface{}(nil))
-	return b, codec.NewEncoderBytes(&b, jsh).Encode(msgToList(msg))
+	return b, codec.NewEncoderBytes(&b, jh).Encode(msgToList(msg))
 }
 
 // Deserialize decodes a json payload into a Message.
 func (s *JSONSerializer) Deserialize(data []byte) (wamp.Message, error) {
 	var v []interface{}
-	jsh := &codec.JsonHandle{}
-	jsh.MapType = reflect.TypeOf(map[string]interface{}(nil))
-	err := codec.NewDecoderBytes(data, jsh).Decode(&v)
+	err := codec.NewDecoderBytes(data, jh).Decode(&v)
 	if err != nil {
 		return nil, err
 	}
@@ -55,14 +58,12 @@ type BinaryData []byte
 func (b BinaryData) MarshalJSON() ([]byte, error) {
 	s := base64.StdEncoding.EncodeToString([]byte(b))
 	var out []byte
-	jsh := &codec.JsonHandle{}
-	return out, codec.NewEncoderBytes(&out, jsh).Encode("\x00" + s)
+	return out, codec.NewEncoderBytes(&out, jh).Encode("\x00" + s)
 }
 
 func (b *BinaryData) UnmarshalJSON(v []byte) error {
 	var s string
-	jsh := &codec.JsonHandle{}
-	err := codec.NewDecoderBytes(v, jsh).Decode(&s)
+	err := codec.NewDecoderBytes(v, jh).Decode(&s)
 	if err != nil {
 		return nil
 	}

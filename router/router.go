@@ -20,6 +20,8 @@ import (
 
 const helloTimeout = 5 * time.Second
 
+// Deprecated: replaced by Config
+//
 // RouterConfig is a type alias for the deprecated RouterConfig.
 // router.Config replaces router.RouterConfig
 type RouterConfig = Config
@@ -65,7 +67,7 @@ type Router interface {
 	RemoveRealm(wamp.URI)
 }
 
-// DefaultRouter is the default WAMP router implementation.
+// router is the default WAMP router implementation.
 type router struct {
 	realms map[wamp.URI]*realm
 
@@ -279,11 +281,7 @@ func (r *router) AttachClient(client wamp.Peer, transportDetails wamp.Dict) erro
 	sessDetails["session"] = sid
 
 	// Create new session.
-	sess := &wamp.Session{
-		Peer:    client,
-		ID:      sid,
-		Details: sessDetails,
-	}
+	sess := newSession(client, sid, sessDetails)
 
 	if err := realm.handleSession(sess); err != nil {
 		// Any error returned here is a shutdown error.
@@ -354,7 +352,7 @@ func (r *router) RemoveRealm(name wamp.URI) {
 	// func while still blocking the caller
 	if ok {
 		realm.close()
-		r.log.Printf("Realm %s completed shutdown", name)
+		r.log.Println("Realm", name, "was removed and completed shutdown")
 	}
 }
 

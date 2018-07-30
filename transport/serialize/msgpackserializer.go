@@ -8,6 +8,21 @@ import (
 	"github.com/ugorji/go/codec"
 )
 
+var mh *codec.MsgpackHandle
+
+func init() {
+	mh = &codec.MsgpackHandle{
+		RawToString: true,
+		WriteExt:    true,
+	}
+	mh.MapType = reflect.TypeOf(map[string]interface{}(nil))
+}
+
+// MsgpackRegisterExtension registers a custom type for special serialization.
+func MsgpackRegisterExtension(t reflect.Type, ext byte, encode func(reflect.Value) ([]byte, error), decode func(reflect.Value, []byte) error) {
+	mh.AddExt(t, ext, encode, decode)
+}
+
 // MessagePackSerializer is an implementation of Serializer that handles
 // serializing and deserializing msgpack encoded payloads.
 type MessagePackSerializer struct{}
@@ -15,22 +30,14 @@ type MessagePackSerializer struct{}
 // Serialize encodes a Message into a msgpack payload.
 func (s *MessagePackSerializer) Serialize(msg wamp.Message) ([]byte, error) {
 	var b []byte
-	mph := &codec.MsgpackHandle{
-		RawToString: true,
-	}
-	mph.MapType = reflect.TypeOf(map[string]interface{}(nil))
-	return b, codec.NewEncoderBytes(&b, mph).Encode(
+	return b, codec.NewEncoderBytes(&b, mh).Encode(
 		msgToList(msg))
 }
 
 // Deserialize decodes a msgpack payload into a Message.
 func (s *MessagePackSerializer) Deserialize(data []byte) (wamp.Message, error) {
 	var v []interface{}
-	mph := &codec.MsgpackHandle{
-		RawToString: true,
-	}
-	mph.MapType = reflect.TypeOf(map[string]interface{}(nil))
-	err := codec.NewDecoderBytes(data, mph).Decode(&v)
+	err := codec.NewDecoderBytes(data, mh).Decode(&v)
 	if err != nil {
 		return nil, err
 	}

@@ -32,19 +32,26 @@ var brokerRole = wamp.Dict{
 	},
 }
 
-type Broker struct {
-	// topic URI -> {subscription ID -> subscribed Session}
-	topicSubscribers    map[wamp.URI]map[wamp.ID]*wamp.Session
-	pfxTopicSubscribers map[wamp.URI]map[wamp.ID]*wamp.Session
-	wcTopicSubscribers  map[wamp.URI]map[wamp.ID]*wamp.Session
+// subscription manages all the subscribers to a particular topic.
+type subscription struct {
+	id          wamp.ID  // subscription ID
+	topic       wamp.URI // topic URI
+	match       string   // match policy
+	created     string   // when subscription was created
+	subscribers map[*session]struct{}
+}
 
-	// subscription ID -> topic URI
-	subscriptions    map[wamp.ID]wamp.URI
-	pfxSubscriptions map[wamp.ID]wamp.URI
-	wcSubscriptions  map[wamp.ID]wamp.URI
+type Broker struct {
+	// topic -> subscription
+	topicSubscription    map[wamp.URI]*subscription
+	pfxTopicSubscription map[wamp.URI]*subscription
+	wcTopicSubscription  map[wamp.URI]*subscription
+
+	// subscription ID -> subscription
+	subscriptions map[wamp.ID]*subscription
 
 	// Session -> subscription ID set
-	sessionSubIDSet map[*wamp.Session]map[wamp.ID]struct{}
+	sessionSubIDSet map[*session]map[wamp.ID]struct{}
 
 	actionChan chan func()
 
@@ -64,15 +71,12 @@ func NewBroker(logger stdlog.StdLog, strictURI, allowDisclose, debug bool) *Brok
 		panic("logger is nil")
 	}
 	b := &Broker{
-		topicSubscribers:    map[wamp.URI]map[wamp.ID]*wamp.Session{},
-		pfxTopicSubscribers: map[wamp.URI]map[wamp.ID]*wamp.Session{},
-		wcTopicSubscribers:  map[wamp.URI]map[wamp.ID]*wamp.Session{},
+		topicSubscription:    map[wamp.URI]*subscription{},
+		pfxTopicSubscription: map[wamp.URI]*subscription{},
+		wcTopicSubscription:  map[wamp.URI]*subscription{},
 
-		subscriptions:    map[wamp.ID]wamp.URI{},
-		pfxSubscriptions: map[wamp.ID]wamp.URI{},
-		wcSubscriptions:  map[wamp.ID]wamp.URI{},
-
-		sessionSubIDSet: map[*wamp.Session]map[wamp.ID]struct{}{},
+		subscriptions:   map[wamp.ID]*subscription{},
+		sessionSubIDSet: map[*session]map[wamp.ID]struct{}{},
 
 		// The action handler should be nearly always runable, since it is the
 		// critical section that does the only routing.  So, and unbuffered
@@ -106,7 +110,7 @@ func (b *Broker) Role() wamp.Dict {
 //
 // The Subscriber can detect the delivery of that same event on multiple
 // subscriptions via EVENT.PUBLISHED.Publication, which will be identical.
-func (b *Broker) Publish(pub *wamp.Session, msg *wamp.Publish) {
+func (b *Broker) Publish(pub *session, msg *wamp.Publish) {
 	if pub == nil || msg == nil {
 		panic("broker.Publish with nil session or message")
 	}
@@ -138,7 +142,7 @@ func (b *Broker) Publish(pub *wamp.Session, msg *wamp.Publish) {
 	// do so when the Broker configuration (for the publication topic) is
 	// set up to do so.  TODO: Currently no broker config for this.
 	var disclose bool
-	if opt, _ := wamp.AsBool(msg.Options[wamp.OptDiscloseMe]); opt {
+	if opt, _ := msg.Options[wamp.OptDiscloseMe].(bool); opt {
 		// Broker MAY deny a publisher's request to disclose its identity.
 		if !b.allowDisclose {
 			b.trySend(pub, &wamp.Error{
@@ -159,7 +163,7 @@ func (b *Broker) Publish(pub *wamp.Session, msg *wamp.Publish) {
 		b.publish(pub, msg, pubID, excludePub, disclose, filter)
 	}
 
-	// Send Published message if acknowledge is present and true.
+	// Send PUBLISHED message if acknowledge is present and true.
 	if pubAck, _ := msg.Options[wamp.OptAcknowledge].(bool); pubAck {
 		b.trySend(pub, &wamp.Published{Request: msg.Request, Publication: pubID})
 	}
@@ -175,7 +179,7 @@ func (b *Broker) Publish(pub *wamp.Session, msg *wamp.Publish) {
 // Subscriber might want to subscribe to topics based on a pattern.  If the
 // Broker and the Subscriber support pattern-based subscriptions, this matching
 // can happen by prefix-matching policy or wildcard-matching policy.
-func (b *Broker) Subscribe(sub *wamp.Session, msg *wamp.Subscribe) {
+func (b *Broker) Subscribe(sub *session, msg *wamp.Subscribe) {
 	if sub == nil || msg == nil {
 		panic("broker.Subscribe with nil session or message")
 	}
@@ -203,7 +207,7 @@ func (b *Broker) Subscribe(sub *wamp.Session, msg *wamp.Subscribe) {
 }
 
 // Unsubscribe removes the requested subscription.
-func (b *Broker) Unsubscribe(sub *wamp.Session, msg *wamp.Unsubscribe) {
+func (b *Broker) Unsubscribe(sub *session, msg *wamp.Unsubscribe) {
 	if sub == nil || msg == nil {
 		panic("broker.Unsubscribe with nil session or message")
 	}
@@ -216,7 +220,7 @@ func (b *Broker) Unsubscribe(sub *wamp.Session, msg *wamp.Unsubscribe) {
 // when a client leaves the realm by sending a GOODBYE message or by
 // disconnecting from the router.  If there are any subscriptions for this
 // session a wamp.subscription.on_delete meta event is published for each.
-func (b *Broker) RemoveSession(sess *wamp.Session) {
+func (b *Broker) RemoveSession(sess *session) {
 	if sess == nil {
 		return
 	}
@@ -239,212 +243,214 @@ func (b *Broker) run() {
 	}
 }
 
-func (b *Broker) publish(pub *wamp.Session, msg *wamp.Publish, pubID wamp.ID, excludePub, disclose bool, filter *publishFilter) {
+func (b *Broker) publish(pub *session, msg *wamp.Publish, pubID wamp.ID, excludePub, disclose bool, filter *publishFilter) {
 	// Publish to subscribers with exact match.
-	subs := b.topicSubscribers[msg.Topic]
-	b.pubEvent(pub, msg, pubID, subs, excludePub, false, disclose, filter)
+	if sub, ok := b.topicSubscription[msg.Topic]; ok {
+		b.pubEvent(pub, msg, pubID, sub, excludePub, false, disclose, filter)
+	}
 
 	// Publish to subscribers with prefix match.
-	for pfxTopic, subs := range b.pfxTopicSubscribers {
+	for pfxTopic, sub := range b.pfxTopicSubscription {
 		if msg.Topic.PrefixMatch(pfxTopic) {
-			b.pubEvent(pub, msg, pubID, subs, excludePub, true, disclose, filter)
+			b.pubEvent(pub, msg, pubID, sub, excludePub, true, disclose, filter)
 		}
 	}
 
 	// Publish to subscribers with wildcard match.
-	for wcTopic, subs := range b.wcTopicSubscribers {
+	for wcTopic, sub := range b.wcTopicSubscription {
 		if msg.Topic.WildcardMatch(wcTopic) {
-			b.pubEvent(pub, msg, pubID, subs, excludePub, true, disclose, filter)
+			b.pubEvent(pub, msg, pubID, sub, excludePub, true, disclose, filter)
 		}
 	}
 }
 
-func (b *Broker) subscribe(sub *wamp.Session, msg *wamp.Subscribe, match string) {
-	var idSub map[wamp.ID]*wamp.Session
-	var subscriptions map[wamp.ID]wamp.URI
-	var ok bool
+func (b *Broker) newSubscription(subscriber *session, topic wamp.URI, match string) *subscription {
+	return &subscription{
+		id:          b.idGen.Next(),
+		topic:       topic,
+		match:       match,
+		created:     wamp.NowISO8601(),
+		subscribers: map[*session]struct{}{subscriber: struct{}{}},
+	}
+}
+
+func (b *Broker) subscribe(subscriber *session, msg *wamp.Subscribe, match string) {
+	var sub *subscription
+	var existingSub bool
+
 	switch match {
 	case wamp.MatchPrefix:
 		// Subscribe to any topic that matches by the given prefix URI
-		idSub, ok = b.pfxTopicSubscribers[msg.Topic]
-		if !ok {
-			idSub = map[wamp.ID]*wamp.Session{}
-			b.pfxTopicSubscribers[msg.Topic] = idSub
+		sub, existingSub = b.pfxTopicSubscription[msg.Topic]
+		if !existingSub {
+			// Create a new prefix subscription.
+			sub = b.newSubscription(subscriber, msg.Topic, match)
+			b.pfxTopicSubscription[msg.Topic] = sub
 		}
-		subscriptions = b.pfxSubscriptions
 	case wamp.MatchWildcard:
 		// Subscribe to any topic that matches by the given wildcard URI.
-		idSub, ok = b.wcTopicSubscribers[msg.Topic]
-		if !ok {
-			idSub = map[wamp.ID]*wamp.Session{}
-			b.wcTopicSubscribers[msg.Topic] = idSub
+		sub, existingSub = b.wcTopicSubscription[msg.Topic]
+		if !existingSub {
+			// Create a new wildcard subscription.
+			sub = b.newSubscription(subscriber, msg.Topic, match)
+			b.wcTopicSubscription[msg.Topic] = sub
 		}
-		subscriptions = b.wcSubscriptions
 	default:
 		// Subscribe to the topic that exactly matches the given URI.
-		idSub, ok = b.topicSubscribers[msg.Topic]
-		if !ok {
-			idSub = map[wamp.ID]*wamp.Session{}
-			b.topicSubscribers[msg.Topic] = idSub
+		sub, existingSub = b.topicSubscription[msg.Topic]
+		if !existingSub {
+			// Create a new subscription.
+			sub = b.newSubscription(subscriber, msg.Topic, match)
+			b.topicSubscription[msg.Topic] = sub
 		}
-		subscriptions = b.subscriptions
 	}
+	b.subscriptions[sub.id] = sub
 
 	// If the topic already has subscribers, then see if the session requesting
 	// a subscription is already subscribed to the topic.
-	newSub := true
-	if ok {
-		newSub = false
-		for alreadyID, alreadySub := range idSub {
-			if alreadySub == sub {
-				// Already subscribed, send existing subscription ID.
-				b.trySend(sub, &wamp.Subscribed{
-					Request:      msg.Request,
-					Subscription: alreadyID,
-				})
-				return
-			}
+	if existingSub {
+		if _, already := sub.subscribers[subscriber]; already {
+			// Already subscribed; send existing subscription ID.
+			b.trySend(subscriber, &wamp.Subscribed{
+				Request:      msg.Request,
+				Subscription: sub.id,
+			})
+			return
 		}
+		// Add subscriber to existing subscription.
+		sub.subscribers[subscriber] = struct{}{}
 	}
 
-	// Create a new subscription.
-	id := b.idGen.Next()
-	subscriptions[id] = msg.Topic
-	idSub[id] = sub
-
-	idSet, ok := b.sessionSubIDSet[sub]
+	// Add the subscription ID to the set of subscriptions for the subscriber.
+	subIdSet, ok := b.sessionSubIDSet[subscriber]
 	if !ok {
-		idSet = map[wamp.ID]struct{}{}
-		b.sessionSubIDSet[sub] = idSet
+		// This subscriber does not have any other subscriptions, so new set.
+		subIdSet = map[wamp.ID]struct{}{}
+		b.sessionSubIDSet[subscriber] = subIdSet
 	}
-	idSet[id] = struct{}{}
+	subIdSet[sub.id] = struct{}{}
 
 	// Tell sender the new subscription ID.
-	b.trySend(sub, &wamp.Subscribed{Request: msg.Request, Subscription: id})
+	b.trySend(subscriber, &wamp.Subscribed{Request: msg.Request, Subscription: sub.id})
 
-	if newSub {
-		b.pubSubCreateMeta(msg.Topic, sub.ID, id, match)
+	if !existingSub {
+		b.pubSubCreateMeta(msg.Topic, subscriber.ID, sub)
 	}
 
 	// Publish WAMP on_subscribe meta event.
-	b.pubSubMeta(wamp.MetaEventSubOnSubscribe, sub.ID, id)
+	b.pubSubMeta(wamp.MetaEventSubOnSubscribe, subscriber.ID, sub.id)
 }
 
-func (b *Broker) unsubscribe(sub *wamp.Session, msg *wamp.Unsubscribe) {
-	var delLastSub bool
-	var topicSubscribers map[wamp.URI]map[wamp.ID]*wamp.Session
-	topic, ok := b.subscriptions[msg.Subscription]
+// deleteSubscription removes the the ID->subscription mapping and removes the
+// topic->subscription mapping.
+func (b *Broker) delSubscription(sub *subscription) {
+	// Remove ID -> subscription.
+	delete(b.subscriptions, sub.id)
+
+	// Delete topic -> subscription
+	switch sub.match {
+	case wamp.MatchPrefix:
+		delete(b.pfxTopicSubscription, sub.topic)
+	case wamp.MatchWildcard:
+		delete(b.wcTopicSubscription, sub.topic)
+	default:
+		delete(b.topicSubscription, sub.topic)
+	}
+}
+
+// unsibsubscribe removes the subscriber from the specified subscription.
+func (b *Broker) unsubscribe(subscriber *session, msg *wamp.Unsubscribe) {
+	subID := msg.Subscription
+	sub, ok := b.subscriptions[subID]
 	if !ok {
-		if topic, ok = b.pfxSubscriptions[msg.Subscription]; !ok {
-			if topic, ok = b.wcSubscriptions[msg.Subscription]; !ok {
-				b.trySend(sub, &wamp.Error{
-					Type:    msg.MessageType(),
-					Request: msg.Request,
-					Error:   wamp.ErrNoSuchSubscription,
-				})
-				b.log.Println("Error unsubscribing: no such subscription",
-					msg.Subscription)
-				return
-			}
-			delete(b.wcSubscriptions, msg.Subscription)
-			topicSubscribers = b.wcTopicSubscribers
-		} else {
-			delete(b.pfxSubscriptions, msg.Subscription)
-			topicSubscribers = b.pfxTopicSubscribers
-		}
-	} else {
-		delete(b.subscriptions, msg.Subscription)
-		topicSubscribers = b.topicSubscribers
+		b.trySend(subscriber, &wamp.Error{
+			Type:    msg.MessageType(),
+			Request: msg.Request,
+			Error:   wamp.ErrNoSuchSubscription,
+		})
+		b.log.Println("Error unsubscribing: no such subscription", subID)
+		return
 	}
 
-	// clean up topic -> subscribed session
-	if subs, ok := topicSubscribers[topic]; !ok {
-		b.log.Println("Error unsubscribing: unable to find subscribers for",
-			topic, "topic")
-	} else if _, ok := subs[msg.Subscription]; !ok {
-		b.log.Println("Error unsubscribing: topic", topic,
-			"does not have subscription", msg.Subscription)
-	} else {
-		delete(subs, msg.Subscription)
-		if len(subs) == 0 {
-			delete(b.topicSubscribers, topic)
-			delLastSub = true
-		}
+	// Remove subscribed session from subscription.
+	delete(sub.subscribers, subscriber)
+
+	// If no more subscribers on this subscription, delete subscription and
+	// send on_delete meta event.
+	var delLastSub bool
+	if len(sub.subscribers) == 0 {
+		b.delSubscription(sub)
+		delLastSub = true
 	}
 
-	// clean up sender's subscription
-	if s, ok := b.sessionSubIDSet[sub]; !ok {
+	// Clean up subscriber's subscription ID set.
+	if subIDSet, ok := b.sessionSubIDSet[subscriber]; !ok {
 		b.log.Print("Error unsubscribing: no subscriptions for sender")
-	} else if _, ok := s[msg.Subscription]; !ok {
-		b.log.Println("Error unsubscribing: cannot find subscription",
-			msg.Subscription, "for sender")
+	} else if _, ok := subIDSet[subID]; !ok {
+		b.log.Println("Error unsubscribing: no such subscription for sender:",
+			subID)
 	} else {
-		delete(s, msg.Subscription)
-		if len(s) == 0 {
-			delete(b.sessionSubIDSet, sub)
+		delete(subIDSet, subID)
+		// If subscriber has no remaining subscriptions.
+		if len(subIDSet) == 0 {
+			// Remove subscribers subscription ID set.
+			delete(b.sessionSubIDSet, subscriber)
 		}
 	}
 
 	// Tell sender they are unsubscribed.
-	b.trySend(sub, &wamp.Unsubscribed{Request: msg.Request})
+	b.trySend(subscriber, &wamp.Unsubscribed{Request: msg.Request})
 
 	// Publish WAMP unsubscribe meta event.
-	b.pubSubMeta(wamp.MetaEventSubOnUnsubscribe, sub.ID, msg.Subscription)
+	b.pubSubMeta(wamp.MetaEventSubOnUnsubscribe, subscriber.ID, subID)
 	if delLastSub {
 		// Fired when a subscription is deleted after the last session attached
 		// to it has been removed.
-		b.pubSubMeta(wamp.MetaEventSubOnDelete, sub.ID, msg.Subscription)
+		b.pubSubMeta(wamp.MetaEventSubOnDelete, subscriber.ID, subID)
 	}
 }
 
-func (b *Broker) removeSession(sub *wamp.Session) {
-	var topicSubscribers map[wamp.URI]map[wamp.ID]*wamp.Session
-	for id := range b.sessionSubIDSet[sub] {
-		// For each subscription ID, delete the subscription: topic map entry.
-		topic, ok := b.subscriptions[id]
-		if !ok {
-			if topic, ok = b.pfxSubscriptions[id]; !ok {
-				if topic, ok = b.wcSubscriptions[id]; !ok {
-					continue
-				}
-				delete(b.wcSubscriptions, id)
-				topicSubscribers = b.wcTopicSubscribers
-			} else {
-				delete(b.pfxSubscriptions, id)
-				topicSubscribers = b.pfxTopicSubscribers
-			}
-		} else {
-			delete(b.subscriptions, id)
-			topicSubscribers = b.topicSubscribers
-		}
+// removeSession removed all subscriptions for the session.
+func (b *Broker) removeSession(subscriber *session) {
+	subIDSet, ok := b.sessionSubIDSet[subscriber]
+	if !ok {
+		return
+	}
+	delete(b.sessionSubIDSet, subscriber)
 
-		// clean up topic -> subscriber session
-		if subs, ok := topicSubscribers[topic]; ok {
-			if _, ok := subs[id]; ok {
-				delete(subs, id)
-				if len(subs) == 0 {
-					delete(b.topicSubscribers, topic)
-					// Fired when a subscription is deleted after the last
-					// session attached to it has been removed.
-					b.pubSubMeta(wamp.MetaEventSubOnDelete, sub.ID, id)
-				}
-			}
+	// For each subscription ID, lookup the subscription and remove the
+	// subscriber from the subscription.  If there are no more subscribers on
+	// the subscription, then delete the subscription.
+	var sub *subscription
+	for subID := range subIDSet {
+		sub, ok = b.subscriptions[subID]
+		if !ok {
+			continue
+		}
+		// Remove subscribed session from subscription.
+		delete(sub.subscribers, subscriber)
+
+		// If no more subscribers on this subscription.
+		if len(sub.subscribers) == 0 {
+			b.delSubscription(sub)
+			// Fired when a subscription is deleted after the last
+			// session attached to it has been removed.
+			b.pubSubMeta(wamp.MetaEventSubOnDelete, subscriber.ID, subID)
 		}
 	}
-	delete(b.sessionSubIDSet, sub)
 }
 
 // pubEvent sends an event to all subscribers that are not excluded from
 // receiving the event.
-func (b *Broker) pubEvent(pub *wamp.Session, msg *wamp.Publish, pubID wamp.ID, subs map[wamp.ID]*wamp.Session, excludePublisher, sendTopic, disclose bool, filter *publishFilter) {
-	for id, sub := range subs {
+func (b *Broker) pubEvent(pub *session, msg *wamp.Publish, pubID wamp.ID, sub *subscription, excludePublisher, sendTopic, disclose bool, filter *publishFilter) {
+	for subscriber, _ := range sub.subscribers {
 		// Do not send event to publisher.
-		if sub == pub && excludePublisher {
+		if subscriber == pub && excludePublisher {
 			continue
 		}
 
 		// Check if receiver is restricted.
-		if filter != nil && !filter.publishAllowed(sub) {
+		if filter != nil && !filter.publishAllowed(subscriber) {
 			continue
 		}
 
@@ -457,15 +463,15 @@ func (b *Broker) pubEvent(pub *wamp.Session, msg *wamp.Publish, pubID wamp.ID, s
 			details[detailTopic] = msg.Topic
 		}
 
-		if disclose && sub.HasFeature(roleSub, featurePubIdent) {
+		if disclose && subscriber.HasFeature(roleSub, featurePubIdent) {
 			disclosePublisher(pub, details)
 		}
 
 		// TODO: Handle publication trust levels
 
-		b.trySend(sub, &wamp.Event{
+		b.trySend(subscriber, &wamp.Event{
 			Publication:  pubID,
-			Subscription: id,
+			Subscription: sub.id,
 			Arguments:    msg.Arguments,
 			ArgumentsKw:  msg.ArgumentsKw,
 			Details:      details,
@@ -475,20 +481,21 @@ func (b *Broker) pubEvent(pub *wamp.Session, msg *wamp.Publish, pubID wamp.ID, s
 
 // pubMeta publishes the subscription meta event, using the supplied function,
 // to the matching subscribers.
-func (b *Broker) pubMeta(metaTopic wamp.URI, sendMeta func(subs map[wamp.ID]*wamp.Session, sendTopic bool)) {
+func (b *Broker) pubMeta(metaTopic wamp.URI, sendMeta func(metaSub *subscription, sendTopic bool)) {
 	// Publish to subscribers with exact match.
-	subs := b.topicSubscribers[metaTopic]
-	sendMeta(subs, false)
+	if metaSub, ok := b.topicSubscription[metaTopic]; ok {
+		sendMeta(metaSub, false)
+	}
 	// Publish to subscribers with prefix match.
-	for pfxTopic, subs := range b.pfxTopicSubscribers {
+	for pfxTopic, metaSub := range b.pfxTopicSubscription {
 		if metaTopic.PrefixMatch(pfxTopic) {
-			sendMeta(subs, true)
+			sendMeta(metaSub, true)
 		}
 	}
 	// Publish to subscribers with wildcard match.
-	for wcTopic, subs := range b.wcTopicSubscribers {
+	for wcTopic, metaSub := range b.wcTopicSubscription {
 		if metaTopic.WildcardMatch(wcTopic) {
-			sendMeta(subs, true)
+			sendMeta(metaSub, true)
 		}
 	}
 }
@@ -496,22 +503,25 @@ func (b *Broker) pubMeta(metaTopic wamp.URI, sendMeta func(subs map[wamp.ID]*wam
 // pubSubMeta publishes a subscription meta event when a subscription is added,
 // removed, or deleted.
 func (b *Broker) pubSubMeta(metaTopic wamp.URI, subSessID, subID wamp.ID) {
-	pubID := wamp.GlobalID()
-	sendMeta := func(subs map[wamp.ID]*wamp.Session, sendTopic bool) {
-		for id, sub := range subs {
+	pubID := wamp.GlobalID() // create here so that it is same for all events
+	sendMeta := func(metaSub *subscription, sendTopic bool) {
+		if len(metaSub.subscribers) == 0 {
+			return
+		}
+		details := wamp.Dict{}
+		if sendTopic {
+			details[detailTopic] = metaTopic
+		}
+		for subscriber := range metaSub.subscribers {
 			// Do not send the meta event to the session that is causing the
 			// meta event to be generated.  This prevents useless events that
 			// could lead to race conditions on the client.
-			if sub.ID == subSessID {
+			if subscriber.ID == subSessID {
 				continue
 			}
-			details := wamp.Dict{}
-			if sendTopic {
-				details[detailTopic] = metaTopic
-			}
-			b.trySend(sub, &wamp.Event{
+			b.trySend(subscriber, &wamp.Event{
 				Publication:  pubID,
-				Subscription: id,
+				Subscription: metaSub.id,
 				Details:      details,
 				Arguments:    wamp.List{subSessID, subID},
 			})
@@ -524,30 +534,33 @@ func (b *Broker) pubSubMeta(metaTopic wamp.URI, subSessID, subID wamp.ID) {
 //
 // Fired when a subscription is created through a subscription request for a
 // topic which was previously without subscribers.
-func (b *Broker) pubSubCreateMeta(subTopic wamp.URI, subSessID, subID wamp.ID, match string) {
-	created := wamp.NowISO8601()
-	pubID := wamp.GlobalID()
-	sendMeta := func(subs map[wamp.ID]*wamp.Session, sendTopic bool) {
-		for id, sub := range subs {
+func (b *Broker) pubSubCreateMeta(topic wamp.URI, subSessID wamp.ID, sub *subscription) {
+	pubID := wamp.GlobalID() // create here so that it is same for all events
+	sendMeta := func(metaSub *subscription, sendTopic bool) {
+		if len(metaSub.subscribers) == 0 {
+			return
+		}
+		details := wamp.Dict{}
+		if sendTopic {
+			details[detailTopic] = wamp.MetaEventSubOnCreate
+		}
+		subDetails := wamp.Dict{
+			"id":          sub.id,
+			"created":     sub.created,
+			"uri":         sub.topic,
+			wamp.OptMatch: sub.match,
+		}
+
+		for subscriber := range metaSub.subscribers {
 			// Do not send the meta event to the session that is causing the
 			// meta event to be generated.  This prevents useless events that
 			// could lead to race conditions on the client.
-			if sub.ID == subSessID {
+			if subscriber.ID == subSessID {
 				continue
 			}
-			details := wamp.Dict{}
-			if sendTopic {
-				details[detailTopic] = wamp.MetaEventSubOnCreate
-			}
-			subDetails := wamp.Dict{
-				"id":          subID,
-				"created":     created,
-				"uri":         subTopic,
-				wamp.OptMatch: match,
-			}
-			b.trySend(sub, &wamp.Event{
+			b.trySend(subscriber, &wamp.Event{
 				Publication:  pubID,
-				Subscription: id,
+				Subscription: metaSub.id,
 				Details:      details,
 				Arguments:    wamp.List{subSessID, subDetails},
 			})
@@ -556,7 +569,7 @@ func (b *Broker) pubSubCreateMeta(subTopic wamp.URI, subSessID, subID wamp.ID, m
 	b.pubMeta(wamp.MetaEventSubOnCreate, sendMeta)
 }
 
-func (b *Broker) trySend(sess *wamp.Session, msg wamp.Message) bool {
+func (b *Broker) trySend(sess *session, msg wamp.Message) bool {
 	if err := sess.TrySend(msg); err != nil {
 		b.log.Println("!!! broker dropped", msg.MessageType(), "message:", err)
 		return false
@@ -565,16 +578,225 @@ func (b *Broker) trySend(sess *wamp.Session, msg wamp.Message) bool {
 }
 
 // disclosePublisher adds publisher identity information to EVENT.Details.
-func disclosePublisher(pub *wamp.Session, details wamp.Dict) {
+func disclosePublisher(pub *session, details wamp.Dict) {
 	details[rolePub] = pub.ID
-	features := []string{
-		"authid",
-		"authrole",
-	}
-	for _, f := range features {
-		val, ok := pub.Details[f]
-		if ok {
+	// These values are not required by the specification, but are here for
+	// compatibility with Crossbar.
+	pub.rLock()
+	for _, f := range []string{"authid", "authrole"} {
+		if val, ok := pub.Details[f]; ok {
 			details[fmt.Sprintf("%s_%s", rolePub, f)] = val
 		}
+	}
+	pub.rUnlock()
+}
+
+// ----- Subscription Meta Procedure Handlers -----
+
+// SubList retrieves subscription IDs listed according to match policies.
+func (b *Broker) SubList(msg *wamp.Invocation) wamp.Message {
+	var exactSubs, pfxSubs, wcSubs []wamp.ID
+	sync := make(chan struct{})
+	b.actionChan <- func() {
+		for subID, sub := range b.subscriptions {
+			switch sub.match {
+			case wamp.MatchPrefix:
+				pfxSubs = append(pfxSubs, subID)
+			case wamp.MatchWildcard:
+				wcSubs = append(wcSubs, subID)
+			default:
+				exactSubs = append(exactSubs, subID)
+			}
+		}
+		close(sync)
+	}
+	<-sync
+	dict := wamp.Dict{
+		wamp.MatchExact:    exactSubs,
+		wamp.MatchPrefix:   pfxSubs,
+		wamp.MatchWildcard: wcSubs,
+	}
+	return &wamp.Yield{
+		Request:   msg.Request,
+		Arguments: wamp.List{dict},
+	}
+}
+
+// SubLookup obtains the subscription (if any) managing a topic, according
+// to some match policy.
+func (b *Broker) SubLookup(msg *wamp.Invocation) wamp.Message {
+	var subID wamp.ID
+	if len(msg.Arguments) != 0 {
+		if topic, ok := wamp.AsURI(msg.Arguments[0]); ok {
+			var match string
+			if len(msg.Arguments) > 1 {
+				if opts, ok := wamp.AsDict(msg.Arguments[1]); ok {
+					match, _ = wamp.AsString(opts[wamp.OptMatch])
+				}
+			}
+			sync := make(chan struct{})
+			b.actionChan <- func() {
+				var sub *subscription
+				var ok bool
+				switch match {
+				default:
+					sub, ok = b.topicSubscription[topic]
+				case wamp.MatchPrefix:
+					sub, ok = b.pfxTopicSubscription[topic]
+				case wamp.MatchWildcard:
+					sub, ok = b.wcTopicSubscription[topic]
+				}
+				if ok {
+					subID = sub.id
+				}
+				close(sync)
+			}
+			<-sync
+		}
+	}
+	return &wamp.Yield{
+		Request:   msg.Request,
+		Arguments: wamp.List{subID},
+	}
+}
+
+// SubMatch retrieves a list of IDs of subscriptions matching a topic URI,
+// irrespective of match policy.
+func (b *Broker) SubMatch(msg *wamp.Invocation) wamp.Message {
+	var subIDs []wamp.ID
+	if len(msg.Arguments) != 0 {
+		if topic, ok := wamp.AsURI(msg.Arguments[0]); ok {
+			sync := make(chan struct{})
+			b.actionChan <- func() {
+				if sub, ok := b.topicSubscription[topic]; ok {
+					for subscriber := range sub.subscribers {
+						subIDs = append(subIDs, subscriber.ID)
+					}
+				}
+				for pfxTopic, sub := range b.pfxTopicSubscription {
+					if topic.PrefixMatch(pfxTopic) {
+						for subscriber := range sub.subscribers {
+							subIDs = append(subIDs, subscriber.ID)
+						}
+					}
+				}
+				for wcTopic, sub := range b.wcTopicSubscription {
+					if topic.WildcardMatch(wcTopic) {
+						for subscriber := range sub.subscribers {
+							subIDs = append(subIDs, subscriber.ID)
+						}
+					}
+				}
+				close(sync)
+			}
+			<-sync
+		}
+	}
+	return &wamp.Yield{
+		Request:   msg.Request,
+		Arguments: wamp.List{subIDs},
+	}
+}
+
+// SubGet retrieves information on a particular subscription.
+func (b *Broker) SubGet(msg *wamp.Invocation) wamp.Message {
+	var dict wamp.Dict
+	if len(msg.Arguments) != 0 {
+		if subID, ok := wamp.AsID(msg.Arguments[0]); ok {
+			sync := make(chan struct{})
+			b.actionChan <- func() {
+				if sub, ok := b.subscriptions[subID]; ok {
+					dict = wamp.Dict{
+						"id":          subID,
+						"created":     sub.created,
+						"uri":         sub.topic,
+						wamp.OptMatch: sub.match,
+					}
+				}
+				close(sync)
+			}
+			<-sync
+		}
+	}
+	if dict == nil {
+		return &wamp.Error{
+			Type:    msg.MessageType(),
+			Request: msg.Request,
+			Details: wamp.Dict{},
+			Error:   wamp.ErrNoSuchSubscription,
+		}
+	}
+	return &wamp.Yield{
+		Request:   msg.Request,
+		Arguments: wamp.List{dict},
+	}
+}
+
+// SubListSubscribers retrieves a list of session IDs for sessions currently
+// attached to the subscription.
+func (b *Broker) SubListSubscribers(msg *wamp.Invocation) wamp.Message {
+	var subscriberIDs []wamp.ID
+	if len(msg.Arguments) != 0 {
+		if subID, ok := wamp.AsID(msg.Arguments[0]); ok {
+			sync := make(chan struct{})
+			b.actionChan <- func() {
+				if sub, ok := b.subscriptions[subID]; ok {
+					subscriberIDs = make([]wamp.ID, len(sub.subscribers))
+					var i int
+					for subscriber := range sub.subscribers {
+						subscriberIDs[i] = subscriber.ID
+						i++
+					}
+				}
+				close(sync)
+			}
+			<-sync
+		}
+	}
+	if len(subscriberIDs) == 0 {
+		return &wamp.Error{
+			Type:    msg.MessageType(),
+			Request: msg.Request,
+			Details: wamp.Dict{},
+			Error:   wamp.ErrNoSuchSubscription,
+		}
+	}
+	return &wamp.Yield{
+		Request:   msg.Request,
+		Arguments: wamp.List{subscriberIDs},
+	}
+}
+
+// SubCountSubscribers obtains the number of sessions currently attached to the
+// subscription.
+func (b *Broker) SubCountSubscribers(msg *wamp.Invocation) wamp.Message {
+	var count int
+	var ok bool
+	if len(msg.Arguments) != 0 {
+		var subID wamp.ID
+		if subID, ok = wamp.AsID(msg.Arguments[0]); ok {
+			sync := make(chan struct{})
+			b.actionChan <- func() {
+				if sub, found := b.subscriptions[subID]; found {
+					count = len(sub.subscribers)
+				} else {
+					ok = false
+				}
+				close(sync)
+			}
+			<-sync
+		}
+	}
+	if !ok {
+		return &wamp.Error{
+			Type:    msg.MessageType(),
+			Request: msg.Request,
+			Details: wamp.Dict{},
+			Error:   wamp.ErrNoSuchSession,
+		}
+	}
+	return &wamp.Yield{
+		Request:   msg.Request,
+		Arguments: wamp.List{count},
 	}
 }

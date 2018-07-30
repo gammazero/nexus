@@ -1,11 +1,13 @@
 package aat
 
 import (
+	"context"
 	"errors"
 	"fmt"
 	"testing"
 	"time"
 
+	"github.com/gammazero/nexus/client"
 	"github.com/gammazero/nexus/wamp"
 )
 
@@ -14,6 +16,8 @@ const (
 	metaOnSubscribe   = string(wamp.MetaEventSubOnSubscribe)
 	metaOnUnsubscribe = string(wamp.MetaEventSubOnUnsubscribe)
 	metaOnDelete      = string(wamp.MetaEventSubOnDelete)
+
+	metaSubGet = string(wamp.MetaProcSubGet)
 )
 
 func TestMetaEventOnCreateOnSubscribe(t *testing.T) {
@@ -316,5 +320,77 @@ func TestMetaEventOnUnsubscribeOnDelete(t *testing.T) {
 	err = subscriber.Close()
 	if err != nil {
 		t.Fatal("Failed to disconnect client:", err)
+	}
+}
+
+func TestMetaProcSubGet(t *testing.T) {
+	// Connect subscriber session.
+	subscriber, err := connectClient()
+	if err != nil {
+		t.Fatal("Failed to connect client:", err)
+	}
+	defer subscriber.Close()
+
+	// Subscribe to something
+	nullHandler := func(args wamp.List, kwargs wamp.Dict, details wamp.Dict) {
+		return
+	}
+	err = subscriber.Subscribe(testTopicWC, nullHandler, wamp.Dict{"match": "wildcard"})
+	if err != nil {
+		t.Fatal("subscribe error:", err)
+	}
+	subID, ok := subscriber.SubscriptionID(testTopicWC)
+	if !ok {
+		t.Fatal("client does not have subscription ID")
+	}
+
+	// Connect caller
+	caller, err := connectClient()
+	if err != nil {
+		t.Fatal("Failed to connect client:", err)
+	}
+	defer caller.Close()
+
+	ctx, cancel := context.WithTimeout(context.Background(), time.Second)
+	defer cancel()
+	result, err := caller.Call(ctx, metaSubGet, nil, wamp.List{subID}, nil, "")
+	if err != nil {
+		t.Fatal("error calling", metaSubGet, err)
+	}
+	subDetails, ok := wamp.AsDict(result.Arguments[0])
+	if !ok {
+		t.Fatal("Result argument is not dict")
+	}
+	id, _ := wamp.AsID(subDetails["id"])
+	if id != subID {
+		t.Error("Received wrong subscription ID")
+	}
+	m, _ := wamp.AsString(subDetails["match"])
+	if m != "wildcard" {
+		t.Error("subscription does not have wildcard policy, has", m)
+	}
+	uri, _ := wamp.AsURI(subDetails["uri"])
+	if uri != testTopicWC {
+		t.Error("subscription has wrong topic URI")
+	}
+
+	err = subscriber.Unsubscribe(testTopicWC)
+	if err != nil {
+		t.Fatal("unsubscribe error:", err)
+	}
+
+	cancel()
+	ctx, cancel = context.WithTimeout(context.Background(), time.Second)
+	defer cancel()
+	result, err = caller.Call(ctx, metaSubGet, nil, wamp.List{subID}, nil, "")
+	if err == nil {
+		t.Fatal("expected error")
+	}
+	rpcErr, ok := err.(client.RPCError)
+	if !ok {
+		t.Fatal("expected error to be client.RPCError")
+	}
+	if rpcErr.Err.Error != wamp.ErrNoSuchSubscription {
+		t.Fatal("wrong error:", rpcErr.Err.Error)
 	}
 }

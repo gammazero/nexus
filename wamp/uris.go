@@ -36,16 +36,21 @@ const (
 
 	// -- Session Close --
 
+	CloseNormal = URI("wamp.close.normal")
+
 	// The Peer is shutting down completely - used as a GOODBYE (or ABORT)
 	// reason.
-	ErrSystemShutdown = URI("wamp.error.system_shutdown")
+	CloseSystemShutdown = URI("wamp.close.system_shutdown")
+	ErrSystemShutdown   = CloseSystemShutdown
 
 	// The Peer wants to leave the realm - used as a GOODBYE reason.
-	ErrCloseRealm = URI("wamp.error.close_realm")
+	CloseRealm    = URI("wamp.close.close_realm")
+	ErrCloseRealm = CloseRealm
 
 	// A Peer acknowledges ending of a session - used as a GOODBYE reply
 	// reason.
-	ErrGoodbyeAndOut = URI("wamp.error.goodbye_and_out")
+	CloseGoodbyeAndOut = URI("wamp.close.goodbye_and_out")
+	ErrGoodbyeAndOut   = CloseGoodbyeAndOut
 
 	// -- Authorization --
 
@@ -118,6 +123,21 @@ const (
 
 	// Retrieves information on a specific session.
 	MetaProcSessionGet = URI("wamp.session.get")
+
+	// Kill a single session identified by session ID.
+	MetaProcSessionKill = URI("wamp.session.kill")
+
+	// Kill all currently connected sessions that have the specified authid.
+	MetaProcSessionKillByAuthid = URI("wamp.session.kill_by_authid")
+
+	// Kill all currently connected sessions that have the specified authrole.
+	MetaProcSessionKillByAuthrole = URI("wamp.session.kill_by_authrole")
+
+	// Kill all currently connected sessions in the caller's realm.
+	MetaProcSessionKillAll = URI("wamp.session.kill_all")
+
+	// Modify details of session identified by session ID (non-standard).
+	MetaProcSessionModifyDetails = URI("wamp.session.modify_details")
 
 	// No session with the given ID exists on the router.
 	ErrNoSuchSession = URI("wamp.error.no_such_session")
@@ -194,10 +214,10 @@ const (
 
 	// Retrieves a list of session IDs for sessions currently attached to the
 	// subscription.
-	MetaProcSubListCallees = URI("wamp.subscription.list_subscribers")
+	MetaProcSubListSubscribers = URI("wamp.subscription.list_subscribers")
 
 	// Obtains the number of sessions currently attached to the subscription.
-	MetaProcSubCountCallees = URI("wamp.subscription.count_suscribers")
+	MetaProcSubCountSubscribers = URI("wamp.subscription.count_suscribers")
 
 	// -- Testament Meta Procedures --
 

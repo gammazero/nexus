@@ -71,7 +71,7 @@ func newTestClient(r router.Router) (*Client, error) {
 		Realm:           testRealm,
 		ResponseTimeout: 500 * time.Millisecond,
 		Logger:          logger,
-		Debug:           true,
+		Debug:           false,
 	}
 	return ConnectLocal(r, cfg)
 }
@@ -421,7 +421,7 @@ func TestProgressiveCall(t *testing.T) {
 	}
 	sum, ok := wamp.AsInt64(result.Arguments[0])
 	if !ok {
-		t.Fatal("Could not convert result to int64")
+		t.Fatal("Could not convert result to int64:", result.Arguments[0])
 	}
 	if sum != 55 {
 		t.Fatal("Wrong result:", sum)

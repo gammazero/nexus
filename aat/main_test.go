@@ -115,6 +115,9 @@ func TestMain(m *testing.M) {
 				StrictURI:     false,
 				AnonymousAuth: true,
 				AllowDisclose: false,
+
+				EnableMetaKill:   true,
+				EnableMetaModify: true,
 			},
 			{
 				URI:               wamp.URI(testAuthRealm),
@@ -128,6 +131,9 @@ func TestMain(m *testing.M) {
 
 				MetaStrict:                true,
 				MetaIncludeSessionDetails: []string{"foobar"},
+
+				EnableMetaKill:   true,
+				EnableMetaModify: true,
 			},
 		},
 		//Debug: true,
@@ -155,6 +161,7 @@ func TestMain(m *testing.M) {
 		}
 		s.EnableTrackingCookie = true
 		s.EnableRequestCapture = true
+		s.KeepAlive = time.Second
 		closer, err = s.ListenAndServe(tcpAddr)
 	case "https", "wss":
 		s := router.NewWebsocketServer(nxr)
@@ -165,6 +172,7 @@ func TestMain(m *testing.M) {
 		}
 		s.EnableTrackingCookie = true
 		s.EnableRequestCapture = true
+		s.KeepAlive = time.Second
 		closer, err = s.ListenAndServeTLS(tcpAddr, nil, certPath, keyPath)
 	case "tcp":
 		s := router.NewRawSocketServer(nxr, 0, 0)
