@@ -243,7 +243,7 @@ type EventHandler func(args wamp.List, kwargs, details wamp.Dict)
 // match, or it can specify a URI pattern to match multiple events for the same
 // handler by specifying the pattern type in options.
 //
-// Options
+// Subscribe Options
 //
 // To request a pattern-based subscription set:
 //   options["match"] = "prefix" or "wildcard"
@@ -348,7 +348,7 @@ func (c *Client) Unsubscribe(topic string) error {
 
 // Publish publishes an EVENT to all subscribed clients.
 //
-// Options
+// Publish Options
 //
 // To receive a PUBLISHED response set:
 //   options["acknowledge"] = true
@@ -435,7 +435,7 @@ type InvocationHandler func(context.Context, wamp.List, wamp.Dict, wamp.Dict) (r
 // procedure.  The InvocationHandler is set to be called for each procedure
 // call received.
 //
-// Options
+// Register Options
 //
 // To request a pattern-based registration set:
 //   options["match"] = "prefix" or "wildcard"
@@ -1285,6 +1285,8 @@ func (c *Client) runHandleInvocation(msg *wamp.Invocation) {
 			}
 			<-sync
 			if !ok {
+				// Invocation cancel already gone.  This means router is not
+				// expecting response (cancel with mode="killnowait").
 				return
 			}
 
