@@ -4,7 +4,7 @@
         "cert_file": "",
         "key_file": "",
         "enable_compression": false,
-        "allow_origins": []
+        "allow_origins": ["*"]
     },
     "rawsocket": {
         "tcp_address": "",

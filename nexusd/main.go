@@ -14,7 +14,6 @@ import (
 	"strings"
 	"time"
 
-	"github.com/gammazero/nexus/nexusd/wsutil"
 	"github.com/gammazero/nexus/router"
 )
 
@@ -75,14 +74,13 @@ func main() {
 			logger.Printf("Request capture enabled - not currently used")
 		}
 		if len(conf.WebSocket.AllowOrigins) != 0 {
-			check, e := wsutil.AllowOrigins(conf.WebSocket.AllowOrigins)
+			e := wss.AllowOrigins(conf.WebSocket.AllowOrigins)
 			if e != nil {
 				logger.Print(e)
 				os.Exit(1)
 			}
 			logger.Println("Allowing origins matching:",
 				strings.Join(conf.WebSocket.AllowOrigins, "|"))
-			wss.Upgrader.CheckOrigin = check
 		}
 		var closer io.Closer
 		var sockDesc string
