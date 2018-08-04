@@ -68,9 +68,7 @@ A stable release of nexus is available with support for most advanced profile fe
 
 These features listed here are being added.  If there are are specific items needed, or if any changes in current functionality are needed, then please open an [issue](https://github.com/gammazero/nexus/issues).
 
-- more stress tests and benchmarks
-- more documentation
-- more advanced profile examples
+- more documentation and examples
 - event history
 - call trust levels
 - publisher trust levels
@@ -87,7 +85,8 @@ These features listed here are being added.  If there are are specific items nee
 | call_canceling | Yes |
 | caller_identification | Yes |
 | call_trustlevels | No |
-| registration_meta_api | Yes
+| registration_meta_events | Yes
+| registration_meta_procedures | Yes
 | pattern_based_registration | Yes |
 | shared_registration | Yes |
 | sharded_registration | No |
@@ -102,7 +101,8 @@ These features listed here are being added.  If there are are specific items nee
 | publisher_exclusion | Yes |
 | publisher_identification | Yes |
 | publication_trustlevels | No|
-| subscription_meta_api | Yes |
+| subscription_meta_events | Yes |
+| subscription_meta_procedures | Yes |
 | pattern_based_subscription | Yes |
 | sharded_subscription | No |
 | event_history | No |
@@ -113,15 +113,16 @@ These features listed here are being added.  If there are are specific items nee
 
 | Feature | Supported |
 | ------- | --------- |
+| rawsocket (TCP & Unix) transport | Yes |
+| session meta events | Yes |
+| session meta procedures | Yes |
+| TLS for websockets | Yes |
+| TLS for rawsockets | Yes |
 | challenge-response authentication | Yes |
 | cookie authentication | Yes |
 | ticket authentication | Yes |
-| rawsocket transport | Yes |
 | batched WS transport | No |
 | longpoll transport | No |
-| session meta api | Yes |
-| TLS for websockets | Yes |
-| TLS for rawsockets | Yes |
 | websocket compression | Yes |
 
 ## Extended Functionality

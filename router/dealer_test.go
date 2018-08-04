@@ -962,7 +962,9 @@ func TestPatternBasedRegistration(t *testing.T) {
 		&wamp.Register{
 			Request:   123,
 			Procedure: testProcedureWC,
-			Options:   wamp.Dict{"match": "wildcard"},
+			Options: wamp.Dict{
+				wamp.OptMatch: wamp.MatchWildcard,
+			},
 		})
 	rsp := <-callee.Recv()
 	_, ok := rsp.(*wamp.Registered)
@@ -988,6 +990,14 @@ func TestPatternBasedRegistration(t *testing.T) {
 	inv, ok := rsp.(*wamp.Invocation)
 	if !ok {
 		t.Fatal("expected INVOCATION, got:", rsp.MessageType())
+	}
+	details, ok := wamp.AsDict(inv.Details)
+	if !ok {
+		t.Fatal("INVOCATION missing details")
+	}
+	proc, _ := wamp.AsURI(details[wamp.OptProcedure])
+	if proc != testProcedure {
+		t.Error("INVOCATION has missing or incorrect procedure detail")
 	}
 
 	// Callee responds with a YIELD message

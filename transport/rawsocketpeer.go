@@ -39,7 +39,7 @@ const (
 	rawsocketJSON    = 1
 	rawsocketMsgpack = 2
 	// compatibility with crossbar.io router.
-	rawsocketCBOR    = 3
+	rawsocketCBOR = 3
 
 	// RawSocket header ID.
 	magic = 0x7f
@@ -161,7 +161,13 @@ func (rs *rawSocketPeer) Recv() <-chan wamp.Message { return rs.rd }
 func (rs *rawSocketPeer) TrySend(msg wamp.Message) error {
 	select {
 	case rs.wr <- msg:
+		return nil
 	default:
+	}
+
+	select {
+	case rs.wr <- msg:
+	case <-time.After(time.Second):
 		return errors.New("blocked")
 	}
 	return nil

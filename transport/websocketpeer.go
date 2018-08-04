@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"net"
 	"net/http"
+	"sync/atomic"
 	"time"
 
 	"github.com/gammazero/nexus/stdlog"
@@ -108,13 +109,17 @@ func ConnectWebsocketPeer(url string, serialization serialize.Serialization, tls
 	if err != nil {
 		return nil, err
 	}
-	return NewWebsocketPeer(conn, serializer, payloadType, logger), nil
+	return NewWebsocketPeer(conn, serializer, payloadType, logger, 0), nil
 }
 
 // NewWebsocketPeer creates a websocket peer from an existing websocket
 // connection.  This is used by clients connecting to the WAMP router, and by
 // servers to handle connections from clients.
-func NewWebsocketPeer(conn *websocket.Conn, serializer serialize.Serializer, payloadType int, logger stdlog.StdLog) wamp.Peer {
+//
+// A non-zero keepAlive value configures a websocket "ping/pong" heartbeat,
+// sendings websocket "pings" every keepAlive interval.  If a "pong" response
+// is not received after 2 intervals have elapsed then the websocket is closed.
+func NewWebsocketPeer(conn *websocket.Conn, serializer serialize.Serializer, payloadType int, logger stdlog.StdLog, keepAlive time.Duration) wamp.Peer {
 	w := &websocketPeer{
 		conn:        conn,
 		serializer:  serializer,
@@ -137,7 +142,14 @@ func NewWebsocketPeer(conn *websocket.Conn, serializer serialize.Serializer, pay
 	}
 	// Sending to and receiving from websocket is handled concurrently.
 	go w.recvHandler()
-	go w.sendHandler()
+	if keepAlive != 0 {
+		if keepAlive < time.Second {
+			w.log.Println("Warning: very short keepalive (< 1 second)")
+		}
+		go w.sendHandlerKeepAlive(keepAlive)
+	} else {
+		go w.sendHandler()
+	}
 
 	return w
 }
@@ -147,7 +159,13 @@ func (w *websocketPeer) Recv() <-chan wamp.Message { return w.rd }
 func (w *websocketPeer) TrySend(msg wamp.Message) error {
 	select {
 	case w.wr <- msg:
+		return nil
 	default:
+	}
+
+	select {
+	case w.wr <- msg:
+	case <-time.After(sendTimeout):
 		return errors.New("blocked")
 	}
 	return nil
@@ -201,6 +219,57 @@ func (w *websocketPeer) sendHandler() {
 			if !wamp.IsGoodbyeAck(msg) {
 				w.log.Print(err)
 			}
+			return
+		}
+	}
+}
+
+func (w *websocketPeer) sendHandlerKeepAlive(keepAlive time.Duration) {
+	defer close(w.writerDone)
+
+	var pendingPongs int32
+	w.conn.SetPongHandler(func(msg string) error {
+		// Any response resets counter.
+		atomic.StoreInt32(&pendingPongs, 0)
+		return nil
+	})
+
+	ticker := time.NewTicker(keepAlive)
+	defer ticker.Stop()
+	pingMsg := []byte("keepalive")
+
+recvLoop:
+	for {
+		select {
+		case msg, open := <-w.wr:
+			if msg == nil || !open {
+				return
+			}
+			b, err := w.serializer.Serialize(msg.(wamp.Message))
+			if err != nil {
+				w.log.Print(err)
+				continue recvLoop
+			}
+
+			if err = w.conn.WriteMessage(w.payloadType, b); err != nil {
+				if !wamp.IsGoodbyeAck(msg) {
+					w.log.Print(err)
+				}
+				return
+			}
+		case <-ticker.C:
+			// If missed 2 responses, close websocket.
+			if atomic.LoadInt32(&pendingPongs) >= 2 {
+				w.log.Print("peer not responging to pings, closing websocket")
+				w.conn.Close()
+				return
+			}
+			// Send websocket ping.
+			err := w.conn.WriteMessage(websocket.PingMessage, pingMsg)
+			if err != nil {
+				return
+			}
+			atomic.AddInt32(&pendingPongs, 1)
 		}
 	}
 }

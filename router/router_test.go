@@ -18,6 +18,9 @@ const (
 	testRealm2      = wamp.URI("nexus.test.realm2")
 	testProcedure   = wamp.URI("nexus.test.endpoint")
 	testProcedureWC = wamp.URI("nexus..endpoint")
+	testTopic       = wamp.URI("nexus.test.event")
+	testTopicPfx    = wamp.URI("nexus.test")
+	testTopicWC     = wamp.URI("nexus..event")
 )
 
 var (
@@ -201,7 +204,6 @@ func TestProtocolViolation(t *testing.T) {
 
 func TestRouterSubscribe(t *testing.T) {
 	defer leaktest.Check(t)()
-	const testTopic = wamp.URI("some.uri")
 	r, err := newTestRouter()
 	if err != nil {
 		t.Error(err)
@@ -626,7 +628,7 @@ func TestRegistrationMetaProcedures(t *testing.T) {
 		t.Fatal("prefix matches should not have changed")
 	}
 	if len(wildcard) != len(wildcardPrev)+1 {
-		t.Fatal("wildcard matches should not have changed")
+		t.Fatal("expected additional wildcard match")
 	}
 
 	var found bool
@@ -764,7 +766,7 @@ func TestRegistrationMetaProcedures(t *testing.T) {
 		t.Fatal("Wrong callee session ID")
 	}
 
-	// ----- Test wamp.registration.list_callees meta procedure -----
+	// ----- Test wamp.registration.count_callees meta procedure -----
 	callID = wamp.GlobalID()
 	caller.Send(&wamp.Call{
 		Request:   callID,
@@ -791,6 +793,286 @@ func TestRegistrationMetaProcedures(t *testing.T) {
 	}
 	if count != 1 {
 		t.Fatal("Wring number of callees")
+	}
+}
+
+func TestSubscriptionMetaProcedures(t *testing.T) {
+	defer leaktest.Check(t)()
+	r, err := newTestRouter()
+	if err != nil {
+		t.Error(err)
+	}
+	defer r.Close()
+
+	caller, err := testClient(r)
+	if err != nil {
+		t.Fatal(err)
+	}
+	sessID := caller.ID
+
+	// ----- Test wamp.subscription.list meta procedure -----
+	callID := wamp.GlobalID()
+	caller.Send(&wamp.Call{Request: callID, Procedure: wamp.MetaProcSubList})
+	msg, err := wamp.RecvTimeout(caller, time.Second)
+	if err != nil {
+		t.Fatal("Timed out waiting for RESULT")
+	}
+	result, ok := msg.(*wamp.Result)
+	if !ok {
+		t.Fatal("expected RESULT, got", msg.MessageType())
+	}
+	if result.Request != callID {
+		t.Fatal("wrong result ID")
+	}
+	if len(result.Arguments) == 0 {
+		t.Fatal("missing expected arguemnt")
+	}
+	dict, ok := result.Arguments[0].(wamp.Dict)
+	if !ok {
+		t.Fatal("expected wamp.Dict")
+	}
+	exactPrev, ok := dict["exact"].([]wamp.ID)
+	if !ok {
+		t.Fatal("expected []wamp.ID")
+	}
+	prefixPrev, ok := dict["prefix"].([]wamp.ID)
+	if !ok {
+		t.Fatal("expected []wamp.ID")
+	}
+	wildcardPrev, ok := dict["wildcard"].([]wamp.ID)
+	if !ok {
+		t.Fatal("expected []wamp.ID")
+	}
+
+	subscriber, err := testClient(r)
+	if err != nil {
+		t.Fatal("Error connecting client:", err)
+	}
+	sessID = subscriber.ID
+	// Subscribe to topic
+	reqID := wamp.GlobalID()
+	subscriber.Send(&wamp.Subscribe{Request: reqID, Topic: testTopic})
+	msg, err = wamp.RecvTimeout(subscriber, time.Second)
+	if err != nil {
+		t.Fatal("Timed out waiting for SUBSCRIBED")
+	}
+	subscribed, ok := msg.(*wamp.Subscribed)
+	if !ok {
+		t.Fatal("expected SUBSCRIBED, got:", msg.MessageType())
+	}
+	if subscribed.Request != reqID {
+		t.Fatal("wrong request ID")
+	}
+	subscriptionID := subscribed.Subscription
+
+	// Subscriber to wildcard topic
+	subscriber.Send(&wamp.Subscribe{
+		Request: wamp.GlobalID(),
+		Topic:   testTopicWC,
+		Options: wamp.Dict{"match": "wildcard"},
+	})
+	msg = <-subscriber.Recv()
+	if _, ok = msg.(*wamp.Subscribed); !ok {
+		t.Fatal("expected SUBSCRIBED, got:", msg.MessageType())
+	}
+
+	// Call subscription meta-procedure to get subscriptions.
+	callID = wamp.GlobalID()
+	caller.Send(&wamp.Call{Request: callID, Procedure: wamp.MetaProcSubList})
+	msg, err = wamp.RecvTimeout(caller, time.Second)
+	if err != nil {
+		t.Fatal("Timed out waiting for RESULT")
+	}
+	result, ok = msg.(*wamp.Result)
+	if !ok {
+		t.Fatal("expected RESULT, got", msg.MessageType())
+	}
+	if result.Request != callID {
+		t.Fatal("wrong result ID")
+	}
+	if len(result.Arguments) == 0 {
+		t.Fatal("missing expected arguemnt")
+	}
+	dict, ok = result.Arguments[0].(wamp.Dict)
+	if !ok {
+		t.Fatal("expected wamp.Dict")
+	}
+	exact := dict["exact"].([]wamp.ID)
+	prefix := dict["prefix"].([]wamp.ID)
+	wildcard := dict["wildcard"].([]wamp.ID)
+
+	if len(exact) != len(exactPrev)+1 {
+		t.Error("expected additional exact match")
+	}
+	if len(prefix) != len(prefixPrev) {
+		t.Error("prefix matches should not have changed")
+	}
+	if len(wildcard) != len(wildcardPrev)+1 {
+		t.Error("expected additional wildcard match")
+	}
+
+	var found bool
+	for i := range exact {
+		if exact[i] == subscriptionID {
+			found = true
+			break
+		}
+	}
+	if !found {
+		t.Error("missing expected subscription ID")
+	}
+
+	// ----- Test wamp.subscription.lookup meta procedure -----
+	callID = wamp.GlobalID()
+	caller.Send(&wamp.Call{
+		Request:   callID,
+		Procedure: wamp.MetaProcSubLookup,
+		Arguments: wamp.List{testTopic},
+	})
+	msg, err = wamp.RecvTimeout(caller, time.Second)
+	if err != nil {
+		t.Fatal("Timed out waiting for RESULT")
+	}
+	result, ok = msg.(*wamp.Result)
+	if !ok {
+		t.Fatal("expected RESULT, got", msg.MessageType())
+	}
+	if result.Request != callID {
+		t.Fatal("wrong result ID")
+	}
+	if len(result.Arguments) == 0 {
+		t.Fatal("missing expected arguemnt")
+	}
+	subID, ok := result.Arguments[0].(wamp.ID)
+	if !ok {
+		t.Fatal("expected wamp.ID")
+	}
+	if subID != subscriptionID {
+		t.Fatal("received wrong subscription ID")
+	}
+
+	// ----- Test wamp.subscription.match meta procedure -----
+	callID = wamp.GlobalID()
+	caller.Send(&wamp.Call{
+		Request:   callID,
+		Procedure: wamp.MetaProcSubMatch,
+		Arguments: wamp.List{testTopic},
+	})
+	msg, err = wamp.RecvTimeout(caller, time.Second)
+	if err != nil {
+		t.Fatal("Timed out waiting for RESULT")
+	}
+	result, ok = msg.(*wamp.Result)
+	if !ok {
+		t.Fatal("expected RESULT, got", msg.MessageType())
+	}
+	if result.Request != callID {
+		t.Fatal("wrong result ID")
+	}
+	if len(result.Arguments) == 0 {
+		t.Fatal("missing expected arguemnt")
+	}
+	subIDs, ok := wamp.AsList(result.Arguments[0])
+	if !ok {
+		t.Fatal("expected wamp.List")
+	}
+	if len(subIDs) != 2 {
+		t.Error("expected 2 subscriptions for wamp.subscription.match, got", len(subIDs))
+	}
+
+	// ----- Test wamp.subscription.get meta procedure -----
+	callID = wamp.GlobalID()
+	caller.Send(&wamp.Call{
+		Request:   callID,
+		Procedure: wamp.MetaProcSubGet,
+		Arguments: wamp.List{subscriptionID},
+	})
+	msg, err = wamp.RecvTimeout(caller, time.Second)
+	if err != nil {
+		t.Fatal("Timed out waiting for RESULT")
+	}
+	result, ok = msg.(*wamp.Result)
+	if !ok {
+		t.Fatalf("expected RESULT, got %s %+v", msg.MessageType(), msg)
+	}
+	if result.Request != callID {
+		t.Fatal("wrong result ID")
+	}
+	if len(result.Arguments) == 0 {
+		t.Fatal("missing expected arguemnt")
+	}
+	dict, ok = result.Arguments[0].(wamp.Dict)
+	if !ok {
+		t.Fatal("expected wamp.Dict")
+	}
+	subID, _ = wamp.AsID(dict["id"])
+	if subID != subscriptionID {
+		t.Fatal("received wrong subscription")
+	}
+	uri, _ := wamp.AsURI(dict["uri"])
+	if uri != testTopic {
+		t.Fatal("subscription has wrong uri:", uri)
+	}
+
+	// ----- Test wamp.subscription.list_subscribers meta procedure -----
+	callID = wamp.GlobalID()
+	caller.Send(&wamp.Call{
+		Request:   callID,
+		Procedure: wamp.MetaProcSubListSubscribers,
+		Arguments: wamp.List{subscriptionID},
+	})
+	msg, err = wamp.RecvTimeout(caller, time.Second)
+	if err != nil {
+		t.Fatal("Timed out waiting for RESULT")
+	}
+	result, ok = msg.(*wamp.Result)
+	if !ok {
+		t.Fatal("expected RESULT, got", msg.MessageType())
+	}
+	if result.Request != callID {
+		t.Fatal("wrong result ID")
+	}
+	if len(result.Arguments) == 0 {
+		t.Fatal("missing expected arguemnt")
+	}
+	idList, ok := result.Arguments[0].([]wamp.ID)
+	if !ok {
+		t.Fatal("Expected []wamp.ID")
+	}
+	if len(idList) != 1 {
+		t.Fatal("Expected 1 subscriber in list")
+	}
+	if idList[0] != sessID {
+		t.Fatal("Wrong subscriber session ID")
+	}
+
+	// ----- Test wamp.subscription.count_subscribers meta procedure -----
+	callID = wamp.GlobalID()
+	caller.Send(&wamp.Call{
+		Request:   callID,
+		Procedure: wamp.MetaProcSubCountSubscribers,
+		Arguments: wamp.List{subscriptionID},
+	})
+	msg, err = wamp.RecvTimeout(caller, time.Second)
+	if err != nil {
+		t.Fatal("Timed out waiting for RESULT")
+	}
+	result, ok = msg.(*wamp.Result)
+	if !ok {
+		t.Fatal("expected RESULT, got", msg.MessageType())
+	}
+	if result.Request != callID {
+		t.Fatal("wrong result ID")
+	}
+	if len(result.Arguments) == 0 {
+		t.Fatal("missing expected arguemnt")
+	}
+	count, ok := wamp.AsInt64(result.Arguments[0])
+	if !ok {
+		t.Fatal("Argument is not an int")
+	}
+	if count != 1 {
+		t.Fatal("Wring number of subscribers")
 	}
 }
 

@@ -108,20 +108,9 @@ func TestMetaEventOnLeave(t *testing.T) {
 		t.Fatal("Failed to connect client:", err)
 	}
 
-	var onLeaveID wamp.ID
-	errChan := make(chan error)
+	argsChan := make(chan wamp.List)
 	evtHandler := func(args wamp.List, kwargs wamp.Dict, details wamp.Dict) {
-		if len(args) == 0 {
-			errChan <- errors.New("missing argument")
-			return
-		}
-		var ok bool
-		onLeaveID, ok = wamp.AsID(args[0])
-		if !ok {
-			errChan <- errors.New("argument was not wamp.ID")
-			return
-		}
-		errChan <- nil
+		argsChan <- args
 	}
 
 	// Subscribe to event.
@@ -140,8 +129,7 @@ func TestMetaEventOnLeave(t *testing.T) {
 	var timeout bool
 	for !timeout {
 		select {
-		case err = <-errChan:
-			onLeaveID = wamp.ID(0)
+		case <-argsChan:
 		case <-time.After(200 * time.Millisecond):
 			timeout = true
 		}
@@ -154,18 +142,29 @@ func TestMetaEventOnLeave(t *testing.T) {
 	}
 
 	// Make sure the event was received.
+	var eventArgs wamp.List
 	select {
-	case err = <-errChan:
-		if err != nil {
-			t.Fatal("Event error:", err)
-		}
+	case eventArgs = <-argsChan:
 	case <-time.After(200 * time.Millisecond):
 		t.Fatal("did not get published event")
 	}
 
+	// Check that all expected arguments are returned in on_leave event.
+	if len(eventArgs) < 3 {
+		t.Fatal("expected 3 event args, got:", len(eventArgs))
+	}
+	onLeaveID, _ := wamp.AsID(eventArgs[0])
 	if onLeaveID != sess.ID() {
-		t.Fatal(metaOnLeave, "meta even had wrong session ID, got", onLeaveID,
+		t.Fatal(metaOnLeave, "meta event had wrong session ID, got", onLeaveID,
 			"want", sess.ID())
+	}
+	authid, _ := wamp.AsString(eventArgs[1])
+	if len(authid) == 0 {
+		t.Error("expected non-empty authid")
+	}
+	authrole, _ := wamp.AsString(eventArgs[2])
+	if authrole != "trusted" && authrole != "anonymous" {
+		t.Error("expected authrole of trusted or anonymous, got:", authrole)
 	}
 
 	err = subscriber.Close()
