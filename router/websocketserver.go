@@ -101,8 +101,9 @@ type WebsocketServer struct {
 // server.
 //
 // Optional websocket server configuration can be set, after creating the
-// server instance, by setting WebsocketServer.Upgrader and WebsocketServer
-// members directly.
+// server instance, by setting WebsocketServer.Upgrader and other
+// WebsocketServer members directly.  Use then WebsocketServer.AllowOrigins()
+// function to specify what origins to allow for CORS support.
 //
 // To run the websocket server, call one of the server's
 // ListenAndServe methods:
@@ -140,7 +141,8 @@ func NewWebsocketServer(r Router) *WebsocketServer {
 // glob patterns.  If the origin in the websocket upgrade request is not set,
 // is equal to the request host, or matches one of the allowed patterns, then
 // the websocket connection is allowed.  A pattern is in the form of a shell
-// glob as described here: https://golang.org/pkg/path/filepath/#Match
+// glob as described here: https://golang.org/pkg/path/filepath/#Match  Glob
+// matching is case-insensitive.
 //
 // For example:
 //   s := NewWebsocketServer(r)
