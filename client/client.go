@@ -211,6 +211,10 @@ func (c *Client) Done() <-chan struct{} { return c.done }
 // router and joining a realm.
 func (c *Client) ID() wamp.ID { return c.sess.ID }
 
+// Logger returns the clients logger that was provided by Config when the
+// client was created, or the stdout logger if one was not provided in Config.
+func (c *Client) Logger() stdlog.StdLog { return c.log }
+
 // AuthFunc takes the CHALLENGE message and returns the signature string and
 // any WELCOME message details.  If the signature is accepted, the details are
 // used to populate the welcome message, as well as the session attributes.
