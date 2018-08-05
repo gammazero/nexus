@@ -9,7 +9,7 @@ import (
 	"github.com/gammazero/nexus/wamp"
 )
 
-func ExampleClient_ConnectLocal() {
+func Example_ConnectLocal() {
 	// Create router that local client attaches to.
 	routerConfig := &router.Config{
 		RealmConfigs: []*router.RealmConfig{
@@ -32,7 +32,7 @@ func ExampleClient_ConnectLocal() {
 	defer c.Close()
 }
 
-func ExampleClient_ConnectNet() {
+func Example_ConnectNet() {
 	// Configure and connect client.
 	c, err := ConnectNet("unix:///tmp/app.sock", Config{Realm: "nexus.realm1"})
 	if err != nil {
