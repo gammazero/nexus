@@ -86,8 +86,8 @@ type WebsocketServer struct {
 	EnableTrackingCookie bool
 	// EnableRequestCapture tells the server to include the upgrade HTTP
 	// request in the HELLO and session details.  It is stored in
-	// Details.transport.auth.request|*http.Request and is available to
-	// auth/authz logic.
+	// Details.transport.auth.request|*http.Request making it available to
+	// authenticator and authorizer logic.
 	EnableRequestCapture bool
 
 	// KeepAlive configures a websocket "ping/pong" heartbeat when set to a
