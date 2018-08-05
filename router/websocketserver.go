@@ -137,12 +137,15 @@ func NewWebsocketServer(r Router) *WebsocketServer {
 	return s
 }
 
-// AllowOrigins configures the server to allow origins that match the specified
-// glob patterns.  If the origin in the websocket upgrade request is not set,
-// is equal to the request host, or matches one of the allowed patterns, then
-// the websocket connection is allowed.  A pattern is in the form of a shell
-// glob as described here: https://golang.org/pkg/path/filepath/#Match  Glob
-// matching is case-insensitive.
+// AllowOrigins configures the server to allow connections when the Origin host
+// matches a specified glob pattern.
+//
+// If the origin request header in the websocket upgrade request is present,
+// then the connection is allowed if the Origin host is equal to the Host
+// request header or Origin matches one of the allowed patterns.  A pattern is
+// in the form of a shell glob as described here:
+// https://golang.org/pkg/path/filepath/#Match Glob matching is
+// case-insensitive.
 //
 // For example:
 //   s := NewWebsocketServer(r)
