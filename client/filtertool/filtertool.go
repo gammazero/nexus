@@ -1,3 +1,19 @@
+/*
+Package filtertool is a utility to do client-side session filtering.
+
+A FilterTool instance monitors session sessions joining and leaving a realm.
+Filters are added to the monitor to maintain a whitelist, associated with each
+filter, of allowed sessions, as determine by a function provided when adding
+the filter.  Filters are named, and the name is used to retrieve the most
+current whitelist for a filter.  The whitelist for a filter can be retrieved at
+any time, and is suitable for use as a whitelist when publishing a message.
+
+A filter function may have whatever functionality is necessary for the client
+to determine whether or not each session is allowed.  This means complex
+filtering can be implemented without affecting the performance of the router
+since the work is done by the clients that care to do filtering.
+
+*/
 package filtertool
 
 import (
@@ -9,7 +25,8 @@ import (
 	"github.com/gammazero/nexus/wamp"
 )
 
-// FilterFunc is a function that is called, when a client joins the realm of the monitor client.
+// FilterFunc is a function that is called, when a client joins the realm of
+// the monitor client.
 type FilterFunc func(sessDetails wamp.Dict) (allowed bool)
 
 type filter struct {
@@ -44,7 +61,7 @@ const (
 // FilterTool only cares about session details, not about topics that each
 // session is subscribed to.  This allows the whitelist to be computed when a
 // client joins the realm, instead of when it subscribes or unsubscribes.  The
-// reduces whitelist recomputation and helps ensure that sessions do not miss
+// reduces whitelist re-computation and helps ensure that sessions do not miss
 // events they were published close to the time a client subscribed.
 //
 // The monitor session is not treated as special, and may be included in
@@ -98,7 +115,7 @@ func (f *FilterTool) RemoveFilter(filterName string) {
 	<-sync
 }
 
-// Whitelist returns the list of IDs of allowed session.  This list is sutiable
+// Whitelist returns the list of IDs of allowed session.  This list is suitable
 // for use as the whitelist supplied when publishing an event.  A boolean is
 // also returned to indicate is the named filter exists.
 //
@@ -185,7 +202,7 @@ func (f *FilterTool) addSession(details wamp.Dict) {
 	}
 	for i := range f.filters {
 		fltr := f.filters[i]
-		// Check if session alrady allowed.
+		// Check if session already allowed.
 		if _, ok = fltr.whiteset[sid]; ok {
 			continue
 		}
