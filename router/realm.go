@@ -642,7 +642,7 @@ func (r *realm) authClient(sid wamp.ID, client wamp.Peer, details wamp.Dict) (*w
 
 	// The default authentication method is "WAMP-Anonymous" if client does not
 	// specify otherwise.
-	if _, ok := details["authmethods"]; !ok {
+	if am, _ := wamp.AsList(details["authmethods"]); len(am) == 0 {
 		if details == nil {
 			details = wamp.Dict{}
 		}
