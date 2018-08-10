@@ -642,24 +642,22 @@ func (r *realm) authClient(sid wamp.ID, client wamp.Peer, details wamp.Dict) (*w
 
 	// The default authentication method is "WAMP-Anonymous" if client does not
 	// specify otherwise.
-	if am, _ := wamp.AsList(details["authmethods"]); len(am) == 0 {
-		if details == nil {
-			details = wamp.Dict{}
-		}
-		details["authmethods"] = []string{"anonymous"}
+	_authmethods, _ := wamp.AsList(details["authmethods"])
+	if len(_authmethods) == 0 {
+		_authmethods = append(_authmethods, "anonymous")
 	}
 
 	var authmethods []string
-	if _authmethods, ok := details["authmethods"]; ok {
-		amList, _ := wamp.AsList(_authmethods)
-		for _, x := range amList {
-			am, ok := wamp.AsString(x)
-			if !ok {
-				r.log.Println("!! Could not convert authmethod:", x)
-				continue
-			}
-			authmethods = append(authmethods, am)
+	for _, val := range _authmethods {
+		am, ok := wamp.AsString(val)
+		if !ok {
+			r.log.Println("!! Could not convert authmethod:", val)
+			continue
 		}
+		if am == "" {
+			continue
+		}
+		authmethods = append(authmethods, am)
 	}
 	if len(authmethods) == 0 {
 		return nil, errors.New("no authentication supplied")
