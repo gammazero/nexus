@@ -5,8 +5,9 @@ To install the nodejs dependencies, start with:
 
 1. `yarn install`
 
-Then, to run the example
+Then, to run the example (from **this** folder)
 
-1. Run the server & callee with `go run callee.go`
+1. Run the server and callee with `go run ../../rpc/server_embedded_callee/`
+
 2. Run the caller with `npm start`
 
