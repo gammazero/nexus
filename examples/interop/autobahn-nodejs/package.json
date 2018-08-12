@@ -1,0 +1,19 @@
+{
+  "name": "wampy-nodejs",
+  "version": "1.0.0",
+  "license": "MIT",
+  "scripts": {
+    "start": "npm run build:live",
+    "build:live": "nodemon --exec ./node_modules/.bin/ts-node -- caller.ts",
+    "test": "jest"
+  },
+  "devDependencies": {
+    "@types/node": "^10.1.4",
+    "nodemon": "^1.17.5",
+    "ts-node": "^6.0.5",
+    "typescript": "^2.8.4"
+  },
+  "dependencies": {
+    "autobahn": "^18.3.2"
+  }
+}
