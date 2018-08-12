@@ -50,6 +50,12 @@ func main() {
 	}
 	logger.Println("Registered procedure", procName, "with router")
 
+	procName = "div"
+	if err = callee.Register(procName, div, nil); err != nil {
+		logger.Fatal("Failed to register procedure:", err)
+	}
+	logger.Println("Registered procedure", procName, "with router")
+
 	// Create and run websocket server.
 	closer, err := router.NewWebsocketServer(nxr).ListenAndServe(wsAddr)
 	if err != nil {
@@ -65,7 +71,7 @@ func main() {
 }
 
 func sum(ctx context.Context, args wamp.List, kwargs, details wamp.Dict) *client.InvokeResult {
-	fmt.Print("Calculating sum")
+	fmt.Println("Calculating sum")
 	var sum int64
 	for i := range args {
 		n, ok := wamp.AsInt64(args[i])
@@ -74,4 +80,21 @@ func sum(ctx context.Context, args wamp.List, kwargs, details wamp.Dict) *client
 		}
 	}
 	return &client.InvokeResult{Args: wamp.List{sum}}
+}
+
+func div(ctx context.Context, args wamp.List, kwargs, details wamp.Dict) *client.InvokeResult {
+	fmt.Println("Calculating div")
+	if len(args)!=2 {
+		return &client.InvokeResult{Err:"Not enough arguments"}
+	}
+	a, ok1 := wamp.AsInt64(args[0])
+	b, ok2 := wamp.AsInt64(args[1])
+	if ok1 && ok2 {
+		if b== 0 {
+			return &client.InvokeResult{Err:"Can not divide by 0"}
+		}
+		return &client.InvokeResult{Args: wamp.List{float64(a)/float64(b)}}
+	}
+	panic("")
+	return &client.InvokeResult{Err:"Invalid argument type"}
 }
