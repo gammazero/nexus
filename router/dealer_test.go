@@ -991,6 +991,14 @@ func TestPatternBasedRegistration(t *testing.T) {
 	if !ok {
 		t.Fatal("expected INVOCATION, got:", rsp.MessageType())
 	}
+	details, ok := wamp.AsDict(inv.Details)
+	if !ok {
+		t.Fatal("INVOCATION missing details")
+	}
+	proc, _ := wamp.AsURI(details[wamp.OptProcedure])
+	if proc != testProcedure {
+		t.Error("INVOCATION has missing or incorrect procedure detail")
+	}
 
 	// Callee responds with a YIELD message
 	dealer.Yield(calleeSess, &wamp.Yield{Request: inv.Request})

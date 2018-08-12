@@ -9,6 +9,9 @@ import (
 	"io"
 	"net"
 	"net/http"
+	"net/url"
+	"path/filepath"
+	"strings"
 	"time"
 
 	"github.com/gammazero/nexus/stdlog"
@@ -30,6 +33,15 @@ type protocol struct {
 }
 
 // WebsocketServer handles websocket connections.
+//
+// Origin Considerations
+//
+// Web browsers allow Javascript applications to open a WebSocket connection to
+// any host.  It is up to the server to enforce an origin policy using the
+// Origin request header sent by the browser.  To specify origins allowed by
+// the server, call AllowOrigins() to allow origins matching glob patterns, or
+// assign a custom function to the server's Upgrader.CheckOrigin.  See
+// AllowOrigins() for details.
 type WebsocketServer struct {
 	// Upgrader specifies parameters for upgrading an HTTP connection to a
 	// websocket connection.  See:
@@ -74,8 +86,8 @@ type WebsocketServer struct {
 	EnableTrackingCookie bool
 	// EnableRequestCapture tells the server to include the upgrade HTTP
 	// request in the HELLO and session details.  It is stored in
-	// Details.transport.auth.request|*http.Request and is available to
-	// auth/authz logic.
+	// Details.transport.auth.request|*http.Request making it available to
+	// authenticator and authorizer logic.
 	EnableRequestCapture bool
 
 	// KeepAlive configures a websocket "ping/pong" heartbeat when set to a
@@ -89,8 +101,9 @@ type WebsocketServer struct {
 // server.
 //
 // Optional websocket server configuration can be set, after creating the
-// server instance, by setting WebsocketServer.Upgrader and WebsocketServer
-// members directly.
+// server instance, by setting WebsocketServer.Upgrader and other
+// WebsocketServer members directly.  Use then WebsocketServer.AllowOrigins()
+// function to specify what origins to allow for CORS support.
 //
 // To run the websocket server, call one of the server's
 // ListenAndServe methods:
@@ -122,6 +135,88 @@ func NewWebsocketServer(r Router) *WebsocketServer {
 		&serialize.CBORSerializer{})
 
 	return s
+}
+
+// AllowOrigins configures the server to allow connections when the Origin host
+// matches a specified glob pattern.
+//
+// If the origin request header in the websocket upgrade request is present,
+// then the connection is allowed if the Origin host is equal to the Host
+// request header or Origin matches one of the allowed patterns.  A pattern is
+// in the form of a shell glob as described here:
+// https://golang.org/pkg/path/filepath/#Match Glob matching is
+// case-insensitive.
+//
+// For example:
+//   s := NewWebsocketServer(r)
+//   s.AllowOrigins([]string{"*.domain.com", "*.domain.net"})
+//
+// To allow all origins, specify a wildcard only:
+//   s.AllowOrigins([]string{"*"})
+//
+// Origins with Ports
+//
+// To allow origins that have a port number, specify the port as part of the
+// origin pattern, or use a wildcard to match the ports.
+//
+// Allow a specific port, by specifying the expected port number:
+//   s.AllowOrigins([]string{"*.somewhere.com:8080"})
+//
+// Allow individual ports, by specifying each port:
+//  err := s.AllowOrigins([]string{
+//      "*.somewhere.com:8080",
+//      "*.somewhere.com:8905",
+//      "*.somewhere.com:8908",
+//  })
+//
+// Allow any port, by specifying a wildcard. Be sure to include the colon ":"
+// so that the pattern does not match a longer origin.  Without the ":" this
+// example would also match "x.somewhere.comics.net"
+//   err := s.AllowOrigins([]string{"*.somewhere.com:*"})
+//
+// Custom Origin Checks
+//
+// Alternatively, a custom function my be configured to supplied any origin
+// checking logic your application needs.  The WebsocketServer calls the
+// function specified in the WebsocketServer.Upgrader.CheckOrigin field to
+// check the origin.  If the CheckOrigin function returns false, then the
+// WebSocket handshake fails with HTTP status 403.  To supply a CheckOrigin
+// function:
+//
+//     s := NewWebsocketServer(r)
+//     s.Upgrader.CheckOrigin = func(r *http.Request) bool { ... }
+//
+// Default Behavior
+//
+// If AllowOrigins() is not called, and Upgrader.CheckOrigin is nil, then a
+// safe default is used: fail the handshake if the Origin request header is
+// present and the Origin host is not equal to the Host request header.
+func (s *WebsocketServer) AllowOrigins(origins []string) error {
+	if len(origins) == 0 {
+		return nil
+	}
+	var exacts, globs []string
+	for _, o := range origins {
+		// If allowing any origins, then return simple "true" function.
+		if o == "*" {
+			s.Upgrader.CheckOrigin = func(r *http.Request) bool { return true }
+			return nil
+		}
+
+		// Do exact matching whenever possible, since it is more efficient.
+		if strings.ContainsAny(o, "*?[]^") {
+			if _, err := filepath.Match(o, o); err != nil {
+				return fmt.Errorf("error allowing origin, %s: %s", err, o)
+			}
+			globs = append(globs, strings.ToLower(o))
+		} else {
+			exacts = append(exacts, o)
+		}
+	}
+	s.Upgrader.CheckOrigin = func(r *http.Request) bool {
+		return checkOrigin(exacts, globs, r)
+	}
+	return nil
 }
 
 // Deprecated: Set WebsocketServer.Upgrader and WebsockServer.Xxx members
@@ -225,8 +320,8 @@ func (s *WebsocketServer) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 
-	// If request capture is enabled, then the HTTP upgrade http.Request in the
-	// HELLO and session details as transport.auth details.request.
+	// If request capture is enabled, then save the HTTP upgrade http.Request
+	// in the HELLO and session details as transport.auth details.request.
 	if s.EnableRequestCapture {
 		if authDict == nil {
 			authDict = wamp.Dict{}
@@ -289,4 +384,36 @@ func (s *WebsocketServer) handleWebsocket(conn *websocket.Conn, transportDetails
 	if err := s.router.AttachClient(peer, transportDetails); err != nil {
 		s.log.Println("Error attaching to router:", err)
 	}
+}
+
+// checkOrigin returns true if the origin is not set, is equal to the request
+// host, or matches one of the allowed patterns.  This function is assigned to
+// the server's Upgrader.CheckOrigin when AllowOrigins() is called.
+func checkOrigin(exacts, globs []string, r *http.Request) bool {
+	origin := r.Header["Origin"]
+	if len(origin) == 0 {
+		return true
+	}
+	u, err := url.Parse(origin[0])
+	if err != nil {
+		return false
+	}
+	if strings.EqualFold(u.Host, r.Host) {
+		return true
+	}
+
+	for i := range exacts {
+		if strings.EqualFold(u.Host, exacts[i]) {
+			return true
+		}
+	}
+	if len(globs) != 0 {
+		host := strings.ToLower(u.Host)
+		for i := range globs {
+			if ok, _ := filepath.Match(globs[i], host); ok {
+				return true
+			}
+		}
+	}
+	return false
 }
