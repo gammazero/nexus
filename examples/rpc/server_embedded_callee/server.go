@@ -95,6 +95,6 @@ func div(ctx context.Context, args wamp.List, kwargs, details wamp.Dict) *client
 		}
 		return &client.InvokeResult{Args: wamp.List{float64(a)/float64(b)}}
 	}
-	panic("")
+
 	return &client.InvokeResult{Err:"Invalid argument type"}
 }
