@@ -112,9 +112,10 @@ var clientRoles = wamp.Dict{
 	},
 	"caller": wamp.Dict{
 		"features": wamp.Dict{
-			"call_canceling":        true,
-			"call_timeout":          true,
-			"caller_identification": true,
+			"call_canceling":           true,
+			"call_timeout":             true,
+			"caller_identification":    true,
+			"progressive_call_results": true,
 		},
 	},
 }
