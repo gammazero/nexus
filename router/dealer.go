@@ -715,7 +715,11 @@ func (d *Dealer) cancel(caller *session, msg *wamp.Cancel) {
 
 	// Cancel mode should be one of: "skip", "kill", "killnowait"
 	mode, _ := wamp.AsString(msg.Options[wamp.OptMode])
-	if mode == wamp.CancelModeKillNoWait || mode == wamp.CancelModeKill {
+	if mode == "" {
+		mode = wamp.CancelModeKill
+	}
+	switch mode {
+	case wamp.CancelModeKillNoWait, wamp.CancelModeKill:
 		// Check that callee supports call canceling to see if it is alright to
 		// send INTERRUPT to callee.
 		if !invk.callee.HasFeature(roleCallee, featureCallCanceling) {
@@ -738,7 +742,8 @@ func (d *Dealer) cancel(caller *session, msg *wamp.Cancel) {
 				}
 			}
 		}
-	} else if mode != wamp.CancelModeSkip {
+	case wamp.CancelModeSkip:
+	default:
 		d.log.Printf("!! Unrecognized cancel mode '%s', changing to 'skip'",
 			mode)
 	}

@@ -1279,22 +1279,6 @@ func (c *Client) runHandleInvocation(msg *wamp.Invocation) {
 		}
 
 		if result.Err != "" {
-			// If the cancel is already deleted, this is the signal that
-			// kill mode was "killnowait", in which case do not send a
-			// response to the router.
-			sync := make(chan struct{})
-			var ok bool
-			c.actionChan <- func() {
-				_, ok = c.invHandlerKill[msg.Request]
-				close(sync)
-			}
-			<-sync
-			if !ok {
-				// Invocation cancel already gone.  This means router is not
-				// expecting response (cancel with mode="killnowait").
-				return
-			}
-
 			c.sess.Send(&wamp.Error{
 				Type:        wamp.INVOCATION,
 				Request:     msg.Request,
@@ -1321,13 +1305,6 @@ func (c *Client) runHandleInterrupt(msg *wamp.Interrupt) {
 	if !ok {
 		c.log.Print("Received INTERRUPT for invocation that no longer exists")
 		return
-	}
-	// If the interrupt mode is "killnowait", then the router is not
-	// waiting for a response, so do not send one.  This is indicated by
-	// deleting the cancel for the invocation early.
-	mode, _ := wamp.AsString(msg.Options[wamp.OptMode])
-	if mode == wamp.CancelModeKillNoWait {
-		delete(c.invHandlerKill, msg.Request)
 	}
 	cancel()
 }
