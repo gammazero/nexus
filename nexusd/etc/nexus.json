@@ -3,6 +3,7 @@
         "address": ":8080",
         "cert_file": "",
         "key_file": "",
+        "keep_alive": 30,
         "enable_compression": false,
         "allow_origins": ["*"]
     },

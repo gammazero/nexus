@@ -5,7 +5,7 @@ SERVICE_DIR = nexusd
 all: vet test service
 
 vet:
-	go vet -all -composites=false -shadow=true ./...
+	go vet -v -all -composites=false -shadow=true ./...
 
 test:
 	go get github.com/fortytw2/leaktest
