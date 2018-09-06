@@ -231,7 +231,11 @@ func TestMetaProcSessionCount(t *testing.T) {
 		t.Fatal("Failed to connect client:", err)
 	}
 	// Wait for router to register new session.
-	<-sync
+	select {
+	case <-sync:
+	case <-time.After(5 * time.Second):
+		t.Fatal("Timed out waiting for router to register new session")
+	}
 
 	// Call meta procedure to get session count.
 	result, err = caller.Call(ctx, metaCount, nil, nil, nil, "")
@@ -251,7 +255,11 @@ func TestMetaProcSessionCount(t *testing.T) {
 		t.Fatal("Failed to disconnect client:", err)
 	}
 	// Wait for router to register client leaving.
-	<-sync
+	select {
+	case <-sync:
+	case <-time.After(5 * time.Second):
+		t.Fatal("Timed out waiting for router to register client leaving")
+	}
 
 	// Call meta procedure to get session count.
 	result, err = caller.Call(ctx, metaCount, nil, nil, nil, "")

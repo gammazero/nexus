@@ -1264,7 +1264,7 @@ func (c *Client) runHandleInvocation(msg *wamp.Invocation) {
 			// canceled the call.
 			if result == nil {
 				result = &InvokeResult{Err: wamp.ErrCanceled}
-				c.log.Println("INVOCATION", msg.Request, "canceled")
+				c.log.Println("INVOCATION", msg.Request, "canceled by handler")
 			}
 		case <-c.stopping:
 			c.log.Print("Client stopping, invocation handler canceled")
@@ -1275,7 +1275,7 @@ func (c *Client) runHandleInvocation(msg *wamp.Invocation) {
 			// Received an INTERRUPT message from the router.
 			// Note: handler is also just as likely to return on INTERRUPT.
 			result = &InvokeResult{Err: wamp.ErrCanceled}
-			c.log.Println("INVOCATION", msg.Request, "canceled")
+			c.log.Println("INVOCATION", msg.Request, "canceled by router")
 		}
 
 		if result.Err != "" {
