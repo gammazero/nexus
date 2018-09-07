@@ -9,7 +9,7 @@ go:
 before_script:
   - go get github.com/fortytw2/leaktest
   - go get github.com/davecgh/go-spew/spew
-  - go tool vet -v -all -composites=false -shadow=true aat client transport examples nexusd transport wamp router
+  - go vet -v -all -composites=false -shadow=true ./...
 
 script:
   - go build ./examples/...
