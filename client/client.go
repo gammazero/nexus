@@ -1264,7 +1264,7 @@ func (c *Client) runHandleInvocation(msg *wamp.Invocation) {
 			// canceled the call.
 			if result == nil {
 				result = &InvokeResult{Err: wamp.ErrCanceled}
-				c.log.Println("INVOCATION", msg.Request, "canceled by handler")
+				c.log.Println("INVOCATION", msg.Request, "canceled by callee")
 			}
 		case <-c.stopping:
 			c.log.Print("Client stopping, invocation handler canceled")
@@ -1275,7 +1275,13 @@ func (c *Client) runHandleInvocation(msg *wamp.Invocation) {
 			// Received an INTERRUPT message from the router.
 			// Note: handler is also just as likely to return on INTERRUPT.
 			result = &InvokeResult{Err: wamp.ErrCanceled}
-			c.log.Println("INVOCATION", msg.Request, "canceled by router")
+			var reason string
+			if ctx.Err() == context.DeadlineExceeded {
+				reason = "callee due to timeout"
+			} else {
+				reason = "router"
+			}
+			c.log.Println("INVOCATION", msg.Request, "canceled by", reason)
 		}
 
 		if result.Err != "" {
@@ -1301,10 +1307,16 @@ func (c *Client) runHandleInvocation(msg *wamp.Invocation) {
 // runHandleInterrupt processes an INTERRUPT message from the router,
 // requesting that a pending call be canceled.
 func (c *Client) runHandleInterrupt(msg *wamp.Interrupt) {
+	logMsg := "Received INTERRUPT for INVOCATION"
 	cancel, ok := c.invHandlerKill[msg.Request]
 	if !ok {
-		c.log.Print("Received INTERRUPT for invocation that no longer exists")
+		c.log.Println(logMsg, msg.Request, "that no longer exists")
 		return
+	}
+	if reason, ok := wamp.AsURI(msg.Options[wamp.OptReason]); ok {
+		c.log.Println(logMsg, msg.Request, "reason:", reason)
+	} else {
+		c.log.Println(logMsg, msg.Request)
 	}
 	cancel()
 }
