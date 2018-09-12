@@ -17,9 +17,10 @@ type Config struct {
 		// Files containing a certificate and matching private key.
 		CertFile string `json:"cert_file"`
 		KeyFile  string `json:"key_file"`
+		// Heartbeat ("pings") interval in seconds.  Set to 0 to disable.
+		KeepAlive time.Duration `json:"keep_alive"`
 		// Enable per message write compression.
-		EnableCompression    bool `json:"enable_compression"`
-		AllowContextTakeover bool `json:"allow_context_takeover"`
+		EnableCompression bool `json:"enable_compression"`
 		// Enable sending cookie to identify client in later connections.
 		EnableTrackingCookie bool `json:"enable_tracking_cookie"`
 		// Enable reading HTTP header from client requests.
@@ -63,6 +64,9 @@ func LoadConfig(path string) *Config {
 		log.Fatal("Config Parse Error: ", err)
 	}
 
+	if config.WebSocket.KeepAlive != 0 {
+		config.WebSocket.KeepAlive *= time.Second
+	}
 	if config.RawSocket.TCPKeepAliveInterval != 0 {
 		config.RawSocket.TCPKeepAliveInterval *= time.Second
 	}

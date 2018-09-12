@@ -18,8 +18,7 @@ import (
 // WebsocketConfig is used to provide configuration client websocket settings.
 type WebsocketConfig struct {
 	// Request per message write compression, if allowed by server.
-	EnableCompression     bool `json:"enable_compression"`
-	EnableContextTakeover bool `json:"enable_context_takeover"`
+	EnableCompression bool `json:"enable_compression"`
 
 	// If provided when configuring websocket client, cookies from server are
 	// put in here.  This allows cookies to be stored and then sent back to the
@@ -101,8 +100,6 @@ func ConnectWebsocketPeer(url string, serialization serialize.Serialization, tls
 	if wsCfg != nil {
 		dialer.Jar = wsCfg.Jar
 		dialer.EnableCompression = true
-		// Uncomment after https://github.com/gorilla/websocket/pull/342
-		//dialer.AllowClientContextTakeover = wsCfg.EnableContextTakeover
 	}
 
 	conn, _, err := dialer.Dial(url, nil)

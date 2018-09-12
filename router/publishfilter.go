@@ -90,9 +90,10 @@ func newPublishFilter(msg *wamp.Publish) *publishFilter {
 // values that appear in a blacklist, and must have a value from each
 // whitelist.
 func (f *publishFilter) publishAllowed(sub *session) bool {
+	subID := sub.ID
 	// Check each blacklisted ID to see if session ID is blacklisted.
 	for i := range f.blIDs {
-		if f.blIDs[i] == sub.ID {
+		if f.blIDs[i] == subID {
 			return false
 		}
 	}
@@ -101,7 +102,7 @@ func (f *publishFilter) publishAllowed(sub *session) bool {
 	// If session ID whitelist given, make sure session ID is in whitelist.
 	if len(f.wlIDs) != 0 {
 		for i := range f.wlIDs {
-			if f.wlIDs[i] == sub.ID {
+			if f.wlIDs[i] == subID {
 				eligible = true
 				break
 			}
@@ -117,9 +118,10 @@ func (f *publishFilter) publishAllowed(sub *session) bool {
 	}
 
 	// Check blacklists to see if session has a value in any blacklist.
+	details := sub.Session.Details
 	for attr, vals := range f.blMap {
 		// Get the session attribute value to compare with blacklist.
-		sessAttr, _ := wamp.AsString(sub.Details[attr])
+		sessAttr, _ := wamp.AsString(details[attr])
 		if sessAttr == "" {
 			continue
 		}
@@ -135,7 +137,7 @@ func (f *publishFilter) publishAllowed(sub *session) bool {
 	// Check whitelists to make sure session has value in each whitelist.
 	for attr, vals := range f.wlMap {
 		// Get the session attribute value to compare with whitelist.
-		sessAttr, _ := wamp.AsString(sub.Details[attr])
+		sessAttr, _ := wamp.AsString(details[attr])
 		if sessAttr == "" {
 			// Session does not have whitelisted value, so deny.
 			return false

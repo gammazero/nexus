@@ -62,7 +62,6 @@ func main() {
 		wss := router.NewWebsocketServer(r)
 		if conf.WebSocket.EnableCompression {
 			wss.Upgrader.EnableCompression = true
-			//wss.Upgrader.AllowServerContextTakeover = conf.WebSocket.AllowContextTakeover
 			logger.Printf("Compression enabled")
 		}
 		if conf.WebSocket.EnableTrackingCookie {
@@ -72,6 +71,10 @@ func main() {
 		if conf.WebSocket.EnableRequestCapture {
 			wss.EnableRequestCapture = true
 			logger.Printf("Request capture enabled - not currently used")
+		}
+		if conf.WebSocket.KeepAlive != 0 {
+			wss.KeepAlive = conf.WebSocket.KeepAlive
+			logger.Printf("Websocket heartbeat interval: %s", wss.KeepAlive)
 		}
 		if len(conf.WebSocket.AllowOrigins) != 0 {
 			e := wss.AllowOrigins(conf.WebSocket.AllowOrigins)

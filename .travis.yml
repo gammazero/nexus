@@ -3,12 +3,13 @@ language: go
 go:
   - "1.9"
   - "1.10"
+  - "1.11"
   - "tip"
 
 before_script:
   - go get github.com/fortytw2/leaktest
   - go get github.com/davecgh/go-spew/spew
-  - go tool vet -all -composites=false -shadow=true aat client transport examples nexusd transport wamp router
+  - go vet -all -composites=false -shadow=true ./...
 
 script:
   - go build ./examples/...

@@ -281,8 +281,24 @@ func (d *Dealer) Cancel(caller *session, msg *wamp.Cancel) {
 	if caller == nil || msg == nil {
 		panic("dealer.Cancel with nil session or message")
 	}
+	// Cancel mode should be one of: "skip", "kill", "killnowait"
+	mode, _ := wamp.AsString(msg.Options[wamp.OptMode])
+	switch mode {
+	case wamp.CancelModeKillNoWait, wamp.CancelModeKill, wamp.CancelModeSkip:
+	case "":
+		mode = wamp.CancelModeKillNoWait
+	default:
+		d.trySend(caller, &wamp.Error{
+			Type:      msg.MessageType(),
+			Request:   msg.Request,
+			Error:     wamp.ErrInvalidArgument,
+			Arguments: wamp.List{fmt.Sprint("invalid cancel mode ", mode)},
+		})
+		return
+	}
+
 	d.actionChan <- func() {
-		d.cancel(caller, msg)
+		d.cancel(caller, msg, mode, wamp.ErrCanceled)
 	}
 }
 
@@ -679,7 +695,7 @@ func (d *Dealer) call(caller *session, msg *wamp.Call) {
 	}
 }
 
-func (d *Dealer) cancel(caller *session, msg *wamp.Cancel) {
+func (d *Dealer) cancel(caller *session, msg *wamp.Cancel, mode string, reason wamp.URI) {
 	procCaller, ok := d.calls[msg.Request]
 	if !ok {
 		// There is no pending call to cancel.
@@ -713,9 +729,8 @@ func (d *Dealer) cancel(caller *session, msg *wamp.Cancel) {
 	}
 	invk.canceled = true
 
-	// Cancel mode should be one of: "skip", "kill", "killnowait"
-	mode, _ := wamp.AsString(msg.Options[wamp.OptMode])
-	if mode == wamp.CancelModeKillNoWait || mode == wamp.CancelModeKill {
+	// If mode is "kill" or "killnowait", then send INTERRUPT.
+	if mode != wamp.CancelModeSkip {
 		// Check that callee supports call canceling to see if it is alright to
 		// send INTERRUPT to callee.
 		if !invk.callee.HasFeature(roleCallee, featureCallCanceling) {
@@ -725,7 +740,7 @@ func (d *Dealer) cancel(caller *session, msg *wamp.Cancel) {
 			// Send INTERRUPT message to callee.
 			if d.trySend(invk.callee, &wamp.Interrupt{
 				Request: invocationID,
-				Options: msg.Options,
+				Options: wamp.Dict{wamp.OptReason: reason, wamp.OptMode: mode},
 			}) {
 				d.log.Println("Dealer sent INTERRUPT to cancel invocation",
 					invocationID, "for call", msg.Request, "mode:", mode)
@@ -738,9 +753,6 @@ func (d *Dealer) cancel(caller *session, msg *wamp.Cancel) {
 				}
 			}
 		}
-	} else if mode != wamp.CancelModeSkip {
-		d.log.Printf("!! Unrecognized cancel mode '%s', changing to 'skip'",
-			mode)
 	}
 	// Treat any unrecognized mode the same as "skip".
 
@@ -757,7 +769,7 @@ func (d *Dealer) cancel(caller *session, msg *wamp.Cancel) {
 	d.trySend(caller, &wamp.Error{
 		Type:    wamp.CALL,
 		Request: msg.Request,
-		Error:   wamp.ErrCanceled,
+		Error:   reason,
 		Details: wamp.Dict{},
 	})
 }
@@ -779,7 +791,7 @@ func (d *Dealer) yield(callee *session, msg *wamp.Yield) {
 			// canceling.
 			if d.trySend(callee, &wamp.Interrupt{
 				Request: msg.Request,
-				Options: wamp.Dict{"mode": wamp.CancelModeKillNoWait},
+				Options: wamp.Dict{wamp.OptMode: wamp.CancelModeKillNoWait},
 			}) {
 				d.log.Println("Dealer sent INTERRUPT to cancel progressive",
 					"results for request", msg.Request, "to callee", callee)
