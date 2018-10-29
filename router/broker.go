@@ -114,10 +114,14 @@ func (b *Broker) Publish(pub *session, msg *wamp.Publish) {
 	if pub == nil || msg == nil {
 		panic("broker.Publish with nil session or message")
 	}
+	// Send a publish error only when pubAck is set.
+	pubAck, _ := msg.Options[wamp.OptAcknowledge].(bool)
+
 	// Validate URI.  For PUBLISH, must be valid URI (either strict or loose),
 	// and all URI components must be non-empty.
+
 	if !msg.Topic.ValidURI(b.strictURI, "") {
-		if pubAck, _ := msg.Options[wamp.OptAcknowledge].(bool); !pubAck {
+		if !pubAck {
 			return
 		}
 		errMsg := fmt.Sprintf(
@@ -145,12 +149,17 @@ func (b *Broker) Publish(pub *session, msg *wamp.Publish) {
 	if opt, _ := msg.Options[wamp.OptDiscloseMe].(bool); opt {
 		// Broker MAY deny a publisher's request to disclose its identity.
 		if !b.allowDisclose {
-			b.trySend(pub, &wamp.Error{
-				Type:    msg.MessageType(),
-				Request: msg.Request,
-				Details: wamp.Dict{},
-				Error:   wamp.ErrOptionDisallowedDiscloseMe,
-			})
+			if pubAck {
+				b.trySend(pub, &wamp.Error{
+					Type:    msg.MessageType(),
+					Request: msg.Request,
+					Details: wamp.Dict{},
+					Error:   wamp.ErrOptionDisallowedDiscloseMe,
+				})
+			}
+			// When the publisher requested disclosure, but it isn't
+			// allowed, don't continue to publish the message.
+			return
 		}
 		disclose = true
 	}
@@ -164,7 +173,7 @@ func (b *Broker) Publish(pub *session, msg *wamp.Publish) {
 	}
 
 	// Send PUBLISHED message if acknowledge is present and true.
-	if pubAck, _ := msg.Options[wamp.OptAcknowledge].(bool); pubAck {
+	if pubAck {
 		b.trySend(pub, &wamp.Published{Request: msg.Request, Publication: pubID})
 	}
 }
@@ -443,7 +452,7 @@ func (b *Broker) removeSession(subscriber *session) {
 // pubEvent sends an event to all subscribers that are not excluded from
 // receiving the event.
 func (b *Broker) pubEvent(pub *session, msg *wamp.Publish, pubID wamp.ID, sub *subscription, excludePublisher, sendTopic, disclose bool, filter *publishFilter) {
-	for subscriber, _ := range sub.subscribers {
+	for subscriber := range sub.subscribers {
 		// Do not send event to publisher.
 		if subscriber == pub && excludePublisher {
 			continue
