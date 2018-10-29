@@ -455,6 +455,9 @@ type InvocationHandler func(context.Context, wamp.List, wamp.Dict, wamp.Dict) (r
 func (c *Client) Register(procedure string, fn InvocationHandler, options wamp.Dict) error {
 	id := wamp.GlobalID()
 	c.expectReply(id)
+	if options == nil {
+		options = wamp.Dict{}
+	}
 	c.sess.Send(&wamp.Register{
 		Request:   id,
 		Options:   options,
@@ -646,6 +649,10 @@ func (c *Client) CallProgress(ctx context.Context, procedure string, options wam
 			wamp.CancelModeKill, wamp.CancelModeKillNoWait, wamp.CancelModeSkip)
 	}
 
+	if options == nil {
+		options = wamp.Dict{}
+	}
+
 	// If caller is willing to receive progressive results, create a channel to
 	// receive these on.  Then, start a goroutine to receive progressive
 	// results and call the callback for each.
@@ -653,9 +660,6 @@ func (c *Client) CallProgress(ctx context.Context, procedure string, options wam
 	var progDone chan struct{}
 	if progcb != nil {
 		progChan = make(chan *wamp.Result)
-		if options == nil {
-			options = wamp.Dict{}
-		}
 		options[wamp.OptReceiveProgress] = true
 
 		progDone = make(chan struct{})
