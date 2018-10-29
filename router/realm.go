@@ -580,6 +580,10 @@ func (r *realm) authzMessage(sess *session, msg wamp.Message) bool {
 		// Get the Request from request types of messages.
 		switch msg := msg.(type) {
 		case *wamp.Publish:
+			// a publish error should only be sent when OptAcknowledge is set.
+			if pubAck, _ := msg.Options[wamp.OptAcknowledge].(bool); !pubAck {
+				return false
+			}
 			errRsp.Request = msg.Request
 		case *wamp.Subscribe:
 			errRsp.Request = msg.Request
