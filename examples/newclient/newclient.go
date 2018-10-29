@@ -20,20 +20,31 @@ import (
 )
 
 const (
-	wsAddr   = "127.0.0.1:8000"
-	wssAddr  = "localhost:8100"
-	tcpAddr  = "127.0.0.1:8001"
-	tcpsAddr = "localhost:8101"
-	unixAddr = "/tmp/exmpl_nexus_sock"
+	defaultRealm = "realm1"
+	defaultAddr  = "localhost"
+	defaultUnix  = "/tmp/exmpl_nexus_sock"
+
+	defaultWsPort   = 8000
+	defaultWssPort  = 8443
+	defaultTcpPort  = 8080
+	defaultTcpsPort = 8081
 )
 
 func NewClient(logger *log.Logger) (*client.Client, error) {
-	var skipVerify, compress bool
-	var scheme, serType, caFile, certFile, keyFile string
-	flag.StringVar(&scheme, "scheme", "ws",
-		"-scheme=[ws, wss, tcp, tcps, unix].  Default is ws (websocket no tls)")
-	flag.StringVar(&serType, "serialize", "json",
-		"-serialize[json, msgpack] or none for socket default")
+	var (
+		skipVerify, compress bool
+
+		port int
+
+		addr, caFile, certFile, keyFile, realm, scheme, serType string
+	)
+	flag.StringVar(&addr, "addr", "",
+		fmt.Sprintf("router address. (default %q or %q for network or unix socket)", defaultAddr, defaultUnix))
+	flag.IntVar(&port, "port", 0,
+		fmt.Sprintf("router port. (default %d, %d, %d, %d for scheme ws, wss, tcp, tcps)", defaultWsPort, defaultWssPort, defaultTcpPort, defaultTcpsPort))
+	flag.StringVar(&realm, "realm", defaultRealm, "realm name")
+	flag.StringVar(&scheme, "scheme", "ws", "[ws, wss, tcp, tcps, unix]")
+	flag.StringVar(&serType, "serialize", "json", "\"json\" or \"msgpack\"")
 	flag.BoolVar(&skipVerify, "skipverify", false,
 		"accept any certificate presented by the server")
 	flag.StringVar(&caFile, "trust", "",
@@ -56,8 +67,16 @@ func NewClient(logger *log.Logger) (*client.Client, error) {
 			"invalid serialization, muse be one of: json, msgpack")
 	}
 
+	if addr == "" {
+		if scheme == "unix" {
+			addr = defaultUnix
+		} else {
+			addr = defaultAddr
+		}
+	}
+
 	cfg := client.Config{
-		Realm:         "nexus.examples",
+		Realm:         realm,
 		Serialization: serialization,
 		Logger:        logger,
 	}
@@ -116,19 +135,30 @@ func NewClient(logger *log.Logger) (*client.Client, error) {
 
 	// Create client with requested transport type.
 	var cli *client.Client
-	var addr string
 	var err error
 	switch scheme {
 	case "http", "ws":
-		addr = fmt.Sprintf("ws://%s/", wsAddr)
+		if port == 0 {
+			port = defaultWsPort
+		}
+		addr = fmt.Sprintf("ws://%s:%d/ws", addr, port)
 	case "https", "wss":
-		addr = fmt.Sprintf("wss://%s/", wssAddr)
+		if port == 0 {
+			port = defaultWssPort
+		}
+		addr = fmt.Sprintf("wss://%s:%d/ws", addr, port)
 	case "tcp":
-		addr = fmt.Sprintf("tcp://%s/", tcpAddr)
+		if port == 0 {
+			port = defaultTcpPort
+		}
+		addr = fmt.Sprintf("tcp://%s:%d/", addr, port)
 	case "tcps":
-		addr = fmt.Sprintf("tcps://%s/", tcpsAddr)
+		if port == 0 {
+			port = defaultTcpsPort
+		}
+		addr = fmt.Sprintf("tcps://%s:%d/", addr, port)
 	case "unix":
-		addr = fmt.Sprintf("unix://%s", unixAddr)
+		addr = fmt.Sprintf("unix://%s", addr)
 	default:
 		return nil, errors.New("scheme must be one of: http, https, ws, wss, tcp, tcps, unix")
 	}

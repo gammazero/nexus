@@ -6,6 +6,8 @@ rawsockets (with/out TLS), and unix rawsockets.
 package main
 
 import (
+	"flag"
+	"fmt"
 	"log"
 	"os"
 	"os/signal"
@@ -17,22 +19,36 @@ import (
 )
 
 const (
-	wsAddr     = "127.0.0.1:8000"
-	tcpAddr    = "127.0.0.1:8001"
-	wsAddrTLS  = "127.0.0.1:8100"
-	tcpAddrTLS = "127.0.0.1:8101"
-	unixAddr   = "/tmp/exmpl_nexus_sock"
-
 	certFile = "cert.pem"
 	keyFile  = "rsakey.pem"
 )
 
 func main() {
+	var (
+		realm = "realm1"
+
+		netAddr  = "localhost"
+		unixAddr = "/tmp/exmpl_nexus_sock"
+
+		wsPort   = 8000
+		wssPort  = 8443
+		tcpPort  = 8080
+		tcpsPort = 8081
+	)
+	flag.StringVar(&netAddr, "netaddr", netAddr, "network address to listen on")
+	flag.StringVar(&unixAddr, "unixaddr", unixAddr, "unix address to listen on")
+	flag.IntVar(&wsPort, "ws-port", wsPort, "websocket port")
+	flag.IntVar(&wssPort, "wss-port", wssPort, "websocket TLS port")
+	flag.IntVar(&tcpPort, "tcp-port", tcpPort, "TCP port")
+	flag.IntVar(&tcpsPort, "tcps-port", tcpsPort, "TCP TLS port")
+	flag.StringVar(&realm, "realm", realm, "realm name")
+	flag.Parse()
+
 	// Create router instance.
 	routerConfig := &router.Config{
 		RealmConfigs: []*router.RealmConfig{
 			&router.RealmConfig{
-				URI:           wamp.URI("nexus.examples"),
+				URI:           wamp.URI(realm),
 				AnonymousAuth: true,
 				AllowDisclose: true,
 			},
@@ -59,6 +75,7 @@ func main() {
 	// ---- Start servers ----
 
 	// Run websocket server.
+	wsAddr := fmt.Sprintf("%s:%d", netAddr, wsPort)
 	wsCloser, err := wss.ListenAndServe(wsAddr)
 	if err != nil {
 		log.Fatal(err)
@@ -67,6 +84,7 @@ func main() {
 	log.Printf("Websocket server listening on ws://%s/", wsAddr)
 
 	// Run TCP rawsocket server.
+	tcpAddr := fmt.Sprintf("%s:%d", netAddr, tcpPort)
 	tcpCloser, err := rss.ListenAndServe("tcp", tcpAddr)
 	if err != nil {
 		log.Fatal(err)
@@ -94,6 +112,7 @@ func main() {
 	}
 
 	// Run TLS websocket server.
+	wsAddrTLS := fmt.Sprintf("%s:%d", netAddr, wssPort)
 	wsTlsCloser, err := wss.ListenAndServeTLS(wsAddrTLS, nil, certPath, keyPath)
 	if err != nil {
 		log.Fatal(err)
@@ -102,6 +121,7 @@ func main() {
 	log.Printf("TLS Websocket server listening on wss://%s/", wsAddrTLS)
 
 	// Run TLS TCP rawsocket server.
+	tcpAddrTLS := fmt.Sprintf("%s:%d", netAddr, tcpsPort)
 	tcpTlsCloser, err := rss.ListenAndServeTLS("tcp", tcpAddrTLS, nil, certPath, keyPath)
 	if err != nil {
 		log.Fatal(err)
