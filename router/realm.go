@@ -576,13 +576,14 @@ func (r *realm) authzMessage(sess *session, msg wamp.Message) bool {
 	sess.unlock()
 
 	if !isAuthz {
+		skipResponse := false
 		errRsp := &wamp.Error{Type: msg.MessageType()}
 		// Get the Request from request types of messages.
 		switch msg := msg.(type) {
 		case *wamp.Publish:
 			// a publish error should only be sent when OptAcknowledge is set.
 			if pubAck, _ := msg.Options[wamp.OptAcknowledge].(bool); !pubAck {
-				return false
+				skipResponse = true
 			}
 			errRsp.Request = msg.Request
 		case *wamp.Subscribe:
@@ -612,9 +613,11 @@ func (r *realm) authzMessage(sess *session, msg wamp.Message) bool {
 			errRsp.Error = wamp.ErrNotAuthorized
 			r.log.Println("Client", sess, msg.MessageType(), "not authorized")
 		}
-		err = sess.TrySend(errRsp)
-		if err != nil {
-			r.log.Println("!!! client blocked, could not send authz error")
+		if !skipResponse {
+			err = sess.TrySend(errRsp)
+			if err != nil {
+				r.log.Println("!!! client blocked, could not send authz error")
+			}
 		}
 		return false
 	}
