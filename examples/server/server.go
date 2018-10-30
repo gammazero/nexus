@@ -6,6 +6,7 @@ rawsockets (with/out TLS), and unix rawsockets.
 package main
 
 import (
+	"context"
 	"flag"
 	"fmt"
 	"log"
@@ -14,6 +15,7 @@ import (
 	"path"
 	"time"
 
+	"github.com/gammazero/nexus/client"
 	"github.com/gammazero/nexus/router"
 	"github.com/gammazero/nexus/wamp"
 )
@@ -59,6 +61,14 @@ func main() {
 		log.Fatal(err)
 	}
 	defer nxr.Close()
+
+	// create local (embedded) RPC callee client that provides the time in the
+	// requested timezones.
+	callee, err := createLocalCallee(nxr, realm)
+	if err != nil {
+		log.Fatal(err)
+	}
+	defer callee.Close()
 
 	// Create websocket server.
 	wss := router.NewWebsocketServer(nxr)
@@ -134,4 +144,54 @@ func main() {
 	signal.Notify(shutdown, os.Interrupt)
 	<-shutdown
 	// Servers close at exit due to defer calls.
+}
+
+// createLocalCallee creates a local callee client that is embedded in this
+// server.  This client functions as a trusted client and does not require IPC
+// to communicate with the router.
+//
+// The purpose of this client is to demonstrate how to create a local client
+// that is part of the same application running the WAMP router.
+func createLocalCallee(nxr router.Router, realm string) (*client.Client, error) {
+	logger := log.New(os.Stdout, "CALLEE> ", log.LstdFlags)
+	cfg := client.Config{
+		Realm:  realm,
+		Logger: logger,
+	}
+	callee, err := client.ConnectLocal(nxr, cfg)
+	if err != nil {
+		return nil, err
+	}
+
+	// Register procedure "time"
+	const timeProc = "worldtime"
+	if err = callee.Register(timeProc, worldTime, nil); err != nil {
+		return nil, fmt.Errorf("Failed to register %q: %s", timeProc, err)
+	}
+	log.Printf("Registered procedure %q with router", timeProc)
+
+	return callee, nil
+}
+
+// worldTime is a RPC function that returns times for the specified timezones.
+// This function is registered by the local callee client that is embedded in
+// the server.
+func worldTime(ctx context.Context, args wamp.List, kwargs, details wamp.Dict) *client.InvokeResult {
+	now := time.Now()
+	results := wamp.List{fmt.Sprintf("UTC: %s", now.UTC())}
+
+	for i := range args {
+		locName, ok := wamp.AsString(args[i])
+		if !ok {
+			continue
+		}
+		loc, err := time.LoadLocation(locName)
+		if err != nil {
+			results = append(results, fmt.Sprintf("%s: %s", locName, err))
+			continue
+		}
+		results = append(results, fmt.Sprintf("%s: %s", locName, now.In(loc)))
+	}
+
+	return &client.InvokeResult{Args: results}
 }
