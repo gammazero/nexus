@@ -4,7 +4,7 @@ This directory contains a `Makefile` that automates installing and initializing 
 
 To setup, configure, and run the Crossbar node:
 
-1. Setup the python/autobahn environment and install Crossbar:  Run `make`
+1. Setup the python environment and install Crossbar:  Run `make`
 2. Optionally configure the node: edit `node/.crossbar/config.json`
 3. Run the node: `pyenv/bin/crossbar start --cbdir node/.crossbar`
 
