@@ -13,6 +13,7 @@ from autobahn.twisted.wamp import ApplicationSession, ApplicationRunner
 from autobahn.twisted.util import sleep
 from autobahn.wamp.types import RegisterOptions
 
+realm = u'realm1'
 topic = u'example.hello'
 procedure = u'example.add2'
 procedure2 = u'example.longop'
@@ -71,7 +72,6 @@ class MyComponent(ApplicationSession):
 
 
 if __name__ == '__main__':
-    runner = ApplicationRunner(
-        url=u"ws://localhost:8000/ws", realm=u"nexus.examples")
+    runner = ApplicationRunner(url=u"ws://localhost:8000/ws", realm=realm)
     runner.run(MyComponent)
     print("Received", event_count, "events")

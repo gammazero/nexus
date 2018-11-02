@@ -8,17 +8,22 @@ import (
 	"github.com/gammazero/nexus/wamp"
 )
 
-const exampleTopic = "example.hello"
+const (
+	addr  = "ws://localhost:8000/"
+	realm = "realm1"
+
+	exampleTopic = "example.hello"
+)
 
 func main() {
 	logger := log.New(os.Stdout, "", 0)
 	cfg := client.Config{
-		Realm:  "nexus.realm1",
+		Realm:  realm,
 		Logger: logger,
 	}
 
 	// Connect publisher session.
-	publisher, err := client.ConnectNet("ws://localhost:8080/", cfg)
+	publisher, err := client.ConnectNet(addr, cfg)
 	if err != nil {
 		logger.Fatal(err)
 	}
