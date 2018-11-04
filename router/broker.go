@@ -465,7 +465,12 @@ func allowPublish(sub *session, filter PublishFilter) bool {
 		sub.RLock()
 		defer sub.RUnlock()
 	}
-	return filter.PublishAllowed(&sub.Session)
+	// Create a safe session to prevent access to the session.Peer.
+	safeSession := wamp.Session{
+		ID:      sub.ID,
+		Details: sub.Details,
+	}
+	return filter.PublishAllowed(&safeSession)
 }
 
 // pubEvent sends an event to all subscribers that are not excluded from

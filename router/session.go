@@ -6,7 +6,7 @@ import (
 	"github.com/gammazero/nexus/wamp"
 )
 
-// session is a wrapper around a wamp.session to provide the router with a
+// session is a wrapper around a wamp.Session to provide the router with a
 // lockable killable session.
 type session struct {
 	wamp.Session
