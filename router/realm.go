@@ -216,8 +216,8 @@ func (r *realm) close() {
 	// session handlers for this realm.  This prevents the router from starting
 	// any new session handlers, allowing the realm can safely close after
 	// waiting for all existing session handlers to exit.
-	r.closeLock.lock()
-	defer r.closeLock.unlock()
+	r.closeLock.Lock()
+	defer r.closeLock.Unlock()
 	if r.closed {
 		// This realm is already closed.
 		return
@@ -426,9 +426,9 @@ func (r *realm) handleSession(sess *session) error {
 	// This ensures that no new session handler can start once the realm is
 	// closing, during which the realm waits for all existing session handlers
 	// to exit.
-	r.closeLock.lock()
+	r.closeLock.Lock()
 	if r.closed {
-		r.closeLock.unlock()
+		r.closeLock.Unlock()
 		err := errors.New("realm closed")
 		return err
 	}
