@@ -50,17 +50,17 @@ func (s *session) String() string { return s.Session.String() }
 
 // HasRole returns true if the session supports the specified role.
 func (s *session) HasRole(role string) bool {
-	s.rwlock.rLock()
+	s.rwlock.RLock()
 	ok := s.Session.HasRole(role)
-	s.rwlock.rUnlock()
+	s.rwlock.RUnlock()
 	return ok
 }
 
 // HasFeature returns true if the session has the specified feature for the
 // specified role.
 func (s *session) HasFeature(role, feature string) bool {
-	s.rwlock.rLock()
+	s.rwlock.RLock()
 	ok := s.Session.HasFeature(role, feature)
-	s.rwlock.rUnlock()
+	s.rwlock.RUnlock()
 	return ok
 }
