@@ -9,21 +9,19 @@ import (
 // PublishFilter is an interface to check whether a publication should be sent
 // to a specific session
 type PublishFilter interface {
-	LockRequired() bool
-	PublishAllowed(sess *wamp.Session) bool
+	Allowed(sess *wamp.Session) bool
 }
 
 type simplePublishFilter struct {
-	blIDs        []wamp.ID
-	wlIDs        []wamp.ID
-	blMap        map[string][]string
-	wlMap        map[string][]string
-	lockRequired bool
+	blIDs []wamp.ID
+	wlIDs []wamp.ID
+	blMap map[string][]string
+	wlMap map[string][]string
 }
 
-// NewSimplePublishFilter gets any blacklists and whitelists included in a PUBLISH
-// message.  If there are no filters defined by the PUBLISH message, then nil
-// is returned.
+// NewSimplePublishFilter gets any blacklists and whitelists included
+// in a PUBLISH message.  If there are no filters defined by the
+// PUBLISH message, then nil is returned.
 func NewSimplePublishFilter(msg *wamp.Publish) PublishFilter {
 	const (
 		blacklistPrefix = "exclude_"
@@ -90,12 +88,6 @@ func NewSimplePublishFilter(msg *wamp.Publish) PublishFilter {
 	return &simplePublishFilter{blIDs, wlIDs, blMap, wlMap, len(blMap) != 0 || len(wlMap) != 0}
 }
 
-// LockRequired determines whether a consistent state of the subscriber sessions is
-// required while running the filter
-func (f *simplePublishFilter) LockRequired() bool {
-	return f.lockRequired
-}
-
 // PublishAllowed determines if a message is allowed to be published to a
 // subscriber, by looking at any blacklists and whitelists provided with the
 // publish message.
@@ -103,7 +95,7 @@ func (f *simplePublishFilter) LockRequired() bool {
 // To receive a published event, the subscriber session must not have any
 // values that appear in a blacklist, and must have a value from each
 // whitelist.
-func (f *simplePublishFilter) PublishAllowed(sub *wamp.Session) bool {
+func (f *simplePublishFilter) Allowed(sub *wamp.Session) bool {
 	// Check each blacklisted ID to see if session ID is blacklisted.
 	for i := range f.blIDs {
 		if f.blIDs[i] == sub.ID {

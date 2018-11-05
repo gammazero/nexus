@@ -461,16 +461,15 @@ func allowPublish(sub *session, filter PublishFilter) bool {
 	if filter == nil {
 		return true
 	}
-	if filter.LockRequired() {
-		sub.RLock()
-		defer sub.RUnlock()
-	}
 	// Create a safe session to prevent access to the session.Peer.
 	safeSession := wamp.Session{
 		ID:      sub.ID,
 		Details: sub.Details,
 	}
-	return filter.PublishAllowed(&safeSession)
+	sub.rLock()
+	ok := filter.Allowed(&safeSession)
+	sub.rUnlock()
+	return ok
 }
 
 // pubEvent sends an event to all subscribers that are not excluded from
@@ -615,13 +614,13 @@ func disclosePublisher(pub *session, details wamp.Dict) {
 	details[rolePub] = pub.ID
 	// These values are not required by the specification, but are here for
 	// compatibility with Crossbar.
-	pub.RLock()
+	pub.rLock()
 	for _, f := range []string{"authid", "authrole"} {
 		if val, ok := pub.Details[f]; ok {
 			details[fmt.Sprintf("%s_%s", rolePub, f)] = val
 		}
 	}
-	pub.RUnlock()
+	pub.rUnlock()
 }
 
 // ----- Subscription Meta Procedure Handlers -----

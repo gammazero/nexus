@@ -27,12 +27,12 @@ func newSession(peer wamp.Peer, sid wamp.ID, details wamp.Dict) *session {
 	}
 }
 
-func (s *session) RLock()   { s.rwlock.RLock() }
-func (s *session) RUnlock() { s.rwlock.RUnlock() }
-func (s *session) Lock()    { s.rwlock.Lock() }
-func (s *session) Unlock()  { s.rwlock.Unlock() }
+func (s *session) rLock()   { s.rwlock.RLock() }
+func (s *session) rUnlock() { s.rwlock.RUnlock() }
+func (s *session) lock()    { s.rwlock.Lock() }
+func (s *session) unlock()  { s.rwlock.Unlock() }
 
-func (s *session) Kill(goodbye *wamp.Goodbye) bool {
+func (s *session) kill(goodbye *wamp.Goodbye) bool {
 	if s.killChan == nil {
 		return false
 	}
@@ -50,17 +50,17 @@ func (s *session) String() string { return s.Session.String() }
 
 // HasRole returns true if the session supports the specified role.
 func (s *session) HasRole(role string) bool {
-	s.rwlock.RLock()
+	s.rwlock.rLock()
 	ok := s.Session.HasRole(role)
-	s.rwlock.RUnlock()
+	s.rwlock.rUnlock()
 	return ok
 }
 
 // HasFeature returns true if the session has the specified feature for the
 // specified role.
 func (s *session) HasFeature(role, feature string) bool {
-	s.rwlock.RLock()
+	s.rwlock.rLock()
 	ok := s.Session.HasFeature(role, feature)
-	s.rwlock.RUnlock()
+	s.rwlock.rUnlock()
 	return ok
 }

@@ -204,9 +204,9 @@ func (d *Dealer) Register(callee *session, msg *wamp.Register) {
 	disclose, _ := msg.Options[wamp.OptDiscloseCaller].(bool)
 	// allow disclose for trusted clients
 	if !d.allowDisclose && disclose {
-		callee.RLock()
+		callee.rLock()
 		authrole, _ := wamp.AsString(callee.Details["authrole"])
-		callee.RUnlock()
+		callee.rUnlock()
 		if authrole != "trusted" {
 			d.trySend(callee, &wamp.Error{
 				Type:    msg.MessageType(),
@@ -1182,11 +1182,11 @@ func discloseCaller(caller *session, details wamp.Dict) {
 	details[roleCaller] = caller.ID
 	// These values are not required by the specification, but are here for
 	// compatibility with Crossbar.
-	caller.RLock()
+	caller.rLock()
 	for _, f := range []string{"authid", "authrole"} {
 		if val, ok := caller.Details[f]; ok {
 			details[fmt.Sprintf("%s_%s", roleCaller, f)] = val
 		}
 	}
-	caller.RUnlock()
+	caller.rUnlock()
 }
