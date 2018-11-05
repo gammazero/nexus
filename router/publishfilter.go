@@ -85,12 +85,12 @@ func NewSimplePublishFilter(msg *wamp.Publish) PublishFilter {
 	if blIDs == nil && wlIDs == nil && blMap == nil && wlMap == nil {
 		return nil
 	}
-	return &simplePublishFilter{blIDs, wlIDs, blMap, wlMap, len(blMap) != 0 || len(wlMap) != 0}
+	return &simplePublishFilter{blIDs, wlIDs, blMap, wlMap}
 }
 
-// PublishAllowed determines if a message is allowed to be published to a
-// subscriber, by looking at any blacklists and whitelists provided with the
-// publish message.
+// Allowed determines if a message is allowed to be published to a
+// subscriber, by looking at any blacklists and whitelists provided
+// with the publish message.
 //
 // To receive a published event, the subscriber session must not have any
 // values that appear in a blacklist, and must have a value from each

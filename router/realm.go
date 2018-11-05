@@ -435,7 +435,7 @@ func (r *realm) handleSession(sess *session) error {
 
 	// Ensure session is capable of receiving exit signal before releasing lock
 	r.onJoin(sess)
-	r.closeLock.unlock()
+	r.closeLock.Unlock()
 
 	if r.debug {
 		r.log.Println("Started session", sess)
