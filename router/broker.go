@@ -41,6 +41,9 @@ type subscription struct {
 	subscribers map[*session]struct{}
 }
 
+// FilterFactory is a function which creates a PublishFilter from a publication
+type FilterFactory func(msg *wamp.Publish) PublishFilter
+
 type Broker struct {
 	// topic -> subscription
 	topicSubscription    map[wamp.URI]*subscription
@@ -61,14 +64,18 @@ type Broker struct {
 	strictURI     bool
 	allowDisclose bool
 
-	log   stdlog.StdLog
-	debug bool
+	log           stdlog.StdLog
+	debug         bool
+	filterFactory FilterFactory
 }
 
 // NewBroker returns a new default broker implementation instance.
-func NewBroker(logger stdlog.StdLog, strictURI, allowDisclose, debug bool) *Broker {
+func NewBroker(logger stdlog.StdLog, strictURI, allowDisclose, debug bool, publishFilter FilterFactory) *Broker {
 	if logger == nil {
 		panic("logger is nil")
+	}
+	if publishFilter == nil {
+		publishFilter = NewSimplePublishFilter
 	}
 	b := &Broker{
 		topicSubscription:    map[wamp.URI]*subscription{},
@@ -88,8 +95,9 @@ func NewBroker(logger stdlog.StdLog, strictURI, allowDisclose, debug bool) *Brok
 		strictURI:     strictURI,
 		allowDisclose: allowDisclose,
 
-		log:   logger,
-		debug: debug,
+		log:           logger,
+		debug:         debug,
+		filterFactory: publishFilter,
 	}
 	go b.run()
 	return b
@@ -166,7 +174,7 @@ func (b *Broker) Publish(pub *session, msg *wamp.Publish) {
 	pubID := wamp.GlobalID()
 
 	// Get blacklists and whitelists, if any, from publish message.
-	filter := newPublishFilter(msg)
+	filter := b.filterFactory(msg)
 
 	b.actionChan <- func() {
 		b.publish(pub, msg, pubID, excludePub, disclose, filter)
@@ -252,7 +260,7 @@ func (b *Broker) run() {
 	}
 }
 
-func (b *Broker) publish(pub *session, msg *wamp.Publish, pubID wamp.ID, excludePub, disclose bool, filter *publishFilter) {
+func (b *Broker) publish(pub *session, msg *wamp.Publish, pubID wamp.ID, excludePub, disclose bool, filter PublishFilter) {
 	// Publish to subscribers with exact match.
 	if sub, ok := b.topicSubscription[msg.Topic]; ok {
 		b.pubEvent(pub, msg, pubID, sub, excludePub, false, disclose, filter)
@@ -449,17 +457,32 @@ func (b *Broker) removeSession(subscriber *session) {
 	}
 }
 
+func allowPublish(sub *session, filter PublishFilter) bool {
+	if filter == nil {
+		return true
+	}
+	// Create a safe session to prevent access to the session.Peer.
+	safeSession := wamp.Session{
+		ID:      sub.ID,
+		Details: sub.Details,
+	}
+	sub.rLock()
+	ok := filter.Allowed(&safeSession)
+	sub.rUnlock()
+	return ok
+}
+
 // pubEvent sends an event to all subscribers that are not excluded from
 // receiving the event.
-func (b *Broker) pubEvent(pub *session, msg *wamp.Publish, pubID wamp.ID, sub *subscription, excludePublisher, sendTopic, disclose bool, filter *publishFilter) {
-	for subscriber := range sub.subscribers {
+func (b *Broker) pubEvent(pub *session, msg *wamp.Publish, pubID wamp.ID, sub *subscription, excludePublisher, sendTopic, disclose bool, filter PublishFilter) {
+	for subscriber, _ := range sub.subscribers {
 		// Do not send event to publisher.
 		if subscriber == pub && excludePublisher {
 			continue
 		}
 
 		// Check if receiver is restricted.
-		if filter != nil && !filter.publishAllowed(subscriber) {
+		if !allowPublish(subscriber, filter) {
 			continue
 		}
 

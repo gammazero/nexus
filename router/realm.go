@@ -54,6 +54,14 @@ type RealmConfig struct {
 	// procedure.  This is disabled by default to avoid requiring Authorizer
 	// logic when it may not be needed otherwise.
 	EnableMetaModify bool `json:"enable_meta_modify"`
+
+	// PublishFilterFactory is a function used to create a
+	// PublishFilter to check which sessions a publication should be
+	// sent to.
+	//
+	// This value is not set via json config, but is configured when
+	// embedding nexus.  A value of nil enables the default filtering.
+	PublishFilterFactory FilterFactory
 }
 
 // Special ID for meta session.
