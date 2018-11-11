@@ -664,7 +664,8 @@ func (d *Dealer) call(caller *session, msg *wamp.Call) {
 	}
 
 	if reg.match != wamp.MatchExact {
-		// according to the spec, a router has to provide the actual procedure to the client.
+		// According to the spec, a router must provide the actual
+		// procedure to the client.
 		details[wamp.OptProcedure] = msg.Procedure
 	}
 
