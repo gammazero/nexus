@@ -6,7 +6,9 @@ func TestURIPrefixMatch(t *testing.T) {
 	uri := URI("this.is.a.test")
 	matches := []URI{
 		"this.is.a",
-		"this.is."}
+		"this.is.",
+		"this.i",
+	}
 	for i := range matches {
 		if !uri.PrefixMatch(matches[i]) {
 			t.Error("expected prefix", matches[i], "to match", uri)
@@ -41,6 +43,7 @@ func TestURIWildcardMatch(t *testing.T) {
 	}
 
 	nonMatches := []URI{
+		"this.is.a",
 		"this.is.a.bird",
 		"this.is.test",
 		".is..test.",
