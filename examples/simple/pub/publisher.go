@@ -9,7 +9,7 @@ import (
 )
 
 const (
-	addr  = "ws://localhost:8000/"
+	addr  = "ws://localhost:8080/ws"
 	realm = "realm1"
 
 	exampleTopic = "example.hello"
