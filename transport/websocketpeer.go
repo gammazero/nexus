@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"net"
 	"net/http"
+	"net/url"
 	"sync/atomic"
 	"time"
 
@@ -15,7 +16,7 @@ import (
 	"github.com/gorilla/websocket"
 )
 
-// WebsocketConfig is used to provide configuration client websocket settings.
+// WebsocketConfig is used to configure client websocket settings.
 type WebsocketConfig struct {
 	// Request per message write compression, if allowed by server.
 	EnableCompression bool `json:"enable_compression"`
@@ -25,6 +26,10 @@ type WebsocketConfig struct {
 	// server in subsequent websocket connections.  Cookies may be used to
 	// identify returning clients, and can be used to authenticate clients.
 	Jar http.CookieJar
+
+	// ProxyURL is an optional URL of the proxy to use for websocket requests.
+	// If not defined, the proxy defined by the environment is used if defined.
+	ProxyURL string
 
 	// Deprecated server config options.
 	// See: https://godoc.org/github.com/gammazero/nexus/router#WebsocketServer
@@ -67,7 +72,7 @@ type DialFunc func(network, addr string) (net.Conn, error)
 // ConnectWebsocketPeer creates a new websocket client with the specified
 // config, connects the client to the websocket server at the specified URL,
 // and returns the connected websocket peer.
-func ConnectWebsocketPeer(url string, serialization serialize.Serialization, tlsConfig *tls.Config, dial DialFunc, logger stdlog.StdLog, wsCfg *WebsocketConfig) (wamp.Peer, error) {
+func ConnectWebsocketPeer(routerURL string, serialization serialize.Serialization, tlsConfig *tls.Config, dial DialFunc, logger stdlog.StdLog, wsCfg *WebsocketConfig) (wamp.Peer, error) {
 	var (
 		protocol    string
 		payloadType int
@@ -97,12 +102,20 @@ func ConnectWebsocketPeer(url string, serialization serialize.Serialization, tls
 		Proxy:           http.ProxyFromEnvironment,
 		NetDial:         dial,
 	}
+
 	if wsCfg != nil {
+		if wsCfg.ProxyURL != "" {
+			proxyURL, err := url.Parse(wsCfg.ProxyURL)
+			if err != nil {
+				return nil, err
+			}
+			dialer.Proxy = http.ProxyURL(proxyURL)
+		}
 		dialer.Jar = wsCfg.Jar
 		dialer.EnableCompression = true
 	}
 
-	conn, _, err := dialer.Dial(url, nil)
+	conn, _, err := dialer.Dial(routerURL, nil)
 	if err != nil {
 		return nil, err
 	}
