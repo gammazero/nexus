@@ -341,3 +341,110 @@ func TestRPCTimeoutCall(t *testing.T) {
 		t.Fatal("Failed to disconnect client:", err)
 	}
 }
+
+func TestRPCResponseRouting(t *testing.T) {
+	defer leaktest.Check(t)()
+	// Connect callee session.
+	callee, err := connectClient()
+	if err != nil {
+		t.Fatal("Failed to connect client:", err)
+	}
+
+	respond := make(chan struct{})
+	ready := sync.WaitGroup{}
+	ready.Add(2)
+
+	// Register procedure "hello"
+	hello := func(ctx context.Context, args wamp.List, kwargs, details wamp.Dict) *client.InvokeResult {
+		ready.Done()
+		<-respond
+		return &client.InvokeResult{Args: wamp.List{"HELLO"}}
+	}
+	if err = callee.Register("hello", hello, nil); err != nil {
+		t.Fatal("Failed to register procedure:", err)
+	}
+
+	// Register procedure "world"
+	world := func(ctx context.Context, args wamp.List, kwargs, details wamp.Dict) *client.InvokeResult {
+		ready.Done()
+		<-respond
+		return &client.InvokeResult{Args: wamp.List{"WORLD"}}
+	}
+	// Register procedure "hello"
+	if err = callee.Register("world", world, nil); err != nil {
+		t.Fatal("Failed to register procedure:", err)
+	}
+
+	// Connect hello caller session.
+	callerHello, err := connectClient()
+	if err != nil {
+		t.Fatal("Failed to connect client:", err)
+	}
+
+	// Connect world caller session.
+	callerWorld, err := connectClient()
+	if err != nil {
+		t.Fatal("Failed to connect client:", err)
+	}
+
+	rc1 := make(chan *wamp.Result)
+	rc2 := make(chan *wamp.Result)
+	ec1 := make(chan error)
+	ec2 := make(chan error)
+
+	ctx, cancel := context.WithTimeout(context.Background(), time.Second)
+	defer cancel()
+
+	go func() {
+		result1, err1 := callerHello.Call(ctx, "hello", nil, nil, nil, "")
+		if err1 != nil {
+			ec1 <- err1
+			return
+		}
+		rc1 <- result1
+	}()
+	go func() {
+		result2, err2 := callerWorld.Call(ctx, "world", nil, nil, nil, "")
+		if err2 != nil {
+			ec2 <- err2
+			return
+		}
+		rc2 <- result2
+	}()
+
+	ready.Wait()
+	close(respond)
+
+	var result *wamp.Result
+	for i := 0; i < 2; i++ {
+		select {
+		case result = <-rc1:
+			if result.Arguments[0] != "HELLO" {
+				t.Error("Wrong result for call to 'hello':", result.Arguments[0])
+			}
+		case result = <-rc2:
+			if result.Arguments[0] != "WORLD" {
+				t.Error("Wrong result for call to 'world':", result.Arguments[0])
+			}
+		case err = <-ec1:
+			t.Error("Error calling 'hello':", err)
+		case err = <-ec2:
+			t.Error("Error calling 'world':", err)
+		}
+	}
+
+	err = callerHello.Close()
+	if err != nil {
+		t.Error("Failed to disconnect client:", err)
+	}
+
+	err = callerWorld.Close()
+	if err != nil {
+		t.Error("Failed to disconnect client:", err)
+	}
+
+	err = callee.Close()
+	if err != nil {
+		t.Error("Failed to disconnect client:", err)
+	}
+}
