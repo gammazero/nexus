@@ -57,9 +57,14 @@ type registration struct {
 
 // invocation tracks in-progress invocation
 type invocation struct {
-	callID   wamp.ID
+	callID   requestID
 	callee   *session
 	canceled bool
+}
+
+type requestID struct {
+	session wamp.ID
+	request wamp.ID
 }
 
 type Dealer struct {
@@ -73,13 +78,13 @@ type Dealer struct {
 	registrations map[wamp.ID]*registration
 
 	// call ID -> caller session
-	calls map[wamp.ID]*session
+	calls map[requestID]*session
 
 	// invocation ID -> {call ID, callee, canceled}
 	invocations map[wamp.ID]*invocation
 
 	// call ID -> invocation ID (for cancel)
-	invocationByCall map[wamp.ID]wamp.ID
+	invocationByCall map[requestID]wamp.ID
 
 	// callee session -> registration ID set.
 	// Used to lookup registrations when removing a callee session.
@@ -120,9 +125,9 @@ func NewDealer(logger stdlog.StdLog, strictURI, allowDisclose, debug bool) *Deal
 
 		registrations: map[wamp.ID]*registration{},
 
-		calls:            map[wamp.ID]*session{},
+		calls:            map[requestID]*session{},
 		invocations:      map[wamp.ID]*invocation{},
-		invocationByCall: map[wamp.ID]wamp.ID{},
+		invocationByCall: map[requestID]wamp.ID{},
 		calleeRegIDSet:   map[*session]map[wamp.ID]struct{}{},
 
 		// The action handler should be nearly always runable, since it is the
@@ -669,13 +674,17 @@ func (d *Dealer) call(caller *session, msg *wamp.Call) {
 		details[wamp.OptProcedure] = msg.Procedure
 	}
 
-	d.calls[msg.Request] = caller
+	reqID := requestID{
+		session: caller.ID,
+		request: msg.Request,
+	}
+	d.calls[reqID] = caller
 	invocationID := d.idGen.Next()
 	d.invocations[invocationID] = &invocation{
-		callID: msg.Request,
+		callID: reqID,
 		callee: callee,
-	}
-	d.invocationByCall[msg.Request] = invocationID
+}
+d.invocationByCall[reqID] = invocationID
 
 	// Send INVOCATION to the endpoint that has registered the requested
 	// procedure.
@@ -697,7 +706,11 @@ func (d *Dealer) call(caller *session, msg *wamp.Call) {
 }
 
 func (d *Dealer) cancel(caller *session, msg *wamp.Cancel, mode string, reason wamp.URI) {
-	procCaller, ok := d.calls[msg.Request]
+	reqID := requestID{
+		session: caller.ID,
+		request: msg.Request,
+	}
+	procCaller, ok := d.calls[reqID]
 	if !ok {
 		// There is no pending call to cancel.
 		return
@@ -713,7 +726,7 @@ func (d *Dealer) cancel(caller *session, msg *wamp.Cancel, mode string, reason w
 	}
 
 	// Find the pending invocation.
-	invocationID, ok := d.invocationByCall[msg.Request]
+	invocationID, ok := d.invocationByCall[reqID]
 	if !ok {
 		// If there is no pending invocation, ignore cancel.
 		d.log.Print("Found call with no pending invocation")
@@ -762,8 +775,8 @@ func (d *Dealer) cancel(caller *session, msg *wamp.Cancel, mode string, reason w
 	// callee to be dropped.
 	//
 	// This also stops repeated CANCEL messages.
-	delete(d.calls, msg.Request)
-	delete(d.invocationByCall, msg.Request)
+	delete(d.calls, reqID)
+	delete(d.invocationByCall, reqID)
 	delete(d.invocations, invocationID)
 
 	// Send error to the caller.
@@ -832,7 +845,7 @@ func (d *Dealer) yield(callee *session, msg *wamp.Yield) {
 
 	// Send RESULT to the caller.  This forwards the YIELD from the callee.
 	d.trySend(caller, &wamp.Result{
-		Request:     callID,
+		Request:     callID.request,
 		Details:     details,
 		Arguments:   msg.Arguments,
 		ArgumentsKw: msg.ArgumentsKw,
@@ -867,7 +880,7 @@ func (d *Dealer) error(msg *wamp.Error) {
 	// Send error to the caller.
 	d.trySend(caller, &wamp.Error{
 		Type:        wamp.CALL,
-		Request:     callID,
+		Request:     callID.request,
 		Error:       msg.Error,
 		Details:     msg.Details,
 		Arguments:   msg.Arguments,
