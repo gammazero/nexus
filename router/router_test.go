@@ -411,68 +411,84 @@ func TestSessionMetaProcedures(t *testing.T) {
 	sessID := caller.ID
 
 	// Call session meta-procedure to get session count.
-	callID := wamp.GlobalID()
-	caller.Send(&wamp.Call{Request: callID, Procedure: wamp.MetaProcSessionCount})
-	msg, err := wamp.RecvTimeout(caller, time.Second)
-	if err != nil {
-		t.Fatal(err)
+	sessionCountRequests := []*wamp.Call{
+		// Normal call
+		&wamp.Call{Request: wamp.GlobalID(), Procedure: wamp.MetaProcSessionCount},
+		// Call with extra arguments (but invalid)
+		&wamp.Call{Request: wamp.GlobalID(), Procedure: wamp.MetaProcSessionCount, Arguments: wamp.List{"invalidarg"}},
 	}
-	result, ok := msg.(*wamp.Result)
-	if !ok {
-		t.Fatal("expected RESULT, got", msg.MessageType())
-	}
-	if result.Request != callID {
-		t.Fatal("wrong result ID")
-	}
+	for _, req := range sessionCountRequests {
+		callID := req.Request
+		caller.Send(req)
+		msg, err := wamp.RecvTimeout(caller, time.Second)
+		if err != nil {
+			t.Fatal(err)
+		}
+		result, ok := msg.(*wamp.Result)
+		if !ok {
+			t.Fatal("expected RESULT, got", msg.MessageType())
+		}
+		if result.Request != callID {
+			t.Fatal("wrong result ID")
+		}
 
-	if len(result.Arguments) == 0 {
-		t.Fatal("missing expected arguemnt")
-	}
-	count, ok := result.Arguments[0].(int)
-	if !ok {
-		t.Fatal("expected int arguemnt")
-	}
-	if count != 1 {
-		t.Fatal("wrong session count")
+		if len(result.Arguments) == 0 {
+			t.Fatal("missing expected arguemnt")
+		}
+		count, ok := result.Arguments[0].(int)
+		if !ok {
+			t.Fatal("expected int arguemnt")
+		}
+		if count != 1 {
+			t.Fatal("wrong session count")
+		}
 	}
 
 	// Call session meta-procedure to get session list.
-	callID = wamp.GlobalID()
-	caller.Send(&wamp.Call{Request: callID, Procedure: wamp.MetaProcSessionList})
-	msg, err = wamp.RecvTimeout(caller, time.Second)
-	if err != nil {
-		t.Fatal(err)
+	sessionListRequests := []*wamp.Call{
+		// Normal call
+		&wamp.Call{Request: wamp.GlobalID(), Procedure: wamp.MetaProcSessionList},
+		// Call with extra arguments (but invalid)
+		&wamp.Call{Request: wamp.GlobalID(), Procedure: wamp.MetaProcSessionList, Arguments: wamp.List{"invalidarg"}},
 	}
-	result, ok = msg.(*wamp.Result)
-	if !ok {
-		t.Fatal("expected RESULT, got", msg.MessageType())
-	}
-	if result.Request != callID {
-		t.Fatal("wrong result ID")
-	}
+	for _, req := range sessionListRequests {
+		callID := req.Request
+		caller.Send(&wamp.Call{Request: callID, Procedure: wamp.MetaProcSessionList})
+		msg, err := wamp.RecvTimeout(caller, time.Second)
+		if err != nil {
+			t.Fatal(err)
+		}
+		result, ok := msg.(*wamp.Result)
+		if !ok {
+			t.Fatal("expected RESULT, got", msg.MessageType())
+		}
+		if result.Request != callID {
+			t.Fatal("wrong result ID")
+		}
 
-	if len(result.Arguments) == 0 {
-		t.Fatal("missing expected arguemnt")
-	}
-	ids, ok := result.Arguments[0].([]wamp.ID)
-	if !ok {
-		t.Fatal("wrong arg type")
-	}
-	if len(ids) != count {
-		t.Fatal("wrong number of session IDs")
-	}
-	if sessID != ids[0] {
-		t.Fatal("wrong session ID")
+		if len(result.Arguments) == 0 {
+			t.Fatal("missing expected arguemnt")
+		}
+		ids, ok := result.Arguments[0].([]wamp.ID)
+		if !ok {
+			t.Fatal("wrong arg type")
+		}
+		if len(ids) != 1 {
+			t.Fatal("wrong number of session IDs")
+		}
+		if sessID != ids[0] {
+			t.Fatal("wrong session ID")
+		}
 	}
 
 	// Call session meta-procedure with bad session ID
-	callID = wamp.GlobalID()
+	callID := wamp.GlobalID()
 	caller.Send(&wamp.Call{
 		Request:   callID,
 		Procedure: wamp.MetaProcSessionGet,
 		Arguments: wamp.List{wamp.ID(123456789)},
 	})
-	msg, err = wamp.RecvTimeout(caller, time.Second)
+	msg, err := wamp.RecvTimeout(caller, time.Second)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -495,7 +511,7 @@ func TestSessionMetaProcedures(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	result, ok = msg.(*wamp.Result)
+	result, ok := msg.(*wamp.Result)
 	if !ok {
 		t.Fatal("expected RESULT, got", msg.MessageType())
 	}

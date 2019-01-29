@@ -789,7 +789,7 @@ func (r *realm) metaProcedureHandler() {
 func (r *realm) sessionCount(msg *wamp.Invocation) wamp.Message {
 	var filter []string
 	if len(msg.Arguments) != 0 {
-		filter = msg.Arguments[0].([]string)
+		filter, _ = msg.Arguments[0].([]string)
 	}
 	retChan := make(chan int)
 
@@ -826,7 +826,7 @@ func (r *realm) sessionCount(msg *wamp.Invocation) wamp.Message {
 func (r *realm) sessionList(msg *wamp.Invocation) wamp.Message {
 	var filter []string
 	if len(msg.Arguments) != 0 {
-		filter = msg.Arguments[0].([]string)
+		filter, _ = msg.Arguments[0].([]string)
 	}
 	retChan := make(chan []wamp.ID)
 
