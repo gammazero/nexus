@@ -80,7 +80,7 @@ func main() {
 	wss.KeepAlive = 30 * time.Second
 
 	// Create rawsocket server.
-	rss := router.NewRawSocketServer(nxr, 0, 0)
+	rss := router.NewRawSocketServer(nxr)
 
 	// ---- Start servers ----
 

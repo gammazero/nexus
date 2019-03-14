@@ -156,7 +156,7 @@ type Client struct {
 	closed        int32
 	done          chan struct{}
 	routerGoodbye *wamp.Goodbye
-	idGen *wamp.SyncIDGen
+	idGen         *wamp.SyncIDGen
 }
 
 // NewClient takes a connected Peer, joins the realm specified in cfg, and if

@@ -1,8 +1,8 @@
 package transport
 
 import (
+	"context"
 	"crypto/tls"
-	"errors"
 	"fmt"
 	"net"
 	"net/http"
@@ -51,6 +51,9 @@ type websocketPeer struct {
 	rd chan wamp.Message
 	wr chan wamp.Message
 
+	cancelSender context.CancelFunc
+	ctxSender    context.Context
+
 	writerDone chan struct{}
 
 	log stdlog.StdLog
@@ -63,8 +66,7 @@ const (
 	msgpackWebsocketProtocol = "wamp.2.msgpack"
 	cborWebsocketProtocol    = "wamp.2.cbor"
 
-	outQueueSize = 16
-	ctrlTimeout  = 5 * time.Second
+	ctrlTimeout = 5 * time.Second
 )
 
 type DialFunc func(network, addr string) (net.Conn, error)
@@ -119,7 +121,7 @@ func ConnectWebsocketPeer(routerURL string, serialization serialize.Serializatio
 	if err != nil {
 		return nil, err
 	}
-	return NewWebsocketPeer(conn, serializer, payloadType, logger, 0), nil
+	return NewWebsocketPeer(conn, serializer, payloadType, logger, 0, 0), nil
 }
 
 // NewWebsocketPeer creates a websocket peer from an existing websocket
@@ -129,7 +131,7 @@ func ConnectWebsocketPeer(routerURL string, serialization serialize.Serializatio
 // A non-zero keepAlive value configures a websocket "ping/pong" heartbeat,
 // sendings websocket "pings" every keepAlive interval.  If a "pong" response
 // is not received after 2 intervals have elapsed then the websocket is closed.
-func NewWebsocketPeer(conn *websocket.Conn, serializer serialize.Serializer, payloadType int, logger stdlog.StdLog, keepAlive time.Duration) wamp.Peer {
+func NewWebsocketPeer(conn *websocket.Conn, serializer serialize.Serializer, payloadType int, logger stdlog.StdLog, keepAlive time.Duration, outQueueSize int) wamp.Peer {
 	w := &websocketPeer{
 		conn:        conn,
 		serializer:  serializer,
@@ -150,6 +152,8 @@ func NewWebsocketPeer(conn *websocket.Conn, serializer serialize.Serializer, pay
 
 		log: logger,
 	}
+	w.ctxSender, w.cancelSender = context.WithCancel(context.Background())
+
 	// Sending to and receiving from websocket is handled concurrently.
 	go w.recvHandler()
 	if keepAlive != 0 {
@@ -167,18 +171,7 @@ func NewWebsocketPeer(conn *websocket.Conn, serializer serialize.Serializer, pay
 func (w *websocketPeer) Recv() <-chan wamp.Message { return w.rd }
 
 func (w *websocketPeer) TrySend(msg wamp.Message) error {
-	select {
-	case w.wr <- msg:
-		return nil
-	default:
-	}
-
-	select {
-	case w.wr <- msg:
-	case <-time.After(sendTimeout):
-		return errors.New("blocked")
-	}
-	return nil
+	return wamp.TrySend(w.wr, msg)
 }
 
 func (w *websocketPeer) Send(msg wamp.Message) error {
@@ -192,10 +185,9 @@ func (w *websocketPeer) Send(msg wamp.Message) error {
 //
 // *** Do not call Send after calling Close. ***
 func (w *websocketPeer) Close() {
-	// Tell sendHandler to exit, allowing it to finish sending any queued
-	// messages.  Do not close wr channel in case there are incoming messages
-	// during close.
-	w.wr <- nil
+	// Tell sendHandler to exit and discard any queued messages.  Do not close
+	// wr channel in case there are incoming messages during close.
+	w.cancelSender()
 	<-w.writerDone
 
 	closeMsg := websocket.FormatCloseMessage(websocket.CloseNormalClosure,
@@ -211,24 +203,42 @@ func (w *websocketPeer) Close() {
 	w.conn.Close()
 }
 
+// drainChannel drains a channel to unblock remaining writers.
+func drainChannel(ch chan wamp.Message) {
+	go func() {
+		ch <- nil
+	}()
+	// Drain write channel, exiting when nil received.
+	for m := range ch {
+		if m == nil {
+			break
+		}
+	}
+}
+
 // sendHandler pulls messages from the write channel, and pushes them to the
 // websocket.
 func (w *websocketPeer) sendHandler() {
 	defer close(w.writerDone)
-	for msg := range w.wr {
-		if msg == nil {
-			return
-		}
-		b, err := w.serializer.Serialize(msg.(wamp.Message))
-		if err != nil {
-			w.log.Print(err)
-			continue
-		}
+	defer drainChannel(w.wr)
 
-		if err = w.conn.WriteMessage(w.payloadType, b); err != nil {
-			if !wamp.IsGoodbyeAck(msg) {
+sendLoop:
+	for {
+		select {
+		case msg := <-w.wr:
+			b, err := w.serializer.Serialize(msg.(wamp.Message))
+			if err != nil {
 				w.log.Print(err)
+				continue sendLoop
 			}
+
+			if err = w.conn.WriteMessage(w.payloadType, b); err != nil {
+				if !wamp.IsGoodbyeAck(msg) {
+					w.log.Print(err)
+				}
+				return
+			}
+		case <-w.ctxSender.Done():
 			return
 		}
 	}
@@ -236,6 +246,7 @@ func (w *websocketPeer) sendHandler() {
 
 func (w *websocketPeer) sendHandlerKeepAlive(keepAlive time.Duration) {
 	defer close(w.writerDone)
+	defer drainChannel(w.wr)
 
 	var pendingPongs int32
 	w.conn.SetPongHandler(func(msg string) error {
@@ -248,13 +259,11 @@ func (w *websocketPeer) sendHandlerKeepAlive(keepAlive time.Duration) {
 	defer ticker.Stop()
 	pingMsg := []byte("keepalive")
 
+	senderDone := w.ctxSender.Done()
 recvLoop:
 	for {
 		select {
-		case msg, open := <-w.wr:
-			if msg == nil || !open {
-				return
-			}
+		case msg := <-w.wr:
 			b, err := w.serializer.Serialize(msg.(wamp.Message))
 			if err != nil {
 				w.log.Print(err)
@@ -280,6 +289,8 @@ recvLoop:
 				return
 			}
 			atomic.AddInt32(&pendingPongs, 1)
+		case <-senderDone:
+			return
 		}
 	}
 }
@@ -301,9 +312,9 @@ func (w *websocketPeer) recvHandler() {
 			default:
 				// Peer received control message to close.  Cause sendHandler
 				// to exit without closing the write channel (in case writes
-				// still happening) and allow it to finish sending any queued
-				// messages.
-				w.wr <- nil
+				// still happening) and discard any queued messages.
+				w.cancelSender()
+				// Wait for writer to exit before closing websocket.
 				<-w.writerDone
 			}
 			// The error is only one of these errors.  It is generally not

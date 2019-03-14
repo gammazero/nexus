@@ -85,6 +85,10 @@ func main() {
 			logger.Println("Allowing origins matching:",
 				strings.Join(conf.WebSocket.AllowOrigins, "|"))
 		}
+		if conf.WebSocket.OutQueueSize != 0 {
+			wss.OutQueueSize = conf.WebSocket.OutQueueSize
+			logger.Printf("Websocket outbound queue size: %d", wss.OutQueueSize)
+		}
 		var closer io.Closer
 		var sockDesc string
 		if conf.WebSocket.CertFile != "" && conf.WebSocket.KeyFile != "" {
@@ -106,9 +110,18 @@ func main() {
 	}
 	if conf.RawSocket.TCPAddress != "" || conf.RawSocket.UnixAddress != "" {
 		// Create a new rawsocket server with the router.
-		rss := router.NewRawSocketServer(r, conf.RawSocket.MaxMsgLen,
-			conf.RawSocket.TCPKeepAliveInterval)
+		rss := router.NewRawSocketServer(r)
+		rss.RecvLimit = conf.RawSocket.MaxMsgLen
+		if conf.RawSocket.OutQueueSize != 0 {
+			rss.OutQueueSize = conf.RawSocket.OutQueueSize
+			logger.Printf("raw socket outbound queue size: %d", rss.OutQueueSize)
+		}
 		if conf.RawSocket.TCPAddress != "" {
+			if conf.RawSocket.TCPKeepAliveInterval != 0 {
+				rss.KeepAlive = conf.RawSocket.TCPKeepAliveInterval
+				logger.Printf("tcp keep-alive interval: %s", rss.KeepAlive)
+			}
+
 			var closer io.Closer
 			var sockDesc string
 			if conf.RawSocket.CertFile != "" && conf.RawSocket.KeyFile != "" {

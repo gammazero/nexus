@@ -14,7 +14,6 @@ import (
 	"strings"
 	"time"
 
-	"github.com/gammazero/nexus/stdlog"
 	"github.com/gammazero/nexus/transport"
 	"github.com/gammazero/nexus/transport/serialize"
 	"github.com/gammazero/nexus/wamp"
@@ -25,6 +24,8 @@ const (
 	jsonWebsocketProtocol    = "wamp.2.json"
 	msgpackWebsocketProtocol = "wamp.2.msgpack"
 	cborWebsocketProtocol    = "wamp.2.cbor"
+
+	defaultOutQueueSize = 16
 )
 
 type protocol struct {
@@ -52,11 +53,6 @@ type WebsocketServer struct {
 	TextSerializer serialize.Serializer
 	// Serializer for binary frames.  Defaults to MessagePackSerializer.
 	BinarySerializer serialize.Serializer
-
-	router Router
-
-	protocols map[string]protocol
-	log       stdlog.StdLog
 
 	// EnableTrackingCookie tells the server to send a random-value cookie to
 	// the websocket client.  A returning client may identify itself by sending
@@ -95,6 +91,13 @@ type WebsocketServer struct {
 	// If a "pong" response is not received after 2 intervals have elapsed then
 	// the websocket connection is closed.
 	KeepAlive time.Duration
+
+	// OutQueueSize is the maximum number of pending outbound messages, per
+	// client.  The default is defaultOutQueueSize.
+	OutQueueSize int
+
+	router    Router
+	protocols map[string]protocol
 }
 
 // NewWebsocketServer takes a router instance and creates a new websocket
@@ -124,7 +127,6 @@ func NewWebsocketServer(r Router) *WebsocketServer {
 	s := &WebsocketServer{
 		router:    r,
 		protocols: map[string]protocol{},
-		log:       r.Logger(),
 	}
 	s.Upgrader = &websocket.Upgrader{}
 	s.addProtocol(jsonWebsocketProtocol, websocket.TextMessage,
@@ -233,7 +235,7 @@ func (s *WebsocketServer) SetConfig(wsCfg transport.WebsocketConfig) {
 func (s *WebsocketServer) ListenAndServe(address string) (io.Closer, error) {
 	l, err := net.Listen("tcp", address)
 	if err != nil {
-		s.log.Print(err)
+		s.router.Logger().Print(err)
 		return nil, err
 	}
 
@@ -271,7 +273,7 @@ func (s *WebsocketServer) ListenAndServeTLS(address string, tlscfg *tls.Config, 
 
 	l, err := tls.Listen("tcp", address, tlscfg)
 	if err != nil {
-		s.log.Print(err)
+		s.router.Logger().Print(err)
 		return nil, err
 	}
 
@@ -331,7 +333,7 @@ func (s *WebsocketServer) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 
 	conn, err := s.Upgrader.Upgrade(w, r, w.Header())
 	if err != nil {
-		s.log.Println("Error upgrading to websocket connection:", err)
+		s.router.Logger().Println("Error upgrading to websocket connection:", err)
 		http.Error(w, err.Error(), http.StatusBadRequest)
 		return
 	}
@@ -380,9 +382,13 @@ func (s *WebsocketServer) handleWebsocket(conn *websocket.Conn, transportDetails
 
 	// Create a websocket peer from the websocket connection and attach the
 	// peer to the router.
-	peer := transport.NewWebsocketPeer(conn, serializer, payloadType, s.log, s.KeepAlive)
+	qsize := s.OutQueueSize
+	if qsize == 0 {
+		qsize = defaultOutQueueSize
+	}
+	peer := transport.NewWebsocketPeer(conn, serializer, payloadType, s.router.Logger(), s.KeepAlive, qsize)
 	if err := s.router.AttachClient(peer, transportDetails); err != nil {
-		s.log.Println("Error attaching to router:", err)
+		s.router.Logger().Println("Error attaching to router:", err)
 	}
 }
 

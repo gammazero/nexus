@@ -243,7 +243,6 @@ func TestRPCProgressiveCallInterrupt(t *testing.T) {
 }
 
 func TestProgressStress(t *testing.T) {
-	t.Skip("needs investigation with ci")
 	defer leaktest.Check(t)()
 
 	// Connect callee session.

@@ -32,3 +32,14 @@ func RecvTimeout(p Peer, t time.Duration) (Message, error) {
 		return nil, errors.New("timeout waiting for message")
 	}
 }
+
+// TrySend sends a message to the write-only channel and returns an error if
+// the channel blocks.
+func TrySend(wr chan<- Message, msg Message) error {
+	select {
+	case wr <- msg:
+	default:
+		return errors.New("blocked")
+	}
+	return nil
+}

@@ -301,7 +301,6 @@ func (d *Dealer) Cancel(caller *session, msg *wamp.Cancel) {
 		})
 		return
 	}
-
 	d.actionChan <- func() {
 		d.cancel(caller, msg, mode, wamp.ErrCanceled)
 	}
@@ -313,8 +312,16 @@ func (d *Dealer) Yield(callee *session, msg *wamp.Yield) {
 	if callee == nil || msg == nil {
 		panic("dealer.Yield with nil session or message")
 	}
+	var caller *session
+	var resMsg *wamp.Result
+	done := make(chan struct{})
 	d.actionChan <- func() {
-		d.yield(callee, msg)
+		caller, resMsg = d.yield(callee, msg)
+		close(done)
+	}
+	<-done
+	if caller != nil {
+		caller.Send(resMsg)
 	}
 }
 
@@ -433,7 +440,7 @@ func (d *Dealer) register(callee *session, msg *wamp.Register, match, invokePoli
 		if reg.policy != invokePolicy {
 			d.log.Println("REGISTER for already registered procedure",
 				msg.Procedure, "with conflicting invocation policy (has",
-				reg.policy, "and", invokePolicy, "was requested")
+				reg.policy, "and requested", invokePolicy)
 			d.trySend(callee, &wamp.Error{
 				Type:    msg.MessageType(),
 				Request: msg.Request,
@@ -547,7 +554,8 @@ func (d *Dealer) matchProcedure(procedure wamp.URI) (*registration, bool) {
 				}
 			}
 		}
-		// according to the spec, we have to prefer prefix match over wildcard match:
+		// According to the spec, we have to prefer prefix match over wildcard
+		// match:
 		// https://wamp-proto.org/static/rfc/draft-oberstet-hybi-crossbar-wamp.html#rfc.section.14.3.8.1.4.2
 		if ok {
 			return reg, ok
@@ -642,13 +650,13 @@ func (d *Dealer) call(caller *session, msg *wamp.Call) {
 		if opt, _ := msg.Options[wamp.OptDiscloseMe].(bool); opt {
 			// Dealer MAY deny a Caller's request to disclose its identity.
 			if !d.allowDisclose {
+				// Do not continue a call when discloseMe was disallowed.
 				d.trySend(caller, &wamp.Error{
 					Type:    msg.MessageType(),
 					Request: msg.Request,
 					Details: wamp.Dict{},
 					Error:   wamp.ErrOptionDisallowedDiscloseMe,
 				})
-				// don't continue a call when discloseMe was disallowed.
 				return
 			}
 			if callee.HasFeature(roleCallee, featureCallerIdent) {
@@ -683,8 +691,8 @@ func (d *Dealer) call(caller *session, msg *wamp.Call) {
 	d.invocations[invocationID] = &invocation{
 		callID: reqID,
 		callee: callee,
-}
-d.invocationByCall[reqID] = invocationID
+	}
+	d.invocationByCall[reqID] = invocationID
 
 	// Send INVOCATION to the endpoint that has registered the requested
 	// procedure.
@@ -700,7 +708,7 @@ d.invocationByCall[reqID] = invocationID
 			Request:   invocationID,
 			Details:   wamp.Dict{},
 			Error:     wamp.ErrNetworkFailure,
-			Arguments: wamp.List{"client blocked - cannot call procedure"},
+			Arguments: wamp.List{"callee blocked - cannot call procedure"},
 		})
 	}
 }
@@ -718,7 +726,7 @@ func (d *Dealer) cancel(caller *session, msg *wamp.Cancel, mode string, reason w
 
 	// Check if the caller of cancel is also the caller of the procedure.
 	if caller != procCaller {
-		// The caller it trying to cancel calls that it does not own.  It it
+		// The caller is trying to cancel calls that it does not own.  It it
 		// either confused or trying to do something bad.
 		d.log.Println("CANCEL received from caller", caller,
 			"for call owned by different session")
@@ -788,7 +796,7 @@ func (d *Dealer) cancel(caller *session, msg *wamp.Cancel, mode string, reason w
 	})
 }
 
-func (d *Dealer) yield(callee *session, msg *wamp.Yield) {
+func (d *Dealer) yield(callee *session, msg *wamp.Yield) (*session, *wamp.Result) {
 	progress, _ := msg.Options[wamp.OptProgress].(bool)
 
 	// Find and delete pending invocation.
@@ -816,7 +824,7 @@ func (d *Dealer) yield(callee *session, msg *wamp.Yield) {
 			d.log.Println("YIELD received with unknown invocation request ID:",
 				msg.Request)
 		}
-		return
+		return nil, nil
 	}
 	callID := invk.callID
 	// Find caller for this result.
@@ -840,16 +848,16 @@ func (d *Dealer) yield(callee *session, msg *wamp.Yield) {
 		// Found invocation id that does not have any call id.
 		d.log.Println("!!! No matching caller for invocation from YIELD:",
 			msg.Request)
-		return
+		return nil, nil
 	}
 
 	// Send RESULT to the caller.  This forwards the YIELD from the callee.
-	d.trySend(caller, &wamp.Result{
+	return caller, &wamp.Result{
 		Request:     callID.request,
 		Details:     details,
 		Arguments:   msg.Arguments,
 		ArgumentsKw: msg.ArgumentsKw,
-	})
+	}
 }
 
 func (d *Dealer) error(msg *wamp.Error) {
@@ -1185,7 +1193,8 @@ func (d *Dealer) RegCountCallees(msg *wamp.Invocation) wamp.Message {
 
 func (d *Dealer) trySend(sess *session, msg wamp.Message) bool {
 	if err := sess.TrySend(msg); err != nil {
-		d.log.Println("!!! dealer dropped", msg.MessageType(), "message:", err)
+		d.log.Printf("!!! dealer dropped %s to session %s: %s",
+			msg.MessageType(), sess, err)
 		return false
 	}
 	return true

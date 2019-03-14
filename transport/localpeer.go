@@ -1,18 +1,10 @@
 package transport
 
 import (
-	"errors"
-	"time"
-
 	"github.com/gammazero/nexus/wamp"
 )
 
-const (
-	linkedPeersOutQueueSize = 16
-	// Time to wait to write message to send channel when send channel is
-	// blocked due to a burst of messages.
-	sendTimeout = time.Second
-)
+const linkedPeersOutQueueSize = 16
 
 // LinkedPeers creates two connected peers.  Messages sent to one peer appear
 // in the Recv of the other.  This is used for connecting client sessions to
@@ -55,18 +47,7 @@ func (p *localPeer) Recv() <-chan wamp.Message { return p.rd }
 
 // TrySend writes a message to the peer's outbound message channel.
 func (p *localPeer) TrySend(msg wamp.Message) error {
-	select {
-	case p.wr <- msg:
-		return nil
-	default:
-	}
-
-	select {
-	case p.wr <- msg:
-	case <-time.After(sendTimeout):
-		return errors.New("blocked")
-	}
-	return nil
+	return wamp.TrySend(p.wr, msg)
 }
 
 // Send writes a message to the peer's outbound message channel.
