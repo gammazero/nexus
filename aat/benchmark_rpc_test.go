@@ -3,11 +3,11 @@ package aat
 import (
 	"context"
 	"fmt"
-	"math/rand"
-	"testing"
-
 	"github.com/gammazero/nexus/client"
 	"github.com/gammazero/nexus/wamp"
+	"math/rand"
+	"sync"
+	"testing"
 )
 
 func BenchmarkRpcIntegerList(b *testing.B) {
@@ -148,27 +148,38 @@ func benchmarkRpc(b *testing.B, action client.InvocationHandler, callArgs wamp.L
 		panic("Failed to register procedure: " + err.Error())
 	}
 
-	client, err := connectClient()
-	if err != nil {
-		panic("Failed to connect client: " + err.Error())
-	}
-
-	ctx := context.Background()
-	var result *wamp.Result
-
 	b.ResetTimer()
 
+	clientsWg := &sync.WaitGroup{}
+
 	for i := 0; i < b.N; i++ {
-		result, err = client.Call(ctx, "action", nil, callArgs, nil, "")
-		if err != nil {
-			panic(err)
-		}
+		clientsWg.Add(1)
+		go func() {
+			client, err := connectClient()
+			defer client.Close()
+			defer clientsWg.Done()
+
+			if err != nil {
+				panic("Failed to connect client: " + err.Error())
+			}
+
+			ctx := context.Background()
+			var result *wamp.Result
+
+			for j:= 0; j < 10; j++ {
+				result, err = client.Call(ctx, "action", nil, callArgs, nil, "")
+				if err != nil {
+					panic(err)
+				}
+				verify(result)
+			}
+		}()
 	}
 
-	b.StopTimer()
-	verify(result)
+	clientsWg.Wait()
 
-	client.Close()
+	b.StopTimer()
+
 	server.Close()
 }
 
