@@ -5,14 +5,6 @@ import (
 	"errors"
 	"flag"
 	"fmt"
-	"io"
-	"log"
-	"net/http/cookiejar"
-	"os"
-	"path"
-	"testing"
-	"time"
-
 	"github.com/fortytw2/leaktest"
 	"github.com/gammazero/nexus/client"
 	"github.com/gammazero/nexus/router"
@@ -20,6 +12,16 @@ import (
 	"github.com/gammazero/nexus/stdlog"
 	"github.com/gammazero/nexus/transport/serialize"
 	"github.com/gammazero/nexus/wamp"
+	"github.com/gorilla/mux"
+	"io"
+	"log"
+	"net/http"
+	"net/http/cookiejar"
+	"os"
+	"path"
+	"syscall"
+	"testing"
+	"time"
 )
 
 const (
@@ -27,6 +29,7 @@ const (
 	testAuthRealm = "nexus.test.auth"
 
 	tcpAddr  = "127.0.0.1:8282"
+	httpAddr = "127.0.0.1:8001"
 	unixAddr = "/tmp/nexustest_sock"
 
 	certFile = "cert.pem"
@@ -85,6 +88,16 @@ func TestMain(m *testing.M) {
 		fmt.Fprintln(os.Stderr, "invalid serialize value")
 		flag.Usage()
 		os.Exit(1)
+	}
+
+	fmt.Println("Increasing ulimit to max")
+	var rLimit syscall.Rlimit
+	if err := syscall.Getrlimit(syscall.RLIMIT_NOFILE, &rLimit); err != nil {
+		panic(err)
+	}
+	rLimit.Cur = rLimit.Max
+	if err := syscall.Setrlimit(syscall.RLIMIT_NOFILE, &rLimit); err != nil {
+		panic(err)
 	}
 
 	var certPath, keyPath string
@@ -151,7 +164,41 @@ func TestMain(m *testing.M) {
 	case "":
 		serType = ""
 		sockDesc = "LOCAL CONNECTIONS"
-	case "http", "ws":
+	case "http", "https":
+		s := router.NewWebsocketServer(nxr)
+		sockDesc = "WEBSOCKETS"
+		// Set optional websocket config.
+		if compress {
+			s.Upgrader.EnableCompression = true
+			sockDesc += " + compression"
+		}
+		s.EnableTrackingCookie = true
+		s.EnableRequestCapture = true
+		s.KeepAlive = time.Second
+
+		// Run the HTTP/HTTPS server in a go routine since ListenAndServe blocks
+		go func() {
+			// Create a router and assign the serveHTTP handler to /ws endpoint
+			webRouter := mux.NewRouter()
+			webRouter.HandleFunc("/ws", s.ServeHTTP).Methods("GET")
+			wampServer := &http.Server{
+				Addr:    httpAddr,
+				Handler: webRouter,
+			}
+
+			// Check if we should use the certs when using tls
+			if scheme == "http" {
+				err = wampServer.ListenAndServe()
+			} else {
+				err = wampServer.ListenAndServeTLS(certPath, keyPath)
+			}
+			if err != nil {
+				fmt.Print("Error ", err.Error())
+			}
+		}()
+		// Wait a short time to ensure the server is up and running
+		time.Sleep(1 * time.Second)
+	case "ws":
 		s := router.NewWebsocketServer(nxr)
 		sockDesc = "WEBSOCKETS"
 		// Set optional websocket config.
@@ -163,7 +210,7 @@ func TestMain(m *testing.M) {
 		s.EnableRequestCapture = true
 		s.KeepAlive = time.Second
 		closer, err = s.ListenAndServe(tcpAddr)
-	case "https", "wss":
+	case "wss":
 		s := router.NewWebsocketServer(nxr)
 		sockDesc = "WEBSOCKETS + TLS"
 		if compress {
@@ -265,10 +312,18 @@ func connectClientCfg(cfg client.Config) (*client.Client, error) {
 
 	var addr string
 	switch scheme {
-	case "http", "ws", "tcp":
-		addr = fmt.Sprintf("%s://%s/", scheme, tcpAddr)
+	case "http", "https":
+		addr = fmt.Sprintf("%s://%s/ws", scheme, httpAddr)
+		if scheme == "https" {
+			cfg.TlsCfg = &tls.Config{
+				InsecureSkipVerify: true,
+			}
+		}
 		cli, err = client.ConnectNet(addr, cfg)
-	case "https", "wss", "tcps":
+	case "ws", "tcp":
+		addr = fmt.Sprintf("%s://%s", scheme, tcpAddr)
+		cli, err = client.ConnectNet(addr, cfg)
+	case "wss", "tcps":
 		// If TLS requested, set up TLS configuration to skip verification.
 		cfg.TlsCfg = &tls.Config{
 			InsecureSkipVerify: true,
