@@ -8,6 +8,7 @@ vet:
 	go vet -all -composites=false -shadow=true ./...
 
 test:
+	go get github.com/gorilla/mux
 	go get github.com/fortytw2/leaktest
 	go get github.com/davecgh/go-spew/spew
 	go build ./examples/...
