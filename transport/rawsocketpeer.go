@@ -64,7 +64,7 @@ func ConnectRawSocketPeer(network, address string, serialization serialize.Seria
 		return nil, err
 	}
 
-	conn, err := net.Dial(network, address)
+	conn, err := net.DialTimeout(network, address, 5 * time.Second)
 	if err != nil {
 		return nil, err
 	}

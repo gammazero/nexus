@@ -1,6 +1,7 @@
 package transport
 
 import (
+	"context"
 	"crypto/tls"
 	"errors"
 	"fmt"
@@ -115,7 +116,8 @@ func ConnectWebsocketPeer(routerURL string, serialization serialize.Serializatio
 		dialer.EnableCompression = true
 	}
 
-	conn, _, err := dialer.Dial(routerURL, nil)
+	ctx, _ := context.WithTimeout(context.Background(), 5 * time.Second)
+	conn, _, err := dialer.DialContext(ctx, routerURL, nil)
 	if err != nil {
 		return nil, err
 	}
