@@ -138,9 +138,9 @@ func ConnectWebsocketPeerContext(
 	}
 
 	if ctx == nil {
-		conn, _, err = dialer.DialContext(ctx, routerURL, nil)
-	} else {
 		conn, _, err = dialer.Dial(routerURL, nil)
+	} else {
+		conn, _, err = dialer.DialContext(ctx, routerURL, nil)
 	}
 
 	if err != nil {

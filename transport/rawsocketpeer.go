@@ -84,9 +84,9 @@ func ConnectRawSocketPeerTimeout(
 	}
 
 	if timeout == 0 {
-		conn, err = net.DialTimeout(network, address, timeout)
-	} else {
 		conn, err = net.Dial(network, address)
+	} else {
+		conn, err = net.DialTimeout(network, address, timeout)
 	}
 
 	if err != nil {
