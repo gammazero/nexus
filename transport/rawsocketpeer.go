@@ -45,7 +45,12 @@ const (
 	magic = 0x7f
 )
 
-// ConnectRawSocketPeer creates a new rawSocketPeer with the specified config,
+// ConnectRawSocketPeer calls ConnectRawSocketPeerTimeout without a Dial timeout
+func ConnectRawSocketPeer(network, address string, serialization serialize.Serialization, logger stdlog.StdLog, recvLimit int) (wamp.Peer, error) {
+	return ConnectRawSocketPeerTimeout(0, network, address, serialization, logger, recvLimit)
+}
+
+// ConnectRawSocketPeerTimeout creates a new rawSocketPeer with the specified config,
 // and connects it to the WAMP router at the specified address.  The network
 // and address parameters are documented here:
 // https://golang.org/pkg/net/#Dial
@@ -53,23 +58,42 @@ const (
 // If recvLimit is > 0, then the client will not receive messages with size
 // larger than the nearest power of 2 greater than or equal to recvLimit.  If
 // recvLimit is <= 0, then the default of 16M is used.
-func ConnectRawSocketPeer(network, address string, serialization serialize.Serialization, logger stdlog.StdLog, recvLimit int) (wamp.Peer, error) {
-	err := checkNetworkType(network)
+func ConnectRawSocketPeerTimeout(
+	timeout time.Duration,
+	network,
+	address string,
+	serialization serialize.Serialization,
+	logger stdlog.StdLog,
+	recvLimit int) (wamp.Peer, error) {
+
+	var (
+		protocol byte
+		conn     net.Conn
+		err      error
+		peer     *rawSocketPeer
+	)
+
+	err = checkNetworkType(network)
 	if err != nil {
 		return nil, err
 	}
 
-	protocol, err := getProtoByte(serialization)
+	protocol, err = getProtoByte(serialization)
 	if err != nil {
 		return nil, err
 	}
 
-	conn, err := net.DialTimeout(network, address, 5 * time.Second)
+	if timeout == 0 {
+		conn, err = net.DialTimeout(network, address, timeout)
+	} else {
+		conn, err = net.Dial(network, address)
+	}
+
 	if err != nil {
 		return nil, err
 	}
 
-	peer, err := clientHandshake(conn, logger, protocol, recvLimit)
+	peer, err = clientHandshake(conn, logger, protocol, recvLimit)
 	if err != nil {
 		conn.Close()
 		return nil, err
