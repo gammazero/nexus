@@ -73,11 +73,35 @@ type DialFunc func(network, addr string) (net.Conn, error)
 // ConnectWebsocketPeer creates a new websocket client with the specified
 // config, connects the client to the websocket server at the specified URL,
 // and returns the connected websocket peer.
-func ConnectWebsocketPeer(routerURL string, serialization serialize.Serialization, tlsConfig *tls.Config, dial DialFunc, logger stdlog.StdLog, wsCfg *WebsocketConfig) (wamp.Peer, error) {
+func ConnectWebsocketPeer(
+	routerURL string,
+	serialization serialize.Serialization,
+	tlsConfig *tls.Config,
+	dial DialFunc,
+	logger stdlog.StdLog,
+	wsCfg *WebsocketConfig) (wamp.Peer, error) {
+	return ConnectWebsocketPeerContext(nil, routerURL, serialization, tlsConfig, dial, logger, wsCfg)
+}
+
+
+// ConnectWebsocketPeer creates a new websocket client with the specified
+// config, connects the client to the websocket server at the specified URL,
+// and returns the connected websocket peer.
+func ConnectWebsocketPeerContext(
+	ctx context.Context,
+	routerURL string,
+	serialization serialize.Serialization,
+	tlsConfig *tls.Config,
+	dial DialFunc,
+	logger stdlog.StdLog,
+	wsCfg *WebsocketConfig) (wamp.Peer, error) {
+
 	var (
 		protocol    string
 		payloadType int
 		serializer  serialize.Serializer
+		conn *websocket.Conn
+		err error
 	)
 
 	switch serialization {
@@ -116,15 +140,18 @@ func ConnectWebsocketPeer(routerURL string, serialization serialize.Serializatio
 		dialer.EnableCompression = true
 	}
 
-	ctx, cancel := context.WithTimeout(context.Background(), 5 * time.Second)
-	defer cancel()
-	
-	conn, _, err := dialer.DialContext(ctx, routerURL, nil)
+	if ctx == nil {
+		conn, _, err = dialer.DialContext(ctx, routerURL, nil)
+	} else {
+		conn, _, err = dialer.Dial(routerURL, nil)
+	}
+
 	if err != nil {
 		return nil, err
 	}
 	return NewWebsocketPeer(conn, serializer, payloadType, logger, 0), nil
 }
+
 
 // NewWebsocketPeer creates a websocket peer from an existing websocket
 // connection.  This is used by clients connecting to the WAMP router, and by
