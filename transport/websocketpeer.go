@@ -70,9 +70,7 @@ const (
 
 type DialFunc func(network, addr string) (net.Conn, error)
 
-// ConnectWebsocketPeer creates a new websocket client with the specified
-// config, connects the client to the websocket server at the specified URL,
-// and returns the connected websocket peer.
+// ConnectWebsocketPeer calls ConnectWebsocketPeerContext without a Dial context
 func ConnectWebsocketPeer(
 	routerURL string,
 	serialization serialize.Serialization,
@@ -82,7 +80,6 @@ func ConnectWebsocketPeer(
 	wsCfg *WebsocketConfig) (wamp.Peer, error) {
 	return ConnectWebsocketPeerContext(nil, routerURL, serialization, tlsConfig, dial, logger, wsCfg)
 }
-
 
 // ConnectWebsocketPeer creates a new websocket client with the specified
 // config, connects the client to the websocket server at the specified URL,
@@ -151,7 +148,6 @@ func ConnectWebsocketPeerContext(
 	}
 	return NewWebsocketPeer(conn, serializer, payloadType, logger, 0), nil
 }
-
 
 // NewWebsocketPeer creates a websocket peer from an existing websocket
 // connection.  This is used by clients connecting to the WAMP router, and by
