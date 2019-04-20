@@ -1,7 +1,5 @@
 module github.com/gammazero/nexus
 
-go 1.12
-
 require (
 	github.com/davecgh/go-spew v1.1.1
 	github.com/fortytw2/leaktest v1.3.0
