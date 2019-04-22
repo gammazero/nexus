@@ -821,7 +821,6 @@ func (d *Dealer) yield(callee *session, msg *wamp.Yield) {
 
 	// Make sure this yield was sent by the session that handled the call
 	if invk.callee != callee {
-		d.log.Println("DIFF CALLEES:", invk.callee, callee)
 		d.log.Println("Ignoring YIELD received from session", callee, "that does not own request", msg.Request)
 		return
 	}
