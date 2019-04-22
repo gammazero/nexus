@@ -417,10 +417,11 @@ func TestSessionMetaProcedures(t *testing.T) {
 		// Call with extra arguments (but invalid)
 		&wamp.Call{Request: wamp.GlobalID(), Procedure: wamp.MetaProcSessionCount, Arguments: wamp.List{"invalidarg"}},
 	}
+	var msg wamp.Message
 	for _, req := range sessionCountRequests {
 		callID := req.Request
 		caller.Send(req)
-		msg, err := wamp.RecvTimeout(caller, time.Second)
+		msg, err = wamp.RecvTimeout(caller, time.Second)
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -454,7 +455,7 @@ func TestSessionMetaProcedures(t *testing.T) {
 	for _, req := range sessionListRequests {
 		callID := req.Request
 		caller.Send(&wamp.Call{Request: callID, Procedure: wamp.MetaProcSessionList})
-		msg, err := wamp.RecvTimeout(caller, time.Second)
+		msg, err = wamp.RecvTimeout(caller, time.Second)
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -488,7 +489,7 @@ func TestSessionMetaProcedures(t *testing.T) {
 		Procedure: wamp.MetaProcSessionGet,
 		Arguments: wamp.List{wamp.ID(123456789)},
 	})
-	msg, err := wamp.RecvTimeout(caller, time.Second)
+	msg, err = wamp.RecvTimeout(caller, time.Second)
 	if err != nil {
 		t.Fatal(err)
 	}

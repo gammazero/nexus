@@ -153,7 +153,12 @@ func TestBasicCall(t *testing.T) {
 	calleeSess := newSession(callee, 0, nil)
 	dealer.Register(calleeSess,
 		&wamp.Register{Request: 123, Procedure: testProcedure})
-	rsp := <-callee.Recv()
+	var rsp wamp.Message
+	select {
+	case rsp = <-callee.Recv():
+	case <-time.After(time.Millisecond):
+		t.Fatal("timed out waiting for response")
+	}
 	_, ok := rsp.(*wamp.Registered)
 	if !ok {
 		t.Fatal("did not receive REGISTERED response")
@@ -639,7 +644,7 @@ func TestSharedRegistrationFirst(t *testing.T) {
 
 	// Register callee1 with first shared registration
 	callee1 := newTestPeer()
-	calleeSess1 := newSession(callee1, 0, calleeRoles)
+	calleeSess1 := newSession(callee1, 1111, calleeRoles)
 	dealer.Register(calleeSess1, &wamp.Register{
 		Request:   123,
 		Procedure: testProcedure,
@@ -661,7 +666,7 @@ func TestSharedRegistrationFirst(t *testing.T) {
 
 	// Register callee2 with roundrobin shared registration
 	callee2 := newTestPeer()
-	calleeSess2 := newSession(callee2, 0, calleeRoles)
+	calleeSess2 := newSession(callee2, 2222, calleeRoles)
 	dealer.Register(calleeSess2, &wamp.Register{
 		Request:   1233,
 		Procedure: testProcedure,
@@ -679,12 +684,17 @@ func TestSharedRegistrationFirst(t *testing.T) {
 		Procedure: testProcedure,
 		Options:   wamp.SetOption(nil, "invoke", "first"),
 	})
-	rsp = <-callee2.Recv()
+	select {
+	case rsp = <-callee2.Recv():
+	case <-time.After(time.Second):
+		t.Fatal("Timed out waiting for REGISTERED")
+	}
+
 	if regMsg, ok = rsp.(*wamp.Registered); !ok {
 		t.Fatal("did not receive REGISTERED response")
 	}
 	regID2 := regMsg.Registration
-	if err = checkMetaReg(metaClient, calleeSess1.ID); err != nil {
+	if err = checkMetaReg(metaClient, calleeSess2.ID); err != nil {
 		t.Fatal("Registration meta event fail:", err)
 	}
 
@@ -694,7 +704,7 @@ func TestSharedRegistrationFirst(t *testing.T) {
 
 	// Test calling valid procedure
 	caller := newTestPeer()
-	callerSession := newSession(caller, 0, nil)
+	callerSession := newSession(caller, 333, nil)
 	dealer.Call(callerSession,
 		&wamp.Call{Request: 125, Procedure: testProcedure})
 
@@ -712,10 +722,15 @@ func TestSharedRegistrationFirst(t *testing.T) {
 		t.Fatal("Timed out waiting for INVOCATION")
 	}
 
-	// Callee responds with a YIELD message
+	// Callee1 responds with a YIELD message
 	dealer.Yield(calleeSess1, &wamp.Yield{Request: inv.Request})
+
 	// Check that caller received a RESULT message.
-	rsp = <-caller.Recv()
+	select {
+	case rsp = <-caller.Recv():
+	case <-time.After(time.Second):
+		t.Fatal("Timed out waiting for RESULT")
+	}
 	rslt, ok := rsp.(*wamp.Result)
 	if !ok {
 		t.Fatal("expected RESULT, got:", rsp.MessageType())
@@ -742,9 +757,14 @@ func TestSharedRegistrationFirst(t *testing.T) {
 	}
 
 	// Callee responds with a YIELD message
-	dealer.Yield(calleeSess2, &wamp.Yield{Request: inv.Request})
+	dealer.Yield(calleeSess1, &wamp.Yield{Request: inv.Request})
+
 	// Check that caller received a RESULT message.
-	rsp = <-caller.Recv()
+	select {
+	case rsp = <-caller.Recv():
+	case <-time.After(time.Second):
+		t.Fatal("Timed out waiting for RESULT")
+	}
 	rslt, ok = rsp.(*wamp.Result)
 	if !ok {
 		t.Fatal("expected RESULT, got:", rsp.MessageType())
@@ -781,8 +801,14 @@ func TestSharedRegistrationFirst(t *testing.T) {
 
 	// Callee responds with a YIELD message
 	dealer.Yield(calleeSess2, &wamp.Yield{Request: inv.Request})
+
 	// Check that caller received a RESULT message.
-	rsp = <-caller.Recv()
+	select {
+	case rsp = <-caller.Recv():
+	case <-time.After(time.Second):
+		t.Fatal("Timed out waiting for RESULT")
+	}
+
 	rslt, ok = rsp.(*wamp.Result)
 	if !ok {
 		t.Fatal("expected RESULT, got:", rsp.MessageType())
@@ -838,7 +864,7 @@ func TestSharedRegistrationLast(t *testing.T) {
 	if _, ok = rsp.(*wamp.Registered); !ok {
 		t.Fatal("did not receive REGISTERED response")
 	}
-	if err = checkMetaReg(metaClient, calleeSess1.ID); err != nil {
+	if err = checkMetaReg(metaClient, calleeSess2.ID); err != nil {
 		t.Fatal("Registration meta event fail:", err)
 	}
 
@@ -1108,5 +1134,49 @@ func TestCallerIdentification(t *testing.T) {
 	if id, _ := wamp.AsID(inv.Details["caller"]); id != callerID {
 		fmt.Println("===> details:", inv.Details)
 		t.Fatal("Did not get expected caller ID")
+	}
+}
+
+func TestWrongYielder(t *testing.T) {
+	dealer := NewDealer(logger, false, true, debug)
+
+	// Register a procedure.
+	callee := newTestPeer()
+	calleeSess := newSession(callee, 7777, nil)
+	dealer.Register(calleeSess,
+		&wamp.Register{Request: 4321, Procedure: testProcedure})
+	rsp := <-callee.Recv()
+	_, ok := rsp.(*wamp.Registered)
+	if !ok {
+		t.Fatal("did not receive REGISTERED response")
+	}
+
+	// Create caller
+	caller := newTestPeer()
+	callerSession := newSession(caller, 0, nil)
+
+	// Create imposter callee
+	badCallee := newTestPeer()
+	badCalleeSess := newSession(badCallee, 1313, nil)
+
+	// Call the procedure
+	dealer.Call(callerSession,
+		&wamp.Call{Request: 4322, Procedure: testProcedure})
+
+	// Test that callee received an INVOCATION message.
+	rsp = <-callee.Recv()
+	inv, ok := rsp.(*wamp.Invocation)
+	if !ok {
+		t.Fatal("expected INVOCATION, got:", rsp.MessageType())
+	}
+
+	// Imposter callee responds with a YIELD message
+	dealer.Yield(badCalleeSess, &wamp.Yield{Request: inv.Request})
+
+	// Check that caller did not received a RESULT message.
+	select {
+	case rsp = <-caller.Recv():
+		t.Fatal("Caller received response from imposter callee")
+	case <-time.After(200 * time.Millisecond):
 	}
 }

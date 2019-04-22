@@ -42,4 +42,4 @@ $(SERVICE_DIR)/nexusd:
 clean:
 	@rm -f $(SERVICE_DIR)/nexusd
 	@rm -f $(SERVICE_DIR)/*.log
-	@go clean
+	@GO111MODULE=off go clean
