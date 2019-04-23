@@ -15,8 +15,12 @@ type session struct {
 	rwlock   sync.RWMutex
 }
 
-// newSession created a new lockable session.
+// newSession creates a new lockable session.
 func newSession(peer wamp.Peer, sid wamp.ID, details wamp.Dict) *session {
+	if sid == 0 {
+		sid = wamp.GlobalID()
+	}
+
 	return &session{
 		Session: wamp.Session{
 			Peer:    peer,

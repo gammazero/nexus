@@ -683,8 +683,8 @@ func (d *Dealer) call(caller *session, msg *wamp.Call) {
 	d.invocations[invocationID] = &invocation{
 		callID: reqID,
 		callee: callee,
-}
-d.invocationByCall[reqID] = invocationID
+	}
+	d.invocationByCall[reqID] = invocationID
 
 	// Send INVOCATION to the endpoint that has registered the requested
 	// procedure.
@@ -818,6 +818,13 @@ func (d *Dealer) yield(callee *session, msg *wamp.Yield) {
 		}
 		return
 	}
+
+	// Make sure this yield was sent by the session that handled the call
+	if invk.callee != callee {
+		d.log.Println("Ignoring YIELD received from session", callee, "that does not own request", msg.Request)
+		return
+	}
+
 	callID := invk.callID
 	// Find caller for this result.
 	caller, ok := d.calls[callID]
