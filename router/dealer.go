@@ -859,6 +859,13 @@ func (d *Dealer) yield(callee *session, msg *wamp.Yield, canRetry bool) bool {
 		}
 		return false
 	}
+
+	// Make sure this yield was sent by the session that handled the call
+	if invk.callee != callee {
+		d.log.Println("Ignoring YIELD received from session", callee, "that does not own request", msg.Request)
+		return
+	}
+
 	callID := invk.callID
 	// Find caller for this result.
 	caller, ok := d.calls[callID]
