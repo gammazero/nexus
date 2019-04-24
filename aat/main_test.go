@@ -31,6 +31,8 @@ const (
 
 	certFile = "cert.pem"
 	keyFile  = "rsakey.pem"
+
+	keepAliveInterval = time.Second * 5
 )
 
 var (
@@ -165,7 +167,7 @@ func TestMain(m *testing.M) {
 		}
 		s.EnableTrackingCookie = true
 		s.EnableRequestCapture = true
-		s.KeepAlive = time.Second
+		s.KeepAlive = keepAliveInterval
 		s.OutQueueSize = outQueueSize
 		closer, err = s.ListenAndServe(tcpAddr)
 	case "https", "wss":
@@ -177,24 +179,24 @@ func TestMain(m *testing.M) {
 		}
 		s.EnableTrackingCookie = true
 		s.EnableRequestCapture = true
-		s.KeepAlive = time.Second
+		s.KeepAlive = keepAliveInterval
 		s.OutQueueSize = outQueueSize
 		closer, err = s.ListenAndServeTLS(tcpAddr, nil, certPath, keyPath)
 	case "tcp":
 		s := router.NewRawSocketServer(nxr)
-		s.KeepAlive = time.Second
+		s.KeepAlive = keepAliveInterval
 		closer, err = s.ListenAndServe(scheme, tcpAddr)
 		sockDesc = "TCP RAWSOCKETS"
 	case "tcps":
 		s := router.NewRawSocketServer(nxr)
-		s.KeepAlive = time.Second
+		s.KeepAlive = keepAliveInterval
 		s.OutQueueSize = outQueueSize
 		closer, err = s.ListenAndServeTLS("tcp", tcpAddr, nil, certPath, keyPath)
 		sockDesc = "TCP RAWSOCKETS + TLS"
 	case "unix":
 		os.Remove(unixAddr)
 		s := router.NewRawSocketServer(nxr)
-		s.KeepAlive = time.Second
+		s.KeepAlive = keepAliveInterval
 		s.OutQueueSize = outQueueSize
 		closer, err = s.ListenAndServe(scheme, unixAddr)
 		addr = unixAddr

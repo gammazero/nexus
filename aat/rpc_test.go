@@ -168,6 +168,7 @@ func TestRPCCancelCall(t *testing.T) {
 	if err != nil {
 		t.Fatal("Failed to connect client:", err)
 	}
+	defer callee.Close()
 
 	// Check for feature support in router.
 	const featureCallCanceling = "call_canceling"
@@ -215,11 +216,10 @@ func TestRPCCancelCall(t *testing.T) {
 	select {
 	case err = <-errChan:
 		if err == nil {
-			t.Fatal("Expected error from canceling call")
+			t.Fatal("expected error from canceling call")
 		}
-		if err.(client.RPCError).Err.Error != wamp.ErrCanceled {
-			t.Fatal("Wrong error for canceled call, got",
-				err.(client.RPCError).Err.Error, "want", wamp.ErrCanceled)
+		if err != context.Canceled {
+			t.Fatal("expected context.Canceled error")
 		}
 	case <-time.After(2 * time.Second):
 		t.Fatal("call should have been canceled")
@@ -232,13 +232,6 @@ func TestRPCCancelCall(t *testing.T) {
 		t.Fatal("invocation should have been canceled")
 	}
 
-	rpcError, ok := err.(client.RPCError)
-	if !ok {
-		t.Fatal("expected RPCError type of error")
-	}
-	if rpcError.Err.Error != wamp.ErrCanceled {
-		t.Fatal("expected canceled error, got:", err)
-	}
 	if err = callee.Unregister(procName); err != nil {
 		t.Fatal("failed to unregister procedure:", err)
 	}

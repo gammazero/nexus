@@ -168,9 +168,12 @@ func (rs *rawSocketPeer) TrySend(msg wamp.Message) error {
 	return wamp.TrySend(rs.wr, msg)
 }
 
+func (rs *rawSocketPeer) SendCtx(ctx context.Context, msg wamp.Message) error {
+	return wamp.SendCtx(ctx, rs.wr, msg)
+}
+
 func (rs *rawSocketPeer) Send(msg wamp.Message) error {
-	rs.wr <- msg
-	return nil
+	return wamp.SendCtx(rs.ctxSender, rs.wr, msg)
 }
 
 // Close closes the rawsocket peer.  This closes the local send channel, and
@@ -196,7 +199,7 @@ func (rs *rawSocketPeer) Close() {
 // socket.
 func (rs *rawSocketPeer) sendHandler() {
 	defer close(rs.writerDone)
-	defer drainChannel(rs.wr)
+	defer rs.cancelSender()
 
 	senderDone := rs.ctxSender.Done()
 sendLoop:

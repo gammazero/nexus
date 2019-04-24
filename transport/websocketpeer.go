@@ -174,9 +174,12 @@ func (w *websocketPeer) TrySend(msg wamp.Message) error {
 	return wamp.TrySend(w.wr, msg)
 }
 
+func (w *websocketPeer) SendCtx(ctx context.Context, msg wamp.Message) error {
+	return wamp.SendCtx(ctx, w.wr, msg)
+}
+
 func (w *websocketPeer) Send(msg wamp.Message) error {
-	w.wr <- msg
-	return nil
+	return wamp.SendCtx(w.ctxSender, w.wr, msg)
 }
 
 // Close closes the websocket peer.  This closes the local send channel, and
@@ -203,24 +206,11 @@ func (w *websocketPeer) Close() {
 	w.conn.Close()
 }
 
-// drainChannel drains a channel to unblock remaining writers.
-func drainChannel(ch chan wamp.Message) {
-	go func() {
-		ch <- nil
-	}()
-	// Drain write channel, exiting when nil received.
-	for m := range ch {
-		if m == nil {
-			break
-		}
-	}
-}
-
 // sendHandler pulls messages from the write channel, and pushes them to the
 // websocket.
 func (w *websocketPeer) sendHandler() {
 	defer close(w.writerDone)
-	defer drainChannel(w.wr)
+	defer w.cancelSender()
 
 sendLoop:
 	for {
@@ -246,7 +236,7 @@ sendLoop:
 
 func (w *websocketPeer) sendHandlerKeepAlive(keepAlive time.Duration) {
 	defer close(w.writerDone)
-	defer drainChannel(w.wr)
+	defer w.cancelSender()
 
 	var pendingPongs int32
 	w.conn.SetPongHandler(func(msg string) error {

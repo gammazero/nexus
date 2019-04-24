@@ -1,6 +1,7 @@
 package wamp
 
 import (
+	"context"
 	"testing"
 	"time"
 )
@@ -20,6 +21,10 @@ func (p *testPeer) TrySend(msg Message) error {
 func (p *testPeer) Send(msg Message) error {
 	p.in <- msg
 	return nil
+}
+
+func (p *testPeer) SendCtx(ctx context.Context, msg Message) error {
+	return SendCtx(ctx, p.in, msg)
 }
 
 func (p *testPeer) Recv() <-chan Message { return p.in }
@@ -65,5 +70,23 @@ func TestTrySend(t *testing.T) {
 		t.Fatal("Failed to send message")
 	}
 
+	p.Close()
+}
+
+func TestSendCtx(t *testing.T) {
+	p := newTestPeer()
+	ctx, cancel := context.WithCancel(context.Background())
+	go func() {
+		<-p.Recv()
+	}()
+	err := p.SendCtx(ctx, &Hello{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	cancel()
+	err = p.SendCtx(ctx, &Hello{})
+	if err != context.Canceled {
+		t.Fatal("Expected context.Canceled error")
+	}
 	p.Close()
 }

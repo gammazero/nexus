@@ -483,12 +483,8 @@ func TestTimeoutCancelRemoteProcedureCall(t *testing.T) {
 		t.Fatal("call should have been canceled")
 	}
 
-	rpcError, ok := err.(RPCError)
-	if !ok {
-		t.Fatal("expected RPCError type of error")
-	}
-	if rpcError.Err.Error != wamp.ErrCanceled {
-		t.Fatal("expected canceled error, got:", err)
+	if err != context.DeadlineExceeded {
+		t.Fatal("expected context.DeadlineExceeded error")
 	}
 	if err = callee.Unregister(procName); err != nil {
 		t.Fatal("failed to unregister procedure:", err)
@@ -541,12 +537,8 @@ func TestCancelRemoteProcedureCall(t *testing.T) {
 		t.Fatal("call should have been canceled")
 	}
 
-	rpcError, ok := err.(RPCError)
-	if !ok {
-		t.Fatal("expected RPCError type of error")
-	}
-	if rpcError.Err.Error != wamp.ErrCanceled {
-		t.Fatal("expected canceled error, got:", err)
+	if err != context.Canceled {
+		t.Fatal("expected context.Canceled error")
 	}
 	if err = callee.Unregister(procName); err != nil {
 		t.Fatal("failed to unregister procedure:", err)

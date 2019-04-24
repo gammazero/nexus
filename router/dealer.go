@@ -23,6 +23,13 @@ const (
 	featureSharedReg        = "shared_registration"
 	featureRegMetaAPI       = "registration_meta_api"
 	featureTestamentMetaAPI = "testament_meta_api"
+
+	// sendResultDeadline is the amount of time until the dealer gives up
+	// trying to send a RESULT to a blocked caller.  This is different that the
+	// CALL timeout which spedifies how long the callee may take to answer.
+	sendResultDeadline = time.Minute
+	// yieldRetryDelay is the initial delay before reprocessin a blocked yield
+	yieldRetryDelay = 200 * time.Millisecond
 )
 
 // Role information for this broker.
@@ -57,9 +64,10 @@ type registration struct {
 
 // invocation tracks in-progress invocation
 type invocation struct {
-	callID   requestID
-	callee   *session
-	canceled bool
+	callID     requestID
+	callee     *session
+	canceled   bool
+	retryCount int
 }
 
 type requestID struct {
@@ -308,20 +316,45 @@ func (d *Dealer) Cancel(caller *session, msg *wamp.Cancel) {
 
 // Yield handles the result of successfully processing and finishing the
 // execution of a call, send from callee to dealer.
+//
+// If the RESULT could not be sent to the caller because he caller was blocked
+// (send queue full), then retry sending until timeout.  If timeout while
+// trying to send RESULT, then cancel call.
 func (d *Dealer) Yield(callee *session, msg *wamp.Yield) {
 	if callee == nil || msg == nil {
 		panic("dealer.Yield with nil session or message")
 	}
-	var caller *session
-	var resMsg *wamp.Result
+	var again bool
 	done := make(chan struct{})
 	d.actionChan <- func() {
-		caller, resMsg = d.yield(callee, msg)
-		close(done)
+		again = d.yield(callee, msg, true)
+		done <- struct{}{}
 	}
 	<-done
-	if caller != nil {
-		caller.Send(resMsg)
+
+	// If blocked, retry
+	if again {
+		retry := true
+		delay := yieldRetryDelay
+		start := time.Now()
+		// Retry processing YIELD until caller gone or deadline reached
+		for {
+			d.log.Println("Retry sending RESULT after", delay)
+			<-time.After(delay)
+			// Do not retry if the elapsed time exceeds deadline
+			if time.Since(start) >= sendResultDeadline {
+				retry = false
+			}
+			d.actionChan <- func() {
+				again = d.yield(callee, msg, retry)
+				done <- struct{}{}
+			}
+			<-done
+			if !again {
+				break
+			}
+			delay *= 2
+		}
 	}
 }
 
@@ -796,7 +829,7 @@ func (d *Dealer) cancel(caller *session, msg *wamp.Cancel, mode string, reason w
 	})
 }
 
-func (d *Dealer) yield(callee *session, msg *wamp.Yield) (*session, *wamp.Result) {
+func (d *Dealer) yield(callee *session, msg *wamp.Yield, canRetry bool) bool {
 	progress, _ := msg.Options[wamp.OptProgress].(bool)
 
 	// Find and delete pending invocation.
@@ -824,7 +857,7 @@ func (d *Dealer) yield(callee *session, msg *wamp.Yield) (*session, *wamp.Result
 			d.log.Println("YIELD received with unknown invocation request ID:",
 				msg.Request)
 		}
-		return nil, nil
+		return false
 	}
 	callID := invk.callID
 	// Find caller for this result.
@@ -832,15 +865,22 @@ func (d *Dealer) yield(callee *session, msg *wamp.Yield) (*session, *wamp.Result
 
 	details := wamp.Dict{}
 
-	if !progress {
-		delete(d.invocations, msg.Request)
-		// Delete callID -> invocation.
-		delete(d.invocationByCall, callID)
-		// Delete pending call since it is finished.
-		delete(d.calls, callID)
-	} else {
+	var keepInvocation bool
+	if progress {
 		// If this is a progressive response, then set progress=true.
 		details[wamp.OptProgress] = true
+	} else {
+		// Clean up the invocation, unless need to retry.
+		defer func() {
+			if keepInvocation {
+				return
+			}
+			delete(d.invocations, msg.Request)
+			// Delete callID -> invocation.
+			delete(d.invocationByCall, callID)
+			// Delete pending call since it is finished.
+			delete(d.calls, callID)
+		}()
 	}
 
 	// Did not find caller.
@@ -848,16 +888,30 @@ func (d *Dealer) yield(callee *session, msg *wamp.Yield) (*session, *wamp.Result
 		// Found invocation id that does not have any call id.
 		d.log.Println("!!! No matching caller for invocation from YIELD:",
 			msg.Request)
-		return nil, nil
+		return false
 	}
 
-	// Send RESULT to the caller.  This forwards the YIELD from the callee.
-	return caller, &wamp.Result{
+	// Send RESULT to the caller.  If the caller is blocked, then make the
+	// callee wait and retry sending this message again.  The caller may be
+	// blocked when the callee is generating progressive responses faster than
+	// the caller can handle them.
+	res := &wamp.Result{
 		Request:     callID.request,
 		Details:     details,
 		Arguments:   msg.Arguments,
 		ArgumentsKw: msg.ArgumentsKw,
 	}
+	err := caller.TrySend(res)
+	if err != nil {
+		if canRetry {
+			keepInvocation = true
+			return true
+		}
+		d.log.Printf("!!! Dropped %s to caller %s: %s", res.MessageType(), caller, err)
+		d.cancel(caller, &wamp.Cancel{Request: callID.request},
+			wamp.CancelModeKillNoWait, wamp.ErrCanceled)
+	}
+	return false
 }
 
 func (d *Dealer) error(msg *wamp.Error) {
@@ -1193,8 +1247,7 @@ func (d *Dealer) RegCountCallees(msg *wamp.Invocation) wamp.Message {
 
 func (d *Dealer) trySend(sess *session, msg wamp.Message) bool {
 	if err := sess.TrySend(msg); err != nil {
-		d.log.Printf("!!! dealer dropped %s to session %s: %s",
-			msg.MessageType(), sess, err)
+		d.log.Printf("!!! Dropped %s to session %s: %s", msg.MessageType(), sess, err)
 		return false
 	}
 	return true

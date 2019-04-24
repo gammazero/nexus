@@ -1,6 +1,8 @@
 package transport
 
 import (
+	"context"
+
 	"github.com/gammazero/nexus/wamp"
 )
 
@@ -48,6 +50,10 @@ func (p *localPeer) Recv() <-chan wamp.Message { return p.rd }
 // TrySend writes a message to the peer's outbound message channel.
 func (p *localPeer) TrySend(msg wamp.Message) error {
 	return wamp.TrySend(p.wr, msg)
+}
+
+func (p *localPeer) SendCtx(ctx context.Context, msg wamp.Message) error {
+	return wamp.SendCtx(ctx, p.wr, msg)
 }
 
 // Send writes a message to the peer's outbound message channel.
