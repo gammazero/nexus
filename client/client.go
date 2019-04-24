@@ -1091,8 +1091,6 @@ CollectResults:
 		}
 	case <-ctx.Done():
 		err = ctx.Err()
-		c.log.Printf("Call to %q canceled by caller (mode=%s): %s",
-			procedure, mode, err)
 		if c.debug {
 			c.log.Printf("Call to %q canceled by caller (mode=%s): %s",
 				procedure, mode, err)
