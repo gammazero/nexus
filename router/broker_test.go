@@ -1,7 +1,7 @@
 package router
 
 import (
-	"errors"
+	"context"
 	"testing"
 	"time"
 
@@ -19,18 +19,18 @@ func newTestPeer() *testPeer {
 }
 
 func (p *testPeer) TrySend(msg wamp.Message) error {
-	select {
-	case p.in <- msg:
-	default:
-		return errors.New("try again")
-	}
-	return nil
+	return wamp.TrySend(p.in, msg)
 }
 
 func (p *testPeer) Send(msg wamp.Message) error {
 	p.in <- msg
 	return nil
 }
+
+func (p *testPeer) SendCtx(ctx context.Context, msg wamp.Message) error {
+	return wamp.SendCtx(ctx, p.in, msg)
+}
+
 func (p *testPeer) Recv() <-chan wamp.Message { return p.in }
 func (p *testPeer) Close()                    { return }
 

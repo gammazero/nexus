@@ -243,7 +243,6 @@ func TestRPCProgressiveCallInterrupt(t *testing.T) {
 }
 
 func TestProgressStress(t *testing.T) {
-	t.Skip("needs investigation with ci")
 	defer leaktest.Check(t)()
 
 	// Connect callee session.
@@ -319,11 +318,20 @@ func TestProgressStress(t *testing.T) {
 	progHandler := func(result *wamp.Result) {
 		// Received another chunk of data.
 		chunk := result.Arguments[0].(string)
-		// Uncomment to make the caller slow to receive responses.  This will
-		// cause the dealer to be blocked trying to send to this client.
-		//time.Sleep(20 * time.Millisecond)
 		recvLen += len(chunk)
 		recvCount++
+
+		// Simulate processing time.  This causes the callee to have to pause
+		// and resend the RESULT, which happens when a callee generates results
+		// faster than the caller can process them.  The pause is long enough
+		// to ensure there are multiple retries.
+		//
+		// Pause on the 13th RESULT or every third call.
+		if recvCount == 13 && result.Request%3 == 0 {
+			fmt.Println("Caller pausing to process", recvCount, "of result",
+				result.Request)
+			time.Sleep(time.Millisecond * 250)
+		}
 	}
 
 	// All results, for all calls, must be recieved by timeout.
@@ -336,7 +344,7 @@ func TestProgressStress(t *testing.T) {
 		result, err := caller.CallProgress(
 			ctx, chunkProc, nil, wamp.List{i}, nil, "", progHandler)
 		if err != nil {
-			t.Error("Failed to call procedure:", err)
+			t.Fatal(err)
 		}
 
 		// As a final result, the callee returns the total length the data.

@@ -23,6 +23,13 @@ const (
 	featureSharedReg        = "shared_registration"
 	featureRegMetaAPI       = "registration_meta_api"
 	featureTestamentMetaAPI = "testament_meta_api"
+
+	// sendResultDeadline is the amount of time until the dealer gives up
+	// trying to send a RESULT to a blocked caller.  This is different that the
+	// CALL timeout which spedifies how long the callee may take to answer.
+	sendResultDeadline = time.Minute
+	// yieldRetryDelay is the initial delay before reprocessin a blocked yield
+	yieldRetryDelay = 200 * time.Millisecond
 )
 
 // Role information for this broker.
@@ -57,9 +64,10 @@ type registration struct {
 
 // invocation tracks in-progress invocation
 type invocation struct {
-	callID   requestID
-	callee   *session
-	canceled bool
+	callID     requestID
+	callee     *session
+	canceled   bool
+	retryCount int
 }
 
 type requestID struct {
@@ -301,7 +309,6 @@ func (d *Dealer) Cancel(caller *session, msg *wamp.Cancel) {
 		})
 		return
 	}
-
 	d.actionChan <- func() {
 		d.cancel(caller, msg, mode, wamp.ErrCanceled)
 	}
@@ -309,12 +316,45 @@ func (d *Dealer) Cancel(caller *session, msg *wamp.Cancel) {
 
 // Yield handles the result of successfully processing and finishing the
 // execution of a call, send from callee to dealer.
+//
+// If the RESULT could not be sent to the caller because he caller was blocked
+// (send queue full), then retry sending until timeout.  If timeout while
+// trying to send RESULT, then cancel call.
 func (d *Dealer) Yield(callee *session, msg *wamp.Yield) {
 	if callee == nil || msg == nil {
 		panic("dealer.Yield with nil session or message")
 	}
+	var again bool
+	done := make(chan struct{})
 	d.actionChan <- func() {
-		d.yield(callee, msg)
+		again = d.yield(callee, msg, true)
+		done <- struct{}{}
+	}
+	<-done
+
+	// If blocked, retry
+	if again {
+		retry := true
+		delay := yieldRetryDelay
+		start := time.Now()
+		// Retry processing YIELD until caller gone or deadline reached
+		for {
+			d.log.Println("Retry sending RESULT after", delay)
+			<-time.After(delay)
+			// Do not retry if the elapsed time exceeds deadline
+			if time.Since(start) >= sendResultDeadline {
+				retry = false
+			}
+			d.actionChan <- func() {
+				again = d.yield(callee, msg, retry)
+				done <- struct{}{}
+			}
+			<-done
+			if !again {
+				break
+			}
+			delay *= 2
+		}
 	}
 }
 
@@ -433,7 +473,7 @@ func (d *Dealer) register(callee *session, msg *wamp.Register, match, invokePoli
 		if reg.policy != invokePolicy {
 			d.log.Println("REGISTER for already registered procedure",
 				msg.Procedure, "with conflicting invocation policy (has",
-				reg.policy, "and", invokePolicy, "was requested")
+				reg.policy, "and requested", invokePolicy)
 			d.trySend(callee, &wamp.Error{
 				Type:    msg.MessageType(),
 				Request: msg.Request,
@@ -547,7 +587,8 @@ func (d *Dealer) matchProcedure(procedure wamp.URI) (*registration, bool) {
 				}
 			}
 		}
-		// according to the spec, we have to prefer prefix match over wildcard match:
+		// According to the spec, we have to prefer prefix match over wildcard
+		// match:
 		// https://wamp-proto.org/static/rfc/draft-oberstet-hybi-crossbar-wamp.html#rfc.section.14.3.8.1.4.2
 		if ok {
 			return reg, ok
@@ -642,13 +683,13 @@ func (d *Dealer) call(caller *session, msg *wamp.Call) {
 		if opt, _ := msg.Options[wamp.OptDiscloseMe].(bool); opt {
 			// Dealer MAY deny a Caller's request to disclose its identity.
 			if !d.allowDisclose {
+				// Do not continue a call when discloseMe was disallowed.
 				d.trySend(caller, &wamp.Error{
 					Type:    msg.MessageType(),
 					Request: msg.Request,
 					Details: wamp.Dict{},
 					Error:   wamp.ErrOptionDisallowedDiscloseMe,
 				})
-				// don't continue a call when discloseMe was disallowed.
 				return
 			}
 			if callee.HasFeature(roleCallee, featureCallerIdent) {
@@ -700,7 +741,7 @@ func (d *Dealer) call(caller *session, msg *wamp.Call) {
 			Request:   invocationID,
 			Details:   wamp.Dict{},
 			Error:     wamp.ErrNetworkFailure,
-			Arguments: wamp.List{"client blocked - cannot call procedure"},
+			Arguments: wamp.List{"callee blocked - cannot call procedure"},
 		})
 	}
 }
@@ -718,7 +759,7 @@ func (d *Dealer) cancel(caller *session, msg *wamp.Cancel, mode string, reason w
 
 	// Check if the caller of cancel is also the caller of the procedure.
 	if caller != procCaller {
-		// The caller it trying to cancel calls that it does not own.  It it
+		// The caller is trying to cancel calls that it does not own.  It it
 		// either confused or trying to do something bad.
 		d.log.Println("CANCEL received from caller", caller,
 			"for call owned by different session")
@@ -788,7 +829,7 @@ func (d *Dealer) cancel(caller *session, msg *wamp.Cancel, mode string, reason w
 	})
 }
 
-func (d *Dealer) yield(callee *session, msg *wamp.Yield) {
+func (d *Dealer) yield(callee *session, msg *wamp.Yield, canRetry bool) bool {
 	progress, _ := msg.Options[wamp.OptProgress].(bool)
 
 	// Find and delete pending invocation.
@@ -816,13 +857,13 @@ func (d *Dealer) yield(callee *session, msg *wamp.Yield) {
 			d.log.Println("YIELD received with unknown invocation request ID:",
 				msg.Request)
 		}
-		return
+		return false
 	}
 
 	// Make sure this yield was sent by the session that handled the call
 	if invk.callee != callee {
 		d.log.Println("Ignoring YIELD received from session", callee, "that does not own request", msg.Request)
-		return
+		return false
 	}
 
 	callID := invk.callID
@@ -831,15 +872,22 @@ func (d *Dealer) yield(callee *session, msg *wamp.Yield) {
 
 	details := wamp.Dict{}
 
-	if !progress {
-		delete(d.invocations, msg.Request)
-		// Delete callID -> invocation.
-		delete(d.invocationByCall, callID)
-		// Delete pending call since it is finished.
-		delete(d.calls, callID)
-	} else {
+	var keepInvocation bool
+	if progress {
 		// If this is a progressive response, then set progress=true.
 		details[wamp.OptProgress] = true
+	} else {
+		// Clean up the invocation, unless need to retry.
+		defer func() {
+			if keepInvocation {
+				return
+			}
+			delete(d.invocations, msg.Request)
+			// Delete callID -> invocation.
+			delete(d.invocationByCall, callID)
+			// Delete pending call since it is finished.
+			delete(d.calls, callID)
+		}()
 	}
 
 	// Did not find caller.
@@ -847,16 +895,30 @@ func (d *Dealer) yield(callee *session, msg *wamp.Yield) {
 		// Found invocation id that does not have any call id.
 		d.log.Println("!!! No matching caller for invocation from YIELD:",
 			msg.Request)
-		return
+		return false
 	}
 
-	// Send RESULT to the caller.  This forwards the YIELD from the callee.
-	d.trySend(caller, &wamp.Result{
+	// Send RESULT to the caller.  If the caller is blocked, then make the
+	// callee wait and retry sending this message again.  The caller may be
+	// blocked when the callee is generating progressive responses faster than
+	// the caller can handle them.
+	res := &wamp.Result{
 		Request:     callID.request,
 		Details:     details,
 		Arguments:   msg.Arguments,
 		ArgumentsKw: msg.ArgumentsKw,
-	})
+	}
+	err := caller.TrySend(res)
+	if err != nil {
+		if canRetry {
+			keepInvocation = true
+			return true
+		}
+		d.log.Printf("!!! Dropped %s to caller %s: %s", res.MessageType(), caller, err)
+		d.cancel(caller, &wamp.Cancel{Request: callID.request},
+			wamp.CancelModeKillNoWait, wamp.ErrCanceled)
+	}
+	return false
 }
 
 func (d *Dealer) error(msg *wamp.Error) {
@@ -1192,7 +1254,7 @@ func (d *Dealer) RegCountCallees(msg *wamp.Invocation) wamp.Message {
 
 func (d *Dealer) trySend(sess *session, msg wamp.Message) bool {
 	if err := sess.TrySend(msg); err != nil {
-		d.log.Println("!!! dealer dropped", msg.MessageType(), "message:", err)
+		d.log.Printf("!!! Dropped %s to session %s: %s", msg.MessageType(), sess, err)
 		return false
 	}
 	return true

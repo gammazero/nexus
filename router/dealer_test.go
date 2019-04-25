@@ -1039,14 +1039,20 @@ func TestPatternBasedRegistration(t *testing.T) {
 	}
 }
 
-func TestRPCBlockedSlowClientCall(t *testing.T) {
+func TestRPCBlockedUnresponsiveCallee(t *testing.T) {
+	const (
+		rpcExecTime    = time.Second
+		timeoutMs      = 2000
+		shortTimeoutMs = 200
+	)
 	dealer, metaClient := newTestDealer()
 
 	// Register a procedure.
 	callee, rtr := transport.LinkedPeers()
 	calleeSess := newSession(rtr, 0, nil)
+	opts := wamp.Dict{wamp.OptTimeout: timeoutMs}
 	dealer.Register(calleeSess,
-		&wamp.Register{Request: 223, Procedure: testProcedure})
+		&wamp.Register{Request: 223, Procedure: testProcedure, Options: opts})
 	rsp := <-callee.Recv()
 	_, ok := rsp.(*wamp.Registered)
 	if !ok {
@@ -1060,16 +1066,28 @@ func TestRPCBlockedSlowClientCall(t *testing.T) {
 	caller, rtr := transport.LinkedPeers()
 	callerSession := newSession(rtr, 0, nil)
 
-	for i := 0; i < 20; i++ {
+	// Call unresponsive callee until call dropped.
+	var i int
+sendLoop:
+	for {
+		i++
 		fmt.Println("Calling", i)
 		// Test calling valid procedure
-		dealer.Call(callerSession,
-			&wamp.Call{Request: wamp.ID(i + 225), Procedure: testProcedure})
+		dealer.Call(callerSession, &wamp.Call{
+			Request:   wamp.ID(i + 225),
+			Procedure: testProcedure,
+			Options:   opts,
+		})
+		select {
+		case rsp = <-caller.Recv():
+			break sendLoop
+		default:
+		}
 	}
 
-	fmt.Println("Waiting for error")
+	callee.Close()
+
 	// Test that caller received an ERROR message.
-	rsp = <-caller.Recv()
 	rslt, ok := rsp.(*wamp.Error)
 	if !ok {
 		t.Fatal("expected ERROR, got:", rsp.MessageType())

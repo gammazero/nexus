@@ -7,26 +7,29 @@ import (
 	"net"
 	"time"
 
-	"github.com/gammazero/nexus/stdlog"
 	"github.com/gammazero/nexus/transport"
 )
 
 // RawSocketServer handles socket connections.
 type RawSocketServer struct {
-	router Router
+	// RecvLimit is the maximum length of messages the server is willing to
+	// receive.  Defaults to maximum allowed for protocol: 16M.
+	RecvLimit int
 
-	log       stdlog.StdLog
-	recvLimit int
-	keepAlive time.Duration
+	// KeepAlive is the TCP keep-alive period.  Default is disable keep-alive.
+	KeepAlive time.Duration
+
+	// OutQueueSize is the maximum number of pending outbound messages, per
+	// client.  The default is defaultOutQueueSize.
+	OutQueueSize int
+
+	router Router
 }
 
 // NewRawSocketServer takes a router instance and creates a new socket server.
-func NewRawSocketServer(r Router, recvLimit int, keepAlive time.Duration) *RawSocketServer {
+func NewRawSocketServer(r Router) *RawSocketServer {
 	return &RawSocketServer{
-		router:    r,
-		log:       r.Logger(),
-		recvLimit: recvLimit,
-		keepAlive: keepAlive,
+		router: r,
 	}
 }
 
@@ -35,7 +38,7 @@ func NewRawSocketServer(r Router, recvLimit int, keepAlive time.Duration) *RawSo
 func (s *RawSocketServer) ListenAndServe(network, address string) (io.Closer, error) {
 	l, err := net.Listen(network, address)
 	if err != nil {
-		s.log.Print(err)
+		s.router.Logger().Print(err)
 		return nil, err
 	}
 
@@ -68,7 +71,7 @@ func (s *RawSocketServer) ListenAndServeTLS(network, address string, tlscfg *tls
 
 	l, err := tls.Listen(network, address, tlscfg)
 	if err != nil {
-		s.log.Print(err)
+		s.router.Logger().Print(err)
 		return nil, err
 	}
 
@@ -87,9 +90,9 @@ func (s *RawSocketServer) requestHandler(l net.Listener) {
 			return
 		}
 		if tcpConn, ok := conn.(*net.TCPConn); ok {
-			if s.keepAlive != 0 {
+			if s.KeepAlive != 0 {
 				tcpConn.SetKeepAlive(true)
-				tcpConn.SetKeepAlivePeriod(s.keepAlive)
+				tcpConn.SetKeepAlivePeriod(s.KeepAlive)
 			} else {
 				tcpConn.SetKeepAlive(false)
 			}
@@ -102,13 +105,17 @@ func (s *RawSocketServer) requestHandler(l net.Listener) {
 // client handshake, creates a rawSocketPeer, and then attaches that peer to
 // the router.
 func (s *RawSocketServer) handleRawSocket(conn net.Conn) {
-	peer, err := transport.AcceptRawSocket(conn, s.log, s.recvLimit)
+	qsize := s.OutQueueSize
+	if qsize == 0 {
+		qsize = defaultOutQueueSize
+	}
+	peer, err := transport.AcceptRawSocket(conn, s.router.Logger(), s.RecvLimit, qsize)
 	if err != nil {
-		s.log.Println("Error accepting rawsocket client:", err)
+		s.router.Logger().Println("Error accepting rawsocket client:", err)
 		return
 	}
 
 	if err := s.router.Attach(peer); err != nil {
-		s.log.Println("Error attaching to router:", err)
+		s.router.Logger().Println("Error attaching to router:", err)
 	}
 }

@@ -1,6 +1,7 @@
 package wamp
 
 import (
+	"context"
 	"errors"
 	"time"
 )
@@ -9,6 +10,8 @@ import (
 type Peer interface {
 	// Sends the message to the peer.
 	Send(Message) error
+
+	SendCtx(context.Context, Message) error
 
 	// TrySend performs a non-blocking send.  Returns error if blocked.
 	TrySend(Message) error
@@ -31,4 +34,24 @@ func RecvTimeout(p Peer, t time.Duration) (Message, error) {
 	case <-time.After(t):
 		return nil, errors.New("timeout waiting for message")
 	}
+}
+
+func SendCtx(ctx context.Context, wr chan<- Message, msg Message) error {
+	select {
+	case <-ctx.Done():
+		return ctx.Err()
+	case wr <- msg:
+	}
+	return nil
+}
+
+// TrySend sends a message to the write-only channel and returns an error if
+// the channel blocks.
+func TrySend(wr chan<- Message, msg Message) error {
+	select {
+	case wr <- msg:
+	default:
+		return errors.New("blocked")
+	}
+	return nil
 }

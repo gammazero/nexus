@@ -156,7 +156,7 @@ type Client struct {
 	closed        int32
 	done          chan struct{}
 	routerGoodbye *wamp.Goodbye
-	idGen *wamp.SyncIDGen
+	idGen         *wamp.SyncIDGen
 }
 
 // NewClient takes a connected Peer, joins the realm specified in cfg, and if
@@ -284,7 +284,7 @@ func (c *Client) Subscribe(topic string, fn EventHandler, options wamp.Dict) err
 		}
 		<-sync
 	case *wamp.Error:
-		return fmt.Errorf("error subscribing to topic '%v': %s", topic,
+		return fmt.Errorf("subscribing to topic '%v': %s", topic,
 			wampErrorString(msg))
 	default:
 		return unexpectedMsgError(msg, wamp.SUBSCRIBED)
@@ -347,7 +347,7 @@ func (c *Client) Unsubscribe(topic string) error {
 		// Already deleted the event handler for the topic.
 		return nil
 	case *wamp.Error:
-		return fmt.Errorf("Error unsubscribing to '%s': %s", topic,
+		return fmt.Errorf("unsubscribing to '%s': %s", topic,
 			wampErrorString(msg))
 	}
 	return unexpectedMsgError(msg, wamp.UNSUBSCRIBED)
@@ -418,8 +418,7 @@ func (c *Client) Publish(topic string, options wamp.Dict, args wamp.List, kwargs
 	switch msg := msg.(type) {
 	case *wamp.Published:
 	case *wamp.Error:
-		return fmt.Errorf("error waiting for published message: %s",
-			wampErrorString(msg))
+		return fmt.Errorf("waiting for published message: %s", wampErrorString(msg))
 	default:
 		return unexpectedMsgError(msg, wamp.PUBLISHED)
 	}
@@ -486,7 +485,7 @@ func (c *Client) Register(procedure string, fn InvocationHandler, options wamp.D
 				msg.Registration)
 		}
 	case *wamp.Error:
-		return fmt.Errorf("Error registering procedure '%v': %s", procedure,
+		return fmt.Errorf("registering procedure '%v': %s", procedure,
 			wampErrorString(msg))
 	default:
 		return unexpectedMsgError(msg, wamp.REGISTERED)
@@ -548,7 +547,7 @@ func (c *Client) Unregister(procedure string) error {
 	case *wamp.Unregistered:
 		// Already deleted the invocation handler for the procedure.
 	case *wamp.Error:
-		return fmt.Errorf("error unregistering procedure '%s': %v", procedure,
+		return fmt.Errorf("unregistering procedure '%s': %v", procedure,
 			wampErrorString(msg))
 	default:
 		return unexpectedMsgError(msg, wamp.UNREGISTERED)
@@ -565,11 +564,18 @@ func (c *Client) Unregister(procedure string) error {
 //
 // Call Canceling
 //
-// The provided Context can be used to cancel a call, or to set a deadline that
-// cancels the call when the deadline expires.  There is no separate Cancel()
-// API to do this.  If the call is canceled before a result is received, then a
-// CANCEL message is sent to the router to cancel the call according to the
-// specified mode.
+// The provided Context allows the caller to cancel a call, or to set a
+// deadline that cancels the call when the deadline expires.  There is no
+// separate Cancel() API to do this.  If the call is canceled before a result
+// is received, then a CANCEL message is sent to the router to cancel the call
+// according to the specified mode.
+//
+// If the context is canceled or times out, then error returned will not be a
+// RPCError.  This allows the caller to distinquish between cancellation
+// initiated by the client (by canceling context), and cancellation initialed
+// elsewhere.
+//
+// Cancel Mode
 //
 // cancelMode must be one of the following: "kill", "killnowait', "skip".
 // Setting to "" specifies using the default value: "killnowait".  cancelMode
@@ -577,7 +583,7 @@ func (c *Client) Unregister(procedure string) error {
 // is specified as a parameter to the Call() API, and not a message option for
 // CALL.
 //
-// Cancellation behaves differently depending on the mode:
+// Cancele Mode Behavior
 //
 // "skip": The pending call is canceled and ERROR is sent immediately back to
 // the caller.  No INTERRUPT is sent to the callee and the result is discarded
@@ -720,7 +726,7 @@ type RPCError struct {
 // Error implements the error interface, returning an error string for the
 // RPCError.
 func (rpce RPCError) Error() string {
-	return fmt.Sprintf("error calling remote procedure '%s': %s",
+	return fmt.Sprintf("calling remote procedure '%s': %s",
 		rpce.Procedure, wampErrorString(rpce.Err))
 }
 
@@ -802,7 +808,7 @@ func (c *Client) SendProgress(ctx context.Context, args wamp.List, kwArgs wamp.D
 		// Caller is not accepting progressive results or call canceled.
 		return errors.New("caller not accepting progressive results")
 	}
-	return c.sess.Send(&wamp.Yield{
+	return c.sess.SendCtx(ctx, &wamp.Yield{
 		Request:     req,
 		Options:     wamp.Dict{wamp.OptProgress: true},
 		Arguments:   args,
@@ -887,9 +893,11 @@ func (c *Client) leaveRealm() {
 
 	// Wait for run() to exit, but do not wait longer that a normal response
 	// timeout.
+	timer := time.NewTimer(c.responseTimeout)
 	select {
 	case <-c.done:
-	case <-time.After(c.responseTimeout):
+		timer.Stop()
+	case <-timer.C:
 		close(c.actionChan) // force run() to exit
 		<-c.done
 	}
@@ -1024,14 +1032,16 @@ func (c *Client) waitForReply(id wamp.ID) (wamp.Message, error) {
 
 	var msg wamp.Message
 	var err error
+	timer := time.NewTimer(c.responseTimeout)
 	select {
 	case msg, ok = <-wait:
+		timer.Stop()
 		if !ok {
 			// Return directly here, since awaitingReply entry already deleted.
 			return nil, errors.New("client closed")
 		}
-	case <-time.After(c.responseTimeout):
-		err = errors.New("timeout while waiting for reply")
+	case <-timer.C:
+		err = errors.New("timeout waiting for reply")
 	}
 	c.replyLock.Lock()
 	delete(c.awaitingReply, id)
@@ -1065,13 +1075,14 @@ CollectResults:
 	select {
 	case msg, ok = <-wait:
 		if !ok {
-			// Return directly here, since awaitingReply entry already deleted.
+			// Return here, since awaitingReply entry already deleted.
 			return nil, errors.New("client closed")
 		}
 		// If this is a progressive result, put the Result message on the
 		// progress channel and go back to waiting for more results.
 		if progChan != nil {
-			if result, ok := msg.(*wamp.Result); ok {
+			var result *wamp.Result
+			if result, ok = msg.(*wamp.Result); ok {
 				if ok, _ = result.Details[wamp.OptProgress].(bool); ok {
 					progChan <- result
 					goto CollectResults
@@ -1079,19 +1090,33 @@ CollectResults:
 			}
 		}
 	case <-ctx.Done():
+		err = ctx.Err()
 		if c.debug {
-			c.log.Printf("Call to '%s' canceled (mode=%s)", procedure, mode)
+			c.log.Printf("Call to %q canceled by caller (mode=%s): %s",
+				procedure, mode, err)
 		}
 		c.sess.Send(&wamp.Cancel{
 			Request: id,
 			Options: wamp.SetOption(nil, wamp.OptMode, mode),
 		})
-		// If waiting for callee to cancel, then wait for the ERROR from
-		// the dealer.
+		// Wait for the ERROR from the dealer.
+		timer := time.NewTimer(c.responseTimeout)
+	waitCancel:
+		// Discard responses until ERROR or timeout
 		select {
-		case msg = <-wait:
-		case <-time.After(c.responseTimeout):
-			err = errors.New("timeout while waiting for reply after cancel")
+		case msg, ok = <-wait:
+			if !ok {
+				timer.Stop()
+				return nil, err
+			}
+			if _, ok = msg.(*wamp.Error); !ok {
+				// Discard message
+				goto waitCancel
+			}
+			timer.Stop()
+		case <-timer.C:
+			// Did not get expected response to cancel
+			err = errors.New("timeout waiting for reply after cancel")
 		}
 	}
 	// All done with this call, so not waiting for more replies.
