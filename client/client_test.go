@@ -661,3 +661,40 @@ func (ks *serverKeyStore) AuthRole(authid string) (string, error) {
 	}
 	return "user", nil
 }
+
+// ---- network testing ----
+
+func TestConnectContext(t *testing.T) {
+	const (
+		expect     = "dial tcp: operation was canceled"
+		unixExpect = "dial unix /tmp/wamp.sock: operation was canceled"
+	)
+
+	cfg := Config{
+		Realm:           testRealm,
+		ResponseTimeout: 500 * time.Millisecond,
+		Logger:          logger,
+		Debug:           false,
+	}
+	ctx, cancel := context.WithCancel(context.Background())
+	cancel()
+	_, err := ConnectNetContext(ctx, "http://localhost:9999/ws", cfg)
+	if err == nil || err.Error() != expect {
+		t.Fatalf("expected error %s, got %s", expect, err)
+	}
+
+	_, err = ConnectNetContext(ctx, "tcp://localhost:9999", cfg)
+	if err == nil || err.Error() != expect {
+		t.Fatalf("expected error %s, got %s", expect, err)
+	}
+
+	_, err = ConnectNetContext(ctx, "unix:///tmp/wamp.sock", cfg)
+	if err == nil || err.Error() != unixExpect {
+		t.Fatalf("expected error %s, got %s", expect, err)
+	}
+
+	_, err = ConnectNetContext(ctx, "tcps://localhost:9999", cfg)
+	if err == nil {
+		t.Fatalf("expected error")
+	}
+}

@@ -51,7 +51,7 @@ func TestDropOnBlockedClient(t *testing.T) {
 	}()
 	select {
 	case <-done:
-	case <-time.After(sendTimeout + 50*time.Millisecond):
+	case <-time.After(sendTimeout + 500*time.Millisecond):
 		t.Fatal("Send should have dropped and not blocked")
 	}
 	if err == nil || err.Error() != "blocked" {

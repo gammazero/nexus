@@ -1,6 +1,7 @@
 package transport
 
 import (
+	"context"
 	"crypto/tls"
 	"errors"
 	"fmt"
@@ -45,21 +46,22 @@ const (
 	magic = 0x7f
 )
 
-// ConnectRawSocketPeer calls ConnectRawSocketPeerTimeout without a Dial timeout
+// ConnectRawSocketPeer calls ConnectRawSocketPeerContext without a Dial
+// timeout
 func ConnectRawSocketPeer(network, address string, serialization serialize.Serialization, logger stdlog.StdLog, recvLimit int) (wamp.Peer, error) {
-	return ConnectRawSocketPeerTimeout(0, network, address, serialization, logger, recvLimit)
+	return ConnectRawSocketPeerContext(context.Background(), network, address, serialization, logger, recvLimit)
 }
 
-// ConnectRawSocketPeerTimeout creates a new rawSocketPeer with the specified config,
-// and connects it to the WAMP router at the specified address.  The network
-// and address parameters are documented here:
+// ConnectRawSocketPeerContext creates a new rawSocketPeer with the specified
+// config, and connects it to the WAMP router at the specified address.  The
+// network and address parameters are documented here:
 // https://golang.org/pkg/net/#Dial
 //
 // If recvLimit is > 0, then the client will not receive messages with size
 // larger than the nearest power of 2 greater than or equal to recvLimit.  If
 // recvLimit is <= 0, then the default of 16M is used.
-func ConnectRawSocketPeerTimeout(
-	timeout time.Duration,
+func ConnectRawSocketPeerContext(
+	ctx context.Context,
 	network,
 	address string,
 	serialization serialize.Serialization,
@@ -83,12 +85,8 @@ func ConnectRawSocketPeerTimeout(
 		return nil, err
 	}
 
-	if timeout == 0 {
-		conn, err = net.Dial(network, address)
-	} else {
-		conn, err = net.DialTimeout(network, address, timeout)
-	}
-
+	var d net.Dialer
+	conn, err = d.DialContext(ctx, network, address)
 	if err != nil {
 		return nil, err
 	}

@@ -70,7 +70,8 @@ const (
 
 type DialFunc func(network, addr string) (net.Conn, error)
 
-// ConnectWebsocketPeer calls ConnectWebsocketPeerContext without a Dial context
+// ConnectWebsocketPeer calls ConnectWebsocketPeerContext without a Dial
+// context
 func ConnectWebsocketPeer(
 	routerURL string,
 	serialization serialize.Serialization,
@@ -78,10 +79,10 @@ func ConnectWebsocketPeer(
 	dial DialFunc,
 	logger stdlog.StdLog,
 	wsCfg *WebsocketConfig) (wamp.Peer, error) {
-	return ConnectWebsocketPeerContext(nil, routerURL, serialization, tlsConfig, dial, logger, wsCfg)
+	return ConnectWebsocketPeerContext(context.Background(), routerURL, serialization, tlsConfig, dial, logger, wsCfg)
 }
 
-// ConnectWebsocketPeer creates a new websocket client with the specified
+// ConnectWebsocketPeer Contextcreates a new websocket client with the specified
 // config, connects the client to the websocket server at the specified URL,
 // and returns the connected websocket peer.
 func ConnectWebsocketPeerContext(
@@ -97,8 +98,8 @@ func ConnectWebsocketPeerContext(
 		protocol    string
 		payloadType int
 		serializer  serialize.Serializer
-		conn *websocket.Conn
-		err error
+		conn        *websocket.Conn
+		err         error
 	)
 
 	switch serialization {
@@ -137,12 +138,7 @@ func ConnectWebsocketPeerContext(
 		dialer.EnableCompression = true
 	}
 
-	if ctx == nil {
-		conn, _, err = dialer.Dial(routerURL, nil)
-	} else {
-		conn, _, err = dialer.DialContext(ctx, routerURL, nil)
-	}
-
+	conn, _, err = dialer.DialContext(ctx, routerURL, nil)
 	if err != nil {
 		return nil, err
 	}

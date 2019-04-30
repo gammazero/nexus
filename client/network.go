@@ -1,6 +1,8 @@
 package client
 
 import (
+	"context"
+	"errors"
 	"fmt"
 	"log"
 	"net/url"
@@ -10,6 +12,10 @@ import (
 	"github.com/gammazero/nexus/transport"
 	"github.com/gammazero/nexus/wamp"
 )
+
+func ConnectNet(routerURL string, cfg Config) (*Client, error) {
+	return ConnectNetContext(context.Background(), routerURL, cfg)
+}
 
 // ConnectNet creates a new client connected a WAMP router over a websocket,
 // TCP socket, or unix socket.  The new client joins the realm specified in the
@@ -31,7 +37,7 @@ import (
 // For Unix socket clients, the routerURL has the form "unix://path".  The path
 // portion specifies a path on the local file system where the Unix socket is
 // created.  TLS is not used for unix socket.
-func ConnectNet(routerURL string, cfg Config) (*Client, error) {
+func ConnectNetContext(ctx context.Context, routerURL string, cfg Config) (*Client, error) {
 	if cfg.Logger == nil {
 		cfg.Logger = log.New(os.Stderr, "", 0)
 	}
@@ -51,17 +57,16 @@ func ConnectNet(routerURL string, cfg Config) (*Client, error) {
 		routerURL = u.String()
 		fallthrough
 	case "ws", "wss":
-		p, err = transport.ConnectWebsocketPeer(routerURL, cfg.Serialization,
+		p, err = transport.ConnectWebsocketPeerContext(ctx, routerURL, cfg.Serialization,
 			cfg.TlsCfg, cfg.Dial, cfg.Logger, &cfg.WsCfg)
 	case "tcp":
-		p, err = transport.ConnectRawSocketPeer(u.Scheme, u.Host,
+		p, err = transport.ConnectRawSocketPeerContext(ctx, u.Scheme, u.Host,
 			cfg.Serialization, cfg.Logger, cfg.RecvLimit)
 	case "tcps":
-		p, err = transport.ConnectTlsRawSocketPeer("tcp", u.Host,
-			cfg.Serialization, cfg.TlsCfg, cfg.Logger, cfg.RecvLimit)
+		return nil, errors.New("tcps not available for use with context")
 	case "unix":
 		path := strings.TrimRight(u.Host+u.Path, "/")
-		p, err = transport.ConnectRawSocketPeer(u.Scheme, path,
+		p, err = transport.ConnectRawSocketPeerContext(ctx, u.Scheme, path,
 			cfg.Serialization, cfg.Logger, cfg.RecvLimit)
 	default:
 		err = fmt.Errorf("invalid url: %s", routerURL)
