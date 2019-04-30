@@ -692,9 +692,4 @@ func TestConnectContext(t *testing.T) {
 	if err == nil || err.Error() != unixExpect {
 		t.Fatalf("expected error %s, got %s", expect, err)
 	}
-
-	_, err = ConnectNetContext(ctx, "tcps://localhost:9999", cfg)
-	if err == nil {
-		t.Fatalf("expected error")
-	}
 }

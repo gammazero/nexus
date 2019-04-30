@@ -2,7 +2,6 @@ package client
 
 import (
 	"context"
-	"errors"
 	"fmt"
 	"log"
 	"net/url"
@@ -63,7 +62,8 @@ func ConnectNetContext(ctx context.Context, routerURL string, cfg Config) (*Clie
 		p, err = transport.ConnectRawSocketPeerContext(ctx, u.Scheme, u.Host,
 			cfg.Serialization, cfg.Logger, cfg.RecvLimit)
 	case "tcps":
-		return nil, errors.New("tcps not available for use with context")
+		p, err = transport.ConnectTlsRawSocketPeer("tcp", u.Host,
+			cfg.Serialization, cfg.TlsCfg, cfg.Logger, cfg.RecvLimit)
 	case "unix":
 		path := strings.TrimRight(u.Host+u.Path, "/")
 		p, err = transport.ConnectRawSocketPeerContext(ctx, u.Scheme, path,
