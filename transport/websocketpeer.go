@@ -71,7 +71,7 @@ const (
 type DialFunc func(network, addr string) (net.Conn, error)
 
 // ConnectWebsocketPeer calls ConnectWebsocketPeerContext without a Dial
-// context
+// context.
 func ConnectWebsocketPeer(
 	routerURL string,
 	serialization serialize.Serialization,
@@ -82,9 +82,13 @@ func ConnectWebsocketPeer(
 	return ConnectWebsocketPeerContext(context.Background(), routerURL, serialization, tlsConfig, dial, logger, wsCfg)
 }
 
-// ConnectWebsocketPeer Contextcreates a new websocket client with the specified
-// config, connects the client to the websocket server at the specified URL,
-// and returns the connected websocket peer.
+// ConnectWebsocketPeerContext creates a new websocket client with the
+// specified config, connects the client to the websocket server at the
+// specified URL, and returns the connected websocket peer.
+//
+// The provided Context must be non-nil. If the context expires before the
+// connection is complete, an error is returned. Once successfully connected,
+// any expiration of the context will not affect the connection.
 func ConnectWebsocketPeerContext(
 	ctx context.Context,
 	routerURL string,
@@ -128,7 +132,8 @@ func ConnectWebsocketPeerContext(
 
 	if wsCfg != nil {
 		if wsCfg.ProxyURL != "" {
-			proxyURL, err := url.Parse(wsCfg.ProxyURL)
+			var proxyURL *url.URL
+			proxyURL, err = url.Parse(wsCfg.ProxyURL)
 			if err != nil {
 				return nil, err
 			}

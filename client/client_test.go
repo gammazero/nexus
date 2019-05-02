@@ -683,7 +683,17 @@ func TestConnectContext(t *testing.T) {
 		t.Fatalf("expected error %s, got %s", expect, err)
 	}
 
+	_, err = ConnectNetContext(ctx, "https://localhost:9999/ws", cfg)
+	if err == nil || err.Error() != expect {
+		t.Fatalf("expected error %s, got %s", expect, err)
+	}
+
 	_, err = ConnectNetContext(ctx, "tcp://localhost:9999", cfg)
+	if err == nil || err.Error() != expect {
+		t.Fatalf("expected error %s, got %s", expect, err)
+	}
+
+	_, err = ConnectNetContext(ctx, "tcps://localhost:9999", cfg)
 	if err == nil || err.Error() != expect {
 		t.Fatalf("expected error %s, got %s", expect, err)
 	}

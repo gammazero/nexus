@@ -46,8 +46,7 @@ const (
 	magic = 0x7f
 )
 
-// ConnectRawSocketPeer calls ConnectRawSocketPeerContext without a Dial
-// timeout
+// ConnectRawSocketPeer calls ConnectRawSocketPeerContext without a context.
 func ConnectRawSocketPeer(network, address string, serialization serialize.Serialization, logger stdlog.StdLog, recvLimit int) (wamp.Peer, error) {
 	return ConnectRawSocketPeerContext(context.Background(), network, address, serialization, logger, recvLimit)
 }
@@ -56,6 +55,9 @@ func ConnectRawSocketPeer(network, address string, serialization serialize.Seria
 // config, and connects it to the WAMP router at the specified address.  The
 // network and address parameters are documented here:
 // https://golang.org/pkg/net/#Dial
+//
+// The context is used to cancel or timeout connecting to the server.  It is
+// not used to close the connection after a connected wamp.Peer is returned.
 //
 // If recvLimit is > 0, then the client will not receive messages with size
 // larger than the nearest power of 2 greater than or equal to recvLimit.  If
@@ -99,15 +101,25 @@ func ConnectRawSocketPeerContext(
 	return peer, nil
 }
 
-// ConnectTlsRawSocketPeer creates a new rawSocketPeer with the specified
-// config, and connects it, using TLS, to the WAMP router at the specified
-// address.  The network, address, and tlscfg parameters are documented here:
-// https://golang.org/pkg/crypto/tls/#Dial
+// ConnectTlsRawSocketPeer calls ConnectTlsRawSocketPeerContext without a Dial
+// context.
+func ConnectTlsRawSocketPeer(network, address string, serialization serialize.Serialization, tlsConfig *tls.Config, logger stdlog.StdLog, recvLimit int) (wamp.Peer, error) {
+	return ConnectTlsRawSocketPeerContext(context.Background(), network, address, serialization, tlsConfig, logger, recvLimit)
+}
+
+// ConnectTlsRawSocketPeerContext creates a new rawSocketPeer with the
+// specified config, and connects it, using TLS, to the WAMP router at the
+// specified address.  The network, address, and tlscfg parameters are
+// documented here: https://golang.org/pkg/crypto/tls/#Dial
+//
+// The provided Context must be non-nil. If the context expires before the
+// connection is complete, an error is returned. Once successfully connected,
+// any expiration of the context will not affect the connection.
 //
 // If recvLimit is > 0, then the client will not receive messages with size
 // larger than the nearest power of 2 greater than or equal to recvLimit.  If
 // recvLimit is <= 0, then the default of 16M is used.
-func ConnectTlsRawSocketPeer(network, address string, serialization serialize.Serialization, tlsConfig *tls.Config, logger stdlog.StdLog, recvLimit int) (wamp.Peer, error) {
+func ConnectTlsRawSocketPeerContext(ctx context.Context, network, address string, serialization serialize.Serialization, tlsConfig *tls.Config, logger stdlog.StdLog, recvLimit int) (wamp.Peer, error) {
 	err := checkNetworkType(network)
 	if err != nil {
 		return nil, err
@@ -118,9 +130,28 @@ func ConnectTlsRawSocketPeer(network, address string, serialization serialize.Se
 		return nil, err
 	}
 
-	conn, err := tls.Dial(network, address, tlsConfig)
+	var d net.Dialer
+	rawConn, err := d.DialContext(ctx, network, address)
 	if err != nil {
 		return nil, err
+	}
+
+	conn := tls.Client(rawConn, tlsConfig)
+	errChannel := make(chan error, 1)
+
+	go func() {
+		errChannel <- conn.Handshake()
+	}()
+
+	// Wait for TLS handshake to complete or context to expire
+	select {
+	case err = <-errChannel:
+		if err != nil {
+			rawConn.Close()
+			return nil, err
+		}
+	case <-ctx.Done():
+		return nil, ctx.Err()
 	}
 
 	peer, err := clientHandshake(conn, logger, protocol, recvLimit)

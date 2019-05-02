@@ -62,7 +62,7 @@ func ConnectNetContext(ctx context.Context, routerURL string, cfg Config) (*Clie
 		p, err = transport.ConnectRawSocketPeerContext(ctx, u.Scheme, u.Host,
 			cfg.Serialization, cfg.Logger, cfg.RecvLimit)
 	case "tcps":
-		p, err = transport.ConnectTlsRawSocketPeer("tcp", u.Host,
+		p, err = transport.ConnectTlsRawSocketPeerContext(ctx, "tcp", u.Host,
 			cfg.Serialization, cfg.TlsCfg, cfg.Logger, cfg.RecvLimit)
 	case "unix":
 		path := strings.TrimRight(u.Host+u.Path, "/")
