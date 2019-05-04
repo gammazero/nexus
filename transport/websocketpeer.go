@@ -86,18 +86,10 @@ func ConnectWebsocketPeer(
 // specified config, connects the client to the websocket server at the
 // specified URL, and returns the connected websocket peer.
 //
-// The provided Context must be non-nil. If the context expires before the
-// connection is complete, an error is returned. Once successfully connected,
+// The provided Context must be non-nil.  If the context expires before the
+// connection is complete, an error is returned.  Once successfully connected,
 // any expiration of the context will not affect the connection.
-func ConnectWebsocketPeerContext(
-	ctx context.Context,
-	routerURL string,
-	serialization serialize.Serialization,
-	tlsConfig *tls.Config,
-	dial DialFunc,
-	logger stdlog.StdLog,
-	wsCfg *WebsocketConfig) (wamp.Peer, error) {
-
+func ConnectWebsocketPeerContext(ctx context.Context, routerURL string, serialization serialize.Serialization, tlsConfig *tls.Config, dial DialFunc, logger stdlog.StdLog, wsCfg *WebsocketConfig) (wamp.Peer, error) {
 	var (
 		protocol    string
 		payloadType int

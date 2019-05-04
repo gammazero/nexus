@@ -56,20 +56,14 @@ func ConnectRawSocketPeer(network, address string, serialization serialize.Seria
 // network and address parameters are documented here:
 // https://golang.org/pkg/net/#Dial
 //
-// The context is used to cancel or timeout connecting to the server.  It is
-// not used to close the connection after a connected wamp.Peer is returned.
+// The provided Context must be non-nil.  If the context expires before the
+// connection is complete, an error is returned.  Once successfully connected,
+// any expiration of the context will not affect the connection.
 //
 // If recvLimit is > 0, then the client will not receive messages with size
 // larger than the nearest power of 2 greater than or equal to recvLimit.  If
 // recvLimit is <= 0, then the default of 16M is used.
-func ConnectRawSocketPeerContext(
-	ctx context.Context,
-	network,
-	address string,
-	serialization serialize.Serialization,
-	logger stdlog.StdLog,
-	recvLimit int) (wamp.Peer, error) {
-
+func ConnectRawSocketPeerContext(ctx context.Context, network, address string, serialization serialize.Serialization, logger stdlog.StdLog, recvLimit int) (wamp.Peer, error) {
 	var (
 		protocol byte
 		conn     net.Conn
@@ -112,8 +106,8 @@ func ConnectTlsRawSocketPeer(network, address string, serialization serialize.Se
 // specified address.  The network, address, and tlscfg parameters are
 // documented here: https://golang.org/pkg/crypto/tls/#Dial
 //
-// The provided Context must be non-nil. If the context expires before the
-// connection is complete, an error is returned. Once successfully connected,
+// The provided Context must be non-nil.  If the context expires before the
+// connection is complete, an error is returned.  Once successfully connected,
 // any expiration of the context will not affect the connection.
 //
 // If recvLimit is > 0, then the client will not receive messages with size
