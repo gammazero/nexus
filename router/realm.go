@@ -789,7 +789,26 @@ func (r *realm) metaProcedureHandler() {
 func (r *realm) sessionCount(msg *wamp.Invocation) wamp.Message {
 	var filter []string
 	if len(msg.Arguments) != 0 {
-		filter, _ = msg.Arguments[0].([]string)
+		filterList, isOk := wamp.AsList(msg.Arguments[0])
+
+		if isOk {
+			return &wamp.Error{
+				Error:   wamp.ErrInvalidArgument,
+				Request: msg.Request,
+			}
+		}
+
+		for _, x := range filterList {
+			role, ok := x.(string)
+			if ok {
+				filter = append(filter, role)
+			} else {
+				return &wamp.Error{
+					Error:   wamp.ErrInvalidArgument,
+					Request: msg.Request,
+				}
+			}
+		}
 	}
 	retChan := make(chan int)
 
@@ -826,8 +845,28 @@ func (r *realm) sessionCount(msg *wamp.Invocation) wamp.Message {
 func (r *realm) sessionList(msg *wamp.Invocation) wamp.Message {
 	var filter []string
 	if len(msg.Arguments) != 0 {
-		filter, _ = msg.Arguments[0].([]string)
+		filterList, isOk := wamp.AsList(msg.Arguments[0])
+
+		if isOk {
+			return &wamp.Error{
+				Error:   wamp.ErrInvalidArgument,
+				Request: msg.Request,
+			}
+		}
+
+		for _, x := range filterList {
+			role, ok := x.(string)
+			if ok {
+				filter = append(filter, role)
+			} else {
+				return &wamp.Error{
+					Error:   wamp.ErrInvalidArgument,
+					Request: msg.Request,
+				}
+			}
+		}
 	}
+
 	retChan := make(chan []wamp.ID)
 
 	if len(filter) == 0 {
