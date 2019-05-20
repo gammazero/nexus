@@ -1,8 +1,9 @@
 language: go
 
 go:
-  - "1.11"
-  - "1.12"
+  - 1.11.x
+  - 1.12.x
+  - master
 
 env:
   global:
@@ -11,6 +12,8 @@ env:
 before_script:
   - go get
   - go vet -all -composites=false ./...
+  - go install golang.org/x/tools/go/analysis/passes/shadow/cmd/shadow
+  - go vet -vettool=${GOPATH}/bin/shadow ./...
 
 script:
   - go build ./examples/...
