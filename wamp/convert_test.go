@@ -241,3 +241,17 @@ func TestAsFloat64(t *testing.T) {
 		t.Error(shouldFailMsg)
 	}
 }
+
+func TestListToStrings(t *testing.T) {
+	strs, ok := ListToStrings(List{"hello", "world"})
+	if !ok {
+		t.Fatal("not convered")
+	}
+	if strs[0] != "hello" || strs[1] != "world" {
+		t.Fatal("bad conversion")
+	}
+
+	if _, ok = ListToStrings(List{"hello", 123}); ok {
+		t.Fatal("should not have converted")
+	}
+}

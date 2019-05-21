@@ -789,7 +789,22 @@ func (r *realm) metaProcedureHandler() {
 func (r *realm) sessionCount(msg *wamp.Invocation) wamp.Message {
 	var filter []string
 	if len(msg.Arguments) != 0 {
-		filter, _ = msg.Arguments[0].([]string)
+		filterList, ok := wamp.AsList(msg.Arguments[0])
+		if !ok {
+			return &wamp.Error{
+				Type:    wamp.INVOCATION,
+				Error:   wamp.ErrInvalidArgument,
+				Request: msg.Request,
+			}
+		}
+		filter, ok = wamp.ListToStrings(filterList)
+		if !ok {
+			return &wamp.Error{
+				Type:    wamp.INVOCATION,
+				Error:   wamp.ErrInvalidArgument,
+				Request: msg.Request,
+			}
+		}
 	}
 	retChan := make(chan int)
 
@@ -826,7 +841,22 @@ func (r *realm) sessionCount(msg *wamp.Invocation) wamp.Message {
 func (r *realm) sessionList(msg *wamp.Invocation) wamp.Message {
 	var filter []string
 	if len(msg.Arguments) != 0 {
-		filter, _ = msg.Arguments[0].([]string)
+		filterList, ok := wamp.AsList(msg.Arguments[0])
+		if !ok {
+			return &wamp.Error{
+				Type:    wamp.INVOCATION,
+				Error:   wamp.ErrInvalidArgument,
+				Request: msg.Request,
+			}
+		}
+		filter, ok = wamp.ListToStrings(filterList)
+		if !ok {
+			return &wamp.Error{
+				Type:    wamp.INVOCATION,
+				Error:   wamp.ErrInvalidArgument,
+				Request: msg.Request,
+			}
+		}
 	}
 	retChan := make(chan []wamp.ID)
 
@@ -1061,12 +1091,10 @@ func (r *realm) testamentAdd(msg *wamp.Invocation) wamp.Message {
 	}
 	topic, ok := wamp.AsURI(msg.Arguments[0])
 	if !ok {
-		fmt.Printf("invalid topic")
 		return makeError(msg.Request, wamp.ErrInvalidArgument)
 	}
 	args, ok := wamp.AsList(msg.Arguments[1])
 	if !ok {
-		fmt.Printf("invalid args")
 		return makeError(msg.Request, wamp.ErrInvalidArgument)
 	}
 	kwargs, ok := wamp.AsDict(msg.Arguments[2])
