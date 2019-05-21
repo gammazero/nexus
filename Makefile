@@ -4,8 +4,12 @@ SERVICE_DIR = nexusd
 
 all: vet test service
 
-vet:
-	go vet -all -composites=false -shadow=true ./...
+$(GOPATH)/bin/shadow:
+	go install golang.org/x/tools/go/analysis/passes/shadow/cmd/shadow
+
+vet: $(GOPATH)/bin/shadow
+	go vet -all -composites=false ./...
+	go vet -vettool=$(GOPATH)/bin/shadow ./...
 
 test:
 	go get github.com/fortytw2/leaktest
@@ -20,7 +24,7 @@ test:
 	go test -race ./aat -scheme=unix
 	go test ./aat -scheme=ws -serialize=msgpack
 	go test ./aat -scheme=tcp -serialize=msgpack
-	go test ./aat -scheme=ws -serialize=cbor
+	go test ./aat -scheme=ws -serialize=cbor -compress
 	go test ./aat -scheme=tcp -serialize=cbor
 	go test ./aat -scheme=wss
 	go test ./aat -scheme=tcps
@@ -42,4 +46,5 @@ $(SERVICE_DIR)/nexusd:
 clean:
 	@rm -f $(SERVICE_DIR)/nexusd
 	@rm -f $(SERVICE_DIR)/*.log
-	@GO111MODULE=off go clean
+	@GO111MODULE=off go clean ./...
+	@GO111MODULE=off go clean -cache
