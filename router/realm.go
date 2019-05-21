@@ -789,24 +789,20 @@ func (r *realm) metaProcedureHandler() {
 func (r *realm) sessionCount(msg *wamp.Invocation) wamp.Message {
 	var filter []string
 	if len(msg.Arguments) != 0 {
-		filterList, isOk := wamp.AsList(msg.Arguments[0])
-
-		if isOk {
+		filterList, ok := wamp.AsList(msg.Arguments[0])
+		if !ok {
 			return &wamp.Error{
+				Type:    wamp.INVOCATION,
 				Error:   wamp.ErrInvalidArgument,
 				Request: msg.Request,
 			}
 		}
-
-		for _, x := range filterList {
-			role, ok := x.(string)
-			if ok {
-				filter = append(filter, role)
-			} else {
-				return &wamp.Error{
-					Error:   wamp.ErrInvalidArgument,
-					Request: msg.Request,
-				}
+		filter, ok = wamp.ListToStrings(filterList)
+		if !ok {
+			return &wamp.Error{
+				Type:    wamp.INVOCATION,
+				Error:   wamp.ErrInvalidArgument,
+				Request: msg.Request,
 			}
 		}
 	}
@@ -845,28 +841,23 @@ func (r *realm) sessionCount(msg *wamp.Invocation) wamp.Message {
 func (r *realm) sessionList(msg *wamp.Invocation) wamp.Message {
 	var filter []string
 	if len(msg.Arguments) != 0 {
-		filterList, isOk := wamp.AsList(msg.Arguments[0])
-
-		if isOk {
+		filterList, ok := wamp.AsList(msg.Arguments[0])
+		if !ok {
 			return &wamp.Error{
+				Type:    wamp.INVOCATION,
 				Error:   wamp.ErrInvalidArgument,
 				Request: msg.Request,
 			}
 		}
-
-		for _, x := range filterList {
-			role, ok := x.(string)
-			if ok {
-				filter = append(filter, role)
-			} else {
-				return &wamp.Error{
-					Error:   wamp.ErrInvalidArgument,
-					Request: msg.Request,
-				}
+		filter, ok = wamp.ListToStrings(filterList)
+		if !ok {
+			return &wamp.Error{
+				Type:    wamp.INVOCATION,
+				Error:   wamp.ErrInvalidArgument,
+				Request: msg.Request,
 			}
 		}
 	}
-
 	retChan := make(chan []wamp.ID)
 
 	if len(filter) == 0 {
@@ -1100,12 +1091,10 @@ func (r *realm) testamentAdd(msg *wamp.Invocation) wamp.Message {
 	}
 	topic, ok := wamp.AsURI(msg.Arguments[0])
 	if !ok {
-		fmt.Printf("invalid topic")
 		return makeError(msg.Request, wamp.ErrInvalidArgument)
 	}
 	args, ok := wamp.AsList(msg.Arguments[1])
 	if !ok {
-		fmt.Printf("invalid args")
 		return makeError(msg.Request, wamp.ErrInvalidArgument)
 	}
 	kwargs, ok := wamp.AsDict(msg.Arguments[2])

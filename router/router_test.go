@@ -396,7 +396,119 @@ func TestRouterCall(t *testing.T) {
 	}
 }
 
-func TestSessionMetaProcedures(t *testing.T) {
+func TestSessionCountMetaProcedure(t *testing.T) {
+	defer leaktest.Check(t)()
+	r, err := newTestRouter()
+	if err != nil {
+		t.Error(err)
+	}
+	defer r.Close()
+
+	caller, err := testClient(r)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	// Call wamp.MetaProcSessionCount
+	req := &wamp.Call{Request: wamp.GlobalID(), Procedure: wamp.MetaProcSessionCount}
+	caller.Send(req)
+	msg, err := wamp.RecvTimeout(caller, time.Second)
+	if err != nil {
+		t.Fatal(err)
+	}
+	result, ok := msg.(*wamp.Result)
+	if !ok {
+		t.Fatal("expected RESULT, got", msg.MessageType())
+	}
+	if result.Request != req.Request {
+		t.Fatal("wrong result ID")
+	}
+	if len(result.Arguments) == 0 {
+		t.Fatal("missing expected arguemnt")
+	}
+	count, ok := result.Arguments[0].(int)
+	if !ok {
+		t.Fatal("expected int arguemnt")
+	}
+	if count != 1 {
+		t.Fatal("wrong session count")
+	}
+
+	// Call wamp.MetaProcSessionCount with invalid argument
+	req = &wamp.Call{
+		Request:   wamp.GlobalID(),
+		Procedure: wamp.MetaProcSessionCount,
+		Arguments: wamp.List{"should-be-a-list"},
+	}
+	caller.Send(req)
+	msg, err = wamp.RecvTimeout(caller, time.Second)
+	if err != nil {
+		t.Fatal(err)
+	}
+	errResult, ok := msg.(*wamp.Error)
+	if !ok {
+		t.Fatal("expected ERROR, got", msg.MessageType())
+	}
+	if errResult.Request != req.Request {
+		t.Fatal("wrong result ID")
+	}
+
+	// Call wamp.MetaProcSessionCount with non-matching filter
+	filter := wamp.List{"user", "def"}
+	req = &wamp.Call{
+		Request:   wamp.GlobalID(),
+		Procedure: wamp.MetaProcSessionCount,
+		Arguments: wamp.List{filter},
+	}
+	caller.Send(req)
+	msg, err = wamp.RecvTimeout(caller, time.Second)
+	if err != nil {
+		t.Fatal(err)
+	}
+	result, ok = msg.(*wamp.Result)
+	if !ok {
+		t.Fatal("expected RESULT, got", msg.MessageType())
+	}
+	if result.Request != req.Request {
+		t.Fatal("wrong result ID")
+	}
+	if len(result.Arguments) == 0 {
+		t.Fatal("missing expected arguemnt")
+	}
+	count = result.Arguments[0].(int)
+	if count != 0 {
+		t.Fatal("wrong session count")
+	}
+
+	// Call wamp.MetaProcSessionCount with matching filter
+	filter = wamp.List{"trusted", "user", "def"}
+	req = &wamp.Call{
+		Request:   wamp.GlobalID(),
+		Procedure: wamp.MetaProcSessionCount,
+		Arguments: wamp.List{filter},
+	}
+	caller.Send(req)
+	msg, err = wamp.RecvTimeout(caller, time.Second)
+	if err != nil {
+		t.Fatal(err)
+	}
+	result, ok = msg.(*wamp.Result)
+	if !ok {
+		t.Fatal("expected RESULT, got", msg.MessageType())
+	}
+	if result.Request != req.Request {
+		t.Fatal("wrong result ID")
+	}
+	if len(result.Arguments) == 0 {
+		t.Fatal("missing expected arguemnt")
+	}
+	count = result.Arguments[0].(int)
+	if count != 1 {
+		t.Fatal("wrong session count")
+	}
+}
+
+func TestListSessionMetaProcedures(t *testing.T) {
 	defer leaktest.Check(t)()
 	r, err := newTestRouter()
 	if err != nil {
@@ -410,77 +522,84 @@ func TestSessionMetaProcedures(t *testing.T) {
 	}
 	sessID := caller.ID
 
-	// Call session meta-procedure to get session count.
-	sessionCountRequests := []*wamp.Call{
-		// Normal call
-		&wamp.Call{Request: wamp.GlobalID(), Procedure: wamp.MetaProcSessionCount},
-		// Call with extra arguments (but invalid)
-		&wamp.Call{Request: wamp.GlobalID(), Procedure: wamp.MetaProcSessionCount, Arguments: wamp.List{"invalidarg"}},
+	// Call wamp.MetaProcSessionList to get session list.
+	req := &wamp.Call{
+		Request:   wamp.GlobalID(),
+		Procedure: wamp.MetaProcSessionList,
 	}
-	var msg wamp.Message
-	for _, req := range sessionCountRequests {
-		callID := req.Request
-		caller.Send(req)
-		msg, err = wamp.RecvTimeout(caller, time.Second)
-		if err != nil {
-			t.Fatal(err)
-		}
-		result, ok := msg.(*wamp.Result)
-		if !ok {
-			t.Fatal("expected RESULT, got", msg.MessageType())
-		}
-		if result.Request != callID {
-			t.Fatal("wrong result ID")
-		}
-
-		if len(result.Arguments) == 0 {
-			t.Fatal("missing expected arguemnt")
-		}
-		count, ok := result.Arguments[0].(int)
-		if !ok {
-			t.Fatal("expected int arguemnt")
-		}
-		if count != 1 {
-			t.Fatal("wrong session count")
-		}
+	caller.Send(req)
+	msg, err := wamp.RecvTimeout(caller, time.Second)
+	if err != nil {
+		t.Fatal(err)
+	}
+	result, ok := msg.(*wamp.Result)
+	if !ok {
+		t.Fatal("expected RESULT, got", msg.MessageType())
+	}
+	if result.Request != req.Request {
+		t.Fatal("wrong result ID")
+	}
+	if len(result.Arguments) == 0 {
+		t.Fatal("missing expected arguemnt")
+	}
+	ids, ok := result.Arguments[0].([]wamp.ID)
+	if !ok {
+		t.Fatal("wrong arg type")
+	}
+	if len(ids) != 1 {
+		t.Fatal("wrong number of session IDs")
+	}
+	if sessID != ids[0] {
+		t.Fatal("wrong session ID")
 	}
 
-	// Call session meta-procedure to get session list.
-	sessionListRequests := []*wamp.Call{
-		// Normal call
-		&wamp.Call{Request: wamp.GlobalID(), Procedure: wamp.MetaProcSessionList},
-		// Call with extra arguments (but invalid)
-		&wamp.Call{Request: wamp.GlobalID(), Procedure: wamp.MetaProcSessionList, Arguments: wamp.List{"invalidarg"}},
+	// Call wamp.MetaProcSessionList with matching filter
+	filter := wamp.List{"trusted"}
+	req = &wamp.Call{
+		Request:   wamp.GlobalID(),
+		Procedure: wamp.MetaProcSessionList,
+		Arguments: wamp.List{filter},
 	}
-	for _, req := range sessionListRequests {
-		callID := req.Request
-		caller.Send(&wamp.Call{Request: callID, Procedure: wamp.MetaProcSessionList})
-		msg, err = wamp.RecvTimeout(caller, time.Second)
-		if err != nil {
-			t.Fatal(err)
-		}
-		result, ok := msg.(*wamp.Result)
-		if !ok {
-			t.Fatal("expected RESULT, got", msg.MessageType())
-		}
-		if result.Request != callID {
-			t.Fatal("wrong result ID")
-		}
+	caller.Send(req)
+	msg, err = wamp.RecvTimeout(caller, time.Second)
+	if err != nil {
+		t.Fatal(err)
+	}
+	result, ok = msg.(*wamp.Result)
+	if !ok {
+		t.Fatal("expected RESULT, got", msg.MessageType())
+	}
+	if result.Request != req.Request {
+		t.Fatal("wrong result ID")
+	}
+	if len(result.Arguments) == 0 {
+		t.Fatal("missing expected arguemnt")
+	}
+	ids, ok = result.Arguments[0].([]wamp.ID)
+	if !ok {
+		t.Fatal("wrong arg type")
+	}
+	if len(ids) != 1 {
+		t.Fatal("wrong number of session IDs")
+	}
+	if sessID != ids[0] {
+		t.Fatal("wrong session ID")
+	}
+}
 
-		if len(result.Arguments) == 0 {
-			t.Fatal("missing expected arguemnt")
-		}
-		ids, ok := result.Arguments[0].([]wamp.ID)
-		if !ok {
-			t.Fatal("wrong arg type")
-		}
-		if len(ids) != 1 {
-			t.Fatal("wrong number of session IDs")
-		}
-		if sessID != ids[0] {
-			t.Fatal("wrong session ID")
-		}
+func TestGetSessionMetaProcedures(t *testing.T) {
+	defer leaktest.Check(t)()
+	r, err := newTestRouter()
+	if err != nil {
+		t.Error(err)
 	}
+	defer r.Close()
+
+	caller, err := testClient(r)
+	if err != nil {
+		t.Fatal(err)
+	}
+	sessID := caller.ID
 
 	// Call session meta-procedure with bad session ID
 	callID := wamp.GlobalID()
@@ -489,7 +608,7 @@ func TestSessionMetaProcedures(t *testing.T) {
 		Procedure: wamp.MetaProcSessionGet,
 		Arguments: wamp.List{wamp.ID(123456789)},
 	})
-	msg, err = wamp.RecvTimeout(caller, time.Second)
+	msg, err := wamp.RecvTimeout(caller, time.Second)
 	if err != nil {
 		t.Fatal(err)
 	}
