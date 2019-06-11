@@ -273,3 +273,87 @@ func TestSessionModifyDetails(t *testing.T) {
 		t.Fatal("Wrong value for detail authid")
 	}
 }
+
+func TestSessionKillDeadlock(t *testing.T) {
+	// Test fix for co-recursive deadlock between dealer goroutine and meta
+	// session inbound message handler (issue #180)
+
+	remoteCli, err := connectClient()
+	if err != nil {
+		t.Fatal("Failed to connect client:", err)
+	}
+
+	// Register procedure
+	handler := func(ctx context.Context, args wamp.List, kwargs, details wamp.Dict) *client.InvokeResult {
+		return &client.InvokeResult{Args: wamp.List{"done"}}
+	}
+	const procName = "dostuff"
+	if err = remoteCli.Register(procName, handler, nil); err != nil {
+		t.Fatal("Failed to register procedure:", err)
+	}
+
+	localCli, err := connectClient()
+	if err != nil {
+		t.Fatal("Failed to connect client:", err)
+	}
+
+	// Subscribe to event.
+	localUnreg := make(chan struct{})
+	lEvtHandler := func(args wamp.List, kwargs wamp.Dict, details wamp.Dict) {
+		close(localUnreg)
+	}
+	err = localCli.Subscribe(string(wamp.MetaEventRegOnUnregister), lEvtHandler, nil)
+	if err != nil {
+		t.Fatal("subscribe error:", err)
+	}
+
+	reason := wamp.URI("test.session.kill")
+	message := "this is a test"
+
+	// Call meta procedure to kill client-2
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+	args := wamp.List{remoteCli.ID()}
+	kwArgs := wamp.Dict{"reason": reason, "message": message}
+	result, err := localCli.Call(ctx, metaKill, nil, args, kwArgs, "")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if result == nil {
+		t.Error("Did not receive result")
+	}
+
+	// Check that remote client was booted.
+	select {
+	case <-remoteCli.Done():
+	case <-time.After(time.Second):
+		t.Fatal("remote client did not shutdown")
+	}
+	// Check for expected GOODBYE message.
+	goodbye := remoteCli.RouterGoodbye()
+	if goodbye != nil {
+		if goodbye.Reason != reason {
+			t.Error("Did not get expected GOODBYE.Reason, got:", goodbye.Reason)
+		}
+		if gm, ok := wamp.AsString(goodbye.Details["message"]); ok {
+			if gm != message {
+				t.Error("Did not get expected goodbye message, got:", gm)
+			}
+		} else {
+			t.Error("Expected message in GOODBYE")
+		}
+	}
+	select {
+	case <-localUnreg:
+	case <-time.After(5 * time.Second):
+		t.Error("Timed out waiting for local client to get on unregister event")
+	}
+
+	// Make sure everything closes correctly.
+	if err = localCli.Close(); err != nil {
+		t.Error(err)
+	}
+	if err = remoteCli.Close(); err != nil {
+		t.Error(err)
+	}
+}

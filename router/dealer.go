@@ -247,8 +247,15 @@ func (d *Dealer) Register(callee *session, msg *wamp.Register) {
 	}
 
 	invoke, _ := wamp.AsString(msg.Options[wamp.OptInvoke])
+	var metaPubs []*wamp.Publish
+	done := make(chan struct{})
 	d.actionChan <- func() {
-		d.register(callee, msg, match, invoke, disclose, wampURI)
+		metaPubs = d.register(callee, msg, match, invoke, disclose, wampURI)
+		close(done)
+	}
+	<-done
+	for _, pub := range metaPubs {
+		d.metaPeer.Send(pub)
 	}
 }
 
@@ -257,9 +264,17 @@ func (d *Dealer) Unregister(callee *session, msg *wamp.Unregister) {
 	if callee == nil || msg == nil {
 		panic("dealer.Unregister with nil session or message")
 	}
+	var metaPubs []*wamp.Publish
+	done := make(chan struct{})
 	d.actionChan <- func() {
-		d.unregister(callee, msg)
+		metaPubs = d.unregister(callee, msg)
+		close(done)
 	}
+	<-done
+	for _, pub := range metaPubs {
+		d.metaPeer.Send(pub)
+	}
+
 }
 
 // Call invokes a registered remote procedure.
@@ -377,8 +392,19 @@ func (d *Dealer) RemoveSession(sess *session) {
 		// No session specified, no session removed.
 		return
 	}
+	// Meta events must be returned by removeSession and must not be sent to
+	// metaPeer while running inside the dealer goroutine.  Sending to metaPeer
+	// from inside the dealer goroutine can deadlock since metaPeer may alredy
+	// be waiting for the dealer goroutine to process a yield.
+	var metaPubs []*wamp.Publish
+	done := make(chan struct{})
 	d.actionChan <- func() {
-		d.removeSession(sess)
+		metaPubs = d.removeSession(sess)
+		close(done)
+	}
+	<-done
+	for _, pub := range metaPubs {
+		d.metaPeer.Send(pub)
 	}
 }
 
@@ -396,7 +422,8 @@ func (d *Dealer) run() {
 	}
 }
 
-func (d *Dealer) register(callee *session, msg *wamp.Register, match, invokePolicy string, disclose, wampURI bool) {
+func (d *Dealer) register(callee *session, msg *wamp.Register, match, invokePolicy string, disclose, wampURI bool) []*wamp.Publish {
+	var metaPubs []*wamp.Publish
 	var reg *registration
 	switch match {
 	default:
@@ -444,7 +471,7 @@ func (d *Dealer) register(callee *session, msg *wamp.Register, match, invokePoli
 				wamp.OptMatch:  match,
 				wamp.OptInvoke: invokePolicy,
 			}
-			d.metaPeer.Send(&wamp.Publish{
+			metaPubs = append(metaPubs, &wamp.Publish{
 				Request:   wamp.GlobalID(),
 				Topic:     wamp.MetaEventRegOnCreate,
 				Arguments: wamp.List{callee.ID, details},
@@ -465,7 +492,7 @@ func (d *Dealer) register(callee *session, msg *wamp.Register, match, invokePoli
 				Details: wamp.Dict{},
 				Error:   wamp.ErrProcedureAlreadyExists,
 			})
-			return
+			return metaPubs
 		}
 
 		// Found an existing registration that has an invocation strategy
@@ -480,7 +507,7 @@ func (d *Dealer) register(callee *session, msg *wamp.Register, match, invokePoli
 				Details: wamp.Dict{},
 				Error:   wamp.ErrProcedureAlreadyExists,
 			})
-			return
+			return metaPubs
 		}
 
 		regID = reg.id
@@ -510,15 +537,17 @@ func (d *Dealer) register(callee *session, msg *wamp.Register, match, invokePoli
 		// event MUST be fired subsequent to a wamp.registration.on_create
 		// event, since the first registration results in both the creation of
 		// the registration and the addition of a session.
-		d.metaPeer.Send(&wamp.Publish{
+		metaPubs = append(metaPubs, &wamp.Publish{
 			Request:   wamp.GlobalID(),
 			Topic:     wamp.MetaEventRegOnRegister,
 			Arguments: wamp.List{callee.ID, regID},
 		})
 	}
+	return metaPubs
 }
 
-func (d *Dealer) unregister(callee *session, msg *wamp.Unregister) {
+func (d *Dealer) unregister(callee *session, msg *wamp.Unregister) []*wamp.Publish {
+	var metaPubs []*wamp.Publish
 	// Delete the registration ID from the callee's set of registrations.
 	if _, ok := d.calleeRegIDSet[callee]; ok {
 		delete(d.calleeRegIDSet[callee], msg.Registration)
@@ -536,18 +565,18 @@ func (d *Dealer) unregister(callee *session, msg *wamp.Unregister) {
 			Details: wamp.Dict{},
 			Error:   wamp.ErrNoSuchRegistration,
 		})
-		return
+		return metaPubs
 	}
 
 	d.trySend(callee, &wamp.Unregistered{Request: msg.Request})
 
 	if d.metaPeer == nil {
-		return
+		return metaPubs
 	}
 
 	// Publish wamp.registration.on_unregister meta event.  Fired when a
 	// session is removed from a subscription.
-	d.metaPeer.Send(&wamp.Publish{
+	metaPubs = append(metaPubs, &wamp.Publish{
 		Request:   wamp.GlobalID(),
 		Topic:     wamp.MetaEventRegOnUnregister,
 		Arguments: wamp.List{callee.ID, msg.Registration},
@@ -558,12 +587,13 @@ func (d *Dealer) unregister(callee *session, msg *wamp.Unregister) {
 		// registration is deleted after the last session attached to it has
 		// been removed.  The wamp.registration.on_delete event MUST be
 		// preceded by a wamp.registration.on_unregister event.
-		d.metaPeer.Send(&wamp.Publish{
+		metaPubs = append(metaPubs, &wamp.Publish{
 			Request:   wamp.GlobalID(),
 			Topic:     wamp.MetaEventRegOnDelete,
 			Arguments: wamp.List{callee.ID, msg.Registration},
 		})
 	}
+	return metaPubs
 }
 
 // matchProcedure finds the best matching registration given a procedure URI.
@@ -957,7 +987,8 @@ func (d *Dealer) error(msg *wamp.Error) {
 	})
 }
 
-func (d *Dealer) removeSession(sess *session) {
+func (d *Dealer) removeSession(sess *session) []*wamp.Publish {
+	var metaPubs []*wamp.Publish
 	// Remove any remaining registrations for the removed session.
 	for regID := range d.calleeRegIDSet[sess] {
 		delReg, err := d.delCalleeReg(sess, regID)
@@ -971,7 +1002,7 @@ func (d *Dealer) removeSession(sess *session) {
 
 		// Publish wamp.registration.on_unregister meta event.  Fired when a
 		// callee session is removed from a registration.
-		d.metaPeer.Send(&wamp.Publish{
+		metaPubs = append(metaPubs, &wamp.Publish{
 			Request:   wamp.GlobalID(),
 			Topic:     wamp.MetaEventRegOnUnregister,
 			Arguments: wamp.List{sess.ID, regID},
@@ -984,7 +1015,7 @@ func (d *Dealer) removeSession(sess *session) {
 		// registration is deleted after the last session attached to it
 		// has been removed.  The wamp.registration.on_delete event MUST be
 		// preceded by a wamp.registration.on_unregister event.
-		d.metaPeer.Send(&wamp.Publish{
+		metaPubs = append(metaPubs, &wamp.Publish{
 			Request:   wamp.GlobalID(),
 			Topic:     wamp.MetaEventRegOnDelete,
 			Arguments: wamp.List{sess.ID, regID},
@@ -1006,6 +1037,7 @@ func (d *Dealer) removeSession(sess *session) {
 			delete(d.invocations, invkID)
 		}
 	}
+	return metaPubs
 }
 
 // delCalleeReg deletes the the callee from the specified registration and
