@@ -276,13 +276,12 @@ func (c *Client) Subscribe(topic string, fn EventHandler, options wamp.Dict) err
 	switch msg := msg.(type) {
 	case *wamp.Subscribed:
 		// Register the event handler for this subscription.
-		sync := make(chan struct{})
-		c.actionChan <- func() {
+		action := func() {
 			c.eventHandlers[msg.Subscription] = fn
 			c.topicSubID[topic] = msg.Subscription
-			close(sync)
 		}
-		<-sync
+		return c.runAction(action)
+
 	case *wamp.Error:
 		return fmt.Errorf("subscribing to topic '%v': %s", topic,
 			wampErrorString(msg))
@@ -296,21 +295,18 @@ func (c *Client) Subscribe(topic string, fn EventHandler, options wamp.Dict) err
 // client does not have an active subscription to the topic, then returns false
 // for second boolean return value.
 func (c *Client) SubscriptionID(topic string) (subID wamp.ID, ok bool) {
-	sync := make(chan struct{})
-	c.actionChan <- func() {
+	action := func() {
 		subID, ok = c.topicSubID[topic]
-		close(sync)
 	}
-	<-sync
+	c.runAction(action)
 	return
 }
 
 // Unsubscribe removes the registered EventHandler from the topic.
 func (c *Client) Unsubscribe(topic string) error {
-	sync := make(chan struct{})
 	var subID wamp.ID
 	var err error
-	c.actionChan <- func() {
+	action := func() {
 		var ok bool
 		subID, ok = c.topicSubID[topic]
 		if !ok {
@@ -323,9 +319,11 @@ func (c *Client) Unsubscribe(topic string) error {
 			delete(c.topicSubID, topic)
 			delete(c.eventHandlers, subID)
 		}
-		close(sync)
 	}
-	<-sync
+	if runErr := c.runAction(action); runErr != nil {
+		return runErr
+	}
+
 	if err != nil {
 		return err
 	}
@@ -473,17 +471,18 @@ func (c *Client) Register(procedure string, fn InvocationHandler, options wamp.D
 	switch msg := msg.(type) {
 	case *wamp.Registered:
 		// Register the event handler for this registration.
-		sync := make(chan struct{})
-		c.actionChan <- func() {
+		action := func() {
 			c.invHandlers[msg.Registration] = fn
 			c.nameProcID[procedure] = msg.Registration
-			close(sync)
+
+			if c.debug {
+				c.log.Println("Registered", procedure, "as registration",
+					msg.Registration)
+			}
 		}
-		<-sync
-		if c.debug {
-			c.log.Println("Registered", procedure, "as registration",
-				msg.Registration)
-		}
+
+		return c.runAction(action)
+
 	case *wamp.Error:
 		return fmt.Errorf("registering procedure '%v': %s", procedure,
 			wampErrorString(msg))
@@ -493,25 +492,41 @@ func (c *Client) Register(procedure string, fn InvocationHandler, options wamp.D
 	return nil
 }
 
+// runAction runs the action on the main run() goroutine blocking waiting for a response
+func (c *Client) runAction(action func()) error {
+	sync := make(chan struct{})
+	select {
+		case c.actionChan <- func() {
+			action()
+			close(sync)
+		}:
+		case <- c.done:
+			if c.debug {
+				c.log.Println("Action cancelled client is closed")
+			}
+			return errors.New("client closed")
+	}
+	<-sync
+	return nil
+}
+
 // RegistrationID returns the registration ID for the specified procedure.  If
 // the client is not registered for the procedure, then returns false for
 // second boolean return value.
 func (c *Client) RegistrationID(procedure string) (regID wamp.ID, ok bool) {
-	sync := make(chan struct{})
-	c.actionChan <- func() {
+
+	action := func() {
 		regID, ok = c.nameProcID[procedure]
-		close(sync)
 	}
-	<-sync
+	c.runAction(action)
 	return
 }
 
 // Unregister removes the registration of a procedure from the router.
 func (c *Client) Unregister(procedure string) error {
-	sync := make(chan struct{})
 	var procID wamp.ID
 	var err error
-	c.actionChan <- func() {
+	action := func() {
 		var ok bool
 		procID, ok = c.nameProcID[procedure]
 		if !ok {
@@ -524,9 +539,11 @@ func (c *Client) Unregister(procedure string) error {
 			delete(c.nameProcID, procedure)
 			delete(c.invHandlers, procID)
 		}
-		close(sync)
 	}
-	<-sync
+	if runErr := c.runAction(action); runErr != nil {
+		return runErr
+	}
+
 	if err != nil {
 		return err
 	}
@@ -1281,10 +1298,12 @@ func (c *Client) runHandleInvocation(msg *wamp.Invocation) {
 			delete(c.progGate, ctx)
 			c.progGateLock.Unlock()
 
-			c.actionChan <- func() {
+			action := func() {
 				delete(c.invHandlerKill, msg.Request)
 				c.activeInvHandlers.Done()
 			}
+			c.runAction(action)
+
 		}()
 
 		// Wait for the handler to finish or for the call be to canceled.
@@ -1365,3 +1384,4 @@ func (c *Client) runSignalReply(msg wamp.Message, requestID wamp.ID) {
 	}
 	w <- msg
 }
+
