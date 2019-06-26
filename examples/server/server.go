@@ -18,7 +18,6 @@ import (
 	"github.com/gammazero/nexus/client"
 	"github.com/gammazero/nexus/router"
 	"github.com/gammazero/nexus/wamp"
-	"github.com/gammazero/nexus/transport/serialize"
 )
 
 const (
@@ -37,7 +36,6 @@ func main() {
 		wssPort  = 8443
 		tcpPort  = 8080
 		tcpsPort = 8081
-		serType  = "json"
 	)
 	flag.StringVar(&netAddr, "netaddr", netAddr, "network address to listen on")
 	flag.StringVar(&unixAddr, "unixaddr", unixAddr, "unix address to listen on")
@@ -46,20 +44,7 @@ func main() {
 	flag.IntVar(&tcpPort, "tcp-port", tcpPort, "TCP port")
 	flag.IntVar(&tcpsPort, "tcps-port", tcpsPort, "TCP TLS port")
 	flag.StringVar(&realm, "realm", realm, "realm name")
-	flag.StringVar(&serType, "serialize", "json", "\"json\" or \"msgpack\" or \"cbor\"")
 	flag.Parse()
-
-	// Get requested serialization.
-	serialization := serialize.JSON
-	switch serType {
-	case "json":
-	case "msgpack":
-		serialization = serialize.MSGPACK
-	case "cbor":
-		serialization = serialize.CBOR
-	default:
-		log.Fatal("invalid serialization, must be one of: json, msgpack, cbor")
-	}
 
 	// Create router instance.
 	routerConfig := &router.Config{
@@ -79,7 +64,7 @@ func main() {
 
 	// create local (embedded) RPC callee client that provides the time in the
 	// requested timezones.
-	callee, err := createLocalCallee(nxr, realm, serialization)
+	callee, err := createLocalCallee(nxr, realm)
 	if err != nil {
 		log.Fatal(err)
 	}
@@ -167,11 +152,10 @@ func main() {
 //
 // The purpose of this client is to demonstrate how to create a local client
 // that is part of the same application running the WAMP router.
-func createLocalCallee(nxr router.Router, realm string, serialization serialize.Serialization) (*client.Client, error) {
+func createLocalCallee(nxr router.Router, realm string) (*client.Client, error) {
 	logger := log.New(os.Stdout, "CALLEE> ", log.LstdFlags)
 	cfg := client.Config{
 		Realm:         realm,
-		Serialization: serialization,
 		Logger:        logger,
 	}
 	callee, err := client.ConnectLocal(nxr, cfg)

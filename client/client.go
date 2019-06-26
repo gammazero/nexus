@@ -288,7 +288,6 @@ func (c *Client) Subscribe(topic string, fn EventHandler, options wamp.Dict) err
 	default:
 		return unexpectedMsgError(msg, wamp.SUBSCRIBED)
 	}
-	return nil
 }
 
 // SubscriptionID returns the subscription ID for the specified topic.  If the
@@ -489,7 +488,6 @@ func (c *Client) Register(procedure string, fn InvocationHandler, options wamp.D
 	default:
 		return unexpectedMsgError(msg, wamp.REGISTERED)
 	}
-	return nil
 }
 
 // runAction runs the action on the main run() goroutine blocking waiting for a response
