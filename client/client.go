@@ -1026,7 +1026,9 @@ func unexpectedMsgError(msg wamp.Message, expected wamp.MessageType) error {
 func (c *Client) expectReply(id wamp.ID) {
 	wait := make(chan wamp.Message)
 	c.replyLock.Lock()
-	c.awaitingReply[id] = wait
+	if c.awaitingReply != nil { 	// Client has already been closed
+		c.awaitingReply[id] = wait
+	}
 	c.replyLock.Unlock()
 }
 
