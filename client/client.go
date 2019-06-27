@@ -786,7 +786,9 @@ func (c *Client) Close() error {
 		c.replyLock.Unlock()
 	}
 
-	c.sess.Peer = nil
+	// c.sess.Peer is accessed from several go routines and would require synchronisation if updated here
+	// Peer is already closed in leaveRealm() so we do not need to set it to nil.
+	// c.sess.Peer = nil
 	return nil
 }
 
