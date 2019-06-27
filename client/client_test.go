@@ -2,8 +2,8 @@ package client
 
 import (
 	"context"
-	"errors"
 	"fmt"
+	"io"
 	"log"
 	"os"
 	"strings"
@@ -11,6 +11,7 @@ import (
 	"time"
 
 	"github.com/fortytw2/leaktest"
+	"github.com/pkg/errors"
 	"github.com/gammazero/nexus/router"
 	"github.com/gammazero/nexus/router/auth"
 	"github.com/gammazero/nexus/stdlog"
@@ -21,6 +22,7 @@ import (
 
 const (
 	testRealm = "nexus.test"
+	testAddress = "localhost:8999"
 )
 
 var logger stdlog.StdLog
@@ -694,4 +696,144 @@ func TestConnectContext(t *testing.T) {
 	if err == nil || err.Error() != unixExpect {
 		t.Fatalf("expected error %s, got %s", expect, err)
 	}
+}
+
+func createTestServer() (router.Router, io.Closer, error) {
+	realmConfig := &router.RealmConfig{
+		URI:              wamp.URI(testRealm),
+		StrictURI:        true,
+		AnonymousAuth:    true,
+		AllowDisclose:    true,
+		EnableMetaKill:   true,
+	}
+	r, err := getTestRouter(realmConfig)
+	if err != nil {
+		return nil, nil, err
+	}
+
+	// Create and run server.
+	closer, err := router.NewWebsocketServer(r).ListenAndServe(testAddress)
+	if err != nil {
+		log.Fatal(err)
+	}
+	log.Printf("Websocket server listening on ws://%s/", testAddress)
+
+	return r, closer, nil
+}
+
+func newNetTestCallee(routerURL string) (*Client, error) {
+	logger := log.New(os.Stderr, "CALLEE> ", log.Lmicroseconds)
+
+	cfg := Config{
+		Realm:         testRealm,
+		ResponseTimeout: 10*time.Millisecond,
+		Serialization: MSGPACK,
+		Logger:        logger,
+		Debug:         true,
+	}
+	cl, err := ConnectNet(routerURL, cfg)
+	if err != nil {
+		return nil, errors.Wrap(err, "Connect error")
+	}
+
+	sleep := func(ctx context.Context, args wamp.List, kwargs, details wamp.Dict) *InvokeResult {
+		log.Println("sleep rpc start")
+		time.Sleep(5*time.Second)
+		log.Println("sleep rpc done")
+		return &InvokeResult{Kwargs: wamp.Dict{"success": true}}
+	}
+
+	for ii := 0; ii < 40; ii++ {
+		procedureName := fmt.Sprintf("sleep_%d", ii)
+		if err = cl.Register(procedureName, sleep, nil); err != nil {
+			// Expect to get kill before we get through the list of register functions
+			logger.Println("Register", procedureName, "err", err)
+		} else {
+			logger.Println("Registered procedure", procedureName, "with router")
+		}
+	}
+	return cl, nil
+}
+
+func newNetTestKiller(routerURL string) (*Client, error) {
+	logger := log.New(os.Stderr, "KILLER> ", log.Lmicroseconds)
+
+	cfg := Config{
+		Realm:         testRealm,
+		ResponseTimeout: 10*time.Second,
+		Serialization: MSGPACK,
+		Logger:        logger,
+		Debug:         true,
+	}
+	cl, err := ConnectNet(routerURL, cfg)
+	if err != nil {
+		return nil, err
+	}
+
+	// Define function to handle on_join events received.
+	onJoin := func(args wamp.List, kwargs wamp.Dict, details wamp.Dict) {
+		details, ok := wamp.AsDict(args[0])
+		if !ok {
+			logger.Println("Client joined realm - no data provided")
+			return
+		}
+		onJoinID, _ := wamp.AsID(details["session"])
+		logger.Printf("Client %v joined realm\n", onJoinID)
+
+		// OnJoin callback is sequential ??
+		go func() {
+			// Call meta procedure to kill new client
+			ctx, _ := context.WithTimeout(context.Background(), 3*time.Second)
+			//defer cancel()
+			killArgs := wamp.List{onJoinID}
+			killKwArgs := wamp.Dict{"reason": "com.session.kill", "message": "because i can"}
+			result, err := cl.Call(ctx, string(wamp.MetaProcSessionKill), nil, killArgs, killKwArgs, "")
+			if err != nil {
+				logger.Printf("Kill new client failed err %s", err)
+			}
+			if result == nil {
+				logger.Println("Kill new client returned no result")
+			}
+		}()
+	}
+
+	// Subscribe to on_join topic.
+	err = cl.Subscribe(string(wamp.MetaEventSessionOnJoin), onJoin, nil)
+	if err != nil {
+		logger.Fatal("subscribe error:", err)
+	}
+	logger.Println("Subscribed to", wamp.MetaEventSessionOnJoin)
+
+	return cl, nil
+}
+
+
+// Test for races in client when session is killed by router.
+func TestClientRace(t *testing.T) {
+
+	// Create a websocket server
+	r, closer, err := createTestServer()
+	if err != nil {
+		t.Fatal("failed to connect test clients:", err)
+	}
+
+	testUrl := fmt.Sprintf("ws://%s/ws", testAddress)
+	killer, err := newNetTestKiller(testUrl)
+	if err != nil {
+		t.Fatal("failed to connect caller:", err)
+	}
+	logger.Println("Starting callee")
+
+	callee, err := newNetTestCallee(testUrl)
+	if err != nil {
+		t.Fatal("failed to connect callee:", err)
+	}
+
+	// If we hit a race condition with the client register, we do not ever return from the Register()
+	logger.Println("Finished test - cleanup")
+
+	closer.Close()
+	r.Close()
+	killer.Close()
+	callee.Close()
 }
