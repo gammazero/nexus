@@ -780,11 +780,11 @@ func newNetTestKiller(routerURL string) (*Client, error) {
 		onJoinID, _ := wamp.AsID(details["session"])
 		logger.Printf("Client %v joined realm\n", onJoinID)
 
-		// OnJoin callback is sequential ??
+		// OnJoin callback is sequential
 		go func() {
 			// Call meta procedure to kill new client
-			ctx, _ := context.WithTimeout(context.Background(), 3*time.Second)
-			//defer cancel()
+			ctx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
+			defer cancel()
 			killArgs := wamp.List{onJoinID}
 			killKwArgs := wamp.Dict{"reason": "com.session.kill", "message": "because i can"}
 			result, err := cl.Call(ctx, string(wamp.MetaProcSessionKill), nil, killArgs, killKwArgs, "")
