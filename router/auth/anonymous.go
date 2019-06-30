@@ -1,6 +1,8 @@
 package auth
 
 import (
+	"strconv"
+
 	"github.com/gammazero/nexus/wamp"
 )
 
@@ -34,7 +36,7 @@ func (a *AnonymousAuth) Authenticate(sid wamp.ID, details wamp.Dict, client wamp
 	// Create welcome details containing auth info.
 	return &wamp.Welcome{
 		Details: wamp.Dict{
-			"authid":       string(wamp.GlobalID()),
+			"authid":       strconv.FormatInt(int64(wamp.GlobalID()), 16),
 			"authrole":     a.AuthRole,
 			"authprovider": "static",
 			"authmethod":   a.AuthMethod(),
