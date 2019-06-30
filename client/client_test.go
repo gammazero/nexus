@@ -2,6 +2,7 @@ package client
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"io"
 	"log"
@@ -17,7 +18,6 @@ import (
 	"github.com/gammazero/nexus/transport"
 	"github.com/gammazero/nexus/wamp"
 	"github.com/gammazero/nexus/wamp/crsign"
-	"github.com/pkg/errors"
 )
 
 const (
@@ -733,7 +733,7 @@ func newNetTestCallee(routerURL string) (*Client, error) {
 	}
 	cl, err := ConnectNet(routerURL, cfg)
 	if err != nil {
-		return nil, errors.Wrap(err, "Connect error")
+		return nil, fmt.Errorf("connect error: %s", err)
 	}
 
 	sleep := func(ctx context.Context, args wamp.List, kwargs, details wamp.Dict) *InvokeResult {

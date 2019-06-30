@@ -276,12 +276,10 @@ func (c *Client) Subscribe(topic string, fn EventHandler, options wamp.Dict) err
 	switch msg := msg.(type) {
 	case *wamp.Subscribed:
 		// Register the event handler for this subscription.
-		action := func() {
+		return c.runAction(func() {
 			c.eventHandlers[msg.Subscription] = fn
 			c.topicSubID[topic] = msg.Subscription
-		}
-		return c.runAction(action)
-
+		})
 	case *wamp.Error:
 		return fmt.Errorf("subscribing to topic '%v': %s", topic,
 			wampErrorString(msg))
@@ -294,10 +292,9 @@ func (c *Client) Subscribe(topic string, fn EventHandler, options wamp.Dict) err
 // client does not have an active subscription to the topic, then returns false
 // for second boolean return value.
 func (c *Client) SubscriptionID(topic string) (subID wamp.ID, ok bool) {
-	action := func() {
+	c.runAction(func() {
 		subID, ok = c.topicSubID[topic]
-	}
-	c.runAction(action)
+	})
 	return
 }
 
@@ -305,7 +302,7 @@ func (c *Client) SubscriptionID(topic string) (subID wamp.ID, ok bool) {
 func (c *Client) Unsubscribe(topic string) error {
 	var subID wamp.ID
 	var err error
-	action := func() {
+	runErr := c.runAction(func() {
 		var ok bool
 		subID, ok = c.topicSubID[topic]
 		if !ok {
@@ -318,11 +315,10 @@ func (c *Client) Unsubscribe(topic string) error {
 			delete(c.topicSubID, topic)
 			delete(c.eventHandlers, subID)
 		}
-	}
-	if runErr := c.runAction(action); runErr != nil {
+	})
+	if runErr != nil {
 		return runErr
 	}
-
 	if err != nil {
 		return err
 	}
@@ -470,7 +466,7 @@ func (c *Client) Register(procedure string, fn InvocationHandler, options wamp.D
 	switch msg := msg.(type) {
 	case *wamp.Registered:
 		// Register the event handler for this registration.
-		action := func() {
+		return c.runAction(func() {
 			c.invHandlers[msg.Registration] = fn
 			c.nameProcID[procedure] = msg.Registration
 
@@ -478,10 +474,7 @@ func (c *Client) Register(procedure string, fn InvocationHandler, options wamp.D
 				c.log.Println("Registered", procedure, "as registration",
 					msg.Registration)
 			}
-		}
-
-		return c.runAction(action)
-
+		})
 	case *wamp.Error:
 		return fmt.Errorf("registering procedure '%v': %s", procedure,
 			wampErrorString(msg))
@@ -490,19 +483,20 @@ func (c *Client) Register(procedure string, fn InvocationHandler, options wamp.D
 	}
 }
 
-// runAction runs the action on the main run() goroutine blocking waiting for a response
+// runAction runs the action on the main run() goroutine blocking waiting for a
+// response
 func (c *Client) runAction(action func()) error {
 	sync := make(chan struct{})
 	select {
-		case c.actionChan <- func() {
-			action()
-			close(sync)
-		}:
-		case <- c.done:
-			if c.debug {
-				c.log.Println("Action cancelled client is closed")
-			}
-			return errors.New("client closed")
+	case c.actionChan <- func() {
+		action()
+		close(sync)
+	}:
+	case <-c.done:
+		if c.debug {
+			c.log.Println("Action cancelled client is closed")
+		}
+		return errors.New("client closed")
 	}
 	<-sync
 	return nil
@@ -512,11 +506,9 @@ func (c *Client) runAction(action func()) error {
 // the client is not registered for the procedure, then returns false for
 // second boolean return value.
 func (c *Client) RegistrationID(procedure string) (regID wamp.ID, ok bool) {
-
-	action := func() {
+	c.runAction(func() {
 		regID, ok = c.nameProcID[procedure]
-	}
-	c.runAction(action)
+	})
 	return
 }
 
@@ -524,7 +516,7 @@ func (c *Client) RegistrationID(procedure string) (regID wamp.ID, ok bool) {
 func (c *Client) Unregister(procedure string) error {
 	var procID wamp.ID
 	var err error
-	action := func() {
+	runErr := c.runAction(func() {
 		var ok bool
 		procID, ok = c.nameProcID[procedure]
 		if !ok {
@@ -537,11 +529,10 @@ func (c *Client) Unregister(procedure string) error {
 			delete(c.nameProcID, procedure)
 			delete(c.invHandlers, procID)
 		}
-	}
-	if runErr := c.runAction(action); runErr != nil {
+	})
+	if runErr != nil {
 		return runErr
 	}
-
 	if err != nil {
 		return err
 	}
@@ -786,9 +777,9 @@ func (c *Client) Close() error {
 		c.replyLock.Unlock()
 	}
 
-	// c.sess.Peer is accessed from several go routines and would require synchronisation if updated here
-	// Peer is already closed in leaveRealm() so we do not need to set it to nil.
-	// c.sess.Peer = nil
+	// c.sess.Peer is accessed from several go routines and would require
+	// synchronisation if updated here.  Peer is closed in leaveRealm() so we
+	// do not need to set it to nil.
 	return nil
 }
 
@@ -1028,7 +1019,7 @@ func unexpectedMsgError(msg wamp.Message, expected wamp.MessageType) error {
 func (c *Client) expectReply(id wamp.ID) {
 	wait := make(chan wamp.Message)
 	c.replyLock.Lock()
-	if c.awaitingReply != nil { 	// Client has already been closed
+	if c.awaitingReply != nil { // Client has already been closed
 		c.awaitingReply[id] = wait
 	}
 	c.replyLock.Unlock()
@@ -1300,12 +1291,10 @@ func (c *Client) runHandleInvocation(msg *wamp.Invocation) {
 			delete(c.progGate, ctx)
 			c.progGateLock.Unlock()
 
-			action := func() {
+			c.runAction(func() {
 				delete(c.invHandlerKill, msg.Request)
 				c.activeInvHandlers.Done()
-			}
-			c.runAction(action)
-
+			})
 		}()
 
 		// Wait for the handler to finish or for the call be to canceled.
@@ -1386,4 +1375,3 @@ func (c *Client) runSignalReply(msg wamp.Message, requestID wamp.ID) {
 	}
 	w <- msg
 }
-
