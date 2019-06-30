@@ -11,17 +11,17 @@ import (
 	"time"
 
 	"github.com/fortytw2/leaktest"
-	"github.com/pkg/errors"
 	"github.com/gammazero/nexus/router"
 	"github.com/gammazero/nexus/router/auth"
 	"github.com/gammazero/nexus/stdlog"
 	"github.com/gammazero/nexus/transport"
 	"github.com/gammazero/nexus/wamp"
 	"github.com/gammazero/nexus/wamp/crsign"
+	"github.com/pkg/errors"
 )
 
 const (
-	testRealm = "nexus.test"
+	testRealm   = "nexus.test"
 	testAddress = "localhost:8999"
 )
 
@@ -700,11 +700,11 @@ func TestConnectContext(t *testing.T) {
 
 func createTestServer() (router.Router, io.Closer, error) {
 	realmConfig := &router.RealmConfig{
-		URI:              wamp.URI(testRealm),
-		StrictURI:        true,
-		AnonymousAuth:    true,
-		AllowDisclose:    true,
-		EnableMetaKill:   true,
+		URI:            wamp.URI(testRealm),
+		StrictURI:      true,
+		AnonymousAuth:  true,
+		AllowDisclose:  true,
+		EnableMetaKill: true,
 	}
 	r, err := getTestRouter(realmConfig)
 	if err != nil {
@@ -725,11 +725,11 @@ func newNetTestCallee(routerURL string) (*Client, error) {
 	logger := log.New(os.Stderr, "CALLEE> ", log.Lmicroseconds)
 
 	cfg := Config{
-		Realm:         testRealm,
-		ResponseTimeout: 10*time.Millisecond,
-		Serialization: MSGPACK,
-		Logger:        logger,
-		Debug:         true,
+		Realm:           testRealm,
+		ResponseTimeout: 10 * time.Millisecond,
+		Serialization:   MSGPACK,
+		Logger:          logger,
+		Debug:           true,
 	}
 	cl, err := ConnectNet(routerURL, cfg)
 	if err != nil {
@@ -738,7 +738,7 @@ func newNetTestCallee(routerURL string) (*Client, error) {
 
 	sleep := func(ctx context.Context, args wamp.List, kwargs, details wamp.Dict) *InvokeResult {
 		log.Println("sleep rpc start")
-		time.Sleep(5*time.Second)
+		time.Sleep(5 * time.Second)
 		log.Println("sleep rpc done")
 		return &InvokeResult{Kwargs: wamp.Dict{"success": true}}
 	}
@@ -759,11 +759,11 @@ func newNetTestKiller(routerURL string) (*Client, error) {
 	logger := log.New(os.Stderr, "KILLER> ", log.Lmicroseconds)
 
 	cfg := Config{
-		Realm:         testRealm,
-		ResponseTimeout: 10*time.Second,
-		Serialization: MSGPACK,
-		Logger:        logger,
-		Debug:         true,
+		Realm:           testRealm,
+		ResponseTimeout: 10 * time.Second,
+		Serialization:   MSGPACK,
+		Logger:          logger,
+		Debug:           true,
 	}
 	cl, err := ConnectNet(routerURL, cfg)
 	if err != nil {
@@ -787,7 +787,8 @@ func newNetTestKiller(routerURL string) (*Client, error) {
 			defer cancel()
 			killArgs := wamp.List{onJoinID}
 			killKwArgs := wamp.Dict{"reason": "com.session.kill", "message": "because i can"}
-			result, err := cl.Call(ctx, string(wamp.MetaProcSessionKill), nil, killArgs, killKwArgs, "")
+			var result *wamp.Result
+			result, err = cl.Call(ctx, string(wamp.MetaProcSessionKill), nil, killArgs, killKwArgs, "")
 			if err != nil {
 				logger.Printf("Kill new client failed err %s", err)
 			}
@@ -806,7 +807,6 @@ func newNetTestKiller(routerURL string) (*Client, error) {
 
 	return cl, nil
 }
-
 
 // Test for races in client when session is killed by router.
 func TestClientRace(t *testing.T) {
