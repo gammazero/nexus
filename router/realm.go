@@ -3,6 +3,7 @@ package router
 import (
 	"errors"
 	"fmt"
+	"strconv"
 	"sync"
 
 	"github.com/gammazero/nexus/router/auth"
@@ -640,7 +641,7 @@ func (r *realm) authClient(sid wamp.ID, client wamp.Peer, details wamp.Dict) (*w
 		// Create welcome details for local client.
 		authid, _ := wamp.AsString(details["authid"])
 		if authid == "" {
-			authid = fmt.Sprint(wamp.GlobalID())
+			authid = strconv.FormatInt(int64(wamp.GlobalID()), 16)
 		}
 		details = wamp.Dict{
 			"authid":       authid,
