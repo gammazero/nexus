@@ -276,10 +276,11 @@ func (c *Client) Subscribe(topic string, fn EventHandler, options wamp.Dict) err
 	switch msg := msg.(type) {
 	case *wamp.Subscribed:
 		// Register the event handler for this subscription.
-		return c.runAction(func() {
+		return c.runAction(func() error {
 			c.eventHandlers[msg.Subscription] = fn
 			c.topicSubID[topic] = msg.Subscription
-		})
+			return nil
+		}, nil, nil).Wait()
 	case *wamp.Error:
 		return fmt.Errorf("subscribing to topic '%v': %s", topic,
 			wampErrorString(msg))
@@ -292,21 +293,21 @@ func (c *Client) Subscribe(topic string, fn EventHandler, options wamp.Dict) err
 // client does not have an active subscription to the topic, then returns false
 // for second boolean return value.
 func (c *Client) SubscriptionID(topic string) (subID wamp.ID, ok bool) {
-	c.runAction(func() {
+	c.runAction(func() error {
 		subID, ok = c.topicSubID[topic]
-	})
+		return nil
+	}, nil, nil).Wait()
 	return
 }
 
 // Unsubscribe removes the registered EventHandler from the topic.
 func (c *Client) Unsubscribe(topic string) error {
 	var subID wamp.ID
-	var err error
-	runErr := c.runAction(func() {
+	err := c.runAction(func() error {
 		var ok bool
 		subID, ok = c.topicSubID[topic]
 		if !ok {
-			err = errors.New("not subscribed to: " + topic)
+			return errors.New("not subscribed to: " + topic)
 		} else {
 			// Delete the subscription anyway, regardless of whether or not the
 			// the router succeeds or fails to unsubscribe.  If the client
@@ -315,10 +316,8 @@ func (c *Client) Unsubscribe(topic string) error {
 			delete(c.topicSubID, topic)
 			delete(c.eventHandlers, subID)
 		}
-	})
-	if runErr != nil {
-		return runErr
-	}
+		return nil
+	}, nil, nil).Wait()
 	if err != nil {
 		return err
 	}
@@ -466,7 +465,7 @@ func (c *Client) Register(procedure string, fn InvocationHandler, options wamp.D
 	switch msg := msg.(type) {
 	case *wamp.Registered:
 		// Register the event handler for this registration.
-		return c.runAction(func() {
+		return c.runAction(func() error {
 			c.invHandlers[msg.Registration] = fn
 			c.nameProcID[procedure] = msg.Registration
 
@@ -474,7 +473,8 @@ func (c *Client) Register(procedure string, fn InvocationHandler, options wamp.D
 				c.log.Println("Registered", procedure, "as registration",
 					msg.Registration)
 			}
-		})
+			return nil
+		}, nil, nil).Wait()
 	case *wamp.Error:
 		return fmt.Errorf("registering procedure '%v': %s", procedure,
 			wampErrorString(msg))
@@ -483,44 +483,74 @@ func (c *Client) Register(procedure string, fn InvocationHandler, options wamp.D
 	}
 }
 
+type action struct {
+	action  func()(error)
+	success func()
+	failure func(error)
+	sync    chan struct{}
+	err     error
+}
+
+func (act *action) Wait() error {
+	<- act.sync
+	return act.err
+}
+
 // runAction runs the action on the main run() goroutine blocking waiting for a
 // response
-func (c *Client) runAction(action func()) error {
-	sync := make(chan struct{})
+func (c *Client) runAction(act func()(error), success func(), failure func(error)) *action{
+	theAction := &action {
+		action: act,
+		success: success,
+		failure: failure,
+		sync: make(chan struct{}),
+	}
 	select {
 	case c.actionChan <- func() {
-		action()
-		close(sync)
+		if err := theAction.action(); err != nil {
+			theAction.err = err
+			if theAction.failure != nil {
+				theAction.failure(err)
+			}
+		} else {
+			if theAction.success != nil {
+				theAction.success()
+			}
+		}
+		close(theAction.sync)
 	}:
 	case <-c.done:
 		if c.debug {
 			c.log.Println("Action cancelled client is closed")
 		}
-		return errors.New("client closed")
+		theAction.err = errors.New("client closed")
+		if theAction.failure != nil {
+			theAction.failure(theAction.err)
+		}
+		close(theAction.sync)
 	}
-	<-sync
-	return nil
+	return theAction
 }
 
 // RegistrationID returns the registration ID for the specified procedure.  If
 // the client is not registered for the procedure, then returns false for
 // second boolean return value.
 func (c *Client) RegistrationID(procedure string) (regID wamp.ID, ok bool) {
-	c.runAction(func() {
+	c.runAction(func() error {
 		regID, ok = c.nameProcID[procedure]
-	})
+		return nil
+	}, nil, nil).Wait()
 	return
 }
 
 // Unregister removes the registration of a procedure from the router.
 func (c *Client) Unregister(procedure string) error {
 	var procID wamp.ID
-	var err error
-	runErr := c.runAction(func() {
+	err := c.runAction(func() error {
 		var ok bool
 		procID, ok = c.nameProcID[procedure]
 		if !ok {
-			err = errors.New("not registered to handle procedure " + procedure)
+			return errors.New("not registered to handle procedure " + procedure)
 		} else {
 			// Delete the registration anyway, regardless of whether or not the
 			// the router succeeds or fails to unregister.  If the client
@@ -529,10 +559,8 @@ func (c *Client) Unregister(procedure string) error {
 			delete(c.nameProcID, procedure)
 			delete(c.invHandlers, procID)
 		}
-	})
-	if runErr != nil {
-		return runErr
-	}
+		return nil
+	}, nil, nil).Wait()
 	if err != nil {
 		return err
 	}
@@ -1291,10 +1319,13 @@ func (c *Client) runHandleInvocation(msg *wamp.Invocation) {
 			delete(c.progGate, ctx)
 			c.progGateLock.Unlock()
 
-			c.runAction(func() {
+			c.runAction(func() error {
 				delete(c.invHandlerKill, msg.Request)
 				c.activeInvHandlers.Done()
-			})
+				return nil
+			},
+				nil,
+				func(error) { c.activeInvHandlers.Done() }).Wait()
 		}()
 
 		// Wait for the handler to finish or for the call be to canceled.
