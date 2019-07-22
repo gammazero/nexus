@@ -29,7 +29,7 @@ const (
 	// CALL timeout which spedifies how long the callee may take to answer.
 	sendResultDeadline = time.Minute
 	// yieldRetryDelay is the initial delay before reprocessin a blocked yield
-	yieldRetryDelay = 200 * time.Millisecond
+	yieldRetryDelay = time.Millisecond
 )
 
 // Role information for this broker.
@@ -332,7 +332,7 @@ func (d *Dealer) Cancel(caller *session, msg *wamp.Cancel) {
 // Yield handles the result of successfully processing and finishing the
 // execution of a call, send from callee to dealer.
 //
-// If the RESULT could not be sent to the caller because he caller was blocked
+// If the RESULT could not be sent to the caller because the caller was blocked
 // (send queue full), then retry sending until timeout.  If timeout while
 // trying to send RESULT, then cancel call.
 func (d *Dealer) Yield(callee *session, msg *wamp.Yield) {
@@ -354,7 +354,9 @@ func (d *Dealer) Yield(callee *session, msg *wamp.Yield) {
 		start := time.Now()
 		// Retry processing YIELD until caller gone or deadline reached
 		for {
-			d.log.Println("Retry sending RESULT after", delay)
+			if d.debug {
+				d.log.Println("Retry sending RESULT after", delay)
+			}
 			<-time.After(delay)
 			// Do not retry if the elapsed time exceeds deadline
 			if time.Since(start) >= sendResultDeadline {

@@ -1293,8 +1293,8 @@ func (c *Client) runHandleInvocation(msg *wamp.Invocation) {
 
 			c.runAction(func() {
 				delete(c.invHandlerKill, msg.Request)
-				c.activeInvHandlers.Done()
 			})
+			c.activeInvHandlers.Done()
 		}()
 
 		// Wait for the handler to finish or for the call be to canceled.
