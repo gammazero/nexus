@@ -11,8 +11,7 @@ import (
 type session struct {
 	wamp.Session
 
-	killChan chan *wamp.Goodbye
-	rwlock   sync.RWMutex
+	rwlock sync.RWMutex
 }
 
 // newSession creates a new lockable session.
@@ -27,7 +26,6 @@ func newSession(peer wamp.Peer, sid wamp.ID, details wamp.Dict) *session {
 			ID:      sid,
 			Details: details,
 		},
-		killChan: make(chan *wamp.Goodbye),
 	}
 }
 
@@ -35,19 +33,6 @@ func (s *session) rLock()   { s.rwlock.RLock() }
 func (s *session) rUnlock() { s.rwlock.RUnlock() }
 func (s *session) lock()    { s.rwlock.Lock() }
 func (s *session) unlock()  { s.rwlock.Unlock() }
-
-func (s *session) kill(goodbye *wamp.Goodbye) bool {
-	if s.killChan == nil {
-		return false
-	}
-	if goodbye == nil {
-		close(s.killChan)
-	} else {
-		s.killChan <- goodbye
-	}
-	s.killChan = nil // prevent subsequent kill from using chan
-	return true
-}
 
 // String returns the session ID as a string.
 func (s *session) String() string { return s.Session.String() }

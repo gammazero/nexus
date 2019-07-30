@@ -16,7 +16,7 @@ type Peer interface {
 	// TrySend performs a non-blocking send.  Returns error if blocked.
 	TrySend(Message) error
 
-	// Closes the peer connection and and channel returned from Recv().
+	// Closes the peer connection and the channel returned from Recv().
 	Close()
 
 	// Recv returns a channel of messages from the peer.

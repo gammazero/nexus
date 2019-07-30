@@ -241,7 +241,7 @@ func (r *realm) close() {
 	// the meta client receives GOODBYE from the meta session, the meta
 	// session is done and will not try to publish anything more to the
 	// broker, and it is finally safe to exit and close the broker.
-	r.metaSess.kill(nil)
+	r.metaSess.Kill(nil)
 	<-r.metaDone
 
 	// handleInboundMessages() and metaProcedureHandler() are the only things
@@ -464,7 +464,6 @@ func (r *realm) handleInboundMessages(sess *session, stopChan <-chan struct{}) (
 	if r.debug {
 		defer r.log.Println("Ended session", sess)
 	}
-	killChan := sess.killChan
 	recvChan := sess.Recv()
 	for {
 		var msg wamp.Message
@@ -484,8 +483,9 @@ func (r *realm) handleInboundMessages(sess *session, stopChan <-chan struct{}) (
 				Details: wamp.Dict{},
 			})
 			return true, false, nil
-		case goodbye, open := <-killChan:
-			if !open {
+		case <-sess.Done():
+			goodbye := sess.Goodbye()
+			if goodbye == nil {
 				if r.debug {
 					r.log.Printf("Stop session %s: system shutdown", sess)
 				}
@@ -1275,7 +1275,7 @@ func (r *realm) killSession(sid wamp.ID, reason wamp.URI, message string) error 
 			errChan <- errors.New("no such session")
 			return
 		}
-		sess.kill(goodbye)
+		sess.Kill(goodbye)
 		close(errChan)
 	}
 	return <-errChan
@@ -1301,7 +1301,7 @@ func (r *realm) killSessionsByDetail(key, value string, reason wamp.URI, message
 			if !ok || val != value {
 				continue
 			}
-			if sess.kill(goodbye) {
+			if sess.Kill(goodbye) {
 				kills++
 			}
 		}
@@ -1325,7 +1325,7 @@ func (r *realm) killAllSessions(reason wamp.URI, message string, exclude wamp.ID
 			if sid == exclude {
 				continue
 			}
-			if sess.kill(goodbye) {
+			if sess.Kill(goodbye) {
 				kills++
 			}
 		}

@@ -8,7 +8,6 @@ package client
 
 import (
 	"context"
-	"crypto/tls"
 	"errors"
 	"fmt"
 	"strings"
@@ -17,70 +16,13 @@ import (
 	"time"
 
 	"github.com/gammazero/nexus/stdlog"
-	"github.com/gammazero/nexus/transport"
 	"github.com/gammazero/nexus/transport/serialize"
 	"github.com/gammazero/nexus/wamp"
 )
 
 const (
-	helloAuthmethods = "authmethods"
-	helloRoles       = "roles"
-)
-
-// Deprecated: replaced by Config
-//
-// ClientConfig is a type alias for the deprecated ClientConfig.
-type ClientConfig = Config
-
-// Config configures a client with everything needed to begin a session
-// with a WAMP router.
-type Config struct {
-	// Realm is the URI of the realm the client will join.
-	Realm string
-
-	// HelloDetails contains details about the client.  The client provides the
-	// roles, unless already supplied by the user.
-	HelloDetails wamp.Dict
-
-	// AuthHandlers is a map of authmethod to AuthFunc.  All authmethod keys
-	// from this map are automatically added to HelloDetails["authmethods"]
-	AuthHandlers map[string]AuthFunc
-
-	// ResponseTimeout specifies the amount of time that the client will block
-	// waiting for a response from the router.  A value of 0 uses the default.
-	ResponseTimeout time.Duration
-
-	// Enable debug logging for client.
-	Debug bool
-
-	// Set to JSON or MSGPACK.  Default (zero-value) is JSON.
-	Serialization serialize.Serialization
-
-	// Provide a tls.Config to connect the client using TLS.  The zero
-	// configuration specifies using defaults.  A nil tls.Config means do not
-	// use TLS.
-	TlsCfg *tls.Config
-
-	// Supplies alternate Dial function for the websocket dialer.
-	// See https://godoc.org/github.com/gorilla/websocket#Dialer
-	Dial transport.DialFunc
-
-	// Client receive limit for use with RawSocket transport.
-	// If recvLimit is > 0, then the client will not receive messages with size
-	// larger than the nearest power of 2 greater than or equal to recvLimit.
-	// If recvLimit is <= 0, then the default of 16M is used.
-	RecvLimit int
-
-	// Logger for client to use.  If not set, client logs to os.Stderr.
-	Logger stdlog.StdLog
-
-	// Websocket transport configuration.
-	WsCfg transport.WebsocketConfig
-}
-
-// Define serialization consts in client package so that client code does not
-// need to import the serialize package to get the consts.
-const (
+	// Define serialization consts in client package so that client code does
+	// not need to import the serialize package to get the consts.
 	JSON    = serialize.JSON
 	MSGPACK = serialize.MSGPACK
 	CBOR    = serialize.CBOR
@@ -144,8 +86,7 @@ type Client struct {
 	invHandlerKill map[wamp.ID]context.CancelFunc
 	progGate       map[context.Context]wamp.ID
 	progGateLock   sync.Mutex
-
-	actionChan chan func()
+	mutex          sync.Mutex
 
 	stopping          chan struct{}
 	activeInvHandlers sync.WaitGroup
@@ -194,9 +135,8 @@ func NewClient(p wamp.Peer, cfg Config) (*Client, error) {
 		invHandlerKill: map[wamp.ID]context.CancelFunc{},
 		progGate:       map[context.Context]wamp.ID{},
 
-		actionChan: make(chan func()),
-		stopping:   make(chan struct{}),
-		done:       make(chan struct{}),
+		stopping: make(chan struct{}),
+		done:     make(chan struct{}),
 
 		log:   cfg.Logger,
 		debug: cfg.Debug,
@@ -276,10 +216,11 @@ func (c *Client) Subscribe(topic string, fn EventHandler, options wamp.Dict) err
 	switch msg := msg.(type) {
 	case *wamp.Subscribed:
 		// Register the event handler for this subscription.
-		return c.runAction(func() {
-			c.eventHandlers[msg.Subscription] = fn
-			c.topicSubID[topic] = msg.Subscription
-		})
+		c.mutex.Lock()
+		c.eventHandlers[msg.Subscription] = fn
+		c.topicSubID[topic] = msg.Subscription
+		c.mutex.Unlock()
+		return nil
 	case *wamp.Error:
 		return fmt.Errorf("subscribing to topic '%v': %s", topic,
 			wampErrorString(msg))
@@ -292,36 +233,27 @@ func (c *Client) Subscribe(topic string, fn EventHandler, options wamp.Dict) err
 // client does not have an active subscription to the topic, then returns false
 // for second boolean return value.
 func (c *Client) SubscriptionID(topic string) (subID wamp.ID, ok bool) {
-	c.runAction(func() {
-		subID, ok = c.topicSubID[topic]
-	})
+	c.mutex.Lock()
+	subID, ok = c.topicSubID[topic]
+	c.mutex.Unlock()
 	return
 }
 
 // Unsubscribe removes the registered EventHandler from the topic.
 func (c *Client) Unsubscribe(topic string) error {
-	var subID wamp.ID
-	var err error
-	runErr := c.runAction(func() {
-		var ok bool
-		subID, ok = c.topicSubID[topic]
-		if !ok {
-			err = errors.New("not subscribed to: " + topic)
-		} else {
-			// Delete the subscription anyway, regardless of whether or not the
-			// the router succeeds or fails to unsubscribe.  If the client
-			// called Unsubscribe() then it has no interest in receiving any
-			// more events for the topic, and may expect any.
-			delete(c.topicSubID, topic)
-			delete(c.eventHandlers, subID)
-		}
-	})
-	if runErr != nil {
-		return runErr
+	c.mutex.Lock()
+	subID, ok := c.topicSubID[topic]
+	if !ok {
+		c.mutex.Unlock()
+		return errors.New("not subscribed to: " + topic)
 	}
-	if err != nil {
-		return err
-	}
+	// Delete the subscription anyway, regardless of whether or not the the
+	// router succeeds or fails to unsubscribe.  If the client called
+	// Unsubscribe() then it has no interest in receiving any more events for
+	// the topic, and may expect any.
+	delete(c.topicSubID, topic)
+	delete(c.eventHandlers, subID)
+	c.mutex.Unlock()
 
 	id := c.idGen.Next()
 	c.expectReply(id)
@@ -466,39 +398,20 @@ func (c *Client) Register(procedure string, fn InvocationHandler, options wamp.D
 	switch msg := msg.(type) {
 	case *wamp.Registered:
 		// Register the event handler for this registration.
-		return c.runAction(func() {
-			c.invHandlers[msg.Registration] = fn
-			c.nameProcID[procedure] = msg.Registration
-
-			if c.debug {
-				c.log.Println("Registered", procedure, "as registration",
-					msg.Registration)
-			}
-		})
+		c.mutex.Lock()
+		c.invHandlers[msg.Registration] = fn
+		c.nameProcID[procedure] = msg.Registration
+		c.mutex.Unlock()
+		if c.debug {
+			c.log.Println("Registered", procedure, "as registration",
+				msg.Registration)
+		}
 	case *wamp.Error:
 		return fmt.Errorf("registering procedure '%v': %s", procedure,
 			wampErrorString(msg))
 	default:
 		return unexpectedMsgError(msg, wamp.REGISTERED)
 	}
-}
-
-// runAction runs the action on the main run() goroutine blocking waiting for a
-// response
-func (c *Client) runAction(action func()) error {
-	sync := make(chan struct{})
-	select {
-	case c.actionChan <- func() {
-		action()
-		close(sync)
-	}:
-	case <-c.done:
-		if c.debug {
-			c.log.Println("Action cancelled client is closed")
-		}
-		return errors.New("client closed")
-	}
-	<-sync
 	return nil
 }
 
@@ -506,36 +419,27 @@ func (c *Client) runAction(action func()) error {
 // the client is not registered for the procedure, then returns false for
 // second boolean return value.
 func (c *Client) RegistrationID(procedure string) (regID wamp.ID, ok bool) {
-	c.runAction(func() {
-		regID, ok = c.nameProcID[procedure]
-	})
+	c.mutex.Lock()
+	regID, ok = c.nameProcID[procedure]
+	c.mutex.Unlock()
 	return
 }
 
 // Unregister removes the registration of a procedure from the router.
 func (c *Client) Unregister(procedure string) error {
-	var procID wamp.ID
-	var err error
-	runErr := c.runAction(func() {
-		var ok bool
-		procID, ok = c.nameProcID[procedure]
-		if !ok {
-			err = errors.New("not registered to handle procedure " + procedure)
-		} else {
-			// Delete the registration anyway, regardless of whether or not the
-			// the router succeeds or fails to unregister.  If the client
-			// called Unregister() then it has no interest in receiving any
-			// more invocations for the procedure, and may not expect any.
-			delete(c.nameProcID, procedure)
-			delete(c.invHandlers, procID)
-		}
-	})
-	if runErr != nil {
-		return runErr
+	c.mutex.Lock()
+	procID, ok := c.nameProcID[procedure]
+	if !ok {
+		c.mutex.Unlock()
+		return errors.New("not registered to handle procedure " + procedure)
 	}
-	if err != nil {
-		return err
-	}
+	// Delete the registration anyway, regardless of whether or not the the
+	// router succeeds or fails to unregister.  If the client called
+	// Unregister() then it has no interest in receiving any more invocations
+	// for the procedure, and may not expect any.
+	delete(c.nameProcID, procedure)
+	delete(c.invHandlers, procID)
+	c.mutex.Unlock()
 
 	id := c.idGen.Next()
 	c.expectReply(id)
@@ -743,10 +647,10 @@ func (c *Client) Close() error {
 		return errors.New("already closed")
 	}
 
-	// Cancel any running invocation handlers and wait for them to finish.
-	// This makes it safe to close the actionChan.  Do this before leaving the
-	// realm so that any invocation handlers do not hang waiting to send to the
-	// router after it has stopped receiving from the client.
+	// Cancel any running invocation handlers and wait for them to finish.  Do
+	// this before leaving the realm so that any invocation handlers do not
+	// hang waiting to send to the router after it has stopped receiving from
+	// the client.
 	close(c.stopping)
 	c.activeInvHandlers.Wait()
 
@@ -829,6 +733,10 @@ func (c *Client) SendProgress(ctx context.Context, args wamp.List, kwArgs wamp.D
 // names to functions that handle each auth type.  This can be nil if router is
 // expected to allow anonymous authentication.
 func joinRealm(peer wamp.Peer, cfg Config) (*wamp.Welcome, error) {
+	const (
+		helloAuthmethods = "authmethods"
+		helloRoles       = "roles"
+	)
 	if cfg.Realm == "" {
 		return nil, errors.New("realm not specified")
 	}
@@ -906,7 +814,7 @@ func (c *Client) leaveRealm() {
 	case <-c.done:
 		timer.Stop()
 	case <-timer.C:
-		close(c.actionChan) // force run() to exit
+		c.sess.Kill(nil) // force run() to exit
 		<-c.done
 	}
 }
@@ -1144,15 +1052,11 @@ func (c *Client) run() {
 	if c.debug {
 		defer c.log.Println("Client", c.sess, "closed")
 	}
-	recvChan := c.sess.Recv()
 	for {
 		select {
-		case action, ok := <-c.actionChan:
-			if !ok {
-				return
-			}
-			action()
-		case msg, ok := <-recvChan:
+		case <-c.sess.Done():
+			return
+		case msg, ok := <-c.sess.Recv():
 			if !ok {
 				return
 			}
@@ -1215,7 +1119,9 @@ func (c *Client) runReceiveFromRouter(msg wamp.Message) bool {
 // as the messages are received in.  This could not be guaranteed if executing
 // concurrently in separate goroutines.
 func (c *Client) runHandleEvent(msg *wamp.Event) {
+	c.mutex.Lock()
 	handler, ok := c.eventHandlers[msg.Subscription]
+	c.mutex.Unlock()
 	if !ok {
 		c.log.Println("No handler registered for subscription:",
 			msg.Subscription)
@@ -1227,9 +1133,11 @@ func (c *Client) runHandleEvent(msg *wamp.Event) {
 // runHandleInvocation processes an INVOCATION message from the router
 // requesting a call to a registered RPC procedure.
 func (c *Client) runHandleInvocation(msg *wamp.Invocation) {
+	c.mutex.Lock()
 	handler, ok := c.invHandlers[msg.Registration]
 	if !ok {
-		errMsg := fmt.Sprintf("Client has no handler for registration %v",
+		c.mutex.Unlock()
+		errMsg := fmt.Sprintf("client has no handler for registration %v",
 			msg.Registration)
 		// The dealer has a procedure registered to this client, but this
 		// client does not recognize the registration ID.  This is not
@@ -1260,6 +1168,7 @@ func (c *Client) runHandleInvocation(msg *wamp.Invocation) {
 	}
 	c.invHandlerKill[msg.Request] = cancel
 	c.activeInvHandlers.Add(1)
+	c.mutex.Unlock()
 
 	// If caller is accepting progressive results, create map entry to
 	// allow progress to be sent.
@@ -1291,10 +1200,10 @@ func (c *Client) runHandleInvocation(msg *wamp.Invocation) {
 			delete(c.progGate, ctx)
 			c.progGateLock.Unlock()
 
-			c.runAction(func() {
-				delete(c.invHandlerKill, msg.Request)
-				c.activeInvHandlers.Done()
-			})
+			c.mutex.Lock()
+			delete(c.invHandlerKill, msg.Request)
+			c.mutex.Unlock()
+			c.activeInvHandlers.Done()
 		}()
 
 		// Wait for the handler to finish or for the call be to canceled.
