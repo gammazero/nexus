@@ -216,32 +216,25 @@ func (r *router) AttachClient(client wamp.Peer, transportDetails wamp.Dict) erro
 	}
 
 	hello.Details = wamp.NormalizeDict(hello.Details)
+	sid := wamp.GlobalID()
+
+	// Create new session.
+	sess := wamp.NewSession(client, sid, nil, hello.Details)
 
 	// A Client must announce the roles it supports via
 	// Hello.Details.roles|dict, where the keys can be: publisher, subscriber,
-	// caller, callee.  If the client announces any roles, to list specific
-	// features for the role, then check that the role is something this router
-	// recognizes.
-	_roleVals, err := wamp.DictValue(hello.Details, []string{"roles"})
-	if err != nil {
-		err = errors.New("no client roles specified")
-		sendAbort(wamp.ErrNoSuchRole, err)
-		return err
-	}
-	roleVals, ok := _roleVals.(wamp.Dict)
-	if !ok || len(roleVals) == 0 {
-		err = errors.New("no client roles specified")
-		sendAbort(wamp.ErrNoSuchRole, err)
-		return err
-	}
-	for roleName := range roleVals {
-		switch roleName {
-		case "publisher", "subscriber", "caller", "callee":
-		default:
-			err = errors.New("invalid client role specified: " + roleName)
-			sendAbort(wamp.ErrNoSuchRole, err)
-			return err
+	// caller, callee.  Check that client has at least one supported role.
+	var rolesOK bool
+	for _, role := range []string{"publisher", "subscriber", "caller", "callee"} {
+		if sess.HasRole(role) {
+			rolesOK = true
+			break
 		}
+	}
+	if !rolesOK {
+		err = errors.New("client did not announce any supported roles")
+		sendAbort(wamp.ErrNoSuchRole, err)
+		return err
 	}
 
 	// Include any transport details with HELLO.Details.
@@ -253,7 +246,6 @@ func (r *router) AttachClient(client wamp.Peer, transportDetails wamp.Dict) erro
 	// message or an error.
 	//
 	// Authentication may take some time.
-	sid := wamp.GlobalID()
 	welcome, err := realm.authClient(sid, client, hello.Details)
 	if err != nil {
 		sendAbort(wamp.ErrAuthenticationFailed, err)
@@ -267,7 +259,7 @@ func (r *router) AttachClient(client wamp.Peer, transportDetails wamp.Dict) erro
 	// only.
 	sessDetails := make(wamp.Dict, len(hello.Details)+len(welcome.Details))
 	for k, v := range hello.Details {
-		if k == "authmethods" {
+		if k == "authmethods" || k == "roles" {
 			continue
 		}
 		sessDetails[k] = v
@@ -280,12 +272,7 @@ func (r *router) AttachClient(client wamp.Peer, transportDetails wamp.Dict) erro
 	}
 	sessDetails["session"] = sid
 
-	// Create new session.
-	sess := &wamp.Session{
-		Peer:    client,
-		ID:      sid,
-		Details: sessDetails,
-	}
+	sess.Details = sessDetails
 
 	if err := realm.handleSession(sess); err != nil {
 		// Any error returned here is a shutdown error.

@@ -125,6 +125,13 @@ type realm struct {
 	enableMetaModify bool
 }
 
+var (
+	shutdownGoodbye = &wamp.Goodbye{
+		Reason:  wamp.ErrSystemShutdown,
+		Details: wamp.Dict{},
+	}
+)
+
 // newRealm creates a new realm with the given RealmConfig, broker and dealer.
 func newRealm(config *RealmConfig, broker *Broker, dealer *Dealer, logger stdlog.StdLog, debug bool) (*realm, error) {
 	if !config.URI.ValidURI(config.StrictURI, "") {
@@ -227,12 +234,12 @@ func (r *realm) close() {
 	// running, before closing.
 	r.waitReady()
 
-	// Kick all clients off.  Clients will not generate meta events when the
-	// ErrSystesShutdown reason is given.
+	// Kick all clients off.  Sending shutdownGoodbye causes client message
+	// handlers to exit without sending meta events.
 	sync := make(chan struct{})
 	r.actionChan <- func() {
 		for _, c := range r.clients {
-			c.Kill(nil)
+			c.End(shutdownGoodbye)
 		}
 		close(sync)
 	}
@@ -246,7 +253,7 @@ func (r *realm) close() {
 	// the meta client receives GOODBYE from the meta session, the meta
 	// session is done and will not try to publish anything more to the
 	// broker, and it is finally safe to exit and close the broker.
-	r.metaSess.Kill(nil)
+	r.metaSess.End(nil)
 	<-r.metaDone
 
 	// handleInboundMessages() and metaProcedureHandler() are the only things
@@ -311,9 +318,9 @@ func (r *realm) run() {
 // createMetaSession creates and starts a session that runs in this realm, and
 // bridges two peers.  One peer, the r.metaSess, is associated with the router
 // and handles meta session requests.  The other, r.metaPeer, is the remote
-// side of the router uplink and is used as the interface to send meta session
-// messages to.  Sending a PUBLISH message to it will result in the router
-// publishing the event to any subscribers.
+// (client) side of the router uplink and is used as the interface to send meta
+// session messages to.  Sending a PUBLISH message to it will result in the
+// router publishing the event to any subscribers.
 func (r *realm) createMetaSession() {
 	cli, rtr := transport.LinkedPeers()
 	r.metaPeer = cli
@@ -485,14 +492,12 @@ func (r *realm) handleInboundMessages(sess *wamp.Session) (bool, bool, error) {
 			}
 		case <-sess.Done():
 			goodbye := sess.Goodbye()
-			if goodbye == nil {
+			switch goodbye {
+			case shutdownGoodbye, wamp.NoGoodbye:
 				if r.debug {
 					r.log.Printf("Stop session %s: system shutdown", sess)
 				}
-				sess.TrySend(&wamp.Goodbye{
-					Reason:  wamp.ErrSystemShutdown,
-					Details: wamp.Dict{},
-				})
+				sess.TrySend(goodbye)
 				return true, false, nil
 			}
 			if r.debug {
@@ -574,14 +579,15 @@ func (r *realm) authzMessage(sess *wamp.Session, msg wamp.Message) bool {
 	}
 
 	// Create a safe session to prevent access to the session.Peer.
-	safeSession := wamp.Session{
+	safeSession := &wamp.Session{
 		ID:      sess.ID,
 		Details: sess.Details,
 	}
+
 	// Write-lock the session, becuase there is no telling what the Authorizer
 	// will do to the session details.
 	sess.Lock()
-	isAuthz, err := r.authorizer.Authorize(&safeSession, msg)
+	isAuthz, err := r.authorizer.Authorize(safeSession, msg)
 	sess.Unlock()
 
 	if !isAuthz {
@@ -1275,7 +1281,7 @@ func (r *realm) killSession(sid wamp.ID, reason wamp.URI, message string) error 
 			errChan <- errors.New("no such session")
 			return
 		}
-		sess.Kill(goodbye)
+		sess.End(goodbye)
 		close(errChan)
 	}
 	return <-errChan
@@ -1301,7 +1307,7 @@ func (r *realm) killSessionsByDetail(key, value string, reason wamp.URI, message
 			if !ok || val != value {
 				continue
 			}
-			if sess.Kill(goodbye) {
+			if sess.End(goodbye) {
 				kills++
 			}
 		}
@@ -1325,7 +1331,7 @@ func (r *realm) killAllSessions(reason wamp.URI, message string, exclude wamp.ID
 			if sid == exclude {
 				continue
 			}
-			if sess.Kill(goodbye) {
+			if sess.End(goodbye) {
 				kills++
 			}
 		}

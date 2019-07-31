@@ -29,7 +29,7 @@ const (
 	// CALL timeout which spedifies how long the callee may take to answer.
 	sendResultDeadline = time.Minute
 	// yieldRetryDelay is the initial delay before reprocessin a blocked yield
-	yieldRetryDelay = 200 * time.Millisecond
+	yieldRetryDelay = time.Millisecond
 )
 
 // Role information for this broker.
@@ -231,21 +231,6 @@ func (d *Dealer) Register(callee *wamp.Session, msg *wamp.Register) {
 		}
 	}
 
-	// If the callee supports progressive call results, but does not support
-	// call canceling, then disable the callee's progressive call results
-	// feature.  Call canceling is necessary to stop progressive results if
-	// the caller session is closed during progressive result delivery.
-	if callee.HasFeature(roleCallee, featureProgCallResults) {
-		if !callee.HasFeature(roleCallee, featureCallCanceling) {
-			dict := wamp.DictChild(callee.Details, "roles")
-			dict = wamp.DictChild(dict, roleCallee)
-			dict = wamp.DictChild(dict, "features")
-			delete(dict, featureProgCallResults)
-			d.log.Println("disabling", featureProgCallResults, "for callee",
-				callee, "that does not support", featureCallCanceling)
-		}
-	}
-
 	invoke, _ := wamp.AsString(msg.Options[wamp.OptInvoke])
 	var metaPubs []*wamp.Publish
 	done := make(chan struct{})
@@ -332,7 +317,7 @@ func (d *Dealer) Cancel(caller *wamp.Session, msg *wamp.Cancel) {
 // Yield handles the result of successfully processing and finishing the
 // execution of a call, send from callee to dealer.
 //
-// If the RESULT could not be sent to the caller because he caller was blocked
+// If the RESULT could not be sent to the caller because the caller was blocked
 // (send queue full), then retry sending until timeout.  If timeout while
 // trying to send RESULT, then cancel call.
 func (d *Dealer) Yield(callee *wamp.Session, msg *wamp.Yield) {
@@ -354,7 +339,9 @@ func (d *Dealer) Yield(callee *wamp.Session, msg *wamp.Yield) {
 		start := time.Now()
 		// Retry processing YIELD until caller gone or deadline reached
 		for {
-			d.log.Println("Retry sending RESULT after", delay)
+			if d.debug {
+				d.log.Println("Retry sending RESULT after", delay)
+			}
 			<-time.After(delay)
 			// Do not retry if the elapsed time exceeds deadline
 			if time.Since(start) >= sendResultDeadline {
@@ -731,17 +718,20 @@ func (d *Dealer) call(caller *wamp.Session, msg *wamp.Call) {
 	// A Caller indicates its willingness to receive progressive results by
 	// setting CALL.Options.receive_progress|bool := true
 	if opt, _ := msg.Options[wamp.OptReceiveProgress].(bool); opt {
-		// If the Callee supports progressive calls, the Dealer will
-		// forward the Caller's willingness to receive progressive
-		// results by setting.
-		if callee.HasFeature(roleCallee, featureProgCallResults) {
+		// If the Callee supports progressive calls, the Dealer will forward
+		// the Caller's willingness to receive progressive results by setting.
+		//
+		// The Callee must all call canceling, as this is necessary to stop
+		// progressive results if the caller session is closed during
+		// progressive result delivery.
+		if callee.HasFeature(roleCallee, featureProgCallResults) && callee.HasFeature(roleCallee, featureCallCanceling) {
 			details[wamp.OptReceiveProgress] = true
 		}
 	}
 
 	if reg.match != wamp.MatchExact {
-		// According to the spec, a router must provide the actual
-		// procedure to the client.
+		// According to the spec, a router must provide the actual procedure to
+		// the client.
 		details[wamp.OptProcedure] = msg.Procedure
 	}
 
