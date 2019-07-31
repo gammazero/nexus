@@ -85,7 +85,6 @@ type Client struct {
 	nameProcID     map[string]wamp.ID
 	invHandlerKill map[wamp.ID]context.CancelFunc
 	progGate       map[context.Context]wamp.ID
-	progGateLock   sync.Mutex
 	mutex          sync.Mutex
 
 	stopping          chan struct{}
@@ -659,13 +658,13 @@ func (c *Client) Close() error {
 	c.replyLock.Lock()
 	awaitingReply = c.awaitingReply
 	c.awaitingReply = nil
+	c.replyLock.Unlock()
 	for _, ch := range awaitingReply {
 		select {
 		case <-ch:
 		default:
 		}
 	}
-	c.replyLock.Unlock()
 
 	// Leave the realm and stop the client's main goroutine.
 	c.leaveRealm()
@@ -673,12 +672,8 @@ func (c *Client) Close() error {
 	// The run goroutine is guaranteed to have exited when leaveRealm()
 	// returns, so there will be nothing trying to write to the reply channel.
 	// Closing the channels dismisses any possible readers.
-	if len(awaitingReply) != 0 {
-		c.replyLock.Lock()
-		for _, ch := range awaitingReply {
-			close(ch)
-		}
-		c.replyLock.Unlock()
+	for _, ch := range awaitingReply {
+		close(ch)
 	}
 
 	// c.sess.Peer is accessed from several go routines and would require
@@ -712,9 +707,9 @@ func (c *Client) SendProgress(ctx context.Context, args wamp.List, kwArgs wamp.D
 	// invocation handler has been closed because the call was canceled.
 	var req wamp.ID
 	var ok bool
-	c.progGateLock.Lock()
+	c.mutex.Lock()
 	req, ok = c.progGate[ctx]
-	c.progGateLock.Unlock()
+	c.mutex.Unlock()
 
 	if !ok {
 		// Caller is not accepting progressive results or call canceled.
@@ -1052,17 +1047,24 @@ func (c *Client) run() {
 	if c.debug {
 		defer c.log.Println("Client", c.sess, "closed")
 	}
-	for {
-		select {
-		case <-c.sess.Done():
+	/*
+		for {
+			select {
+			case <-c.sess.Done():
+				return
+			case msg, ok := <-c.sess.Recv():
+				if !ok {
+					return
+				}
+				if c.runReceiveFromRouter(msg) {
+					return
+				}
+			}
+		}
+	*/
+	for msg := range c.sess.Recv() {
+		if c.runReceiveFromRouter(msg) {
 			return
-		case msg, ok := <-c.sess.Recv():
-			if !ok {
-				return
-			}
-			if c.runReceiveFromRouter(msg) {
-				return
-			}
 		}
 	}
 }
@@ -1168,15 +1170,13 @@ func (c *Client) runHandleInvocation(msg *wamp.Invocation) {
 	}
 	c.invHandlerKill[msg.Request] = cancel
 	c.activeInvHandlers.Add(1)
-	c.mutex.Unlock()
 
 	// If caller is accepting progressive results, create map entry to
 	// allow progress to be sent.
 	if ok, _ = msg.Details[wamp.OptReceiveProgress].(bool); ok {
-		c.progGateLock.Lock()
 		c.progGate[ctx] = msg.Request
-		c.progGateLock.Unlock()
 	}
+	c.mutex.Unlock()
 
 	// Start a goroutine to run the user-defined invocation handler.
 	go func() {
@@ -1196,11 +1196,8 @@ func (c *Client) runHandleInvocation(msg *wamp.Invocation) {
 
 		// Remove the kill switch when done processing invocation.
 		defer func() {
-			c.progGateLock.Lock()
-			delete(c.progGate, ctx)
-			c.progGateLock.Unlock()
-
 			c.mutex.Lock()
+			delete(c.progGate, ctx)
 			delete(c.invHandlerKill, msg.Request)
 			c.mutex.Unlock()
 			c.activeInvHandlers.Done()
@@ -1258,7 +1255,9 @@ func (c *Client) runHandleInvocation(msg *wamp.Invocation) {
 // requesting that a pending call be canceled.
 func (c *Client) runHandleInterrupt(msg *wamp.Interrupt) {
 	logMsg := "Received INTERRUPT for INVOCATION"
+	c.mutex.Lock()
 	cancel, ok := c.invHandlerKill[msg.Request]
+	c.mutex.Unlock()
 	if !ok {
 		c.log.Println(logMsg, msg.Request, "that no longer exists")
 		return

@@ -38,7 +38,7 @@ type subscription struct {
 	topic       wamp.URI // topic URI
 	match       string   // match policy
 	created     string   // when subscription was created
-	subscribers map[*session]struct{}
+	subscribers map[*wamp.Session]struct{}
 }
 
 // FilterFactory is a function which creates a PublishFilter from a publication
@@ -54,7 +54,7 @@ type Broker struct {
 	subscriptions map[wamp.ID]*subscription
 
 	// Session -> subscription ID set
-	sessionSubIDSet map[*session]map[wamp.ID]struct{}
+	sessionSubIDSet map[*wamp.Session]map[wamp.ID]struct{}
 
 	actionChan chan func()
 
@@ -83,7 +83,7 @@ func NewBroker(logger stdlog.StdLog, strictURI, allowDisclose, debug bool, publi
 		wcTopicSubscription:  map[wamp.URI]*subscription{},
 
 		subscriptions:   map[wamp.ID]*subscription{},
-		sessionSubIDSet: map[*session]map[wamp.ID]struct{}{},
+		sessionSubIDSet: map[*wamp.Session]map[wamp.ID]struct{}{},
 
 		// The action handler should be nearly always runable, since it is the
 		// critical section that does the only routing.  So, and unbuffered
@@ -118,7 +118,7 @@ func (b *Broker) Role() wamp.Dict {
 //
 // The Subscriber can detect the delivery of that same event on multiple
 // subscriptions via EVENT.PUBLISHED.Publication, which will be identical.
-func (b *Broker) Publish(pub *session, msg *wamp.Publish) {
+func (b *Broker) Publish(pub *wamp.Session, msg *wamp.Publish) {
 	if pub == nil || msg == nil {
 		panic("broker.Publish with nil session or message")
 	}
@@ -196,7 +196,7 @@ func (b *Broker) Publish(pub *session, msg *wamp.Publish) {
 // Subscriber might want to subscribe to topics based on a pattern.  If the
 // Broker and the Subscriber support pattern-based subscriptions, this matching
 // can happen by prefix-matching policy or wildcard-matching policy.
-func (b *Broker) Subscribe(sub *session, msg *wamp.Subscribe) {
+func (b *Broker) Subscribe(sub *wamp.Session, msg *wamp.Subscribe) {
 	if sub == nil || msg == nil {
 		panic("broker.Subscribe with nil session or message")
 	}
@@ -224,7 +224,7 @@ func (b *Broker) Subscribe(sub *session, msg *wamp.Subscribe) {
 }
 
 // Unsubscribe removes the requested subscription.
-func (b *Broker) Unsubscribe(sub *session, msg *wamp.Unsubscribe) {
+func (b *Broker) Unsubscribe(sub *wamp.Session, msg *wamp.Unsubscribe) {
 	if sub == nil || msg == nil {
 		panic("broker.Unsubscribe with nil session or message")
 	}
@@ -237,7 +237,7 @@ func (b *Broker) Unsubscribe(sub *session, msg *wamp.Unsubscribe) {
 // when a client leaves the realm by sending a GOODBYE message or by
 // disconnecting from the router.  If there are any subscriptions for this
 // session a wamp.subscription.on_delete meta event is published for each.
-func (b *Broker) RemoveSession(sess *session) {
+func (b *Broker) RemoveSession(sess *wamp.Session) {
 	if sess == nil {
 		return
 	}
@@ -260,7 +260,7 @@ func (b *Broker) run() {
 	}
 }
 
-func (b *Broker) publish(pub *session, msg *wamp.Publish, pubID wamp.ID, excludePub, disclose bool, filter PublishFilter) {
+func (b *Broker) publish(pub *wamp.Session, msg *wamp.Publish, pubID wamp.ID, excludePub, disclose bool, filter PublishFilter) {
 	// Publish to subscribers with exact match.
 	if sub, ok := b.topicSubscription[msg.Topic]; ok {
 		b.pubEvent(pub, msg, pubID, sub, excludePub, false, disclose, filter)
@@ -281,17 +281,17 @@ func (b *Broker) publish(pub *session, msg *wamp.Publish, pubID wamp.ID, exclude
 	}
 }
 
-func (b *Broker) newSubscription(subscriber *session, topic wamp.URI, match string) *subscription {
+func (b *Broker) newSubscription(subscriber *wamp.Session, topic wamp.URI, match string) *subscription {
 	return &subscription{
 		id:          b.idGen.Next(),
 		topic:       topic,
 		match:       match,
 		created:     wamp.NowISO8601(),
-		subscribers: map[*session]struct{}{subscriber: struct{}{}},
+		subscribers: map[*wamp.Session]struct{}{subscriber: struct{}{}},
 	}
 }
 
-func (b *Broker) subscribe(subscriber *session, msg *wamp.Subscribe, match string) {
+func (b *Broker) subscribe(subscriber *wamp.Session, msg *wamp.Subscribe, match string) {
 	var sub *subscription
 	var existingSub bool
 
@@ -376,7 +376,7 @@ func (b *Broker) delSubscription(sub *subscription) {
 }
 
 // unsibsubscribe removes the subscriber from the specified subscription.
-func (b *Broker) unsubscribe(subscriber *session, msg *wamp.Unsubscribe) {
+func (b *Broker) unsubscribe(subscriber *wamp.Session, msg *wamp.Unsubscribe) {
 	subID := msg.Subscription
 	sub, ok := b.subscriptions[subID]
 	if !ok {
@@ -428,7 +428,7 @@ func (b *Broker) unsubscribe(subscriber *session, msg *wamp.Unsubscribe) {
 }
 
 // removeSession removed all subscriptions for the session.
-func (b *Broker) removeSession(subscriber *session) {
+func (b *Broker) removeSession(subscriber *wamp.Session) {
 	subIDSet, ok := b.sessionSubIDSet[subscriber]
 	if !ok {
 		return
@@ -457,7 +457,7 @@ func (b *Broker) removeSession(subscriber *session) {
 	}
 }
 
-func allowPublish(sub *session, filter PublishFilter) bool {
+func allowPublish(sub *wamp.Session, filter PublishFilter) bool {
 	if filter == nil {
 		return true
 	}
@@ -466,15 +466,15 @@ func allowPublish(sub *session, filter PublishFilter) bool {
 		ID:      sub.ID,
 		Details: sub.Details,
 	}
-	sub.rLock()
+	sub.Lock()
 	ok := filter.Allowed(&safeSession)
-	sub.rUnlock()
+	sub.Unlock()
 	return ok
 }
 
 // pubEvent sends an event to all subscribers that are not excluded from
 // receiving the event.
-func (b *Broker) pubEvent(pub *session, msg *wamp.Publish, pubID wamp.ID, sub *subscription, excludePublisher, sendTopic, disclose bool, filter PublishFilter) {
+func (b *Broker) pubEvent(pub *wamp.Session, msg *wamp.Publish, pubID wamp.ID, sub *subscription, excludePublisher, sendTopic, disclose bool, filter PublishFilter) {
 	for subscriber, _ := range sub.subscribers {
 		// Do not send event to publisher.
 		if subscriber == pub && excludePublisher {
@@ -601,8 +601,8 @@ func (b *Broker) pubSubCreateMeta(topic wamp.URI, subSessID wamp.ID, sub *subscr
 	b.pubMeta(wamp.MetaEventSubOnCreate, sendMeta)
 }
 
-func (b *Broker) trySend(sess *session, msg wamp.Message) bool {
-	if err := sess.Session.TrySend(msg); err != nil {
+func (b *Broker) trySend(sess *wamp.Session, msg wamp.Message) bool {
+	if err := sess.TrySend(msg); err != nil {
 		b.log.Printf("!!! Dropped %s to session %s: %s", msg.MessageType(), sess, err)
 		return false
 	}
@@ -610,17 +610,17 @@ func (b *Broker) trySend(sess *session, msg wamp.Message) bool {
 }
 
 // disclosePublisher adds publisher identity information to EVENT.Details.
-func disclosePublisher(pub *session, details wamp.Dict) {
+func disclosePublisher(pub *wamp.Session, details wamp.Dict) {
 	details[rolePub] = pub.ID
 	// These values are not required by the specification, but are here for
 	// compatibility with Crossbar.
-	pub.rLock()
+	pub.Lock()
 	for _, f := range []string{"authid", "authrole"} {
 		if val, ok := pub.Details[f]; ok {
 			details[fmt.Sprintf("%s_%s", rolePub, f)] = val
 		}
 	}
-	pub.rUnlock()
+	pub.Unlock()
 }
 
 // ----- Subscription Meta Procedure Handlers -----

@@ -28,19 +28,26 @@ func init() {
 	close(closedchan)
 }
 
+func (s *Session) Lock()   { s.mu.Lock() }
+func (s *Session) Unlock() { s.mu.Unlock() }
+
 // String returns the session ID as a string.
-func (s Session) String() string { return fmt.Sprintf("%d", s.ID) }
+func (s *Session) String() string { return fmt.Sprintf("%d", s.ID) }
 
 // HasRole returns true if the session supports the specified role.
-func (s Session) HasRole(role string) bool {
+func (s *Session) HasRole(role string) bool {
+	s.mu.Lock()
 	_, err := DictValue(s.Details, []string{"roles", role})
+	s.mu.Unlock()
 	return err == nil
 }
 
 // HasFeature returns true if the session has the specified feature for the
 // specified role.
-func (s Session) HasFeature(role, feature string) bool {
+func (s *Session) HasFeature(role, feature string) bool {
+	s.mu.Lock()
 	b, _ := DictFlag(s.Details, []string{"roles", role, "features", feature})
+	s.mu.Unlock()
 	return b
 }
 

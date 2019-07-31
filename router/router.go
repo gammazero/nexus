@@ -281,7 +281,11 @@ func (r *router) AttachClient(client wamp.Peer, transportDetails wamp.Dict) erro
 	sessDetails["session"] = sid
 
 	// Create new session.
-	sess := newSession(client, sid, sessDetails)
+	sess := &wamp.Session{
+		Peer:    client,
+		ID:      sid,
+		Details: sessDetails,
+	}
 
 	if err := realm.handleSession(sess); err != nil {
 		// Any error returned here is a shutdown error.
