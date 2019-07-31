@@ -71,11 +71,10 @@ type InvokeResult struct {
 
 // A Client routes messages to/from a WAMP router.
 type Client struct {
-	sess wamp.Session
+	sess *wamp.Session
 
 	responseTimeout time.Duration
 	awaitingReply   map[wamp.ID]chan wamp.Message
-	replyLock       sync.Mutex
 	authHandlers    map[string]AuthFunc
 
 	eventHandlers map[wamp.ID]EventHandler
@@ -115,13 +114,16 @@ func NewClient(p wamp.Peer, cfg Config) (*Client, error) {
 		p.Close()
 		return nil, err
 	}
+	sess := wamp.NewSession(p, welcome.ID, welcome.Details, welcome.Details)
+
+	// Check that router has at least one supported role.
+	if !sess.HasRole("broker") && !sess.HasRole("dealer") {
+		p.Close()
+		return nil, errors.New("router did not announce any supported roles")
+	}
 
 	c := &Client{
-		sess: wamp.Session{
-			Peer:    p,
-			ID:      welcome.ID,
-			Details: welcome.Details,
-		},
+		sess: sess,
 
 		responseTimeout: cfg.ResponseTimeout,
 		awaitingReply:   map[wamp.ID]chan wamp.Message{},
@@ -655,10 +657,10 @@ func (c *Client) Close() error {
 
 	// Stop waiting for replies and clear the reply channel of pending writes.
 	var awaitingReply map[wamp.ID]chan wamp.Message
-	c.replyLock.Lock()
+	c.mutex.Lock()
 	awaitingReply = c.awaitingReply
 	c.awaitingReply = nil
-	c.replyLock.Unlock()
+	c.mutex.Unlock()
 	for _, ch := range awaitingReply {
 		select {
 		case <-ch:
@@ -809,7 +811,7 @@ func (c *Client) leaveRealm() {
 	case <-c.done:
 		timer.Stop()
 	case <-timer.C:
-		c.sess.Kill(nil) // force run() to exit
+		c.sess.End(nil) // force run() to exit
 		<-c.done
 	}
 }
@@ -921,11 +923,11 @@ func unexpectedMsgError(msg wamp.Message, expected wamp.MessageType) error {
 
 func (c *Client) expectReply(id wamp.ID) {
 	wait := make(chan wamp.Message)
-	c.replyLock.Lock()
+	c.mutex.Lock()
 	if c.awaitingReply != nil { // Client has already been closed
 		c.awaitingReply[id] = wait
 	}
-	c.replyLock.Unlock()
+	c.mutex.Unlock()
 }
 
 // waitForReply waits for an expected reply from the router.
@@ -936,9 +938,9 @@ func (c *Client) expectReply(id wamp.ID) {
 func (c *Client) waitForReply(id wamp.ID) (wamp.Message, error) {
 	var wait chan wamp.Message
 	var ok bool
-	c.replyLock.Lock()
+	c.mutex.Lock()
 	wait, ok = c.awaitingReply[id]
-	c.replyLock.Unlock()
+	c.mutex.Unlock()
 	if !ok {
 		return nil, fmt.Errorf("not expecting reply for ID: %v", id)
 	}
@@ -956,9 +958,9 @@ func (c *Client) waitForReply(id wamp.ID) (wamp.Message, error) {
 	case <-timer.C:
 		err = errors.New("timeout waiting for reply")
 	}
-	c.replyLock.Lock()
+	c.mutex.Lock()
 	delete(c.awaitingReply, id)
-	c.replyLock.Unlock()
+	c.mutex.Unlock()
 
 	return msg, err
 }
@@ -975,9 +977,9 @@ func (c *Client) waitForReplyWithCancel(ctx context.Context, id wamp.ID, mode, p
 	}
 	var wait chan wamp.Message
 	var ok bool
-	c.replyLock.Lock()
+	c.mutex.Lock()
 	wait, ok = c.awaitingReply[id]
-	c.replyLock.Unlock()
+	c.mutex.Unlock()
 	if !ok {
 		return nil, fmt.Errorf("not expecting reply for ID: %v", id)
 	}
@@ -1033,9 +1035,9 @@ CollectResults:
 		}
 	}
 	// All done with this call, so not waiting for more replies.
-	c.replyLock.Lock()
+	c.mutex.Lock()
 	delete(c.awaitingReply, id)
-	c.replyLock.Unlock()
+	c.mutex.Unlock()
 
 	return msg, err
 }
@@ -1047,24 +1049,20 @@ func (c *Client) run() {
 	if c.debug {
 		defer c.log.Println("Client", c.sess, "closed")
 	}
-	/*
-		for {
-			select {
-			case <-c.sess.Done():
-				return
-			case msg, ok := <-c.sess.Recv():
-				if !ok {
-					return
-				}
-				if c.runReceiveFromRouter(msg) {
-					return
-				}
-			}
-		}
-	*/
-	for msg := range c.sess.Recv() {
-		if c.runReceiveFromRouter(msg) {
+
+	recv := c.sess.Recv()
+	done := c.sess.Done()
+	for {
+		select {
+		case <-done:
 			return
+		case msg, ok := <-recv:
+			if !ok {
+				return
+			}
+			if c.runReceiveFromRouter(msg) {
+				return
+			}
 		}
 	}
 }
@@ -1273,9 +1271,9 @@ func (c *Client) runHandleInterrupt(msg *wamp.Interrupt) {
 func (c *Client) runSignalReply(msg wamp.Message, requestID wamp.ID) {
 	var w chan wamp.Message
 	var ok bool
-	c.replyLock.Lock()
+	c.mutex.Lock()
 	w, ok = c.awaitingReply[requestID]
-	c.replyLock.Unlock()
+	c.mutex.Unlock()
 	if !ok {
 		c.log.Println("Received", msg.MessageType(), requestID,
 			"that client is no longer waiting for")

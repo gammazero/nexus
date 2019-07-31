@@ -837,3 +837,63 @@ func TestClientRace(t *testing.T) {
 	killer.Close()
 	callee.Close()
 }
+
+// Test that if the router disconnects the client, while the client is running
+// an invocation handler, that the handler still gets marked as done when it
+// completes.
+func TestInvocationHandlerMissedDone(t *testing.T) {
+	//defer leaktest.Check(t)()
+
+	// Connect two clients to the same server
+	callee, caller, r, err := connectedTestClients()
+	if err != nil {
+		t.Fatal("failed to connect test clients:", err)
+	}
+
+	calledChan := make(chan struct{})
+
+	// Register procedure.
+	handler := func(ctx context.Context, args wamp.List, kwargs, details wamp.Dict) *InvokeResult {
+		close(calledChan)
+		<-ctx.Done()
+		time.Sleep(2 * time.Second)
+		return &InvokeResult{Args: wamp.List{args[0].(int) * 37}}
+	}
+	procName := "myproc"
+	if err = callee.Register(procName, handler, nil); err != nil {
+		t.Fatal("failed to register procedure:", err)
+	}
+
+	// Call procedure
+	callArgs := wamp.List{73}
+	ctx := context.Background()
+
+	go caller.Call(ctx, procName, nil, callArgs, nil, "")
+
+	<-calledChan
+
+	killArgs := wamp.List{callee.ID()}
+	killKwArgs := wamp.Dict{"reason": "com.session.kill", "message": "because i can"}
+	var result *wamp.Result
+	result, err = caller.Call(ctx, string(wamp.MetaProcSessionKill), nil, killArgs, killKwArgs, "")
+	if err != nil {
+		t.Log("Kill new client failed:", err)
+	}
+	if result == nil {
+		t.Log("Kill new client returned no result")
+	}
+
+	caller.Close()
+
+	done := make(chan struct{})
+	go func() {
+		callee.Close()
+		close(done)
+	}()
+	select {
+	case <-done:
+	case <-time.After(2 * time.Second):
+		t.Fatal("Timed out waiting to close client")
+	}
+	r.Close()
+}
