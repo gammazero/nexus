@@ -811,7 +811,7 @@ func (c *Client) leaveRealm() {
 	case <-c.done:
 		timer.Stop()
 	case <-timer.C:
-		c.sess.End(nil) // force run() to exit
+		c.sess.EndRecv(nil) // force run() to exit
 		<-c.done
 	}
 }
@@ -1051,7 +1051,7 @@ func (c *Client) run() {
 	}
 
 	recv := c.sess.Recv()
-	done := c.sess.Done()
+	done := c.sess.RecvDone()
 	for {
 		select {
 		case <-done:

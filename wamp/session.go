@@ -75,7 +75,7 @@ func (s *Session) HasFeature(role, feature string) bool {
 
 // Done returns a channel that is closed when this session has been ended by
 // calling End.
-func (s *Session) Done() <-chan struct{} {
+func (s *Session) RecvDone() <-chan struct{} {
 	s.mu.Lock()
 	if s.done == nil {
 		s.done = make(chan struct{})
@@ -95,9 +95,12 @@ func (s *Session) Goodbye() *Goodbye {
 	return g
 }
 
-// End tells the session signal that messages handlers to stop receiving
-// messages from this session.
-func (s *Session) End(goodbye *Goodbye) bool {
+// EndRecv tells the session to signal messages handlers to stop receiving
+// messages from this session.  An optional goodbye message may be provided for
+// the message handler to send to the peer.  It is the responsibility of the
+// message handler to send the goodbye message, so that this can be coordinated
+// with exiting the message handler for other reasons.
+func (s *Session) EndRecv(goodbye *Goodbye) bool {
 	s.mu.Lock()
 	if s.goodbye != nil {
 		s.mu.Unlock()

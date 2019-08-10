@@ -239,7 +239,7 @@ func (r *realm) close() {
 	sync := make(chan struct{})
 	r.actionChan <- func() {
 		for _, c := range r.clients {
-			c.End(shutdownGoodbye)
+			c.EndRecv(shutdownGoodbye)
 		}
 		close(sync)
 	}
@@ -253,7 +253,7 @@ func (r *realm) close() {
 	// the meta client receives GOODBYE from the meta session, the meta
 	// session is done and will not try to publish anything more to the
 	// broker, and it is finally safe to exit and close the broker.
-	r.metaSess.End(nil)
+	r.metaSess.EndRecv(shutdownGoodbye)
 	<-r.metaDone
 
 	// handleInboundMessages() and metaProcedureHandler() are the only things
@@ -490,7 +490,7 @@ func (r *realm) handleInboundMessages(sess *wamp.Session) (bool, bool, error) {
 				r.log.Println("Lost", sess)
 				return false, false, nil
 			}
-		case <-sess.Done():
+		case <-sess.RecvDone():
 			goodbye := sess.Goodbye()
 			switch goodbye {
 			case shutdownGoodbye, wamp.NoGoodbye:
@@ -1281,7 +1281,7 @@ func (r *realm) killSession(sid wamp.ID, reason wamp.URI, message string) error 
 			errChan <- errors.New("no such session")
 			return
 		}
-		sess.End(goodbye)
+		sess.EndRecv(goodbye)
 		close(errChan)
 	}
 	return <-errChan
@@ -1307,7 +1307,7 @@ func (r *realm) killSessionsByDetail(key, value string, reason wamp.URI, message
 			if !ok || val != value {
 				continue
 			}
-			if sess.End(goodbye) {
+			if sess.EndRecv(goodbye) {
 				kills++
 			}
 		}
@@ -1331,7 +1331,7 @@ func (r *realm) killAllSessions(reason wamp.URI, message string, exclude wamp.ID
 			if sid == exclude {
 				continue
 			}
-			if sess.End(goodbye) {
+			if sess.EndRecv(goodbye) {
 				kills++
 			}
 		}
