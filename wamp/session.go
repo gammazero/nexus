@@ -41,7 +41,7 @@ func NewSession(peer Peer, id ID, details Dict, greetDetails Dict) *Session {
 	return s
 }
 
-// Lock locks the session to protect agains concurrent updates.
+// Lock locks the session to protect against concurrent updates.
 func (s *Session) Lock() { s.mu.Lock() }
 
 // Unlock unlocks the session.
@@ -67,8 +67,8 @@ func (s *Session) HasFeature(role, feature string) bool {
 	return ok
 }
 
-// Done returns a channel that is closed when this session has been ended by
-// calling End.
+// RecvDone returns a channel that is closed when this session has been ended
+// by calling EndRecv.
 func (s *Session) RecvDone() <-chan struct{} {
 	s.mu.Lock()
 	if s.done == nil {
@@ -79,9 +79,9 @@ func (s *Session) RecvDone() <-chan struct{} {
 	return d
 }
 
-// If Done is not yet closed, Goodbye returns nil.
-// If Done is closed, Goodbye returns the GOODBYE message that was supplied
-// when End was called.
+// If RecvDone is not yet closed, Goodbye returns nil.
+// If RecvDone is closed, Goodbye returns the GOODBYE message that was supplied
+// when RecvEnd was called.
 func (s *Session) Goodbye() *Goodbye {
 	s.mu.Lock()
 	g := s.goodbye

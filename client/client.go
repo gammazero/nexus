@@ -481,7 +481,7 @@ func (c *Client) Unregister(procedure string) error {
 // according to the specified mode.
 //
 // If the context is canceled or times out, then error returned will not be a
-// RPCError.  This allows the caller to distinquish between cancellation
+// RPCError.  This allows the caller to distinguish between cancellation
 // initiated by the client (by canceling context), and cancellation initialed
 // elsewhere.
 //
@@ -493,7 +493,7 @@ func (c *Client) Unregister(procedure string) error {
 // is specified as a parameter to the Call() API, and not a message option for
 // CALL.
 //
-// Cancele Mode Behavior
+// Cancel Mode Behavior
 //
 // "skip": The pending call is canceled and ERROR is sent immediately back to
 // the caller.  No INTERRUPT is sent to the callee and the result is discarded
