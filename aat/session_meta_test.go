@@ -135,6 +135,8 @@ func TestMetaEventOnLeave(t *testing.T) {
 		}
 	}
 
+	sid := sess.ID()
+
 	// Disconnect client to generate wamp.session.on_leave event.
 	err = sess.Close()
 	if err != nil {
@@ -154,9 +156,9 @@ func TestMetaEventOnLeave(t *testing.T) {
 		t.Fatal("expected 3 event args, got:", len(eventArgs))
 	}
 	onLeaveID, _ := wamp.AsID(eventArgs[0])
-	if onLeaveID != sess.ID() {
+	if onLeaveID != sid {
 		t.Fatal(metaOnLeave, "meta event had wrong session ID, got", onLeaveID,
-			"want", sess.ID())
+			"want", sid)
 	}
 	authid, _ := wamp.AsString(eventArgs[1])
 	if len(authid) == 0 {
@@ -354,6 +356,8 @@ func TestMetaProcSessionList(t *testing.T) {
 	}
 	firstLen := len(list)
 
+	sid := sess.ID()
+
 	err = sess.Close()
 	if err != nil {
 		t.Fatal("Failed to disconnect client:", err)
@@ -379,7 +383,7 @@ func TestMetaProcSessionList(t *testing.T) {
 	found = false
 	for i := range list {
 		id, _ := wamp.AsID(list[i])
-		if id == sess.ID() {
+		if id == sid {
 			found = true
 			break
 		}
@@ -463,6 +467,8 @@ func TestMetaProcSessionGet(t *testing.T) {
 		}
 	}
 
+	sid := sess.ID()
+
 	err = sess.Close()
 	if err != nil {
 		t.Fatal("Failed to disconnect client:", err)
@@ -471,7 +477,7 @@ func TestMetaProcSessionGet(t *testing.T) {
 	<-sync
 
 	// Call meta procedure to get session list.
-	result, err = caller.Call(ctx, metaGet, nil, wamp.List{sess.ID()}, nil, "")
+	result, err = caller.Call(ctx, metaGet, nil, wamp.List{sid}, nil, "")
 	if err == nil {
 		t.Fatal("Expected error")
 	}
