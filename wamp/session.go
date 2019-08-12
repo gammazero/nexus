@@ -27,13 +27,7 @@ type Session struct {
 var (
 	// NoGoodbye indicates that no Goodbye message was sent out
 	NoGoodbye = &Goodbye{}
-	// closedchan is a reusable closed channel.
-	closedchan = make(chan struct{})
 )
-
-func init() {
-	close(closedchan)
-}
 
 // NewSession creates a new session.  The greetDetails is the details from the
 // HELLO or WELCOME message, from which roles and features are extracted.
@@ -114,10 +108,10 @@ func (s *Session) EndRecv(goodbye *Goodbye) bool {
 	}
 
 	if s.done == nil {
-		s.done = closedchan
-	} else {
-		close(s.done)
+		s.done = make(chan struct{})
 	}
+	close(s.done)
+
 	s.mu.Unlock()
 	return true
 }

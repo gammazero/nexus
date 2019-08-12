@@ -1129,6 +1129,9 @@ func (c *Client) runHandleEvent(msg *wamp.Event) {
 // runHandleInvocation processes an INVOCATION message from the router
 // requesting a call to a registered RPC procedure.
 func (c *Client) runHandleInvocation(msg *wamp.Invocation) {
+	timeout, _ := wamp.AsInt64(msg.Details[wamp.OptTimeout])
+	progResOK, _ := msg.Details[wamp.OptReceiveProgress].(bool)
+
 	c.sess.Lock()
 	handler, ok := c.invHandlers[msg.Registration]
 	if !ok {
@@ -1136,10 +1139,10 @@ func (c *Client) runHandleInvocation(msg *wamp.Invocation) {
 		errMsg := fmt.Sprintf("client has no handler for registration %v",
 			msg.Registration)
 		// The dealer has a procedure registered to this client, but this
-		// client does not recognize the registration ID.  This is not
-		// reported as ErrNoSuchProcedure, since the dealer has a procedure
-		// registered.  It is reported as ErrInvalidArgument to denote that
-		// the client has a problem with the registration ID argument.
+		// client does not recognize the registration ID.  This is not reported
+		// as ErrNoSuchProcedure, since the dealer has a procedure registered.
+		// It is reported as ErrInvalidArgument to denote that the client has a
+		// problem with the registration ID argument.
 		c.sess.Send(&wamp.Error{
 			Type:      wamp.INVOCATION,
 			Request:   msg.Request,
@@ -1154,7 +1157,6 @@ func (c *Client) runHandleInvocation(msg *wamp.Invocation) {
 	// Create a kill switch so that invocation can be canceled.
 	var cancel context.CancelFunc
 	var ctx context.Context
-	timeout, _ := wamp.AsInt64(msg.Details[wamp.OptTimeout])
 	if timeout > 0 {
 		// The caller specified a timeout, in milliseconds.
 		ctx, cancel = context.WithTimeout(context.Background(),
@@ -1165,9 +1167,9 @@ func (c *Client) runHandleInvocation(msg *wamp.Invocation) {
 	c.invHandlerKill[msg.Request] = cancel
 	c.activeInvHandlers.Add(1)
 
-	// If caller is accepting progressive results, create map entry to
-	// allow progress to be sent.
-	if ok, _ = msg.Details[wamp.OptReceiveProgress].(bool); ok {
+	// If caller is accepting progressive results, create map entry to allow
+	// progress to be sent.
+	if progResOK {
 		c.progGate[ctx] = msg.Request
 	}
 	c.sess.Unlock()

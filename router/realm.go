@@ -328,11 +328,7 @@ func (r *realm) createMetaSession() {
 	r.dealer.SetMetaPeer(cli)
 
 	// This session is the local leg of the router uplink.
-	r.metaSess = &wamp.Session{
-		Peer:    rtr,
-		ID:      metaID,
-		Details: wamp.Dict{"authrole": "trusted"},
-	}
+	r.metaSess = wamp.NewSession(rtr, metaID, wamp.Dict{"authrole": "trusted"}, nil)
 
 	// Run the handler for messages from the meta session.
 	go r.handleInboundMessages(r.metaSess)
@@ -480,12 +476,11 @@ func (r *realm) handleInboundMessages(sess *wamp.Session) (bool, bool, error) {
 	if r.debug {
 		defer r.log.Println("Ended session", sess)
 	}
-	recvChan := sess.Recv()
 	for {
 		var msg wamp.Message
 		var open bool
 		select {
-		case msg, open = <-recvChan:
+		case msg, open = <-sess.Recv():
 			if !open {
 				r.log.Println("Lost", sess)
 				return false, false, nil
