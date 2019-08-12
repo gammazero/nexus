@@ -12,7 +12,6 @@ import (
 	"fmt"
 	"strings"
 	"sync"
-	"sync/atomic"
 	"time"
 
 	"github.com/gammazero/nexus/stdlog"
@@ -85,15 +84,15 @@ type Client struct {
 	invHandlerKill map[wamp.ID]context.CancelFunc
 	progGate       map[context.Context]wamp.ID
 
-	stopping          chan struct{}
 	activeInvHandlers sync.WaitGroup
 
 	log   stdlog.StdLog
 	debug bool
 
-	closed    int32
-	done      chan struct{}
-	connected bool
+	cancel context.CancelFunc
+	ctx    context.Context
+
+	closed bool
 
 	routerGoodbye *wamp.Goodbye
 	idGen         *wamp.SyncIDGen
@@ -137,21 +136,22 @@ func NewClient(p wamp.Peer, cfg Config) (*Client, error) {
 		invHandlerKill: map[wamp.ID]context.CancelFunc{},
 		progGate:       map[context.Context]wamp.ID{},
 
-		stopping:  make(chan struct{}),
-		done:      make(chan struct{}),
-		connected: true,
-
 		log:   cfg.Logger,
 		debug: cfg.Debug,
 		idGen: new(wamp.SyncIDGen),
 	}
+	c.ctx, c.cancel = context.WithCancel(context.Background())
 	go c.run() // start the core goroutine
 	return c, nil
 }
 
 // Done returns a channel that signals when the client is no longer connected
 // to a router and has shutdown.
-func (c *Client) Done() <-chan struct{} { return c.done }
+func (c *Client) Done() <-chan struct{} { return c.ctx.Done() }
+
+// Connected returns true if the client is still connected to (receiving from)
+// the router.
+func (c *Client) Connected() bool { return c.ctx.Err() == nil }
 
 // ID returns the client's session ID which is assigned after attaching to a
 // router and joining a realm.
@@ -200,12 +200,9 @@ type EventHandler func(args wamp.List, kwargs, details wamp.Dict)
 //
 // NOTE: Use consts defined in wamp/options.go instead of raw strings.
 func (c *Client) Subscribe(topic string, fn EventHandler, options wamp.Dict) error {
-	c.sess.Lock()
-	if !c.connected {
-		c.sess.Unlock()
+	if !c.Connected() {
 		return ErrNotConn
 	}
-	c.sess.Unlock()
 
 	if options == nil {
 		options = wamp.Dict{}
@@ -263,12 +260,11 @@ func (c *Client) Unsubscribe(topic string) error {
 	// the topic, and may expect any.
 	delete(c.topicSubID, topic)
 	delete(c.eventHandlers, subID)
+	c.sess.Unlock()
 
-	if !c.connected {
-		c.sess.Unlock()
+	if !c.Connected() {
 		return ErrNotConn
 	}
-	c.sess.Unlock()
 
 	id := c.idGen.Next()
 	c.expectReply(id)
@@ -327,12 +323,9 @@ func (c *Client) Unsubscribe(topic string) error {
 //
 // NOTE: Use consts defined in wamp/options.go instead of raw strings.
 func (c *Client) Publish(topic string, options wamp.Dict, args wamp.List, kwargs wamp.Dict) error {
-	c.sess.Lock()
-	if !c.connected {
-		c.sess.Unlock()
+	if !c.Connected() {
 		return ErrNotConn
 	}
-	c.sess.Unlock()
 
 	if options == nil {
 		options = make(wamp.Dict)
@@ -401,13 +394,9 @@ type InvocationHandler func(context.Context, wamp.List, wamp.Dict, wamp.Dict) (r
 //
 // NOTE: Use consts defined in wamp/options.go instead of raw strings.
 func (c *Client) Register(procedure string, fn InvocationHandler, options wamp.Dict) error {
-	c.sess.Lock()
-	if !c.connected {
-		c.sess.Unlock()
+	if !c.Connected() {
 		return ErrNotConn
 	}
-	c.sess.Unlock()
-
 	id := c.idGen.Next()
 	c.expectReply(id)
 	if options == nil {
@@ -468,12 +457,11 @@ func (c *Client) Unregister(procedure string) error {
 	// for the procedure, and may not expect any.
 	delete(c.nameProcID, procedure)
 	delete(c.invHandlers, procID)
+	c.sess.Unlock()
 
-	if !c.connected {
-		c.sess.Unlock()
+	if !c.Connected() {
 		return ErrNotConn
 	}
-	c.sess.Unlock()
 
 	id := c.idGen.Next()
 	c.expectReply(id)
@@ -601,12 +589,9 @@ func (c *Client) CallProgress(ctx context.Context, procedure string, options wam
 			wamp.CancelModeKill, wamp.CancelModeKillNoWait, wamp.CancelModeSkip)
 	}
 
-	c.sess.Lock()
-	if !c.connected {
-		c.sess.Unlock()
+	if !c.Connected() {
 		return nil, ErrNotConn
 	}
-	c.sess.Unlock()
 
 	if options == nil {
 		options = wamp.Dict{}
@@ -684,39 +669,45 @@ func (rpce RPCError) Error() string {
 // Close causes the client to leave the realm it has joined, and closes the
 // connection to the router.
 func (c *Client) Close() error {
-	if !atomic.CompareAndSwapInt32(&c.closed, 0, 1) {
+	c.sess.Lock()
+	if c.closed {
+		c.sess.Unlock()
 		return ErrAlreadyClosed
 	}
-
-	// Cancel any running invocation handlers and wait for them to finish.  Do
-	// this before leaving the realm so that any invocation handlers do not
-	// hang waiting to send to the router after it has stopped receiving from
-	// the client.
-	close(c.stopping)
-	c.activeInvHandlers.Wait()
-
-	// Stop waiting for replies and clear the reply channel of pending writes.
-	var awaitingReply map[wamp.ID]chan wamp.Message
-	c.sess.Lock()
-	awaitingReply = c.awaitingReply
-	c.awaitingReply = nil
+	c.closed = true
 	c.sess.Unlock()
-	for _, ch := range awaitingReply {
-		select {
-		case <-ch:
-		default:
+
+	if c.Connected() {
+		// Leave the realm and stop receiving messages.
+
+		// Send GOODBYE to router.  The router will respond with a GOODBYE
+		// message which is handled by receiveFromRouter, and causes run() to
+		// exit.
+		//
+		// Make an effort to say goodbye, but do not wait around if blocked.
+		if c.sess.TrySend(&wamp.Goodbye{
+			Details: wamp.Dict{},
+			Reason:  wamp.CloseRealm,
+		}) == nil {
+			// Wait for run() to exit, but do not wait longer that a normal
+			// response timeout.
+			timer := time.NewTimer(c.responseTimeout)
+			select {
+			case <-c.Done():
+				timer.Stop()
+			case <-timer.C:
+				c.sess.EndRecv(nil) // force run() to exit
+				<-c.Done()
+			}
+		} else {
+			c.sess.EndRecv(nil) // force run() to exit
+			<-c.Done()
 		}
 	}
 
-	// Leave the realm and stop the client's main goroutine.
-	c.leaveRealm()
-
-	// The run goroutine is guaranteed to have exited when leaveRealm()
-	// returns, so there will be nothing trying to write to the reply channel.
-	// Closing the channels dismisses any possible readers.
-	for _, ch := range awaitingReply {
-		close(ch)
-	}
+	// When for any running invocation handlers to finish.
+	c.activeInvHandlers.Wait()
+	c.sess.Close()
 
 	return nil
 }
@@ -727,7 +718,7 @@ func (c *Client) Close() error {
 // calling this function.
 func (c *Client) RouterGoodbye() *wamp.Goodbye {
 	select {
-	case <-c.done:
+	case <-c.Done():
 	default:
 		// Client not disconnected from router yet.
 		return nil
@@ -741,16 +732,16 @@ func (c *Client) RouterGoodbye() *wamp.Goodbye {
 // that was passed into the invocation handler.  This context is responsible
 // for associating progressive results with the call in progress.
 func (c *Client) SendProgress(ctx context.Context, args wamp.List, kwArgs wamp.Dict) error {
+	if !c.Connected() {
+		return ErrNotConn
+	}
+
 	// Lookup the request ID using ctx.  If there is no request ID, this means
 	// that the caller is not accepting progressive results, or that the
 	// invocation handler has been closed because the call was canceled.
 	var req wamp.ID
 	var ok bool
 	c.sess.Lock()
-	if !c.connected {
-		c.sess.Unlock()
-		return ErrNotConn
-	}
 	req, ok = c.progGate[ctx]
 	c.sess.Unlock()
 
@@ -821,36 +812,6 @@ func joinRealm(peer wamp.Peer, cfg Config) (*wamp.Welcome, error) {
 		return nil, unexpectedMsgError(msg, wamp.WELCOME)
 	}
 	return welcome, nil
-}
-
-// leaveRealm leaves the current realm without closing the connection to the
-// router.
-func (c *Client) leaveRealm() {
-	select {
-	case <-c.done: // run already exited, client already disconnected
-		return
-	default:
-	}
-
-	// Send GOODBYE to router.  The router will respond with a GOODBYE message
-	// which is handled by receiveFromRouter, and causes run() to exit.
-	//
-	// Make an effort to say goodbye, but do not wait around if blocked.
-	c.sess.TrySend(&wamp.Goodbye{
-		Details: wamp.Dict{},
-		Reason:  wamp.CloseRealm,
-	})
-
-	// Wait for run() to exit, but do not wait longer that a normal response
-	// timeout.
-	timer := time.NewTimer(c.responseTimeout)
-	select {
-	case <-c.done:
-		timer.Stop()
-	case <-timer.C:
-		c.sess.EndRecv(nil) // force run() to exit
-		<-c.done
-	}
 }
 
 func handleCRAuth(peer wamp.Peer, challenge *wamp.Challenge, authHandlers map[string]AuthFunc, rspTimeout time.Duration) (wamp.Message, error) {
@@ -961,9 +922,7 @@ func unexpectedMsgError(msg wamp.Message, expected wamp.MessageType) error {
 func (c *Client) expectReply(id wamp.ID) {
 	wait := make(chan wamp.Message)
 	c.sess.Lock()
-	if c.awaitingReply != nil { // Client has already been closed
-		c.awaitingReply[id] = wait
-	}
+	c.awaitingReply[id] = wait
 	c.sess.Unlock()
 }
 
@@ -990,10 +949,12 @@ func (c *Client) waitForReply(id wamp.ID) (wamp.Message, error) {
 		timer.Stop()
 		if !ok {
 			// Return directly here, since awaitingReply entry already deleted.
-			return nil, ErrClosed
+			return nil, ErrNotConn
 		}
 	case <-timer.C:
 		err = ErrReplyTimeout
+	case <-c.Done():
+		err = ErrNotConn
 	}
 	c.sess.Lock()
 	delete(c.awaitingReply, id)
@@ -1028,7 +989,7 @@ CollectResults:
 	case msg, ok = <-wait:
 		if !ok {
 			// Return here, since awaitingReply entry already deleted.
-			return nil, ErrClosed
+			return nil, ErrNotConn
 		}
 		// If this is a progressive result, put the Result message on the
 		// progress channel and go back to waiting for more results.
@@ -1070,6 +1031,8 @@ CollectResults:
 			// Did not get expected response to cancel
 			err = ErrReplyTimeout
 		}
+	case <-c.Done():
+		err = ErrNotConn
 	}
 	// All done with this call, so not waiting for more replies.
 	c.sess.Lock()
@@ -1082,16 +1045,10 @@ CollectResults:
 // run is the core client goroutine.  This handles messages received from the
 // router and serializes access to all mutable state.
 func (c *Client) run() {
-	defer func() {
-		c.sess.Close() // close peer
-		close(c.done)  // signal client done
-		if c.debug {
-			c.log.Println("Client", c.sess, "closed")
-		}
-		c.sess.Lock()
-		c.connected = false
-		c.sess.Unlock()
-	}()
+	defer c.cancel()
+	if c.debug {
+		defer c.log.Println("Client", c.sess, "closed")
+	}
 
 	recv := c.sess.Recv()
 	recvDone := c.sess.RecvDone()
@@ -1256,7 +1213,7 @@ func (c *Client) runHandleInvocation(msg *wamp.Invocation) {
 				result = &InvokeResult{Err: wamp.ErrCanceled}
 				c.log.Println("INVOCATION", msg.Request, "canceled by callee")
 			}
-		case <-c.stopping:
+		case <-c.Done():
 			c.log.Print("Client stopping, invocation handler canceled")
 			// Return without sending response to server.  This will also
 			// cancel the context.
@@ -1275,7 +1232,7 @@ func (c *Client) runHandleInvocation(msg *wamp.Invocation) {
 		}
 
 		if result.Err != "" {
-			c.sess.Send(&wamp.Error{
+			c.sess.SendCtx(c.ctx, &wamp.Error{
 				Type:        wamp.INVOCATION,
 				Request:     msg.Request,
 				Details:     wamp.Dict{},
@@ -1285,7 +1242,7 @@ func (c *Client) runHandleInvocation(msg *wamp.Invocation) {
 			})
 			return
 		}
-		c.sess.Send(&wamp.Yield{
+		c.sess.SendCtx(c.ctx, &wamp.Yield{
 			Request:     msg.Request,
 			Options:     wamp.Dict{},
 			Arguments:   result.Args,
@@ -1324,5 +1281,8 @@ func (c *Client) runSignalReply(msg wamp.Message, requestID wamp.ID) {
 			"that client is no longer waiting for")
 		return
 	}
-	w <- msg
+	select {
+	case w <- msg:
+	case <-c.Done():
+	}
 }
