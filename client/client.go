@@ -91,8 +91,10 @@ type Client struct {
 	log   stdlog.StdLog
 	debug bool
 
-	closed        int32
-	done          chan struct{}
+	closed    int32
+	done      chan struct{}
+	connected bool
+
 	routerGoodbye *wamp.Goodbye
 	idGen         *wamp.SyncIDGen
 }
@@ -118,7 +120,7 @@ func NewClient(p wamp.Peer, cfg Config) (*Client, error) {
 	// Check that router has at least one supported role.
 	if !sess.HasRole("broker") && !sess.HasRole("dealer") {
 		p.Close()
-		return nil, errors.New("router did not announce any supported roles")
+		return nil, ErrRouterNoRoles
 	}
 
 	c := &Client{
@@ -135,8 +137,9 @@ func NewClient(p wamp.Peer, cfg Config) (*Client, error) {
 		invHandlerKill: map[wamp.ID]context.CancelFunc{},
 		progGate:       map[context.Context]wamp.ID{},
 
-		stopping: make(chan struct{}),
-		done:     make(chan struct{}),
+		stopping:  make(chan struct{}),
+		done:      make(chan struct{}),
+		connected: true,
 
 		log:   cfg.Logger,
 		debug: cfg.Debug,
@@ -197,6 +200,13 @@ type EventHandler func(args wamp.List, kwargs, details wamp.Dict)
 //
 // NOTE: Use consts defined in wamp/options.go instead of raw strings.
 func (c *Client) Subscribe(topic string, fn EventHandler, options wamp.Dict) error {
+	c.sess.Lock()
+	if !c.connected {
+		c.sess.Unlock()
+		return ErrNotConn
+	}
+	c.sess.Unlock()
+
 	if options == nil {
 		options = wamp.Dict{}
 	}
@@ -245,7 +255,7 @@ func (c *Client) Unsubscribe(topic string) error {
 	subID, ok := c.topicSubID[topic]
 	if !ok {
 		c.sess.Unlock()
-		return errors.New("not subscribed to: " + topic)
+		return ErrNotSubscribed
 	}
 	// Delete the subscription anyway, regardless of whether or not the the
 	// router succeeds or fails to unsubscribe.  If the client called
@@ -253,6 +263,11 @@ func (c *Client) Unsubscribe(topic string) error {
 	// the topic, and may expect any.
 	delete(c.topicSubID, topic)
 	delete(c.eventHandlers, subID)
+
+	if !c.connected {
+		c.sess.Unlock()
+		return ErrNotConn
+	}
 	c.sess.Unlock()
 
 	id := c.idGen.Next()
@@ -312,6 +327,13 @@ func (c *Client) Unsubscribe(topic string) error {
 //
 // NOTE: Use consts defined in wamp/options.go instead of raw strings.
 func (c *Client) Publish(topic string, options wamp.Dict, args wamp.List, kwargs wamp.Dict) error {
+	c.sess.Lock()
+	if !c.connected {
+		c.sess.Unlock()
+		return ErrNotConn
+	}
+	c.sess.Unlock()
+
 	if options == nil {
 		options = make(wamp.Dict)
 	}
@@ -379,6 +401,13 @@ type InvocationHandler func(context.Context, wamp.List, wamp.Dict, wamp.Dict) (r
 //
 // NOTE: Use consts defined in wamp/options.go instead of raw strings.
 func (c *Client) Register(procedure string, fn InvocationHandler, options wamp.Dict) error {
+	c.sess.Lock()
+	if !c.connected {
+		c.sess.Unlock()
+		return ErrNotConn
+	}
+	c.sess.Unlock()
+
 	id := c.idGen.Next()
 	c.expectReply(id)
 	if options == nil {
@@ -431,7 +460,7 @@ func (c *Client) Unregister(procedure string) error {
 	procID, ok := c.nameProcID[procedure]
 	if !ok {
 		c.sess.Unlock()
-		return errors.New("not registered to handle procedure " + procedure)
+		return ErrNotRegistered
 	}
 	// Delete the registration anyway, regardless of whether or not the the
 	// router succeeds or fails to unregister.  If the client called
@@ -439,6 +468,11 @@ func (c *Client) Unregister(procedure string) error {
 	// for the procedure, and may not expect any.
 	delete(c.nameProcID, procedure)
 	delete(c.invHandlers, procID)
+
+	if !c.connected {
+		c.sess.Unlock()
+		return ErrNotConn
+	}
 	c.sess.Unlock()
 
 	id := c.idGen.Next()
@@ -567,6 +601,13 @@ func (c *Client) CallProgress(ctx context.Context, procedure string, options wam
 			wamp.CancelModeKill, wamp.CancelModeKillNoWait, wamp.CancelModeSkip)
 	}
 
+	c.sess.Lock()
+	if !c.connected {
+		c.sess.Unlock()
+		return nil, ErrNotConn
+	}
+	c.sess.Unlock()
+
 	if options == nil {
 		options = wamp.Dict{}
 	}
@@ -644,7 +685,7 @@ func (rpce RPCError) Error() string {
 // connection to the router.
 func (c *Client) Close() error {
 	if !atomic.CompareAndSwapInt32(&c.closed, 0, 1) {
-		return errors.New("already closed")
+		return ErrAlreadyClosed
 	}
 
 	// Cancel any running invocation handlers and wait for them to finish.  Do
@@ -706,12 +747,16 @@ func (c *Client) SendProgress(ctx context.Context, args wamp.List, kwArgs wamp.D
 	var req wamp.ID
 	var ok bool
 	c.sess.Lock()
+	if !c.connected {
+		c.sess.Unlock()
+		return ErrNotConn
+	}
 	req, ok = c.progGate[ctx]
 	c.sess.Unlock()
 
 	if !ok {
 		// Caller is not accepting progressive results or call canceled.
-		return errors.New("caller not accepting progressive results")
+		return ErrCallerNoProg
 	}
 	return c.sess.SendCtx(ctx, &wamp.Yield{
 		Request:     req,
@@ -795,10 +840,6 @@ func (c *Client) leaveRealm() {
 		Details: wamp.Dict{},
 		Reason:  wamp.CloseRealm,
 	})
-
-	// Close the peer.  This causes run() to exit if it has not already done so
-	// after receiving GOODBYE from router.
-	c.sess.Close()
 
 	// Wait for run() to exit, but do not wait longer that a normal response
 	// timeout.
@@ -949,10 +990,10 @@ func (c *Client) waitForReply(id wamp.ID) (wamp.Message, error) {
 		timer.Stop()
 		if !ok {
 			// Return directly here, since awaitingReply entry already deleted.
-			return nil, errors.New("client closed")
+			return nil, ErrClosed
 		}
 	case <-timer.C:
-		err = errors.New("timeout waiting for reply")
+		err = ErrReplyTimeout
 	}
 	c.sess.Lock()
 	delete(c.awaitingReply, id)
@@ -987,7 +1028,7 @@ CollectResults:
 	case msg, ok = <-wait:
 		if !ok {
 			// Return here, since awaitingReply entry already deleted.
-			return nil, errors.New("client closed")
+			return nil, ErrClosed
 		}
 		// If this is a progressive result, put the Result message on the
 		// progress channel and go back to waiting for more results.
@@ -1027,7 +1068,7 @@ CollectResults:
 			timer.Stop()
 		case <-timer.C:
 			// Did not get expected response to cancel
-			err = errors.New("timeout waiting for reply after cancel")
+			err = ErrReplyTimeout
 		}
 	}
 	// All done with this call, so not waiting for more replies.
@@ -1041,17 +1082,21 @@ CollectResults:
 // run is the core client goroutine.  This handles messages received from the
 // router and serializes access to all mutable state.
 func (c *Client) run() {
-	defer close(c.done)
-	if c.debug {
-		defer c.log.Println("Client", c.sess, "closed")
-	}
+	defer func() {
+		c.sess.Close() // close peer
+		close(c.done)  // signal client done
+		if c.debug {
+			c.log.Println("Client", c.sess, "closed")
+		}
+		c.sess.Lock()
+		c.connected = false
+		c.sess.Unlock()
+	}()
 
 	recv := c.sess.Recv()
-	done := c.sess.RecvDone()
+	recvDone := c.sess.RecvDone()
 	for {
 		select {
-		case <-done:
-			return
 		case msg, ok := <-recv:
 			if !ok {
 				return
@@ -1059,6 +1104,8 @@ func (c *Client) run() {
 			if c.runReceiveFromRouter(msg) {
 				return
 			}
+		case <-recvDone:
+			return
 		}
 	}
 }

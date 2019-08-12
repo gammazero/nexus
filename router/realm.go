@@ -476,16 +476,18 @@ func (r *realm) handleInboundMessages(sess *wamp.Session) (bool, bool, error) {
 	if r.debug {
 		defer r.log.Println("Ended session", sess)
 	}
+	recv := sess.Recv()
+	recvDone := sess.RecvDone()
 	for {
 		var msg wamp.Message
 		var open bool
 		select {
-		case msg, open = <-sess.Recv():
+		case msg, open = <-recv:
 			if !open {
 				r.log.Println("Lost", sess)
 				return false, false, nil
 			}
-		case <-sess.RecvDone():
+		case <-recvDone:
 			goodbye := sess.Goodbye()
 			switch goodbye {
 			case shutdownGoodbye, wamp.NoGoodbye:
