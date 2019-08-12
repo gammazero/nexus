@@ -84,7 +84,6 @@ type Client struct {
 	nameProcID     map[string]wamp.ID
 	invHandlerKill map[wamp.ID]context.CancelFunc
 	progGate       map[context.Context]wamp.ID
-	mutex          sync.Mutex
 
 	stopping          chan struct{}
 	activeInvHandlers sync.WaitGroup
@@ -217,10 +216,10 @@ func (c *Client) Subscribe(topic string, fn EventHandler, options wamp.Dict) err
 	switch msg := msg.(type) {
 	case *wamp.Subscribed:
 		// Register the event handler for this subscription.
-		c.mutex.Lock()
+		c.sess.Lock()
 		c.eventHandlers[msg.Subscription] = fn
 		c.topicSubID[topic] = msg.Subscription
-		c.mutex.Unlock()
+		c.sess.Unlock()
 		return nil
 	case *wamp.Error:
 		return fmt.Errorf("subscribing to topic '%v': %s", topic,
@@ -234,18 +233,18 @@ func (c *Client) Subscribe(topic string, fn EventHandler, options wamp.Dict) err
 // client does not have an active subscription to the topic, then returns false
 // for second boolean return value.
 func (c *Client) SubscriptionID(topic string) (subID wamp.ID, ok bool) {
-	c.mutex.Lock()
+	c.sess.Lock()
 	subID, ok = c.topicSubID[topic]
-	c.mutex.Unlock()
+	c.sess.Unlock()
 	return
 }
 
 // Unsubscribe removes the registered EventHandler from the topic.
 func (c *Client) Unsubscribe(topic string) error {
-	c.mutex.Lock()
+	c.sess.Lock()
 	subID, ok := c.topicSubID[topic]
 	if !ok {
-		c.mutex.Unlock()
+		c.sess.Unlock()
 		return errors.New("not subscribed to: " + topic)
 	}
 	// Delete the subscription anyway, regardless of whether or not the the
@@ -254,7 +253,7 @@ func (c *Client) Unsubscribe(topic string) error {
 	// the topic, and may expect any.
 	delete(c.topicSubID, topic)
 	delete(c.eventHandlers, subID)
-	c.mutex.Unlock()
+	c.sess.Unlock()
 
 	id := c.idGen.Next()
 	c.expectReply(id)
@@ -399,10 +398,10 @@ func (c *Client) Register(procedure string, fn InvocationHandler, options wamp.D
 	switch msg := msg.(type) {
 	case *wamp.Registered:
 		// Register the event handler for this registration.
-		c.mutex.Lock()
+		c.sess.Lock()
 		c.invHandlers[msg.Registration] = fn
 		c.nameProcID[procedure] = msg.Registration
-		c.mutex.Unlock()
+		c.sess.Unlock()
 		if c.debug {
 			c.log.Println("Registered", procedure, "as registration",
 				msg.Registration)
@@ -420,18 +419,18 @@ func (c *Client) Register(procedure string, fn InvocationHandler, options wamp.D
 // the client is not registered for the procedure, then returns false for
 // second boolean return value.
 func (c *Client) RegistrationID(procedure string) (regID wamp.ID, ok bool) {
-	c.mutex.Lock()
+	c.sess.Lock()
 	regID, ok = c.nameProcID[procedure]
-	c.mutex.Unlock()
+	c.sess.Unlock()
 	return
 }
 
 // Unregister removes the registration of a procedure from the router.
 func (c *Client) Unregister(procedure string) error {
-	c.mutex.Lock()
+	c.sess.Lock()
 	procID, ok := c.nameProcID[procedure]
 	if !ok {
-		c.mutex.Unlock()
+		c.sess.Unlock()
 		return errors.New("not registered to handle procedure " + procedure)
 	}
 	// Delete the registration anyway, regardless of whether or not the the
@@ -440,7 +439,7 @@ func (c *Client) Unregister(procedure string) error {
 	// for the procedure, and may not expect any.
 	delete(c.nameProcID, procedure)
 	delete(c.invHandlers, procID)
-	c.mutex.Unlock()
+	c.sess.Unlock()
 
 	id := c.idGen.Next()
 	c.expectReply(id)
@@ -657,10 +656,10 @@ func (c *Client) Close() error {
 
 	// Stop waiting for replies and clear the reply channel of pending writes.
 	var awaitingReply map[wamp.ID]chan wamp.Message
-	c.mutex.Lock()
+	c.sess.Lock()
 	awaitingReply = c.awaitingReply
 	c.awaitingReply = nil
-	c.mutex.Unlock()
+	c.sess.Unlock()
 	for _, ch := range awaitingReply {
 		select {
 		case <-ch:
@@ -678,9 +677,6 @@ func (c *Client) Close() error {
 		close(ch)
 	}
 
-	// c.sess.Peer is accessed from several go routines and would require
-	// synchronisation if updated here.  Peer is closed in leaveRealm() so we
-	// do not need to set it to nil.
 	return nil
 }
 
@@ -709,9 +705,9 @@ func (c *Client) SendProgress(ctx context.Context, args wamp.List, kwArgs wamp.D
 	// invocation handler has been closed because the call was canceled.
 	var req wamp.ID
 	var ok bool
-	c.mutex.Lock()
+	c.sess.Lock()
 	req, ok = c.progGate[ctx]
-	c.mutex.Unlock()
+	c.sess.Unlock()
 
 	if !ok {
 		// Caller is not accepting progressive results or call canceled.
@@ -923,11 +919,11 @@ func unexpectedMsgError(msg wamp.Message, expected wamp.MessageType) error {
 
 func (c *Client) expectReply(id wamp.ID) {
 	wait := make(chan wamp.Message)
-	c.mutex.Lock()
+	c.sess.Lock()
 	if c.awaitingReply != nil { // Client has already been closed
 		c.awaitingReply[id] = wait
 	}
-	c.mutex.Unlock()
+	c.sess.Unlock()
 }
 
 // waitForReply waits for an expected reply from the router.
@@ -938,9 +934,9 @@ func (c *Client) expectReply(id wamp.ID) {
 func (c *Client) waitForReply(id wamp.ID) (wamp.Message, error) {
 	var wait chan wamp.Message
 	var ok bool
-	c.mutex.Lock()
+	c.sess.Lock()
 	wait, ok = c.awaitingReply[id]
-	c.mutex.Unlock()
+	c.sess.Unlock()
 	if !ok {
 		return nil, fmt.Errorf("not expecting reply for ID: %v", id)
 	}
@@ -958,9 +954,9 @@ func (c *Client) waitForReply(id wamp.ID) (wamp.Message, error) {
 	case <-timer.C:
 		err = errors.New("timeout waiting for reply")
 	}
-	c.mutex.Lock()
+	c.sess.Lock()
 	delete(c.awaitingReply, id)
-	c.mutex.Unlock()
+	c.sess.Unlock()
 
 	return msg, err
 }
@@ -977,9 +973,9 @@ func (c *Client) waitForReplyWithCancel(ctx context.Context, id wamp.ID, mode, p
 	}
 	var wait chan wamp.Message
 	var ok bool
-	c.mutex.Lock()
+	c.sess.Lock()
 	wait, ok = c.awaitingReply[id]
-	c.mutex.Unlock()
+	c.sess.Unlock()
 	if !ok {
 		return nil, fmt.Errorf("not expecting reply for ID: %v", id)
 	}
@@ -1035,9 +1031,9 @@ CollectResults:
 		}
 	}
 	// All done with this call, so not waiting for more replies.
-	c.mutex.Lock()
+	c.sess.Lock()
 	delete(c.awaitingReply, id)
-	c.mutex.Unlock()
+	c.sess.Unlock()
 
 	return msg, err
 }
@@ -1119,9 +1115,9 @@ func (c *Client) runReceiveFromRouter(msg wamp.Message) bool {
 // as the messages are received in.  This could not be guaranteed if executing
 // concurrently in separate goroutines.
 func (c *Client) runHandleEvent(msg *wamp.Event) {
-	c.mutex.Lock()
+	c.sess.Lock()
 	handler, ok := c.eventHandlers[msg.Subscription]
-	c.mutex.Unlock()
+	c.sess.Unlock()
 	if !ok {
 		c.log.Println("No handler registered for subscription:",
 			msg.Subscription)
@@ -1133,10 +1129,10 @@ func (c *Client) runHandleEvent(msg *wamp.Event) {
 // runHandleInvocation processes an INVOCATION message from the router
 // requesting a call to a registered RPC procedure.
 func (c *Client) runHandleInvocation(msg *wamp.Invocation) {
-	c.mutex.Lock()
+	c.sess.Lock()
 	handler, ok := c.invHandlers[msg.Registration]
 	if !ok {
-		c.mutex.Unlock()
+		c.sess.Unlock()
 		errMsg := fmt.Sprintf("client has no handler for registration %v",
 			msg.Registration)
 		// The dealer has a procedure registered to this client, but this
@@ -1174,7 +1170,7 @@ func (c *Client) runHandleInvocation(msg *wamp.Invocation) {
 	if ok, _ = msg.Details[wamp.OptReceiveProgress].(bool); ok {
 		c.progGate[ctx] = msg.Request
 	}
-	c.mutex.Unlock()
+	c.sess.Unlock()
 
 	// Start a goroutine to run the user-defined invocation handler.
 	go func() {
@@ -1194,10 +1190,10 @@ func (c *Client) runHandleInvocation(msg *wamp.Invocation) {
 
 		// Remove the kill switch when done processing invocation.
 		defer func() {
-			c.mutex.Lock()
+			c.sess.Lock()
 			delete(c.progGate, ctx)
 			delete(c.invHandlerKill, msg.Request)
-			c.mutex.Unlock()
+			c.sess.Unlock()
 			c.activeInvHandlers.Done()
 		}()
 
@@ -1253,9 +1249,9 @@ func (c *Client) runHandleInvocation(msg *wamp.Invocation) {
 // requesting that a pending call be canceled.
 func (c *Client) runHandleInterrupt(msg *wamp.Interrupt) {
 	logMsg := "Received INTERRUPT for INVOCATION"
-	c.mutex.Lock()
+	c.sess.Lock()
 	cancel, ok := c.invHandlerKill[msg.Request]
-	c.mutex.Unlock()
+	c.sess.Unlock()
 	if !ok {
 		c.log.Println(logMsg, msg.Request, "that no longer exists")
 		return
@@ -1271,9 +1267,9 @@ func (c *Client) runHandleInterrupt(msg *wamp.Interrupt) {
 func (c *Client) runSignalReply(msg wamp.Message, requestID wamp.ID) {
 	var w chan wamp.Message
 	var ok bool
-	c.mutex.Lock()
+	c.sess.Lock()
 	w, ok = c.awaitingReply[requestID]
-	c.mutex.Unlock()
+	c.sess.Unlock()
 	if !ok {
 		c.log.Println("Received", msg.MessageType(), requestID,
 			"that client is no longer waiting for")
