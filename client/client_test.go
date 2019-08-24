@@ -51,6 +51,7 @@ func connectedTestClients() (*Client, *Client, router.Router, error) {
 		AnonymousAuth:    true,
 		AllowDisclose:    true,
 		RequireLocalAuth: true,
+		EnableMetaKill:   true,
 	}
 	r, err := getTestRouter(realmConfig)
 	if err != nil {
@@ -723,7 +724,6 @@ func createTestServer() (router.Router, io.Closer, error) {
 
 func newNetTestCallee(routerURL string) (*Client, error) {
 	logger := log.New(os.Stderr, "CALLEE> ", log.Lmicroseconds)
-
 	cfg := Config{
 		Realm:           testRealm,
 		ResponseTimeout: 10 * time.Millisecond,
@@ -737,9 +737,9 @@ func newNetTestCallee(routerURL string) (*Client, error) {
 	}
 
 	sleep := func(ctx context.Context, args wamp.List, kwargs, details wamp.Dict) *InvokeResult {
-		log.Println("sleep rpc start")
+		logger.Println("sleep rpc start")
 		time.Sleep(5 * time.Second)
-		log.Println("sleep rpc done")
+		logger.Println("sleep rpc done")
 		return &InvokeResult{Kwargs: wamp.Dict{"success": true}}
 	}
 
@@ -810,7 +810,6 @@ func newNetTestKiller(routerURL string) (*Client, error) {
 
 // Test for races in client when session is killed by router.
 func TestClientRace(t *testing.T) {
-
 	// Create a websocket server
 	r, closer, err := createTestServer()
 	if err != nil {
@@ -896,4 +895,96 @@ func TestInvocationHandlerMissedDone(t *testing.T) {
 		t.Fatal("Timed out waiting to close client")
 	}
 	r.Close()
+}
+
+func TestProgressDisconnect(t *testing.T) {
+	defer leaktest.Check(t)()
+
+	// Create a websocket server
+	r, closer, err := createTestServer()
+	if err != nil {
+		t.Fatal("failed to connect test clients:", err)
+	}
+	//defer r.Close()
+	defer closer.Close()
+
+	testURL := fmt.Sprintf("ws://%s/ws", testAddress)
+
+	// Connect callee session.
+	calleeLog := log.New(os.Stderr, "CALLEE> ", log.Lmicroseconds)
+	cfg := Config{
+		Realm:           testRealm,
+		ResponseTimeout: 10 * time.Millisecond,
+		Logger:          calleeLog,
+		Debug:           true,
+	}
+	callee, err := ConnectNet(testURL, cfg)
+	if err != nil {
+		t.Fatalf("connect error: %s", err)
+	}
+	defer callee.Close()
+
+	const chunkProc = "example.progress.text"
+	sendProgErr := make(chan error)
+	disconnect := make(chan struct{})
+	disconnected := make(chan struct{})
+
+	// Define invocation handler.
+	handler := func(ctx context.Context, args wamp.List, kwargs, details wamp.Dict) *InvokeResult {
+		for {
+			// Send a chunk of data.
+			e := callee.SendProgress(ctx, wamp.List{"hello"}, nil)
+			if e != nil {
+				sendProgErr <- e
+				return nil
+			}
+			<-disconnected
+		}
+		// Never gets here
+	}
+
+	// Register procedure.
+	if err = callee.Register(chunkProc, handler, nil); err != nil {
+		t.Fatal("Failed to register procedure:", err)
+	}
+
+	// Connect caller session.
+	cfg.Logger = log.New(os.Stderr, "CALLER> ", log.Lmicroseconds)
+	caller, err := ConnectNet(testURL, cfg)
+	if err != nil {
+		t.Fatalf("connect error: %s", err)
+	}
+	defer caller.Close()
+
+	// The progress handler accumulates the chunks of data as they arrive.
+	progHandler := func(result *wamp.Result) {
+		close(disconnect)
+	}
+
+	// All results, for all calls, must be recieved by timeout.
+	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+	defer cancel()
+
+	progErr := make(chan error)
+	go func() {
+		_, perr := caller.CallProgress(ctx, chunkProc, nil, nil, nil, "", progHandler)
+		progErr <- perr
+	}()
+
+	<-disconnect
+	closer.Close()
+	r.Close()
+	close(disconnected)
+
+	// Check for expected error from caller.
+	err = <-progErr
+	if err != ErrNotConn {
+		t.Fatalf("expected error from caller: %q got %q", ErrNotConn, err)
+	}
+
+	// Check for expected error from callee.
+	err = <-sendProgErr
+	if err != context.Canceled && err != ErrNotConn {
+		t.Fatalf("wrong error from SendProgress: %s", err)
+	}
 }

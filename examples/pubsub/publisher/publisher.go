@@ -23,14 +23,14 @@ func main() {
 	args := wamp.List{"hello world"}
 	err = publisher.Publish(exampleTopic, nil, args, nil)
 	if err != nil {
-		logger.Fatal("subscribe error:", err)
+		logger.Fatalf("publish error: %s", err)
 	}
 
 	// Publish more events to topic.
 	args = wamp.List{"how are you today"}
 	err = publisher.Publish(exampleTopic, nil, args, nil)
 	if err != nil {
-		logger.Fatal("subscribe error:", err)
+		logger.Fatalf("publish error: %s", err)
 	}
 
 	// Publish events only to sessions 42, 1138, 1701.
@@ -38,26 +38,27 @@ func main() {
 	opts := wamp.Dict{wamp.WhitelistKey: wamp.List{42, 1138, 1701}}
 	err = publisher.Publish(exampleTopic, opts, args, nil)
 	if err != nil {
-		logger.Fatal("subscribe error:", err)
+		logger.Fatalf("publish error: %s", err)
 	}
 
 	args = wamp.List{"testing 1"}
 	err = publisher.Publish(exampleTopic, nil, args, nil)
 	if err != nil {
-		logger.Fatal("subscribe error:", err)
+		logger.Fatalf("publish error: %s", err)
 	}
 
 	args = wamp.List{"testing 2"}
 	err = publisher.Publish(exampleTopic, nil, args, nil)
 	if err != nil {
-		logger.Fatal("subscribe error:", err)
+		logger.Fatalf("publish error: %s", err)
 	}
 
 	args = wamp.List{"testing 3"}
 	err = publisher.Publish(exampleTopic, nil, args, nil)
 	if err != nil {
-		logger.Fatal("subscribe error:", err)
+		logger.Fatalf("publish error: %s", err)
 	}
 
 	logger.Println("Published messages to", exampleTopic)
+	publisher.Close()
 }

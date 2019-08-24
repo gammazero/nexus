@@ -137,7 +137,6 @@ func TestRPCProgressiveCallInterrupt(t *testing.T) {
 
 		// Give caller time to receive first message before closing.
 		time.Sleep(50 * time.Millisecond)
-		close(callerKiller)
 
 		// Wait for caller to close so that remaining messages will fail.
 		<-callerClosed
@@ -200,28 +199,33 @@ func TestRPCProgressiveCallInterrupt(t *testing.T) {
 	progHandler := func(result *wamp.Result) {
 		arg := result.Arguments[0].(string)
 		fmt.Println("Caller received progress response:", arg)
+		select {
+		case callerKiller <- struct{}{}:
+		default:
+		}
 	}
 
 	// Test calling the procedure.
-	var recvProgErr error
+	recvProgErr := make(chan error)
 	go func() {
 		ctx := context.Background()
 		_, e := caller.CallProgress(ctx, progProc, nil, nil, nil, "", progHandler)
-		if e != nil && e.Error() != "client closed" {
-			recvProgErr = fmt.Errorf(
-				"unexpected error returned from CallProgress: %s", e)
-		}
+		recvProgErr <- e
 	}()
 
 	// Wait for progressive results to start being returned, then kill caller.
 	<-callerKiller
+
 	err = caller.Close()
 	if err != nil {
 		t.Error("Failed to disconnect client:", err)
 	}
-	if recvProgErr != nil {
-		t.Error(recvProgErr)
+
+	err = <-recvProgErr
+	if err != client.ErrNotConn {
+		t.Errorf("unexpected error returned fom CallProgress: %s", err)
 	}
+	<-caller.Done()
 	close(callerClosed)
 
 	select {
