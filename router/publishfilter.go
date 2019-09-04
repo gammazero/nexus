@@ -12,6 +12,9 @@ type PublishFilter interface {
 	Allowed(sess *wamp.Session) bool
 }
 
+// FilterFactory is a function which creates a PublishFilter from a publication
+type FilterFactory func(msg *wamp.Publish) PublishFilter
+
 type simplePublishFilter struct {
 	blIDs []wamp.ID
 	wlIDs []wamp.ID

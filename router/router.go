@@ -357,8 +357,8 @@ func (r *router) addRealm(config *RealmConfig) (*realm, error) {
 
 	realm, err := newRealm(
 		config,
-		NewBroker(r.log, config.StrictURI, config.AllowDisclose, r.debug, config.PublishFilterFactory),
-		NewDealer(r.log, config.StrictURI, config.AllowDisclose, r.debug),
+		newBroker(r.log, config.StrictURI, config.AllowDisclose, r.debug, config.PublishFilterFactory),
+		newDealer(r.log, config.StrictURI, config.AllowDisclose, r.debug),
 		r.log, r.debug)
 	if err != nil {
 		return nil, err

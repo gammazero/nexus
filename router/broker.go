@@ -41,10 +41,7 @@ type subscription struct {
 	subscribers map[*wamp.Session]struct{}
 }
 
-// FilterFactory is a function which creates a PublishFilter from a publication
-type FilterFactory func(msg *wamp.Publish) PublishFilter
-
-type Broker struct {
+type broker struct {
 	// topic -> subscription
 	topicSubscription    map[wamp.URI]*subscription
 	pfxTopicSubscription map[wamp.URI]*subscription
@@ -69,15 +66,15 @@ type Broker struct {
 	filterFactory FilterFactory
 }
 
-// NewBroker returns a new default broker implementation instance.
-func NewBroker(logger stdlog.StdLog, strictURI, allowDisclose, debug bool, publishFilter FilterFactory) *Broker {
+// newBroker returns a new default broker implementation instance.
+func newBroker(logger stdlog.StdLog, strictURI, allowDisclose, debug bool, publishFilter FilterFactory) *broker {
 	if logger == nil {
 		panic("logger is nil")
 	}
 	if publishFilter == nil {
 		publishFilter = NewSimplePublishFilter
 	}
-	b := &Broker{
+	b := &broker{
 		topicSubscription:    map[wamp.URI]*subscription{},
 		pfxTopicSubscription: map[wamp.URI]*subscription{},
 		wcTopicSubscription:  map[wamp.URI]*subscription{},
@@ -103,13 +100,13 @@ func NewBroker(logger stdlog.StdLog, strictURI, allowDisclose, debug bool, publi
 	return b
 }
 
-// Role returns the role information for the "broker" role.  The data returned
+// role returns the role information for the "broker" role.  The data returned
 // is suitable for use as broker role info in a WELCOME message.
-func (b *Broker) Role() wamp.Dict {
+func (b *broker) role() wamp.Dict {
 	return brokerRole
 }
 
-// Publish finds all subscriptions for the topic being published to, including
+// publish finds all subscriptions for the topic being published to, including
 // those matching the topic by pattern, and sends an event to the subscribers
 // of that topic.
 //
@@ -118,7 +115,7 @@ func (b *Broker) Role() wamp.Dict {
 //
 // The Subscriber can detect the delivery of that same event on multiple
 // subscriptions via EVENT.PUBLISHED.Publication, which will be identical.
-func (b *Broker) Publish(pub *wamp.Session, msg *wamp.Publish) {
+func (b *broker) publish(pub *wamp.Session, msg *wamp.Publish) {
 	if pub == nil || msg == nil {
 		panic("broker.Publish with nil session or message")
 	}
@@ -177,7 +174,7 @@ func (b *Broker) Publish(pub *wamp.Session, msg *wamp.Publish) {
 	filter := b.filterFactory(msg)
 
 	b.actionChan <- func() {
-		b.publish(pub, msg, pubID, excludePub, disclose, filter)
+		b.syncPublish(pub, msg, pubID, excludePub, disclose, filter)
 	}
 
 	// Send PUBLISHED message if acknowledge is present and true.
@@ -186,7 +183,7 @@ func (b *Broker) Publish(pub *wamp.Session, msg *wamp.Publish) {
 	}
 }
 
-// Subscribe subscribes the client to the given topic.
+// subscribe subscribes the client to the given topic.
 //
 // In case of receiving a SUBSCRIBE message from the same Subscriber and to
 // already subscribed topic, Broker should answer with SUBSCRIBED message,
@@ -196,7 +193,7 @@ func (b *Broker) Publish(pub *wamp.Session, msg *wamp.Publish) {
 // Subscriber might want to subscribe to topics based on a pattern.  If the
 // Broker and the Subscriber support pattern-based subscriptions, this matching
 // can happen by prefix-matching policy or wildcard-matching policy.
-func (b *Broker) Subscribe(sub *wamp.Session, msg *wamp.Subscribe) {
+func (b *broker) subscribe(sub *wamp.Session, msg *wamp.Subscribe) {
 	if sub == nil || msg == nil {
 		panic("broker.Subscribe with nil session or message")
 	}
@@ -219,39 +216,39 @@ func (b *Broker) Subscribe(sub *wamp.Session, msg *wamp.Subscribe) {
 	}
 
 	b.actionChan <- func() {
-		b.subscribe(sub, msg, match)
+		b.syncSubscribe(sub, msg, match)
 	}
 }
 
-// Unsubscribe removes the requested subscription.
-func (b *Broker) Unsubscribe(sub *wamp.Session, msg *wamp.Unsubscribe) {
+// unsubscribe removes the requested subscription.
+func (b *broker) unsubscribe(sub *wamp.Session, msg *wamp.Unsubscribe) {
 	if sub == nil || msg == nil {
 		panic("broker.Unsubscribe with nil session or message")
 	}
 	b.actionChan <- func() {
-		b.unsubscribe(sub, msg)
+		b.syncUnsubscribe(sub, msg)
 	}
 }
 
-// RemoveSession removes all subscriptions of the subscriber.  This is called
+// removeSession removes all subscriptions of the subscriber.  This is called
 // when a client leaves the realm by sending a GOODBYE message or by
 // disconnecting from the router.  If there are any subscriptions for this
 // session a wamp.subscription.on_delete meta event is published for each.
-func (b *Broker) RemoveSession(sess *wamp.Session) {
+func (b *broker) removeSession(sess *wamp.Session) {
 	if sess == nil {
 		return
 	}
 	b.actionChan <- func() {
-		b.removeSession(sess)
+		b.syncRemoveSession(sess)
 	}
 }
 
 // Close stops the broker, letting already queued actions finish.
-func (b *Broker) Close() {
+func (b *broker) close() {
 	close(b.actionChan)
 }
 
-func (b *Broker) run() {
+func (b *broker) run() {
 	for action := range b.actionChan {
 		action()
 	}
@@ -260,30 +257,30 @@ func (b *Broker) run() {
 	}
 }
 
-func (b *Broker) publish(pub *wamp.Session, msg *wamp.Publish, pubID wamp.ID, excludePub, disclose bool, filter PublishFilter) {
+func (b *broker) syncPublish(pub *wamp.Session, msg *wamp.Publish, pubID wamp.ID, excludePub, disclose bool, filter PublishFilter) {
 	// Publish to subscribers with exact match.
 	if sub, ok := b.topicSubscription[msg.Topic]; ok {
-		b.pubEvent(pub, msg, pubID, sub, excludePub, false, disclose, filter)
+		b.syncPubEvent(pub, msg, pubID, sub, excludePub, false, disclose, filter)
 	}
 
 	// Publish to subscribers with prefix match.
 	for pfxTopic, sub := range b.pfxTopicSubscription {
 		if msg.Topic.PrefixMatch(pfxTopic) {
-			b.pubEvent(pub, msg, pubID, sub, excludePub, true, disclose, filter)
+			b.syncPubEvent(pub, msg, pubID, sub, excludePub, true, disclose, filter)
 		}
 	}
 
 	// Publish to subscribers with wildcard match.
 	for wcTopic, sub := range b.wcTopicSubscription {
 		if msg.Topic.WildcardMatch(wcTopic) {
-			b.pubEvent(pub, msg, pubID, sub, excludePub, true, disclose, filter)
+			b.syncPubEvent(pub, msg, pubID, sub, excludePub, true, disclose, filter)
 		}
 	}
 }
 
-func (b *Broker) newSubscription(subscriber *wamp.Session, topic wamp.URI, match string) *subscription {
+func newSubscription(id wamp.ID, subscriber *wamp.Session, topic wamp.URI, match string) *subscription {
 	return &subscription{
-		id:          b.idGen.Next(),
+		id:          id,
 		topic:       topic,
 		match:       match,
 		created:     wamp.NowISO8601(),
@@ -291,7 +288,7 @@ func (b *Broker) newSubscription(subscriber *wamp.Session, topic wamp.URI, match
 	}
 }
 
-func (b *Broker) subscribe(subscriber *wamp.Session, msg *wamp.Subscribe, match string) {
+func (b *broker) syncSubscribe(subscriber *wamp.Session, msg *wamp.Subscribe, match string) {
 	var sub *subscription
 	var existingSub bool
 
@@ -301,7 +298,7 @@ func (b *Broker) subscribe(subscriber *wamp.Session, msg *wamp.Subscribe, match 
 		sub, existingSub = b.pfxTopicSubscription[msg.Topic]
 		if !existingSub {
 			// Create a new prefix subscription.
-			sub = b.newSubscription(subscriber, msg.Topic, match)
+			sub = newSubscription(b.idGen.Next(), subscriber, msg.Topic, match)
 			b.pfxTopicSubscription[msg.Topic] = sub
 		}
 	case wamp.MatchWildcard:
@@ -309,7 +306,7 @@ func (b *Broker) subscribe(subscriber *wamp.Session, msg *wamp.Subscribe, match 
 		sub, existingSub = b.wcTopicSubscription[msg.Topic]
 		if !existingSub {
 			// Create a new wildcard subscription.
-			sub = b.newSubscription(subscriber, msg.Topic, match)
+			sub = newSubscription(b.idGen.Next(), subscriber, msg.Topic, match)
 			b.wcTopicSubscription[msg.Topic] = sub
 		}
 	default:
@@ -317,7 +314,7 @@ func (b *Broker) subscribe(subscriber *wamp.Session, msg *wamp.Subscribe, match 
 		sub, existingSub = b.topicSubscription[msg.Topic]
 		if !existingSub {
 			// Create a new subscription.
-			sub = b.newSubscription(subscriber, msg.Topic, match)
+			sub = newSubscription(b.idGen.Next(), subscriber, msg.Topic, match)
 			b.topicSubscription[msg.Topic] = sub
 		}
 	}
@@ -351,16 +348,16 @@ func (b *Broker) subscribe(subscriber *wamp.Session, msg *wamp.Subscribe, match 
 	b.trySend(subscriber, &wamp.Subscribed{Request: msg.Request, Subscription: sub.id})
 
 	if !existingSub {
-		b.pubSubCreateMeta(msg.Topic, subscriber.ID, sub)
+		b.syncPubSubCreateMeta(msg.Topic, subscriber.ID, sub)
 	}
 
 	// Publish WAMP on_subscribe meta event.
-	b.pubSubMeta(wamp.MetaEventSubOnSubscribe, subscriber.ID, sub.id)
+	b.syncPubSubMeta(wamp.MetaEventSubOnSubscribe, subscriber.ID, sub.id)
 }
 
-// deleteSubscription removes the the ID->subscription mapping and removes the
-// topic->subscription mapping.
-func (b *Broker) delSubscription(sub *subscription) {
+// syncDeleteSubscription removes the the ID->subscription mapping and removes
+// the topic->subscription mapping.
+func (b *broker) syncDelSubscription(sub *subscription) {
 	// Remove ID -> subscription.
 	delete(b.subscriptions, sub.id)
 
@@ -375,8 +372,8 @@ func (b *Broker) delSubscription(sub *subscription) {
 	}
 }
 
-// unsibsubscribe removes the subscriber from the specified subscription.
-func (b *Broker) unsubscribe(subscriber *wamp.Session, msg *wamp.Unsubscribe) {
+// syncUnsibsubscribe removes the subscriber from the specified subscription.
+func (b *broker) syncUnsubscribe(subscriber *wamp.Session, msg *wamp.Unsubscribe) {
 	subID := msg.Subscription
 	sub, ok := b.subscriptions[subID]
 	if !ok {
@@ -396,7 +393,7 @@ func (b *Broker) unsubscribe(subscriber *wamp.Session, msg *wamp.Unsubscribe) {
 	// send on_delete meta event.
 	var delLastSub bool
 	if len(sub.subscribers) == 0 {
-		b.delSubscription(sub)
+		b.syncDelSubscription(sub)
 		delLastSub = true
 	}
 
@@ -419,16 +416,16 @@ func (b *Broker) unsubscribe(subscriber *wamp.Session, msg *wamp.Unsubscribe) {
 	b.trySend(subscriber, &wamp.Unsubscribed{Request: msg.Request})
 
 	// Publish WAMP unsubscribe meta event.
-	b.pubSubMeta(wamp.MetaEventSubOnUnsubscribe, subscriber.ID, subID)
+	b.syncPubSubMeta(wamp.MetaEventSubOnUnsubscribe, subscriber.ID, subID)
 	if delLastSub {
 		// Fired when a subscription is deleted after the last session attached
 		// to it has been removed.
-		b.pubSubMeta(wamp.MetaEventSubOnDelete, subscriber.ID, subID)
+		b.syncPubSubMeta(wamp.MetaEventSubOnDelete, subscriber.ID, subID)
 	}
 }
 
-// removeSession removed all subscriptions for the session.
-func (b *Broker) removeSession(subscriber *wamp.Session) {
+// syncRemoveSession removed all subscriptions for the session.
+func (b *broker) syncRemoveSession(subscriber *wamp.Session) {
 	subIDSet, ok := b.sessionSubIDSet[subscriber]
 	if !ok {
 		return
@@ -449,10 +446,10 @@ func (b *Broker) removeSession(subscriber *wamp.Session) {
 
 		// If no more subscribers on this subscription.
 		if len(sub.subscribers) == 0 {
-			b.delSubscription(sub)
+			b.syncDelSubscription(sub)
 			// Fired when a subscription is deleted after the last
 			// session attached to it has been removed.
-			b.pubSubMeta(wamp.MetaEventSubOnDelete, subscriber.ID, subID)
+			b.syncPubSubMeta(wamp.MetaEventSubOnDelete, subscriber.ID, subID)
 		}
 	}
 }
@@ -472,9 +469,9 @@ func allowPublish(sub *wamp.Session, filter PublishFilter) bool {
 	return ok
 }
 
-// pubEvent sends an event to all subscribers that are not excluded from
+// syncPubEvent sends an event to all subscribers that are not excluded from
 // receiving the event.
-func (b *Broker) pubEvent(pub *wamp.Session, msg *wamp.Publish, pubID wamp.ID, sub *subscription, excludePublisher, sendTopic, disclose bool, filter PublishFilter) {
+func (b *broker) syncPubEvent(pub *wamp.Session, msg *wamp.Publish, pubID wamp.ID, sub *subscription, excludePublisher, sendTopic, disclose bool, filter PublishFilter) {
 	for subscriber, _ := range sub.subscribers {
 		// Do not send event to publisher.
 		if subscriber == pub && excludePublisher {
@@ -511,9 +508,9 @@ func (b *Broker) pubEvent(pub *wamp.Session, msg *wamp.Publish, pubID wamp.ID, s
 	}
 }
 
-// pubMeta publishes the subscription meta event, using the supplied function,
-// to the matching subscribers.
-func (b *Broker) pubMeta(metaTopic wamp.URI, sendMeta func(metaSub *subscription, sendTopic bool)) {
+// syncPubMeta publishes the subscription meta event, using the supplied
+// function, to the matching subscribers.
+func (b *broker) syncPubMeta(metaTopic wamp.URI, sendMeta func(metaSub *subscription, sendTopic bool)) {
 	// Publish to subscribers with exact match.
 	if metaSub, ok := b.topicSubscription[metaTopic]; ok {
 		sendMeta(metaSub, false)
@@ -532,11 +529,11 @@ func (b *Broker) pubMeta(metaTopic wamp.URI, sendMeta func(metaSub *subscription
 	}
 }
 
-// pubSubMeta publishes a subscription meta event when a subscription is added,
-// removed, or deleted.
-func (b *Broker) pubSubMeta(metaTopic wamp.URI, subSessID, subID wamp.ID) {
+// syncPubSubMeta publishes a subscription meta event when a subscription is
+// added, removed, or deleted.
+func (b *broker) syncPubSubMeta(metaTopic wamp.URI, subSessID, subID wamp.ID) {
 	pubID := wamp.GlobalID() // create here so that it is same for all events
-	sendMeta := func(metaSub *subscription, sendTopic bool) {
+	b.syncPubMeta(metaTopic, func(metaSub *subscription, sendTopic bool) {
 		if len(metaSub.subscribers) == 0 {
 			return
 		}
@@ -558,17 +555,16 @@ func (b *Broker) pubSubMeta(metaTopic wamp.URI, subSessID, subID wamp.ID) {
 				Arguments:    wamp.List{subSessID, subID},
 			})
 		}
-	}
-	b.pubMeta(metaTopic, sendMeta)
+	})
 }
 
-// pubSubCreateMeta publishes a meta event on subscription creation.
+// syncPubSubCreateMeta publishes a meta event on subscription creation.
 //
 // Fired when a subscription is created through a subscription request for a
 // topic which was previously without subscribers.
-func (b *Broker) pubSubCreateMeta(topic wamp.URI, subSessID wamp.ID, sub *subscription) {
+func (b *broker) syncPubSubCreateMeta(topic wamp.URI, subSessID wamp.ID, sub *subscription) {
 	pubID := wamp.GlobalID() // create here so that it is same for all events
-	sendMeta := func(metaSub *subscription, sendTopic bool) {
+	b.syncPubMeta(wamp.MetaEventSubOnCreate, func(metaSub *subscription, sendTopic bool) {
 		if len(metaSub.subscribers) == 0 {
 			return
 		}
@@ -597,11 +593,10 @@ func (b *Broker) pubSubCreateMeta(topic wamp.URI, subSessID wamp.ID, sub *subscr
 				Arguments:    wamp.List{subSessID, subDetails},
 			})
 		}
-	}
-	b.pubMeta(wamp.MetaEventSubOnCreate, sendMeta)
+	})
 }
 
-func (b *Broker) trySend(sess *wamp.Session, msg wamp.Message) bool {
+func (b *broker) trySend(sess *wamp.Session, msg wamp.Message) bool {
 	if err := sess.TrySend(msg); err != nil {
 		b.log.Printf("!!! Dropped %s to session %s: %s", msg.MessageType(), sess, err)
 		return false
@@ -626,7 +621,7 @@ func disclosePublisher(pub *wamp.Session, details wamp.Dict) {
 // ----- Subscription Meta Procedure Handlers -----
 
 // SubList retrieves subscription IDs listed according to match policies.
-func (b *Broker) SubList(msg *wamp.Invocation) wamp.Message {
+func (b *broker) subList(msg *wamp.Invocation) wamp.Message {
 	var exactSubs, pfxSubs, wcSubs []wamp.ID
 	sync := make(chan struct{})
 	b.actionChan <- func() {
@@ -656,7 +651,7 @@ func (b *Broker) SubList(msg *wamp.Invocation) wamp.Message {
 
 // SubLookup obtains the subscription (if any) managing a topic, according
 // to some match policy.
-func (b *Broker) SubLookup(msg *wamp.Invocation) wamp.Message {
+func (b *broker) subLookup(msg *wamp.Invocation) wamp.Message {
 	var subID wamp.ID
 	if len(msg.Arguments) != 0 {
 		if topic, ok := wamp.AsURI(msg.Arguments[0]); ok {
@@ -694,7 +689,7 @@ func (b *Broker) SubLookup(msg *wamp.Invocation) wamp.Message {
 
 // SubMatch retrieves a list of IDs of subscriptions matching a topic URI,
 // irrespective of match policy.
-func (b *Broker) SubMatch(msg *wamp.Invocation) wamp.Message {
+func (b *broker) subMatch(msg *wamp.Invocation) wamp.Message {
 	var subIDs []wamp.ID
 	if len(msg.Arguments) != 0 {
 		if topic, ok := wamp.AsURI(msg.Arguments[0]); ok {
@@ -731,7 +726,7 @@ func (b *Broker) SubMatch(msg *wamp.Invocation) wamp.Message {
 }
 
 // SubGet retrieves information on a particular subscription.
-func (b *Broker) SubGet(msg *wamp.Invocation) wamp.Message {
+func (b *broker) subGet(msg *wamp.Invocation) wamp.Message {
 	var dict wamp.Dict
 	if len(msg.Arguments) != 0 {
 		if subID, ok := wamp.AsID(msg.Arguments[0]); ok {
@@ -766,7 +761,7 @@ func (b *Broker) SubGet(msg *wamp.Invocation) wamp.Message {
 
 // SubListSubscribers retrieves a list of session IDs for sessions currently
 // attached to the subscription.
-func (b *Broker) SubListSubscribers(msg *wamp.Invocation) wamp.Message {
+func (b *broker) subListSubscribers(msg *wamp.Invocation) wamp.Message {
 	var subscriberIDs []wamp.ID
 	if len(msg.Arguments) != 0 {
 		if subID, ok := wamp.AsID(msg.Arguments[0]); ok {
@@ -801,7 +796,7 @@ func (b *Broker) SubListSubscribers(msg *wamp.Invocation) wamp.Message {
 
 // SubCountSubscribers obtains the number of sessions currently attached to the
 // subscription.
-func (b *Broker) SubCountSubscribers(msg *wamp.Invocation) wamp.Message {
+func (b *broker) subCountSubscribers(msg *wamp.Invocation) wamp.Message {
 	var count int
 	var ok bool
 	if len(msg.Arguments) != 0 {
