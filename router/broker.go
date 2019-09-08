@@ -454,21 +454,6 @@ func (b *broker) syncRemoveSession(subscriber *wamp.Session) {
 	}
 }
 
-func allowPublish(sub *wamp.Session, filter PublishFilter) bool {
-	if filter == nil {
-		return true
-	}
-	// Create a safe session to prevent access to the session.Peer.
-	safeSession := wamp.Session{
-		ID:      sub.ID,
-		Details: sub.Details,
-	}
-	sub.Lock()
-	ok := filter.Allowed(&safeSession)
-	sub.Unlock()
-	return ok
-}
-
 // syncPubEvent sends an event to all subscribers that are not excluded from
 // receiving the event.
 func (b *broker) syncPubEvent(pub *wamp.Session, msg *wamp.Publish, pubID wamp.ID, sub *subscription, excludePublisher, sendTopic, disclose bool, filter PublishFilter) {
@@ -479,8 +464,18 @@ func (b *broker) syncPubEvent(pub *wamp.Session, msg *wamp.Publish, pubID wamp.I
 		}
 
 		// Check if receiver is restricted.
-		if !allowPublish(subscriber, filter) {
-			continue
+		if filter != nil {
+			// Create a safe session to prevent access to the session.Peer.
+			safeSession := wamp.Session{
+				ID:      subscriber.ID,
+				Details: subscriber.Details,
+			}
+			subscriber.Lock()
+			ok := filter.Allowed(&safeSession)
+			subscriber.Unlock()
+			if !ok {
+				continue
+			}
 		}
 
 		details := wamp.Dict{}
