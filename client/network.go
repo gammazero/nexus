@@ -56,7 +56,7 @@ func ConnectNetContext(ctx context.Context, routerURL string, cfg Config) (*Clie
 		routerURL = u.String()
 		fallthrough
 	case "ws", "wss":
-		p, err = transport.ConnectWebsocketPeerContext(ctx, routerURL, cfg.Serialization,
+		p, _, err = transport.ConnectWebsocketPeerContext(ctx, routerURL, cfg.Serialization,
 			cfg.TlsCfg, cfg.Dial, cfg.Logger, &cfg.WsCfg)
 	case "tcp":
 		p, err = transport.ConnectRawSocketPeerContext(ctx, u.Scheme, u.Host,
