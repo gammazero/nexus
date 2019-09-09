@@ -93,6 +93,7 @@ func ConnectWebsocketPeer(
 func ConnectWebsocketPeerContext(ctx context.Context, routerURL string, serialization serialize.Serialization, tlsConfig *tls.Config, dial DialFunc, logger stdlog.StdLog, wsCfg *WebsocketConfig) (wamp.Peer, error) {
 	var (
 		protocol    string
+		res         *http.Response
 		payloadType int
 		serializer  serialize.Serializer
 		conn        *websocket.Conn
@@ -136,8 +137,11 @@ func ConnectWebsocketPeerContext(ctx context.Context, routerURL string, serializ
 		dialer.EnableCompression = true
 	}
 
-	conn, _, err = dialer.DialContext(ctx, routerURL, nil)
+	conn, res, err = dialer.DialContext(ctx, routerURL, nil)
 	if err != nil {
+		if res != nil {
+			fmt.Println("Response from server: ", res)
+		}
 		return nil, err
 	}
 	return NewWebsocketPeer(conn, serializer, payloadType, logger, 0, 0), nil
