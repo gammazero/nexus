@@ -615,7 +615,7 @@ func disclosePublisher(pub *wamp.Session, details wamp.Dict) {
 
 // ----- Subscription Meta Procedure Handlers -----
 
-// SubList retrieves subscription IDs listed according to match policies.
+// subList retrieves subscription IDs listed according to match policies.
 func (b *broker) subList(msg *wamp.Invocation) wamp.Message {
 	var exactSubs, pfxSubs, wcSubs []wamp.ID
 	sync := make(chan struct{})
@@ -644,7 +644,7 @@ func (b *broker) subList(msg *wamp.Invocation) wamp.Message {
 	}
 }
 
-// SubLookup obtains the subscription (if any) managing a topic, according
+// subLookup obtains the subscription (if any) managing a topic, according
 // to some match policy.
 func (b *broker) subLookup(msg *wamp.Invocation) wamp.Message {
 	var subID wamp.ID
@@ -682,7 +682,7 @@ func (b *broker) subLookup(msg *wamp.Invocation) wamp.Message {
 	}
 }
 
-// SubMatch retrieves a list of IDs of subscriptions matching a topic URI,
+// subMatch retrieves a list of IDs of subscriptions matching a topic URI,
 // irrespective of match policy.
 func (b *broker) subMatch(msg *wamp.Invocation) wamp.Message {
 	var subIDs []wamp.ID
@@ -720,7 +720,7 @@ func (b *broker) subMatch(msg *wamp.Invocation) wamp.Message {
 	}
 }
 
-// SubGet retrieves information on a particular subscription.
+// subGet retrieves information on a particular subscription.
 func (b *broker) subGet(msg *wamp.Invocation) wamp.Message {
 	var dict wamp.Dict
 	if len(msg.Arguments) != 0 {
@@ -754,7 +754,7 @@ func (b *broker) subGet(msg *wamp.Invocation) wamp.Message {
 	}
 }
 
-// SubListSubscribers retrieves a list of session IDs for sessions currently
+// subListSubscribers retrieves a list of session IDs for sessions currently
 // attached to the subscription.
 func (b *broker) subListSubscribers(msg *wamp.Invocation) wamp.Message {
 	var subscriberIDs []wamp.ID
@@ -789,7 +789,7 @@ func (b *broker) subListSubscribers(msg *wamp.Invocation) wamp.Message {
 	}
 }
 
-// SubCountSubscribers obtains the number of sessions currently attached to the
+// subCountSubscribers obtains the number of sessions currently attached to the
 // subscription.
 func (b *broker) subCountSubscribers(msg *wamp.Invocation) wamp.Message {
 	var count int
