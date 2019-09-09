@@ -12,7 +12,8 @@ import (
 
 func BenchmarkRpcIntegerList(b *testing.B) {
 	args := wamp.List{make([]int, 128)}
-	benchmarkRpc(b, sum, args, func(result *wamp.Result) {
+
+	verify := func(result *wamp.Result) {
 		v, ok := wamp.AsInt64(result.Arguments[0])
 		if !ok {
 			panic("Can not typecast result to int64")
@@ -20,12 +21,16 @@ func BenchmarkRpcIntegerList(b *testing.B) {
 		if v != 0 {
 			panic(fmt.Sprintf("Wrong result!: %d", v))
 		}
-	})
+	}
+
+	benchmarkRpc(b, sum, args, verify)
+	benchmarkRpcScaleClients(b, sum, args, verify)
 }
 
 func BenchmarkRpcShortString(b *testing.B) {
 	shortString := randomString(128)
-	benchmarkRpc(b, identify, wamp.List{shortString}, func(result *wamp.Result) {
+
+	verify := func(result *wamp.Result) {
 		v, ok := wamp.AsString(result.Arguments[0])
 		if !ok {
 			panic("Can not typecast result to int64")
@@ -33,12 +38,16 @@ func BenchmarkRpcShortString(b *testing.B) {
 		if v != shortString {
 			panic(fmt.Sprintf("Wrong result!: %v", v))
 		}
-	})
+	}
+
+	benchmarkRpc(b, identify, wamp.List{shortString}, verify)
+	benchmarkRpcScaleClients(b, identify, wamp.List{shortString}, verify)
 }
 
 func BenchmarkRpcLargeString(b *testing.B) {
 	largeString := randomString(4096)
-	benchmarkRpc(b, identify, wamp.List{largeString}, func(result *wamp.Result) {
+
+	verify := func(result *wamp.Result) {
 		v, ok := wamp.AsString(result.Arguments[0])
 		if !ok {
 			panic("Can not typecast result to int64")
@@ -46,7 +55,10 @@ func BenchmarkRpcLargeString(b *testing.B) {
 		if v != largeString {
 			panic(fmt.Sprintf("Wrong result!: %v", v))
 		}
-	})
+	}
+
+	benchmarkRpc(b, identify, wamp.List{largeString}, verify)
+	benchmarkRpcScaleClients(b, identify, wamp.List{largeString}, verify)
 }
 
 func BenchmarkRpcDict(b *testing.B) {
@@ -56,7 +68,7 @@ func BenchmarkRpcDict(b *testing.B) {
 	}
 	args := wamp.List{dict}
 
-	benchmarkRpc(b, identify, args, func(result *wamp.Result) {
+	verify := func(result *wamp.Result) {
 		v, ok := wamp.AsDict(result.Arguments[0])
 		if !ok {
 			panic("Can not typecast result to int64")
@@ -65,7 +77,10 @@ func BenchmarkRpcDict(b *testing.B) {
 			panic(fmt.Sprintf("Wrong result!: %d", len(v)))
 		}
 
-	})
+	}
+
+	benchmarkRpc(b, identify, args, verify)
+	benchmarkRpcScaleClients(b, identify, args, verify)
 }
 
 func BenchmarkRPCProgress(b *testing.B) {
@@ -152,16 +167,63 @@ func benchmarkRpc(b *testing.B, action client.InvocationHandler, callArgs wamp.L
 
 	clientsWg := &sync.WaitGroup{}
 
-	for i := 0; i < b.N; i++ {
+	for i := 0; i < 10; i++ {
 		clientsWg.Add(1)
 		go func() {
-			client, err := connectClient()
-			defer client.Close()
 			defer clientsWg.Done()
 
+			client, err := connectClient()
 			if err != nil {
 				panic("Failed to connect client: " + err.Error())
 			}
+			defer client.Close()
+
+			ctx := context.Background()
+			var result *wamp.Result
+
+			// Vary the number of requests being made
+			for j:= 0; j < b.N; j++ {
+				result, err = client.Call(ctx, "action", nil, callArgs, nil, "")
+				if err != nil {
+					panic(err)
+				}
+				verify(result)
+			}
+		}()
+	}
+
+	clientsWg.Wait()
+
+	b.StopTimer()
+
+	server.Close()
+}
+
+func benchmarkRpcScaleClients(b *testing.B, action client.InvocationHandler, callArgs wamp.List, verify func(*wamp.Result)) {
+	server, err := connectClient()
+	if err != nil {
+		panic("Failed to connect client: " + err.Error())
+	}
+
+	if err = server.Register("action", action, nil); err != nil {
+		panic("Failed to register procedure: " + err.Error())
+	}
+
+	b.ResetTimer()
+
+	clientsWg := &sync.WaitGroup{}
+
+	// Vary the number of clients connecting
+	for i := 0; i < b.N; i++ {
+		clientsWg.Add(1)
+		go func() {
+			defer clientsWg.Done()
+
+			client, err := connectClient()
+			if err != nil {
+				panic("Failed to connect client: " + err.Error())
+			}
+			defer client.Close()
 
 			ctx := context.Background()
 			var result *wamp.Result
