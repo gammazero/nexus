@@ -79,7 +79,7 @@ func ConnectWebsocketPeer(
 	tlsConfig *tls.Config,
 	dial DialFunc,
 	logger stdlog.StdLog,
-	wsCfg *WebsocketConfig) (wamp.Peer, error) {
+	wsCfg *WebsocketConfig) (wamp.Peer, *http.Response, error) {
 	return ConnectWebsocketPeerContext(context.Background(), routerURL, serialization, tlsConfig, dial, logger, wsCfg)
 }
 
@@ -90,7 +90,7 @@ func ConnectWebsocketPeer(
 // The provided Context must be non-nil.  If the context expires before the
 // connection is complete, an error is returned.  Once successfully connected,
 // any expiration of the context will not affect the connection.
-func ConnectWebsocketPeerContext(ctx context.Context, routerURL string, serialization serialize.Serialization, tlsConfig *tls.Config, dial DialFunc, logger stdlog.StdLog, wsCfg *WebsocketConfig) (wamp.Peer, error) {
+func ConnectWebsocketPeerContext(ctx context.Context, routerURL string, serialization serialize.Serialization, tlsConfig *tls.Config, dial DialFunc, logger stdlog.StdLog, wsCfg *WebsocketConfig) (wamp.Peer, *http.Response, error) {
 	var (
 		protocol    string
 		res         *http.Response
@@ -114,7 +114,7 @@ func ConnectWebsocketPeerContext(ctx context.Context, routerURL string, serializ
 		payloadType = websocket.BinaryMessage
 		serializer = &serialize.CBORSerializer{}
 	default:
-		return nil, fmt.Errorf("unsupported serialization: %v", serialization)
+		return nil, nil, fmt.Errorf("unsupported serialization: %v", serialization)
 	}
 
 	dialer := websocket.Dialer{
@@ -129,7 +129,7 @@ func ConnectWebsocketPeerContext(ctx context.Context, routerURL string, serializ
 			var proxyURL *url.URL
 			proxyURL, err = url.Parse(wsCfg.ProxyURL)
 			if err != nil {
-				return nil, err
+				return nil, nil, err
 			}
 			dialer.Proxy = http.ProxyURL(proxyURL)
 		}
@@ -139,12 +139,9 @@ func ConnectWebsocketPeerContext(ctx context.Context, routerURL string, serializ
 
 	conn, res, err = dialer.DialContext(ctx, routerURL, nil)
 	if err != nil {
-		if res != nil {
-			fmt.Println("Response from server: ", res)
-		}
-		return nil, err
+		return nil, res, err
 	}
-	return NewWebsocketPeer(conn, serializer, payloadType, logger, 0, 0), nil
+	return NewWebsocketPeer(conn, serializer, payloadType, logger, 0, 0), nil, nil
 }
 
 // NewWebsocketPeer creates a websocket peer from an existing websocket
