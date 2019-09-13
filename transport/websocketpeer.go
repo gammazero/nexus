@@ -16,6 +16,21 @@ import (
 	"github.com/gorilla/websocket"
 )
 
+// WebsocketError is returned on failure to connect to a websocket, and
+// contains the http response if one is available.
+type WebsocketError struct {
+	Err      error
+	Response *http.Response
+}
+
+// Error returns a string describing the failure to connect to a websocket.
+func (e *WebsocketError) Error() string {
+	if e.Response == nil {
+		return e.Err.Error()
+	}
+	return fmt.Sprintf("%s: %s", e.Err, e.Response.Status)
+}
+
 // WebsocketConfig is used to configure client websocket settings.
 type WebsocketConfig struct {
 	// Request per message write compression, if allowed by server.
@@ -95,8 +110,6 @@ func ConnectWebsocketPeerContext(ctx context.Context, routerURL string, serializ
 		protocol    string
 		payloadType int
 		serializer  serialize.Serializer
-		conn        *websocket.Conn
-		err         error
 	)
 
 	switch serialization {
@@ -125,8 +138,7 @@ func ConnectWebsocketPeerContext(ctx context.Context, routerURL string, serializ
 
 	if wsCfg != nil {
 		if wsCfg.ProxyURL != "" {
-			var proxyURL *url.URL
-			proxyURL, err = url.Parse(wsCfg.ProxyURL)
+			proxyURL, err := url.Parse(wsCfg.ProxyURL)
 			if err != nil {
 				return nil, err
 			}
@@ -136,9 +148,12 @@ func ConnectWebsocketPeerContext(ctx context.Context, routerURL string, serializ
 		dialer.EnableCompression = true
 	}
 
-	conn, _, err = dialer.DialContext(ctx, routerURL, nil)
+	conn, rsp, err := dialer.DialContext(ctx, routerURL, nil)
 	if err != nil {
-		return nil, err
+		return nil, &WebsocketError{
+			Err:      err,
+			Response: rsp,
+		}
 	}
 	return NewWebsocketPeer(conn, serializer, payloadType, logger, 0, 0), nil
 }
