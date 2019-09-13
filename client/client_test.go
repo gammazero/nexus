@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"io"
 	"log"
 	"os"
 	"strings"
@@ -20,7 +21,8 @@ import (
 )
 
 const (
-	testRealm = "nexus.test"
+	testRealm   = "nexus.test"
+	testAddress = "localhost:8999"
 )
 
 var logger stdlog.StdLog
@@ -49,6 +51,7 @@ func connectedTestClients() (*Client, *Client, router.Router, error) {
 		AnonymousAuth:    true,
 		AllowDisclose:    true,
 		RequireLocalAuth: true,
+		EnableMetaKill:   true,
 	}
 	r, err := getTestRouter(realmConfig)
 	if err != nil {
@@ -483,12 +486,8 @@ func TestTimeoutCancelRemoteProcedureCall(t *testing.T) {
 		t.Fatal("call should have been canceled")
 	}
 
-	rpcError, ok := err.(RPCError)
-	if !ok {
-		t.Fatal("expected RPCError type of error")
-	}
-	if rpcError.Err.Error != wamp.ErrCanceled {
-		t.Fatal("expected canceled error, got:", err)
+	if err != context.DeadlineExceeded {
+		t.Fatal("expected context.DeadlineExceeded error")
 	}
 	if err = callee.Unregister(procName); err != nil {
 		t.Fatal("failed to unregister procedure:", err)
@@ -541,12 +540,8 @@ func TestCancelRemoteProcedureCall(t *testing.T) {
 		t.Fatal("call should have been canceled")
 	}
 
-	rpcError, ok := err.(RPCError)
-	if !ok {
-		t.Fatal("expected RPCError type of error")
-	}
-	if rpcError.Err.Error != wamp.ErrCanceled {
-		t.Fatal("expected canceled error, got:", err)
+	if err != context.Canceled {
+		t.Fatal("expected context.Canceled error")
 	}
 	if err = callee.Unregister(procName); err != nil {
 		t.Fatal("failed to unregister procedure:", err)
@@ -660,4 +655,336 @@ func (ks *serverKeyStore) AuthRole(authid string) (string, error) {
 		return "", errors.New("no such user: " + authid)
 	}
 	return "user", nil
+}
+
+// ---- network testing ----
+
+func TestConnectContext(t *testing.T) {
+	const (
+		expect     = "dial tcp: operation was canceled"
+		unixExpect = "dial unix /tmp/wamp.sock: operation was canceled"
+	)
+
+	cfg := Config{
+		Realm:           testRealm,
+		ResponseTimeout: 500 * time.Millisecond,
+		Logger:          logger,
+		Debug:           false,
+	}
+	ctx, cancel := context.WithCancel(context.Background())
+	cancel()
+	_, err := ConnectNetContext(ctx, "http://localhost:9999/ws", cfg)
+	if err == nil || err.Error() != expect {
+		t.Fatalf("expected error %s, got %s", expect, err)
+	}
+
+	_, err = ConnectNetContext(ctx, "https://localhost:9999/ws", cfg)
+	if err == nil || err.Error() != expect {
+		t.Fatalf("expected error %s, got %s", expect, err)
+	}
+
+	_, err = ConnectNetContext(ctx, "tcp://localhost:9999", cfg)
+	if err == nil || err.Error() != expect {
+		t.Fatalf("expected error %s, got %s", expect, err)
+	}
+
+	_, err = ConnectNetContext(ctx, "tcps://localhost:9999", cfg)
+	if err == nil || err.Error() != expect {
+		t.Fatalf("expected error %s, got %s", expect, err)
+	}
+
+	_, err = ConnectNetContext(ctx, "unix:///tmp/wamp.sock", cfg)
+	if err == nil || err.Error() != unixExpect {
+		t.Fatalf("expected error %s, got %s", expect, err)
+	}
+}
+
+func createTestServer() (router.Router, io.Closer, error) {
+	realmConfig := &router.RealmConfig{
+		URI:            wamp.URI(testRealm),
+		StrictURI:      true,
+		AnonymousAuth:  true,
+		AllowDisclose:  true,
+		EnableMetaKill: true,
+	}
+	r, err := getTestRouter(realmConfig)
+	if err != nil {
+		return nil, nil, err
+	}
+
+	// Create and run server.
+	closer, err := router.NewWebsocketServer(r).ListenAndServe(testAddress)
+	if err != nil {
+		log.Fatal(err)
+	}
+	log.Printf("Websocket server listening on ws://%s/", testAddress)
+
+	return r, closer, nil
+}
+
+func newNetTestCallee(routerURL string) (*Client, error) {
+	logger := log.New(os.Stderr, "CALLEE> ", log.Lmicroseconds)
+	cfg := Config{
+		Realm:           testRealm,
+		ResponseTimeout: 10 * time.Millisecond,
+		Serialization:   MSGPACK,
+		Logger:          logger,
+		Debug:           true,
+	}
+	cl, err := ConnectNet(routerURL, cfg)
+	if err != nil {
+		return nil, fmt.Errorf("connect error: %s", err)
+	}
+
+	sleep := func(ctx context.Context, args wamp.List, kwargs, details wamp.Dict) *InvokeResult {
+		logger.Println("sleep rpc start")
+		time.Sleep(5 * time.Second)
+		logger.Println("sleep rpc done")
+		return &InvokeResult{Kwargs: wamp.Dict{"success": true}}
+	}
+
+	for ii := 0; ii < 40; ii++ {
+		procedureName := fmt.Sprintf("sleep_%d", ii)
+		if err = cl.Register(procedureName, sleep, nil); err != nil {
+			// Expect to get kill before we get through the list of register functions
+			logger.Println("Register", procedureName, "err", err)
+		} else {
+			logger.Println("Registered procedure", procedureName, "with router")
+		}
+	}
+	return cl, nil
+}
+
+func newNetTestKiller(routerURL string) (*Client, error) {
+	logger := log.New(os.Stderr, "KILLER> ", log.Lmicroseconds)
+
+	cfg := Config{
+		Realm:           testRealm,
+		ResponseTimeout: 10 * time.Second,
+		Serialization:   MSGPACK,
+		Logger:          logger,
+		Debug:           true,
+	}
+	cl, err := ConnectNet(routerURL, cfg)
+	if err != nil {
+		return nil, err
+	}
+
+	// Define function to handle on_join events received.
+	onJoin := func(args wamp.List, kwargs wamp.Dict, details wamp.Dict) {
+		details, ok := wamp.AsDict(args[0])
+		if !ok {
+			logger.Println("Client joined realm - no data provided")
+			return
+		}
+		onJoinID, _ := wamp.AsID(details["session"])
+		logger.Printf("Client %v joined realm\n", onJoinID)
+
+		// OnJoin callback is sequential
+		go func() {
+			// Call meta procedure to kill new client
+			ctx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
+			defer cancel()
+			killArgs := wamp.List{onJoinID}
+			killKwArgs := wamp.Dict{"reason": "com.session.kill", "message": "because i can"}
+			var result *wamp.Result
+			result, err = cl.Call(ctx, string(wamp.MetaProcSessionKill), nil, killArgs, killKwArgs, "")
+			if err != nil {
+				logger.Printf("Kill new client failed err %s", err)
+			}
+			if result == nil {
+				logger.Println("Kill new client returned no result")
+			}
+		}()
+	}
+
+	// Subscribe to on_join topic.
+	err = cl.Subscribe(string(wamp.MetaEventSessionOnJoin), onJoin, nil)
+	if err != nil {
+		logger.Fatal("subscribe error:", err)
+	}
+	logger.Println("Subscribed to", wamp.MetaEventSessionOnJoin)
+
+	return cl, nil
+}
+
+// Test for races in client when session is killed by router.
+func TestClientRace(t *testing.T) {
+	// Create a websocket server
+	r, closer, err := createTestServer()
+	if err != nil {
+		t.Fatal("failed to connect test clients:", err)
+	}
+
+	testUrl := fmt.Sprintf("ws://%s/ws", testAddress)
+	killer, err := newNetTestKiller(testUrl)
+	if err != nil {
+		t.Fatal("failed to connect caller:", err)
+	}
+	logger.Println("Starting callee")
+
+	callee, err := newNetTestCallee(testUrl)
+	if err != nil {
+		t.Fatal("failed to connect callee:", err)
+	}
+
+	// If we hit a race condition with the client register, we do not ever return from the Register()
+	logger.Println("Finished test - cleanup")
+
+	closer.Close()
+	r.Close()
+	killer.Close()
+	callee.Close()
+}
+
+// Test that if the router disconnects the client, while the client is running
+// an invocation handler, that the handler still gets marked as done when it
+// completes.
+func TestInvocationHandlerMissedDone(t *testing.T) {
+	//defer leaktest.Check(t)()
+
+	// Connect two clients to the same server
+	callee, caller, r, err := connectedTestClients()
+	if err != nil {
+		t.Fatal("failed to connect test clients:", err)
+	}
+
+	calledChan := make(chan struct{})
+
+	// Register procedure.
+	handler := func(ctx context.Context, args wamp.List, kwargs, details wamp.Dict) *InvokeResult {
+		close(calledChan)
+		<-ctx.Done()
+		time.Sleep(2 * time.Second)
+		return &InvokeResult{Args: wamp.List{args[0].(int) * 37}}
+	}
+	procName := "myproc"
+	if err = callee.Register(procName, handler, nil); err != nil {
+		t.Fatal("failed to register procedure:", err)
+	}
+
+	// Call procedure
+	callArgs := wamp.List{73}
+	ctx := context.Background()
+
+	go caller.Call(ctx, procName, nil, callArgs, nil, "")
+
+	<-calledChan
+
+	killArgs := wamp.List{callee.ID()}
+	killKwArgs := wamp.Dict{"reason": "com.session.kill", "message": "because i can"}
+	var result *wamp.Result
+	result, err = caller.Call(ctx, string(wamp.MetaProcSessionKill), nil, killArgs, killKwArgs, "")
+	if err != nil {
+		t.Log("Kill new client failed:", err)
+	}
+	if result == nil {
+		t.Log("Kill new client returned no result")
+	}
+
+	caller.Close()
+
+	done := make(chan struct{})
+	go func() {
+		callee.Close()
+		close(done)
+	}()
+	select {
+	case <-done:
+	case <-time.After(2 * time.Second):
+		t.Fatal("Timed out waiting to close client")
+	}
+	r.Close()
+}
+
+func TestProgressDisconnect(t *testing.T) {
+	defer leaktest.Check(t)()
+
+	// Create a websocket server
+	r, closer, err := createTestServer()
+	if err != nil {
+		t.Fatal("failed to connect test clients:", err)
+	}
+	//defer r.Close()
+	defer closer.Close()
+
+	testURL := fmt.Sprintf("ws://%s/ws", testAddress)
+
+	// Connect callee session.
+	calleeLog := log.New(os.Stderr, "CALLEE> ", log.Lmicroseconds)
+	cfg := Config{
+		Realm:           testRealm,
+		ResponseTimeout: 10 * time.Millisecond,
+		Logger:          calleeLog,
+		Debug:           true,
+	}
+	callee, err := ConnectNet(testURL, cfg)
+	if err != nil {
+		t.Fatalf("connect error: %s", err)
+	}
+	defer callee.Close()
+
+	const chunkProc = "example.progress.text"
+	sendProgErr := make(chan error)
+	disconnect := make(chan struct{})
+	disconnected := make(chan struct{})
+
+	// Define invocation handler.
+	handler := func(ctx context.Context, args wamp.List, kwargs, details wamp.Dict) *InvokeResult {
+		for {
+			// Send a chunk of data.
+			e := callee.SendProgress(ctx, wamp.List{"hello"}, nil)
+			if e != nil {
+				sendProgErr <- e
+				return nil
+			}
+			<-disconnected
+		}
+		// Never gets here
+	}
+
+	// Register procedure.
+	if err = callee.Register(chunkProc, handler, nil); err != nil {
+		t.Fatal("Failed to register procedure:", err)
+	}
+
+	// Connect caller session.
+	cfg.Logger = log.New(os.Stderr, "CALLER> ", log.Lmicroseconds)
+	caller, err := ConnectNet(testURL, cfg)
+	if err != nil {
+		t.Fatalf("connect error: %s", err)
+	}
+	defer caller.Close()
+
+	// The progress handler accumulates the chunks of data as they arrive.
+	progHandler := func(result *wamp.Result) {
+		close(disconnect)
+	}
+
+	// All results, for all calls, must be recieved by timeout.
+	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+	defer cancel()
+
+	progErr := make(chan error)
+	go func() {
+		_, perr := caller.CallProgress(ctx, chunkProc, nil, nil, nil, "", progHandler)
+		progErr <- perr
+	}()
+
+	<-disconnect
+	closer.Close()
+	r.Close()
+	close(disconnected)
+
+	// Check for expected error from caller.
+	err = <-progErr
+	if err != ErrNotConn {
+		t.Fatalf("expected error from caller: %q got %q", ErrNotConn, err)
+	}
+
+	// Check for expected error from callee.
+	err = <-sendProgErr
+	if err != context.Canceled && err != ErrNotConn {
+		t.Fatalf("wrong error from SendProgress: %s", err)
+	}
 }

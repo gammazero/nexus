@@ -3,6 +3,7 @@ package router
 import (
 	"errors"
 	"fmt"
+	"strconv"
 	"sync"
 
 	"github.com/gammazero/nexus/router/auth"
@@ -91,13 +92,12 @@ type realm struct {
 	authenticators map[string]auth.Authenticator
 
 	// session ID -> Session
-	clients map[wamp.ID]*session
+	clients map[wamp.ID]*wamp.Session
 	// session ID -> testament
 	testaments map[wamp.ID]testamentBucket
-	clientStop chan struct{}
 
 	metaPeer  wamp.Peer
-	metaSess  *session
+	metaSess  *wamp.Session
 	metaIDGen *wamp.IDGen
 
 	actionChan chan func()
@@ -125,6 +125,13 @@ type realm struct {
 	enableMetaModify bool
 }
 
+var (
+	shutdownGoodbye = &wamp.Goodbye{
+		Reason:  wamp.ErrSystemShutdown,
+		Details: wamp.Dict{},
+	}
+)
+
 // newRealm creates a new realm with the given RealmConfig, broker and dealer.
 func newRealm(config *RealmConfig, broker *Broker, dealer *Dealer, logger stdlog.StdLog, debug bool) (*realm, error) {
 	if !config.URI.ValidURI(config.StrictURI, "") {
@@ -136,9 +143,8 @@ func newRealm(config *RealmConfig, broker *Broker, dealer *Dealer, logger stdlog
 		broker:      broker,
 		dealer:      dealer,
 		authorizer:  config.Authorizer,
-		clients:     map[wamp.ID]*session{},
+		clients:     map[wamp.ID]*wamp.Session{},
 		testaments:  map[wamp.ID]testamentBucket{},
-		clientStop:  make(chan struct{}),
 		actionChan:  make(chan func()),
 		metaIDGen:   new(wamp.IDGen),
 		metaDone:    make(chan struct{}),
@@ -228,9 +234,16 @@ func (r *realm) close() {
 	// running, before closing.
 	r.waitReady()
 
-	// Kick all clients off.  Clients will not generate meta events when the
-	// ErrSystesShutdown reason is given.
-	close(r.clientStop)
+	// Kick all clients off.  Sending shutdownGoodbye causes client message
+	// handlers to exit without sending meta events.
+	sync := make(chan struct{})
+	r.actionChan <- func() {
+		for _, c := range r.clients {
+			c.EndRecv(shutdownGoodbye)
+		}
+		close(sync)
+	}
+	<-sync
 
 	// Wait until each client's handleInboundMessages() has exited.  No new
 	// messages can be generated once sessions are closed.
@@ -240,7 +253,7 @@ func (r *realm) close() {
 	// the meta client receives GOODBYE from the meta session, the meta
 	// session is done and will not try to publish anything more to the
 	// broker, and it is finally safe to exit and close the broker.
-	r.metaSess.kill(nil)
+	r.metaSess.EndRecv(shutdownGoodbye)
 	<-r.metaDone
 
 	// handleInboundMessages() and metaProcedureHandler() are the only things
@@ -305,9 +318,9 @@ func (r *realm) run() {
 // createMetaSession creates and starts a session that runs in this realm, and
 // bridges two peers.  One peer, the r.metaSess, is associated with the router
 // and handles meta session requests.  The other, r.metaPeer, is the remote
-// side of the router uplink and is used as the interface to send meta session
-// messages to.  Sending a PUBLISH message to it will result in the router
-// publishing the event to any subscribers.
+// (client) side of the router uplink and is used as the interface to send meta
+// session messages to.  Sending a PUBLISH message to it will result in the
+// router publishing the event to any subscribers.
 func (r *realm) createMetaSession() {
 	cli, rtr := transport.LinkedPeers()
 	r.metaPeer = cli
@@ -315,10 +328,10 @@ func (r *realm) createMetaSession() {
 	r.dealer.SetMetaPeer(cli)
 
 	// This session is the local leg of the router uplink.
-	r.metaSess = newSession(rtr, metaID, wamp.Dict{"authrole": "trusted"})
+	r.metaSess = wamp.NewSession(rtr, metaID, wamp.Dict{"authrole": "trusted"}, nil)
 
 	// Run the handler for messages from the meta session.
-	go r.handleInboundMessages(r.metaSess, nil)
+	go r.handleInboundMessages(r.metaSess)
 	if r.debug {
 		r.log.Println("Started meta-session", r.metaSess)
 	}
@@ -329,7 +342,7 @@ func (r *realm) createMetaSession() {
 //
 // Note: onJoin() is called from handleSession, not handleInboundMessages, so
 // that it is not called for the meta client.
-func (r *realm) onJoin(sess *session) {
+func (r *realm) onJoin(sess *wamp.Session) {
 	r.waitHandlers.Add(1)
 	sync := make(chan struct{})
 	r.actionChan <- func() {
@@ -344,9 +357,9 @@ func (r *realm) onJoin(sess *session) {
 	// WAMP spec only specifies publishing "session", "authid", "authrole",
 	// "authmethod", "authprovider", "transport".  This implementation
 	// publishes all details except transport.auth.
-	sess.rLock()
+	sess.Lock()
 	output := r.cleanSessionDetails(sess.Details)
-	sess.rUnlock()
+	sess.Unlock()
 	r.metaPeer.Send(&wamp.Publish{
 		Request:   wamp.GlobalID(),
 		Topic:     wamp.MetaEventSessionOnJoin,
@@ -367,7 +380,7 @@ func (r *realm) onJoin(sess *session) {
 //
 // Note: onLeave() must be called from outside handleInboundMessages so that it
 // is not called for the meta client.
-func (r *realm) onLeave(sess *session, shutdown, killAll bool) {
+func (r *realm) onLeave(sess *wamp.Session, shutdown, killAll bool) {
 	var testaments testamentBucket
 	var hasTstm bool
 	sync := make(chan struct{})
@@ -421,7 +434,7 @@ func (r *realm) onLeave(sess *session, shutdown, killAll bool) {
 // HandleSession starts a session attached to this realm.
 //
 // Routing occurs only between WAMP Sessions that have joined the same Realm.
-func (r *realm) handleSession(sess *session) error {
+func (r *realm) handleSession(sess *wamp.Session) error {
 	// The lock is held in mutual exclusion with the closing of the realm.
 	// This ensures that no new session handler can start once the realm is
 	// closing, during which the realm waits for all existing session handlers
@@ -441,7 +454,7 @@ func (r *realm) handleSession(sess *session) error {
 		r.log.Println("Started session", sess)
 	}
 	go func() {
-		shutdown, killAll, err := r.handleInboundMessages(sess, r.clientStop)
+		shutdown, killAll, err := r.handleInboundMessages(sess)
 		if err != nil {
 			abortMsg := wamp.Abort{
 				Reason:  wamp.ErrProtocolViolation,
@@ -459,39 +472,29 @@ func (r *realm) handleSession(sess *session) error {
 
 // handleInboundMessages handles the messages sent from a client session to
 // the router.
-func (r *realm) handleInboundMessages(sess *session, stopChan <-chan struct{}) (bool, bool, error) {
+func (r *realm) handleInboundMessages(sess *wamp.Session) (bool, bool, error) {
 	if r.debug {
 		defer r.log.Println("Ended session", sess)
 	}
-	killChan := sess.killChan
-	recvChan := sess.Recv()
+	recv := sess.Recv()
+	recvDone := sess.RecvDone()
 	for {
 		var msg wamp.Message
 		var open bool
 		select {
-		case msg, open = <-recvChan:
+		case msg, open = <-recv:
 			if !open {
 				r.log.Println("Lost", sess)
 				return false, false, nil
 			}
-		case <-stopChan:
-			if r.debug {
-				r.log.Printf("Stop session %s: system shutdown", sess)
-			}
-			sess.TrySend(&wamp.Goodbye{
-				Reason:  wamp.ErrSystemShutdown,
-				Details: wamp.Dict{},
-			})
-			return true, false, nil
-		case goodbye, open := <-killChan:
-			if !open {
+		case <-recvDone:
+			goodbye := sess.Goodbye()
+			switch goodbye {
+			case shutdownGoodbye, wamp.NoGoodbye:
 				if r.debug {
 					r.log.Printf("Stop session %s: system shutdown", sess)
 				}
-				sess.TrySend(&wamp.Goodbye{
-					Reason:  wamp.ErrSystemShutdown,
-					Details: wamp.Dict{},
-				})
+				sess.TrySend(goodbye)
 				return true, false, nil
 			}
 			if r.debug {
@@ -565,7 +568,7 @@ func (r *realm) handleInboundMessages(sess *session, stopChan <-chan struct{}) (
 // authzMessage checks if the session is authorized to send the message.  If
 // authorization fails or if the session is not authorized, then an error
 // response is returned to the client, and this method returns false.
-func (r *realm) authzMessage(sess *session, msg wamp.Message) bool {
+func (r *realm) authzMessage(sess *wamp.Session, msg wamp.Message) bool {
 	// If the client is local, then do not check authorization, unless
 	// requested in config.
 	if transport.IsLocal(sess.Peer) && !r.localAuthz {
@@ -573,15 +576,16 @@ func (r *realm) authzMessage(sess *session, msg wamp.Message) bool {
 	}
 
 	// Create a safe session to prevent access to the session.Peer.
-	safeSession := wamp.Session{
+	safeSession := &wamp.Session{
 		ID:      sess.ID,
 		Details: sess.Details,
 	}
+
 	// Write-lock the session, becuase there is no telling what the Authorizer
 	// will do to the session details.
-	sess.lock()
-	isAuthz, err := r.authorizer.Authorize(&safeSession, msg)
-	sess.unlock()
+	sess.Lock()
+	isAuthz, err := r.authorizer.Authorize(safeSession, msg)
+	sess.Unlock()
 
 	if !isAuthz {
 		skipResponse := false
@@ -640,7 +644,7 @@ func (r *realm) authClient(sid wamp.ID, client wamp.Peer, details wamp.Dict) (*w
 		// Create welcome details for local client.
 		authid, _ := wamp.AsString(details["authid"])
 		if authid == "" {
-			authid = fmt.Sprint(wamp.GlobalID())
+			authid = strconv.FormatInt(int64(wamp.GlobalID()), 16)
 		}
 		details = wamp.Dict{
 			"authid":       authid,
@@ -789,7 +793,22 @@ func (r *realm) metaProcedureHandler() {
 func (r *realm) sessionCount(msg *wamp.Invocation) wamp.Message {
 	var filter []string
 	if len(msg.Arguments) != 0 {
-		filter, _ = msg.Arguments[0].([]string)
+		filterList, ok := wamp.AsList(msg.Arguments[0])
+		if !ok {
+			return &wamp.Error{
+				Type:    wamp.INVOCATION,
+				Error:   wamp.ErrInvalidArgument,
+				Request: msg.Request,
+			}
+		}
+		filter, ok = wamp.ListToStrings(filterList)
+		if !ok {
+			return &wamp.Error{
+				Type:    wamp.INVOCATION,
+				Error:   wamp.ErrInvalidArgument,
+				Request: msg.Request,
+			}
+		}
 	}
 	retChan := make(chan int)
 
@@ -801,9 +820,9 @@ func (r *realm) sessionCount(msg *wamp.Invocation) wamp.Message {
 		r.actionChan <- func() {
 			var nclients int
 			for _, sess := range r.clients {
-				sess.rLock()
+				sess.Lock()
 				authrole, _ := wamp.AsString(sess.Details["authrole"])
-				sess.rUnlock()
+				sess.Unlock()
 				for j := range filter {
 					if filter[j] == authrole {
 						nclients++
@@ -826,7 +845,22 @@ func (r *realm) sessionCount(msg *wamp.Invocation) wamp.Message {
 func (r *realm) sessionList(msg *wamp.Invocation) wamp.Message {
 	var filter []string
 	if len(msg.Arguments) != 0 {
-		filter, _ = msg.Arguments[0].([]string)
+		filterList, ok := wamp.AsList(msg.Arguments[0])
+		if !ok {
+			return &wamp.Error{
+				Type:    wamp.INVOCATION,
+				Error:   wamp.ErrInvalidArgument,
+				Request: msg.Request,
+			}
+		}
+		filter, ok = wamp.ListToStrings(filterList)
+		if !ok {
+			return &wamp.Error{
+				Type:    wamp.INVOCATION,
+				Error:   wamp.ErrInvalidArgument,
+				Request: msg.Request,
+			}
+		}
 	}
 	retChan := make(chan []wamp.ID)
 
@@ -844,9 +878,9 @@ func (r *realm) sessionList(msg *wamp.Invocation) wamp.Message {
 		r.actionChan <- func() {
 			var ids []wamp.ID
 			for sid, sess := range r.clients {
-				sess.rLock()
+				sess.Lock()
 				authrole, _ := wamp.AsString(sess.Details["authrole"])
-				sess.rUnlock()
+				sess.Unlock()
 				for j := range filter {
 					if filter[j] == authrole {
 						ids = append(ids, sid)
@@ -873,7 +907,7 @@ func (r *realm) sessionGet(msg *wamp.Invocation) wamp.Message {
 		return makeError(msg.Request, wamp.ErrNoSuchSession)
 	}
 
-	retChan := make(chan *session)
+	retChan := make(chan *wamp.Session)
 	r.actionChan <- func() {
 		sess, _ := r.clients[sid]
 		retChan <- sess
@@ -887,9 +921,9 @@ func (r *realm) sessionGet(msg *wamp.Invocation) wamp.Message {
 	// "authmethod", "authprovider", and "transport".  All details are returned
 	// in this implementation, except transport.auth, unless Config.MetaStrict
 	// is set to true.
-	sess.rLock()
+	sess.Lock()
 	output := r.cleanSessionDetails(sess.Details)
-	sess.rUnlock()
+	sess.Unlock()
 
 	return &wamp.Yield{
 		Request:   msg.Request,
@@ -1036,7 +1070,7 @@ func (r *realm) sessionModifyDetails(msg *wamp.Invocation) wamp.Message {
 
 	done := make(chan struct{})
 	r.actionChan <- func() {
-		var sess *session
+		var sess *wamp.Session
 		if sess, ok = r.clients[sid]; ok {
 			r.modifySessionDetails(sess, delta)
 		}
@@ -1061,12 +1095,10 @@ func (r *realm) testamentAdd(msg *wamp.Invocation) wamp.Message {
 	}
 	topic, ok := wamp.AsURI(msg.Arguments[0])
 	if !ok {
-		fmt.Printf("invalid topic")
 		return makeError(msg.Request, wamp.ErrInvalidArgument)
 	}
 	args, ok := wamp.AsList(msg.Arguments[1])
 	if !ok {
-		fmt.Printf("invalid args")
 		return makeError(msg.Request, wamp.ErrInvalidArgument)
 	}
 	kwargs, ok := wamp.AsDict(msg.Arguments[2])
@@ -1246,7 +1278,7 @@ func (r *realm) killSession(sid wamp.ID, reason wamp.URI, message string) error 
 			errChan <- errors.New("no such session")
 			return
 		}
-		sess.kill(goodbye)
+		sess.EndRecv(goodbye)
 		close(errChan)
 	}
 	return <-errChan
@@ -1265,14 +1297,14 @@ func (r *realm) killSessionsByDetail(key, value string, reason wamp.URI, message
 				continue
 			}
 
-			sess.rLock()
+			sess.Lock()
 			val, ok := wamp.AsString(sess.Details[key])
-			sess.rUnlock()
+			sess.Unlock()
 
 			if !ok || val != value {
 				continue
 			}
-			if sess.kill(goodbye) {
+			if sess.EndRecv(goodbye) {
 				kills++
 			}
 		}
@@ -1296,7 +1328,7 @@ func (r *realm) killAllSessions(reason wamp.URI, message string, exclude wamp.ID
 			if sid == exclude {
 				continue
 			}
-			if sess.kill(goodbye) {
+			if sess.EndRecv(goodbye) {
 				kills++
 			}
 		}
@@ -1311,9 +1343,9 @@ func (r *realm) killAllSessions(reason wamp.URI, message string, exclude wamp.ID
 // An item with a non-nil value in the delta wamp.Dict specifies adding or
 // updating that item in the session details.  An item with a nil value in the
 // delta wamp.Dict specifies deleting that item from the session details.
-func (r *realm) modifySessionDetails(sess *session, delta wamp.Dict) {
-	sess.lock()
-	defer sess.unlock()
+func (r *realm) modifySessionDetails(sess *wamp.Session, delta wamp.Dict) {
+	sess.Lock()
+	defer sess.Unlock()
 
 	for k, v := range delta {
 		if v == nil {

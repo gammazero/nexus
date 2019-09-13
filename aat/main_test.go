@@ -34,6 +34,8 @@ const (
 
 	certFile = "cert.pem"
 	keyFile  = "rsakey.pem"
+
+	keepAliveInterval = time.Second * 5
 )
 
 var (
@@ -54,6 +56,9 @@ var (
 
 	// compress enables compression on both client and server config
 	compress bool
+
+	// size of server's per-client outbound message queue
+	outQueueSize int
 )
 
 type testAuthz struct{}
@@ -82,6 +87,7 @@ func TestMain(m *testing.M) {
 	flag.StringVar(&serType, "serialize", "",
 		"-serialize[json, msgpack, cbor] default is json")
 	flag.BoolVar(&compress, "compress", false, "enable compression")
+	flag.IntVar(&outQueueSize, "qsize", 0, "server's per-client outbound queue size")
 	flag.Parse()
 
 	if serType != "" && serType != "json" && serType != "msgpack" && serType != "cbor" {
@@ -208,7 +214,8 @@ func TestMain(m *testing.M) {
 		}
 		s.EnableTrackingCookie = true
 		s.EnableRequestCapture = true
-		s.KeepAlive = time.Second
+		s.KeepAlive = keepAliveInterval
+		s.OutQueueSize = outQueueSize
 		closer, err = s.ListenAndServe(tcpAddr)
 	case "wss":
 		s := router.NewWebsocketServer(nxr)
@@ -219,19 +226,25 @@ func TestMain(m *testing.M) {
 		}
 		s.EnableTrackingCookie = true
 		s.EnableRequestCapture = true
-		s.KeepAlive = time.Second
+		s.KeepAlive = keepAliveInterval
+		s.OutQueueSize = outQueueSize
 		closer, err = s.ListenAndServeTLS(tcpAddr, nil, certPath, keyPath)
 	case "tcp":
-		s := router.NewRawSocketServer(nxr, 0, 0)
+		s := router.NewRawSocketServer(nxr)
+		s.KeepAlive = keepAliveInterval
 		closer, err = s.ListenAndServe(scheme, tcpAddr)
 		sockDesc = "TCP RAWSOCKETS"
 	case "tcps":
-		s := router.NewRawSocketServer(nxr, 0, 0)
+		s := router.NewRawSocketServer(nxr)
+		s.KeepAlive = keepAliveInterval
+		s.OutQueueSize = outQueueSize
 		closer, err = s.ListenAndServeTLS("tcp", tcpAddr, nil, certPath, keyPath)
 		sockDesc = "TCP RAWSOCKETS + TLS"
 	case "unix":
 		os.Remove(unixAddr)
-		s := router.NewRawSocketServer(nxr, 0, 0)
+		s := router.NewRawSocketServer(nxr)
+		s.KeepAlive = keepAliveInterval
+		s.OutQueueSize = outQueueSize
 		closer, err = s.ListenAndServe(scheme, unixAddr)
 		addr = unixAddr
 		sockDesc = "UNIX RAWSOCKETS"

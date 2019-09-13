@@ -45,7 +45,7 @@ func TestBasicRegister(t *testing.T) {
 
 	// Register callee
 	callee := newTestPeer()
-	sess := newSession(callee, 0, nil)
+	sess := wamp.NewSession(callee, 0, nil, nil)
 	dealer.Register(sess, &wamp.Register{Request: 123, Procedure: testProcedure})
 
 	rsp := <-callee.Recv()
@@ -100,7 +100,7 @@ func TestUnregister(t *testing.T) {
 
 	// Register a procedure.
 	callee := newTestPeer()
-	sess := newSession(callee, 0, nil)
+	sess := wamp.NewSession(callee, 0, nil, nil)
 	dealer.Register(sess, &wamp.Register{Request: 123, Procedure: testProcedure})
 	rsp := <-callee.Recv()
 	regID := rsp.(*wamp.Registered).Registration
@@ -150,10 +150,15 @@ func TestBasicCall(t *testing.T) {
 
 	// Register a procedure.
 	callee := newTestPeer()
-	calleeSess := newSession(callee, 0, nil)
+	calleeSess := wamp.NewSession(callee, 0, nil, nil)
 	dealer.Register(calleeSess,
 		&wamp.Register{Request: 123, Procedure: testProcedure})
-	rsp := <-callee.Recv()
+	var rsp wamp.Message
+	select {
+	case rsp = <-callee.Recv():
+	case <-time.After(time.Millisecond):
+		t.Fatal("timed out waiting for response")
+	}
 	_, ok := rsp.(*wamp.Registered)
 	if !ok {
 		t.Fatal("did not receive REGISTERED response")
@@ -166,7 +171,7 @@ func TestBasicCall(t *testing.T) {
 	}
 
 	caller := newTestPeer()
-	callerSession := newSession(caller, 0, nil)
+	callerSession := wamp.NewSession(caller, 0, nil, nil)
 
 	// Test calling invalid procedure
 	dealer.Call(callerSession,
@@ -235,7 +240,7 @@ func TestRemovePeer(t *testing.T) {
 
 	// Register a procedure.
 	callee := newTestPeer()
-	sess := newSession(callee, 0, nil)
+	sess := wamp.NewSession(callee, 0, nil, nil)
 	msg := &wamp.Register{Request: 123, Procedure: testProcedure}
 	dealer.Register(sess, msg)
 	rsp := <-callee.Recv()
@@ -259,7 +264,7 @@ func TestRemovePeer(t *testing.T) {
 	dealer.RemoveSession(sess)
 
 	// Register as a way to sync with dealer.
-	sess2 := newSession(callee, 0, nil)
+	sess2 := wamp.NewSession(callee, 0, nil, nil)
 	dealer.Register(sess2,
 		&wamp.Register{Request: 789, Procedure: wamp.URI("nexus.test.p2")})
 	rsp = <-callee.Recv()
@@ -297,7 +302,7 @@ func TestCancelCallModeKill(t *testing.T) {
 
 	// Register a procedure.
 	callee := newTestPeer()
-	calleeSess := newSession(callee, 0, calleeRoles)
+	calleeSess := wamp.NewSession(callee, 0, nil, calleeRoles)
 	dealer.Register(calleeSess,
 		&wamp.Register{Request: 123, Procedure: testProcedure})
 	rsp := <-callee.Recv()
@@ -311,7 +316,7 @@ func TestCancelCallModeKill(t *testing.T) {
 	}
 
 	caller := newTestPeer()
-	callerSession := newSession(caller, 0, nil)
+	callerSession := wamp.NewSession(caller, 0, nil, nil)
 
 	// Test calling valid procedure
 	dealer.Call(callerSession,
@@ -378,7 +383,7 @@ func TestCancelCallModeKillNoWait(t *testing.T) {
 
 	// Register a procedure.
 	callee := newTestPeer()
-	calleeSess := newSession(callee, 0, calleeRoles)
+	calleeSess := wamp.NewSession(callee, 0, nil, calleeRoles)
 	dealer.Register(calleeSess,
 		&wamp.Register{Request: 123, Procedure: testProcedure})
 	rsp := <-callee.Recv()
@@ -392,7 +397,7 @@ func TestCancelCallModeKillNoWait(t *testing.T) {
 	}
 
 	caller := newTestPeer()
-	callerSession := newSession(caller, 0, nil)
+	callerSession := wamp.NewSession(caller, 0, nil, nil)
 
 	// Test calling valid procedure
 	dealer.Call(callerSession,
@@ -456,7 +461,7 @@ func TestCancelCallModeSkip(t *testing.T) {
 		},
 	}
 
-	calleeSess := newSession(callee, 0, calleeRoles)
+	calleeSess := wamp.NewSession(callee, 0, nil, calleeRoles)
 	dealer.Register(calleeSess,
 		&wamp.Register{Request: 123, Procedure: testProcedure})
 	rsp := <-callee.Recv()
@@ -470,7 +475,7 @@ func TestCancelCallModeSkip(t *testing.T) {
 	}
 
 	caller := newTestPeer()
-	callerSession := newSession(caller, 0, nil)
+	callerSession := wamp.NewSession(caller, 0, nil, nil)
 
 	// Test calling valid procedure
 	dealer.Call(callerSession,
@@ -520,7 +525,7 @@ func TestSharedRegistrationRoundRobin(t *testing.T) {
 
 	// Register callee1 with roundrobin shared registration
 	callee1 := newTestPeer()
-	calleeSess1 := newSession(callee1, 0, calleeRoles)
+	calleeSess1 := wamp.NewSession(callee1, 0, nil, calleeRoles)
 	dealer.Register(calleeSess1, &wamp.Register{
 		Request:   123,
 		Procedure: testProcedure,
@@ -542,7 +547,7 @@ func TestSharedRegistrationRoundRobin(t *testing.T) {
 
 	// Register callee2 with roundrobin shared registration
 	callee2 := newTestPeer()
-	calleeSess2 := newSession(callee2, 0, calleeRoles)
+	calleeSess2 := wamp.NewSession(callee2, 0, nil, calleeRoles)
 	dealer.Register(calleeSess2, &wamp.Register{
 		Request:   124,
 		Procedure: testProcedure,
@@ -564,7 +569,7 @@ func TestSharedRegistrationRoundRobin(t *testing.T) {
 
 	// Test calling valid procedure
 	caller := newTestPeer()
-	callerSession := newSession(caller, 0, nil)
+	callerSession := wamp.NewSession(caller, 0, nil, nil)
 	dealer.Call(callerSession,
 		&wamp.Call{Request: 125, Procedure: testProcedure})
 
@@ -639,7 +644,7 @@ func TestSharedRegistrationFirst(t *testing.T) {
 
 	// Register callee1 with first shared registration
 	callee1 := newTestPeer()
-	calleeSess1 := newSession(callee1, 0, calleeRoles)
+	calleeSess1 := wamp.NewSession(callee1, 1111, nil, calleeRoles)
 	dealer.Register(calleeSess1, &wamp.Register{
 		Request:   123,
 		Procedure: testProcedure,
@@ -661,7 +666,7 @@ func TestSharedRegistrationFirst(t *testing.T) {
 
 	// Register callee2 with roundrobin shared registration
 	callee2 := newTestPeer()
-	calleeSess2 := newSession(callee2, 0, calleeRoles)
+	calleeSess2 := wamp.NewSession(callee2, 2222, nil, calleeRoles)
 	dealer.Register(calleeSess2, &wamp.Register{
 		Request:   1233,
 		Procedure: testProcedure,
@@ -679,12 +684,17 @@ func TestSharedRegistrationFirst(t *testing.T) {
 		Procedure: testProcedure,
 		Options:   wamp.SetOption(nil, "invoke", "first"),
 	})
-	rsp = <-callee2.Recv()
+	select {
+	case rsp = <-callee2.Recv():
+	case <-time.After(time.Second):
+		t.Fatal("Timed out waiting for REGISTERED")
+	}
+
 	if regMsg, ok = rsp.(*wamp.Registered); !ok {
 		t.Fatal("did not receive REGISTERED response")
 	}
 	regID2 := regMsg.Registration
-	if err = checkMetaReg(metaClient, calleeSess1.ID); err != nil {
+	if err = checkMetaReg(metaClient, calleeSess2.ID); err != nil {
 		t.Fatal("Registration meta event fail:", err)
 	}
 
@@ -694,7 +704,7 @@ func TestSharedRegistrationFirst(t *testing.T) {
 
 	// Test calling valid procedure
 	caller := newTestPeer()
-	callerSession := newSession(caller, 0, nil)
+	callerSession := wamp.NewSession(caller, 333, nil, nil)
 	dealer.Call(callerSession,
 		&wamp.Call{Request: 125, Procedure: testProcedure})
 
@@ -712,10 +722,15 @@ func TestSharedRegistrationFirst(t *testing.T) {
 		t.Fatal("Timed out waiting for INVOCATION")
 	}
 
-	// Callee responds with a YIELD message
+	// Callee1 responds with a YIELD message
 	dealer.Yield(calleeSess1, &wamp.Yield{Request: inv.Request})
+
 	// Check that caller received a RESULT message.
-	rsp = <-caller.Recv()
+	select {
+	case rsp = <-caller.Recv():
+	case <-time.After(time.Second):
+		t.Fatal("Timed out waiting for RESULT")
+	}
 	rslt, ok := rsp.(*wamp.Result)
 	if !ok {
 		t.Fatal("expected RESULT, got:", rsp.MessageType())
@@ -742,9 +757,14 @@ func TestSharedRegistrationFirst(t *testing.T) {
 	}
 
 	// Callee responds with a YIELD message
-	dealer.Yield(calleeSess2, &wamp.Yield{Request: inv.Request})
+	dealer.Yield(calleeSess1, &wamp.Yield{Request: inv.Request})
+
 	// Check that caller received a RESULT message.
-	rsp = <-caller.Recv()
+	select {
+	case rsp = <-caller.Recv():
+	case <-time.After(time.Second):
+		t.Fatal("Timed out waiting for RESULT")
+	}
 	rslt, ok = rsp.(*wamp.Result)
 	if !ok {
 		t.Fatal("expected RESULT, got:", rsp.MessageType())
@@ -781,8 +801,14 @@ func TestSharedRegistrationFirst(t *testing.T) {
 
 	// Callee responds with a YIELD message
 	dealer.Yield(calleeSess2, &wamp.Yield{Request: inv.Request})
+
 	// Check that caller received a RESULT message.
-	rsp = <-caller.Recv()
+	select {
+	case rsp = <-caller.Recv():
+	case <-time.After(time.Second):
+		t.Fatal("Timed out waiting for RESULT")
+	}
+
 	rslt, ok = rsp.(*wamp.Result)
 	if !ok {
 		t.Fatal("expected RESULT, got:", rsp.MessageType())
@@ -807,7 +833,7 @@ func TestSharedRegistrationLast(t *testing.T) {
 
 	// Register callee1 with last shared registration
 	callee1 := newTestPeer()
-	calleeSess1 := newSession(callee1, 0, calleeRoles)
+	calleeSess1 := wamp.NewSession(callee1, 0, nil, calleeRoles)
 	dealer.Register(calleeSess1, &wamp.Register{
 		Request:   123,
 		Procedure: testProcedure,
@@ -828,7 +854,7 @@ func TestSharedRegistrationLast(t *testing.T) {
 
 	// Register callee2 with last shared registration
 	callee2 := newTestPeer()
-	calleeSess2 := newSession(callee2, 0, calleeRoles)
+	calleeSess2 := wamp.NewSession(callee2, 0, nil, calleeRoles)
 	dealer.Register(calleeSess2, &wamp.Register{
 		Request:   124,
 		Procedure: testProcedure,
@@ -838,13 +864,13 @@ func TestSharedRegistrationLast(t *testing.T) {
 	if _, ok = rsp.(*wamp.Registered); !ok {
 		t.Fatal("did not receive REGISTERED response")
 	}
-	if err = checkMetaReg(metaClient, calleeSess1.ID); err != nil {
+	if err = checkMetaReg(metaClient, calleeSess2.ID); err != nil {
 		t.Fatal("Registration meta event fail:", err)
 	}
 
 	// Test calling valid procedure
 	caller := newTestPeer()
-	callerSession := newSession(caller, 0, nil)
+	callerSession := wamp.NewSession(caller, 0, nil, nil)
 	dealer.Call(callerSession,
 		&wamp.Call{Request: 125, Procedure: testProcedure})
 
@@ -957,7 +983,7 @@ func TestPatternBasedRegistration(t *testing.T) {
 
 	// Register a procedure with wildcard match.
 	callee := newTestPeer()
-	calleeSess := newSession(callee, 0, calleeRoles)
+	calleeSess := wamp.NewSession(callee, 0, nil, calleeRoles)
 	dealer.Register(calleeSess,
 		&wamp.Register{
 			Request:   123,
@@ -979,7 +1005,7 @@ func TestPatternBasedRegistration(t *testing.T) {
 	}
 
 	caller := newTestPeer()
-	callerSession := newSession(caller, 0, nil)
+	callerSession := wamp.NewSession(caller, 0, nil, nil)
 
 	// Test calling valid procedure with full name.  Widlcard should match.
 	dealer.Call(callerSession,
@@ -1013,14 +1039,20 @@ func TestPatternBasedRegistration(t *testing.T) {
 	}
 }
 
-func TestRPCBlockedSlowClientCall(t *testing.T) {
+func TestRPCBlockedUnresponsiveCallee(t *testing.T) {
+	const (
+		rpcExecTime    = time.Second
+		timeoutMs      = 2000
+		shortTimeoutMs = 200
+	)
 	dealer, metaClient := newTestDealer()
 
 	// Register a procedure.
 	callee, rtr := transport.LinkedPeers()
-	calleeSess := newSession(rtr, 0, nil)
+	calleeSess := wamp.NewSession(rtr, 0, nil, nil)
+	opts := wamp.Dict{wamp.OptTimeout: timeoutMs}
 	dealer.Register(calleeSess,
-		&wamp.Register{Request: 223, Procedure: testProcedure})
+		&wamp.Register{Request: 223, Procedure: testProcedure, Options: opts})
 	rsp := <-callee.Recv()
 	_, ok := rsp.(*wamp.Registered)
 	if !ok {
@@ -1032,18 +1064,30 @@ func TestRPCBlockedSlowClientCall(t *testing.T) {
 	}
 
 	caller, rtr := transport.LinkedPeers()
-	callerSession := newSession(rtr, 0, nil)
+	callerSession := wamp.NewSession(rtr, 0, nil, nil)
 
-	for i := 0; i < 20; i++ {
+	// Call unresponsive callee until call dropped.
+	var i int
+sendLoop:
+	for {
+		i++
 		fmt.Println("Calling", i)
 		// Test calling valid procedure
-		dealer.Call(callerSession,
-			&wamp.Call{Request: wamp.ID(i + 225), Procedure: testProcedure})
+		dealer.Call(callerSession, &wamp.Call{
+			Request:   wamp.ID(i + 225),
+			Procedure: testProcedure,
+			Options:   opts,
+		})
+		select {
+		case rsp = <-caller.Recv():
+			break sendLoop
+		default:
+		}
 	}
 
-	fmt.Println("Waiting for error")
+	callee.Close()
+
 	// Test that caller received an ERROR message.
-	rsp = <-caller.Recv()
 	rslt, ok := rsp.(*wamp.Error)
 	if !ok {
 		t.Fatal("expected ERROR, got:", rsp.MessageType())
@@ -1070,7 +1114,7 @@ func TestCallerIdentification(t *testing.T) {
 
 	// Register a procedure, set option to request disclosing caller.
 	callee := newTestPeer()
-	calleeSess := newSession(callee, 0, calleeRoles)
+	calleeSess := wamp.NewSession(callee, 0, nil, calleeRoles)
 	dealer.Register(calleeSess,
 		&wamp.Register{
 			Request:   123,
@@ -1091,7 +1135,7 @@ func TestCallerIdentification(t *testing.T) {
 
 	caller := newTestPeer()
 	callerID := wamp.ID(11235813)
-	callerSession := newSession(caller, callerID, nil)
+	callerSession := wamp.NewSession(caller, callerID, nil, nil)
 
 	// Test calling valid procedure with full name.  Widlcard should match.
 	dealer.Call(callerSession,
@@ -1108,5 +1152,49 @@ func TestCallerIdentification(t *testing.T) {
 	if id, _ := wamp.AsID(inv.Details["caller"]); id != callerID {
 		fmt.Println("===> details:", inv.Details)
 		t.Fatal("Did not get expected caller ID")
+	}
+}
+
+func TestWrongYielder(t *testing.T) {
+	dealer := NewDealer(logger, false, true, debug)
+
+	// Register a procedure.
+	callee := newTestPeer()
+	calleeSess := wamp.NewSession(callee, 7777, nil, nil)
+	dealer.Register(calleeSess,
+		&wamp.Register{Request: 4321, Procedure: testProcedure})
+	rsp := <-callee.Recv()
+	_, ok := rsp.(*wamp.Registered)
+	if !ok {
+		t.Fatal("did not receive REGISTERED response")
+	}
+
+	// Create caller
+	caller := newTestPeer()
+	callerSession := wamp.NewSession(caller, 0, nil, nil)
+
+	// Create imposter callee
+	badCallee := newTestPeer()
+	badCalleeSess := wamp.NewSession(badCallee, 1313, nil, nil)
+
+	// Call the procedure
+	dealer.Call(callerSession,
+		&wamp.Call{Request: 4322, Procedure: testProcedure})
+
+	// Test that callee received an INVOCATION message.
+	rsp = <-callee.Recv()
+	inv, ok := rsp.(*wamp.Invocation)
+	if !ok {
+		t.Fatal("expected INVOCATION, got:", rsp.MessageType())
+	}
+
+	// Imposter callee responds with a YIELD message
+	dealer.Yield(badCalleeSess, &wamp.Yield{Request: inv.Request})
+
+	// Check that caller did not received a RESULT message.
+	select {
+	case rsp = <-caller.Recv():
+		t.Fatal("Caller received response from imposter callee")
+	case <-time.After(200 * time.Millisecond):
 	}
 }

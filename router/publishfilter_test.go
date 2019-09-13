@@ -37,34 +37,34 @@ func TestFilterBlacklist(t *testing.T) {
 		"authrole": allowedAuthrole,
 		"misc":     "other",
 	}
-	sess := newSession(nil, allowedID, details)
-	if !pf.Allowed(&sess.Session) {
+	sess := &wamp.Session{ID: allowedID, Details: details}
+	if !pf.Allowed(sess) {
 		t.Error(shouldAllowMsg)
 	}
 
-	sess = newSession(nil, blacklistID, details)
+	sess = &wamp.Session{ID: blacklistID, Details: details}
 	// Check that session is denied by ID.
-	if pf.Allowed(&sess.Session) {
+	if pf.Allowed(sess) {
 		t.Error(shouldDenyMsg)
 	}
 
-	sess = newSession(nil, allowedID, details)
+	sess = &wamp.Session{ID: allowedID, Details: details}
 	// Check that session is denied by authid.
 	sess.Details["authid"] = blacklistAuthid
-	if pf.Allowed(&sess.Session) {
+	if pf.Allowed(sess) {
 		t.Error(shouldDenyMsg)
 	}
 
 	// Check that session is denied by authrole.
 	sess.Details["authid"] = allowedAuthid
 	sess.Details["authrole"] = blacklistAuthrole
-	if pf.Allowed(&sess.Session) {
+	if pf.Allowed(sess) {
 		t.Error(shouldDenyMsg)
 	}
 
 	// Check that session is allowed by not having value in blacklist.
 	delete(sess.Details, "authrole")
-	if !pf.Allowed(&sess.Session) {
+	if !pf.Allowed(sess) {
 		t.Error(shouldDenyMsg)
 	}
 }
@@ -100,34 +100,34 @@ func TestFilterWhitelist(t *testing.T) {
 		"authrole": allowedAuthrole,
 		"misc":     "other",
 	}
-	sess := newSession(nil, allowedID, details)
-	if !pf.Allowed(&sess.Session) {
+	sess := &wamp.Session{ID: allowedID, Details: details}
+	if !pf.Allowed(sess) {
 		t.Error(shouldAllowMsg)
 	}
 
-	sess = newSession(nil, deniedID, details)
+	sess = &wamp.Session{ID: deniedID, Details: details}
 	// Check that session is denied by ID.
-	if pf.Allowed(&sess.Session) {
+	if pf.Allowed(sess) {
 		t.Error(shouldDenyMsg)
 	}
 
-	sess = newSession(nil, allowedID, details)
+	sess = &wamp.Session{ID: allowedID, Details: details}
 	// Check that session is denied by authid.
 	sess.Details["authid"] = deniedAuthid
-	if pf.Allowed(&sess.Session) {
+	if pf.Allowed(sess) {
 		t.Error(shouldDenyMsg)
 	}
 
 	// Check that session is denied by authrole.
 	sess.Details["authid"] = allowedAuthid
 	sess.Details["authrole"] = deniedAuthrole
-	if pf.Allowed(&sess.Session) {
+	if pf.Allowed(sess) {
 		t.Error(shouldDenyMsg)
 	}
 
 	// Check that session is denied by not having value in whitelise.
 	delete(sess.Details, "authrole")
-	if pf.Allowed(&sess.Session) {
+	if pf.Allowed(sess) {
 		t.Error(shouldDenyMsg)
 	}
 }
@@ -167,21 +167,21 @@ func TestFilterBlackWhitelistPrecedence(t *testing.T) {
 		"misc":     "other",
 	}
 
-	sess := newSession(nil, allowedID, details)
-	if !pf.Allowed(&sess.Session) {
+	sess := &wamp.Session{ID: allowedID, Details: details}
+	if !pf.Allowed(sess) {
 		t.Error(shouldAllowMsg)
 	}
 
-	sess = newSession(nil, blacklistID, details)
+	sess = &wamp.Session{ID: blacklistID, Details: details}
 	// Check that session is denied by ID even thought ID is also in whitelist.
-	if pf.Allowed(&sess.Session) {
+	if pf.Allowed(sess) {
 		t.Error(shouldDenyMsg)
 	}
 
-	sess = newSession(nil, allowedID, details)
+	sess = &wamp.Session{ID: allowedID, Details: details}
 	// Check that session is denied by authid even though also whitelisted.
 	sess.Details["authid"] = blacklistAuthid
-	if pf.Allowed(&sess.Session) {
+	if pf.Allowed(sess) {
 		t.Error(shouldDenyMsg)
 	}
 }

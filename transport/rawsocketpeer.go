@@ -1,6 +1,7 @@
 package transport
 
 import (
+	"context"
 	"crypto/tls"
 	"errors"
 	"fmt"
@@ -29,6 +30,9 @@ type rawSocketPeer struct {
 	rd chan wamp.Message
 	wr chan wamp.Message
 
+	cancelSender context.CancelFunc
+	ctxSender    context.Context
+
 	writerDone chan struct{}
 
 	log stdlog.StdLog
@@ -45,31 +49,48 @@ const (
 	magic = 0x7f
 )
 
-// ConnectRawSocketPeer creates a new rawSocketPeer with the specified config,
-// and connects it to the WAMP router at the specified address.  The network
-// and address parameters are documented here:
+// ConnectRawSocketPeer calls ConnectRawSocketPeerContext without a context.
+func ConnectRawSocketPeer(network, address string, serialization serialize.Serialization, logger stdlog.StdLog, recvLimit int) (wamp.Peer, error) {
+	return ConnectRawSocketPeerContext(context.Background(), network, address, serialization, logger, recvLimit)
+}
+
+// ConnectRawSocketPeerContext creates a new rawSocketPeer with the specified
+// config, and connects it to the WAMP router at the specified address.  The
+// network and address parameters are documented here:
 // https://golang.org/pkg/net/#Dial
+//
+// The provided Context must be non-nil.  If the context expires before the
+// connection is complete, an error is returned.  Once successfully connected,
+// any expiration of the context will not affect the connection.
 //
 // If recvLimit is > 0, then the client will not receive messages with size
 // larger than the nearest power of 2 greater than or equal to recvLimit.  If
 // recvLimit is <= 0, then the default of 16M is used.
-func ConnectRawSocketPeer(network, address string, serialization serialize.Serialization, logger stdlog.StdLog, recvLimit int) (wamp.Peer, error) {
-	err := checkNetworkType(network)
+func ConnectRawSocketPeerContext(ctx context.Context, network, address string, serialization serialize.Serialization, logger stdlog.StdLog, recvLimit int) (wamp.Peer, error) {
+	var (
+		protocol byte
+		conn     net.Conn
+		err      error
+		peer     *rawSocketPeer
+	)
+
+	err = checkNetworkType(network)
 	if err != nil {
 		return nil, err
 	}
 
-	protocol, err := getProtoByte(serialization)
+	protocol, err = getProtoByte(serialization)
 	if err != nil {
 		return nil, err
 	}
 
-	conn, err := net.Dial(network, address)
+	var d net.Dialer
+	conn, err = d.DialContext(ctx, network, address)
 	if err != nil {
 		return nil, err
 	}
 
-	peer, err := clientHandshake(conn, logger, protocol, recvLimit)
+	peer, err = clientHandshake(conn, logger, protocol, recvLimit)
 	if err != nil {
 		conn.Close()
 		return nil, err
@@ -77,15 +98,25 @@ func ConnectRawSocketPeer(network, address string, serialization serialize.Seria
 	return peer, nil
 }
 
-// ConnectTlsRawSocketPeer creates a new rawSocketPeer with the specified
-// config, and connects it, using TLS, to the WAMP router at the specified
-// address.  The network, address, and tlscfg parameters are documented here:
-// https://golang.org/pkg/crypto/tls/#Dial
+// ConnectTlsRawSocketPeer calls ConnectTlsRawSocketPeerContext without a Dial
+// context.
+func ConnectTlsRawSocketPeer(network, address string, serialization serialize.Serialization, tlsConfig *tls.Config, logger stdlog.StdLog, recvLimit int) (wamp.Peer, error) {
+	return ConnectTlsRawSocketPeerContext(context.Background(), network, address, serialization, tlsConfig, logger, recvLimit)
+}
+
+// ConnectTlsRawSocketPeerContext creates a new rawSocketPeer with the
+// specified config, and connects it, using TLS, to the WAMP router at the
+// specified address.  The network, address, and tlscfg parameters are
+// documented here: https://golang.org/pkg/crypto/tls/#Dial
+//
+// The provided Context must be non-nil.  If the context expires before the
+// connection is complete, an error is returned.  Once successfully connected,
+// any expiration of the context will not affect the connection.
 //
 // If recvLimit is > 0, then the client will not receive messages with size
 // larger than the nearest power of 2 greater than or equal to recvLimit.  If
 // recvLimit is <= 0, then the default of 16M is used.
-func ConnectTlsRawSocketPeer(network, address string, serialization serialize.Serialization, tlsConfig *tls.Config, logger stdlog.StdLog, recvLimit int) (wamp.Peer, error) {
+func ConnectTlsRawSocketPeerContext(ctx context.Context, network, address string, serialization serialize.Serialization, tlsConfig *tls.Config, logger stdlog.StdLog, recvLimit int) (wamp.Peer, error) {
 	err := checkNetworkType(network)
 	if err != nil {
 		return nil, err
@@ -96,9 +127,28 @@ func ConnectTlsRawSocketPeer(network, address string, serialization serialize.Se
 		return nil, err
 	}
 
-	conn, err := tls.Dial(network, address, tlsConfig)
+	var d net.Dialer
+	rawConn, err := d.DialContext(ctx, network, address)
 	if err != nil {
 		return nil, err
+	}
+
+	conn := tls.Client(rawConn, tlsConfig)
+	errChannel := make(chan error, 1)
+
+	go func() {
+		errChannel <- conn.Handshake()
+	}()
+
+	// Wait for TLS handshake to complete or context to expire
+	select {
+	case err = <-errChannel:
+		if err != nil {
+			rawConn.Close()
+			return nil, err
+		}
+	case <-ctx.Done():
+		return nil, ctx.Err()
 	}
 
 	peer, err := clientHandshake(conn, logger, protocol, recvLimit)
@@ -114,8 +164,8 @@ func ConnectTlsRawSocketPeer(network, address string, serialization serialize.Se
 // If recvLimit is > 0, then the client will not receive messages with size
 // larger than the nearest power of 2 greater than or equal to recvLimit.  If
 // recvLimit is <= 0, then the default of 16M is used.
-func AcceptRawSocket(conn net.Conn, logger stdlog.StdLog, recvLimit int) (wamp.Peer, error) {
-	peer, err := serverHandshake(conn, logger, recvLimit)
+func AcceptRawSocket(conn net.Conn, logger stdlog.StdLog, recvLimit, outQueueSize int) (wamp.Peer, error) {
+	peer, err := serverHandshake(conn, logger, recvLimit, outQueueSize)
 	if err != nil {
 		conn.Close()
 		return nil, err
@@ -126,7 +176,7 @@ func AcceptRawSocket(conn net.Conn, logger stdlog.StdLog, recvLimit int) (wamp.P
 // newRawSocketPeer creates a rawsocket peer from an existing socket
 // connection.  This is used by clients connecting to the WAMP router, and by
 // servers to handle connections from clients.
-func newRawSocketPeer(conn net.Conn, serializer serialize.Serializer, logger stdlog.StdLog, sendLimit, recvLimit int) *rawSocketPeer {
+func newRawSocketPeer(conn net.Conn, serializer serialize.Serializer, logger stdlog.StdLog, sendLimit, recvLimit, outQueueSize int) *rawSocketPeer {
 	rs := &rawSocketPeer{
 		conn:       conn,
 		serializer: serializer,
@@ -149,6 +199,8 @@ func newRawSocketPeer(conn net.Conn, serializer serialize.Serializer, logger std
 
 		log: logger,
 	}
+	rs.ctxSender, rs.cancelSender = context.WithCancel(context.Background())
+
 	// Sending to and receiving from socket is handled concurrently.
 	go rs.recvHandler()
 	go rs.sendHandler()
@@ -159,23 +211,15 @@ func newRawSocketPeer(conn net.Conn, serializer serialize.Serializer, logger std
 func (rs *rawSocketPeer) Recv() <-chan wamp.Message { return rs.rd }
 
 func (rs *rawSocketPeer) TrySend(msg wamp.Message) error {
-	select {
-	case rs.wr <- msg:
-		return nil
-	default:
-	}
+	return wamp.TrySend(rs.wr, msg)
+}
 
-	select {
-	case rs.wr <- msg:
-	case <-time.After(time.Second):
-		return errors.New("blocked")
-	}
-	return nil
+func (rs *rawSocketPeer) SendCtx(ctx context.Context, msg wamp.Message) error {
+	return wamp.SendCtx(ctx, rs.wr, msg)
 }
 
 func (rs *rawSocketPeer) Send(msg wamp.Message) error {
-	rs.wr <- msg
-	return nil
+	return wamp.SendCtx(rs.ctxSender, rs.wr, msg)
 }
 
 // Close closes the rawsocket peer.  This closes the local send channel, and
@@ -184,10 +228,9 @@ func (rs *rawSocketPeer) Send(msg wamp.Message) error {
 //
 // *** Do not call Send after calling Close. ***
 func (rs *rawSocketPeer) Close() {
-	// Tell sendHandler to exit, allowing it to finish sending any queued
-	// messages.  Do not close wr channel in case there are incoming messages
-	// during close.
-	rs.wr <- nil
+	// Tell sendHandler to exit, and discard any queued messages.  Do not close
+	// wr channel in case there are incoming messages during close.
+	rs.cancelSender()
 	<-rs.writerDone
 
 	// Tell recvHandler to close.
@@ -202,33 +245,39 @@ func (rs *rawSocketPeer) Close() {
 // socket.
 func (rs *rawSocketPeer) sendHandler() {
 	defer close(rs.writerDone)
-	for msg := range rs.wr {
-		if msg == nil {
+	defer rs.cancelSender()
+
+	senderDone := rs.ctxSender.Done()
+sendLoop:
+	for {
+		select {
+		case msg := <-rs.wr:
+			b, err := rs.serializer.Serialize(msg)
+			if err != nil {
+				rs.log.Print(err)
+				continue sendLoop
+			}
+			if len(b) > rs.sendLimit {
+				rs.log.Println("Message size", len(b), "exceeds limit of",
+					rs.sendLimit)
+				continue sendLoop
+			}
+			lenBytes := intToBytes(len(b))
+			header := []byte{0x0, lenBytes[0], lenBytes[1], lenBytes[2]}
+			if _, err = rs.conn.Write(header); err != nil {
+				if !wamp.IsGoodbyeAck(msg) {
+					rs.log.Println("Error writing header:", err)
+				}
+				continue sendLoop
+			}
+			if _, err = rs.conn.Write(b); err != nil {
+				if !wamp.IsGoodbyeAck(msg) {
+					rs.log.Println("Error writing message:", msg, err)
+				}
+				continue sendLoop
+			}
+		case <-senderDone:
 			return
-		}
-		b, err := rs.serializer.Serialize(msg)
-		if err != nil {
-			rs.log.Print(err)
-			continue
-		}
-		if len(b) > rs.sendLimit {
-			rs.log.Println("Message size", len(b), "exceeds limit of",
-				rs.sendLimit)
-			continue
-		}
-		lenBytes := intToBytes(len(b))
-		header := []byte{0x0, lenBytes[0], lenBytes[1], lenBytes[2]}
-		if _, err = rs.conn.Write(header); err != nil {
-			if !wamp.IsGoodbyeAck(msg) {
-				rs.log.Println("Error writing header:", err)
-			}
-			continue
-		}
-		if _, err = rs.conn.Write(b); err != nil {
-			if !wamp.IsGoodbyeAck(msg) {
-				rs.log.Println("Error writing message:", msg, err)
-			}
-			continue
 		}
 	}
 }
@@ -251,9 +300,8 @@ MsgLoop:
 			default:
 				// Peer received control message to close.  Cause sendHandler
 				// to exit without closing the write channel (in case writes
-				// still happening) and allow it to finish sending any queued
-				// messages.
-				rs.wr <- nil
+				// still happening) and discard any queued messages.
+				rs.cancelSender()
 				<-rs.writerDone
 
 				// Close socket connection.
@@ -383,11 +431,11 @@ func clientHandshake(conn net.Conn, logger stdlog.StdLog, protocol byte, recvLim
 
 	sendLimit := byteToLength(buf[1] >> 4)
 	recvLimit = byteToLength(maxRecvLen)
-	return newRawSocketPeer(conn, serializer, logger, sendLimit, recvLimit), nil
+	return newRawSocketPeer(conn, serializer, logger, sendLimit, recvLimit, 0), nil
 }
 
 // serverHandshake handles the server-side of a RawSocket transport handshake.
-func serverHandshake(conn net.Conn, logger stdlog.StdLog, recvLimit int) (*rawSocketPeer, error) {
+func serverHandshake(conn net.Conn, logger stdlog.StdLog, recvLimit, outQueueSize int) (*rawSocketPeer, error) {
 	var buf [4]byte
 	if _, err := io.ReadFull(conn, buf[:]); err != nil {
 		return nil, err
@@ -426,10 +474,12 @@ func serverHandshake(conn net.Conn, logger stdlog.StdLog, recvLimit int) (*rawSo
 
 	sendLimit := byteToLength(buf[1] >> 4)
 	recvLimit = byteToLength(maxRecvLen)
-	return newRawSocketPeer(conn, serializer, logger, sendLimit, recvLimit), nil
+	return newRawSocketPeer(conn, serializer, logger, sendLimit, recvLimit, outQueueSize), nil
 }
 
-// fitRecvLimit finds the power of 2 that is greater than or equal to the specified receive limit.  This value is returned as the RawSocket transport byte representation of this value.
+// fitRecvLimit finds the power of 2 that is greater than or equal to the
+// specified receive limit.  This value is returned as the RawSocket transport
+// byte representation of this value.
 func fitRecvLimit(recvLimit int) byte {
 	if recvLimit > 0 {
 		for b := byte(0); b < 0xf; b++ {

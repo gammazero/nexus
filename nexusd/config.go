@@ -28,6 +28,8 @@ type Config struct {
 		// Allow origins that match these glob patterns when an origin header
 		// is present in the websocket upgrade request.
 		AllowOrigins []string `json:"allow_origins"`
+		// Limit on number of pending messages to send to each client.
+		OutQueueSize int `json:"out_queue_size"`
 	}
 
 	// RawSocket configuration parameters.
@@ -43,6 +45,8 @@ type Config struct {
 		// Files containing a certificate and matching private key.
 		CertFile string `json:"cert_file"`
 		KeyFile  string `json:"key_file"`
+		// Limit on number of pending messages to send to each client.
+		OutQueueSize int `json:"out_queue_size"`
 	}
 
 	// File to write log data to.  If not specified, log to stdout.

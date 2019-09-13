@@ -117,6 +117,23 @@ func AsList(v interface{}) (List, bool) {
 	return list, true
 }
 
+// ListToStrings converts a List to a slice of string.  Returns the string
+// slice and a boolean indicating if the conversion was successful.
+func ListToStrings(list List) ([]string, bool) {
+	if len(list) == 0 {
+		return nil, true
+	}
+	strs := make([]string, len(list))
+	for i := range list {
+		s, ok := AsString(list[i])
+		if !ok {
+			return nil, false
+		}
+		strs[i] = s
+	}
+	return strs, true
+}
+
 // OptionString returns named value as string; empty string if missing or not
 // string type.
 func OptionString(opts Dict, optionName string) string {

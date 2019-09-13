@@ -15,7 +15,7 @@ func hasFeature(d Dict, role, feature string) bool {
 	return b
 }
 
-func checkRoles(sess Session) error {
+func checkRoles(sess *Session) error {
 	if !sess.HasRole("caller") {
 		return errors.New("session does not have caller role")
 	}
@@ -61,11 +61,11 @@ func TestHasRoleFeatureLookup(t *testing.T) {
 	clientRoles["caller"]["features"] = boolMap
 	dict["roles"] = clientRoles
 
-	if err := checkRoles(Session{Details: dict}); err != nil {
+	if err := checkRoles(NewSession(nil, 0, nil, dict)); err != nil {
 		t.Fatal(err)
 	}
 
-	sess := Session{ID: ID(193847264)}
+	sess := &Session{ID: ID(193847264)}
 	if sess.String() != "193847264" {
 		t.Fatal("Got unexpected session ID string")
 	}
@@ -89,7 +89,7 @@ func TestHasRoleFeatureLookup(t *testing.T) {
 	}
 
 	// Check again after conversion.
-	if err := checkRoles(Session{Details: dict}); err != nil {
+	if err := checkRoles(NewSession(nil, 0, nil, dict)); err != nil {
 		t.Fatal(err)
 	}
 
@@ -110,7 +110,7 @@ func TestHasRoleFeatureLookup(t *testing.T) {
 		},
 		"authmethods": []string{"anonymous", "ticket"},
 	}
-	if err := checkRoles(Session{Details: dict}); err != nil {
+	if err := checkRoles(NewSession(nil, 0, nil, dict)); err != nil {
 		t.Fatal(err)
 	}
 }
@@ -221,7 +221,7 @@ func BenchmarkNormalized(b *testing.B) {
 
 	b.ResetTimer()
 	dict = NormalizeDict(dict)
-	sess := Session{Details: dict}
+	sess := &Session{Details: dict}
 	for i := 0; i < b.N; i++ {
 		checkRoles(sess)
 	}
@@ -242,7 +242,7 @@ func BenchmarkNotNormalized(b *testing.B) {
 	dict["roles"] = clientRoles
 
 	b.ResetTimer()
-	sess := Session{Details: dict}
+	sess := &Session{Details: dict}
 	for i := 0; i < b.N; i++ {
 		checkRoles(sess)
 	}

@@ -80,7 +80,7 @@ func main() {
 	wss.KeepAlive = 30 * time.Second
 
 	// Create rawsocket server.
-	rss := router.NewRawSocketServer(nxr, 0, 0)
+	rss := router.NewRawSocketServer(nxr)
 
 	// ---- Start servers ----
 
@@ -155,8 +155,8 @@ func main() {
 func createLocalCallee(nxr router.Router, realm string) (*client.Client, error) {
 	logger := log.New(os.Stdout, "CALLEE> ", log.LstdFlags)
 	cfg := client.Config{
-		Realm:  realm,
-		Logger: logger,
+		Realm:         realm,
+		Logger:        logger,
 	}
 	callee, err := client.ConnectLocal(nxr, cfg)
 	if err != nil {

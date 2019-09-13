@@ -137,7 +137,6 @@ func TestRPCProgressiveCallInterrupt(t *testing.T) {
 
 		// Give caller time to receive first message before closing.
 		time.Sleep(50 * time.Millisecond)
-		close(callerKiller)
 
 		// Wait for caller to close so that remaining messages will fail.
 		<-callerClosed
@@ -200,28 +199,33 @@ func TestRPCProgressiveCallInterrupt(t *testing.T) {
 	progHandler := func(result *wamp.Result) {
 		arg := result.Arguments[0].(string)
 		fmt.Println("Caller received progress response:", arg)
+		select {
+		case callerKiller <- struct{}{}:
+		default:
+		}
 	}
 
 	// Test calling the procedure.
-	var recvProgErr error
+	recvProgErr := make(chan error)
 	go func() {
 		ctx := context.Background()
 		_, e := caller.CallProgress(ctx, progProc, nil, nil, nil, "", progHandler)
-		if e != nil && e.Error() != "client closed" {
-			recvProgErr = fmt.Errorf(
-				"unexpected error returned from CallProgress: %s", e)
-		}
+		recvProgErr <- e
 	}()
 
 	// Wait for progressive results to start being returned, then kill caller.
 	<-callerKiller
+
 	err = caller.Close()
 	if err != nil {
 		t.Error("Failed to disconnect client:", err)
 	}
-	if recvProgErr != nil {
-		t.Error(recvProgErr)
+
+	err = <-recvProgErr
+	if err != client.ErrNotConn {
+		t.Errorf("unexpected error returned fom CallProgress: %s", err)
 	}
+	<-caller.Done()
 	close(callerClosed)
 
 	select {
@@ -243,7 +247,6 @@ func TestRPCProgressiveCallInterrupt(t *testing.T) {
 }
 
 func TestProgressStress(t *testing.T) {
-	t.Skip("needs investigation with ci")
 	defer leaktest.Check(t)()
 
 	// Connect callee session.
@@ -319,11 +322,20 @@ func TestProgressStress(t *testing.T) {
 	progHandler := func(result *wamp.Result) {
 		// Received another chunk of data.
 		chunk := result.Arguments[0].(string)
-		// Uncomment to make the caller slow to receive responses.  This will
-		// cause the dealer to be blocked trying to send to this client.
-		//time.Sleep(20 * time.Millisecond)
 		recvLen += len(chunk)
 		recvCount++
+
+		// Simulate processing time.  This causes the callee to have to pause
+		// and resend the RESULT, which happens when a callee generates results
+		// faster than the caller can process them.  The pause is long enough
+		// to ensure there are multiple retries.
+		//
+		// Pause on the 13th RESULT or every third call.
+		if recvCount == 13 && result.Request%3 == 0 {
+			fmt.Println("Caller pausing to process", recvCount, "of result",
+				result.Request)
+			time.Sleep(time.Millisecond * 250)
+		}
 	}
 
 	// All results, for all calls, must be recieved by timeout.
@@ -336,7 +348,7 @@ func TestProgressStress(t *testing.T) {
 		result, err := caller.CallProgress(
 			ctx, chunkProc, nil, wamp.List{i}, nil, "", progHandler)
 		if err != nil {
-			t.Error("Failed to call procedure:", err)
+			t.Fatal(err)
 		}
 
 		// As a final result, the callee returns the total length the data.

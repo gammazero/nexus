@@ -1,25 +1,9 @@
 language: go
 
 go:
-  - "1.9"
-  - "1.10"
-  - "1.11"
-  - "tip"
+  - 1.11.x
+  - 1.12.x
 
-before_script:
-  - go get github.com/gorilla/mux
-  - go get github.com/fortytw2/leaktest
-  - go get github.com/davecgh/go-spew/spew
-  - go vet -all -composites=false ./...
-
-script:
-  - go build ./examples/...
-  - go test ./nexusd/...
-  - go test -v -race ./wamp/...
-  - go test -v -race ./transport/...
-  - go test -v -race ./router/...
-  - go test -v -race ./client/...
-  - go test -v -race ./aat/...
-  - go test -v -race ./aat -scheme=ws -compress
-  - go test -v ./aat -scheme=wss -serialize=msgpack
-  - go test -v ./aat -scheme=tcps
+env:
+  global:
+    - GO111MODULE=on

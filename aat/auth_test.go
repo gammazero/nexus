@@ -76,8 +76,8 @@ func TestJoinRealmWithCRCookieAuth(t *testing.T) {
 	if err != nil {
 		t.Fatal("Failed to connect client:", err)
 	}
-	cli.Close()
 	details := cli.RealmDetails()
+	cli.Close()
 
 	// Client should not have be authenticated by cookie first time.
 	if ok, _ := wamp.AsBool(details["authbycookie"]); ok {
@@ -88,8 +88,8 @@ func TestJoinRealmWithCRCookieAuth(t *testing.T) {
 	if err != nil {
 		t.Fatal("Failed to connect client:", err)
 	}
-	cli.Close()
 	details = cli.RealmDetails()
+	cli.Close()
 
 	// If websocket, then should be authenticated by cookie this time.
 	if cfg.WsCfg.Jar != nil {
