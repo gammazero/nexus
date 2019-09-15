@@ -4,12 +4,8 @@ SERVICE_DIR = nexusd
 
 all: vet test service
 
-$(GOPATH)/bin/shadow:
-	go install golang.org/x/tools/go/analysis/passes/shadow/cmd/shadow
-
 vet: $(GOPATH)/bin/shadow
 	go vet -all -composites=false ./...
-	go vet -vettool=$(GOPATH)/bin/shadow ./...
 
 test:
 	go get github.com/fortytw2/leaktest
