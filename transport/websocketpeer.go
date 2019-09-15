@@ -37,6 +37,21 @@ type WebsocketConfig struct {
 	EnableRequestCapture bool `json:"enable_request_capture"`
 }
 
+// WebsocketError is returned on failure to connect to a websocket, and
+// contains the http response if one is available.
+type WebsocketError struct {
+	Err      error
+	Response *http.Response
+}
+
+// Error returns a string describing the failure to connect to a websocket.
+func (e *WebsocketError) Error() string {
+	if e.Response == nil {
+		return e.Err.Error()
+	}
+	return fmt.Sprintf("%s: %s", e.Err, e.Response.Status)
+}
+
 // websocketPeer implements the Peer interface, connecting the Send and Recv
 // methods to a websocket.
 type websocketPeer struct {
@@ -60,7 +75,7 @@ type websocketPeer struct {
 }
 
 const (
-	// WAMP uses the following WebSocket subprotocol identifiers for unbatched
+	// WAMP uses the following websocket subprotocol identifiers for unbatched
 	// modes:
 	jsonWebsocketProtocol    = "wamp.2.json"
 	msgpackWebsocketProtocol = "wamp.2.msgpack"
@@ -95,8 +110,6 @@ func ConnectWebsocketPeerContext(ctx context.Context, routerURL string, serializ
 		protocol    string
 		payloadType int
 		serializer  serialize.Serializer
-		conn        *websocket.Conn
-		err         error
 	)
 
 	switch serialization {
@@ -125,8 +138,7 @@ func ConnectWebsocketPeerContext(ctx context.Context, routerURL string, serializ
 
 	if wsCfg != nil {
 		if wsCfg.ProxyURL != "" {
-			var proxyURL *url.URL
-			proxyURL, err = url.Parse(wsCfg.ProxyURL)
+			proxyURL, err := url.Parse(wsCfg.ProxyURL)
 			if err != nil {
 				return nil, err
 			}
@@ -136,9 +148,12 @@ func ConnectWebsocketPeerContext(ctx context.Context, routerURL string, serializ
 		dialer.EnableCompression = true
 	}
 
-	conn, _, err = dialer.DialContext(ctx, routerURL, nil)
+	conn, rsp, err := dialer.DialContext(ctx, routerURL, nil)
 	if err != nil {
-		return nil, err
+		return nil, &WebsocketError{
+			Err:      err,
+			Response: rsp,
+		}
 	}
 	return NewWebsocketPeer(conn, serializer, payloadType, logger, 0, 0), nil
 }
@@ -148,7 +163,7 @@ func ConnectWebsocketPeerContext(ctx context.Context, routerURL string, serializ
 // servers to handle connections from clients.
 //
 // A non-zero keepAlive value configures a websocket "ping/pong" heartbeat,
-// sendings websocket "pings" every keepAlive interval.  If a "pong" response
+// sending websocket "pings" every keepAlive interval.  If a "pong" response
 // is not received after 2 intervals have elapsed then the websocket is closed.
 func NewWebsocketPeer(conn *websocket.Conn, serializer serialize.Serializer, payloadType int, logger stdlog.StdLog, keepAlive time.Duration, outQueueSize int) wamp.Peer {
 	w := &websocketPeer{
