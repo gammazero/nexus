@@ -4,7 +4,7 @@ SERVICE_DIR = nexusd
 
 all: vet test service
 
-vet: $(GOPATH)/bin/shadow
+vet:
 	go vet -all -composites=false ./...
 
 test:
