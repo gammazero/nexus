@@ -16,21 +16,6 @@ import (
 	"github.com/gorilla/websocket"
 )
 
-// WebsocketError is returned on failure to connect to a websocket, and
-// contains the http response if one is available.
-type WebsocketError struct {
-	Err      error
-	Response *http.Response
-}
-
-// Error returns a string describing the failure to connect to a websocket.
-func (e *WebsocketError) Error() string {
-	if e.Response == nil {
-		return e.Err.Error()
-	}
-	return fmt.Sprintf("%s: %s", e.Err, e.Response.Status)
-}
-
 // WebsocketConfig is used to configure client websocket settings.
 type WebsocketConfig struct {
 	// Request per message write compression, if allowed by server.
@@ -50,6 +35,21 @@ type WebsocketConfig struct {
 	// See: https://godoc.org/github.com/gammazero/nexus/router#WebsocketServer
 	EnableTrackingCookie bool `json:"enable_tracking_cookie"`
 	EnableRequestCapture bool `json:"enable_request_capture"`
+}
+
+// WebsocketError is returned on failure to connect to a websocket, and
+// contains the http response if one is available.
+type WebsocketError struct {
+	Err      error
+	Response *http.Response
+}
+
+// Error returns a string describing the failure to connect to a websocket.
+func (e *WebsocketError) Error() string {
+	if e.Response == nil {
+		return e.Err.Error()
+	}
+	return fmt.Sprintf("%s: %s", e.Err, e.Response.Status)
 }
 
 // websocketPeer implements the Peer interface, connecting the Send and Recv
@@ -75,7 +75,7 @@ type websocketPeer struct {
 }
 
 const (
-	// WAMP uses the following WebSocket subprotocol identifiers for unbatched
+	// WAMP uses the following websocket subprotocol identifiers for unbatched
 	// modes:
 	jsonWebsocketProtocol    = "wamp.2.json"
 	msgpackWebsocketProtocol = "wamp.2.msgpack"
@@ -163,7 +163,7 @@ func ConnectWebsocketPeerContext(ctx context.Context, routerURL string, serializ
 // servers to handle connections from clients.
 //
 // A non-zero keepAlive value configures a websocket "ping/pong" heartbeat,
-// sendings websocket "pings" every keepAlive interval.  If a "pong" response
+// sending websocket "pings" every keepAlive interval.  If a "pong" response
 // is not received after 2 intervals have elapsed then the websocket is closed.
 func NewWebsocketPeer(conn *websocket.Conn, serializer serialize.Serializer, payloadType int, logger stdlog.StdLog, keepAlive time.Duration, outQueueSize int) wamp.Peer {
 	w := &websocketPeer{
