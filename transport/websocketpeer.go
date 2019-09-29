@@ -10,9 +10,9 @@ import (
 	"sync/atomic"
 	"time"
 
-	"github.com/gammazero/nexus/stdlog"
-	"github.com/gammazero/nexus/transport/serialize"
-	"github.com/gammazero/nexus/wamp"
+	"github.com/gammazero/nexus/v3/stdlog"
+	"github.com/gammazero/nexus/v3/transport/serialize"
+	"github.com/gammazero/nexus/v3/wamp"
 	"github.com/gorilla/websocket"
 )
 
@@ -32,7 +32,7 @@ type WebsocketConfig struct {
 	ProxyURL string
 
 	// Deprecated server config options.
-	// See: https://godoc.org/github.com/gammazero/nexus/router#WebsocketServer
+	// See: https://godoc.org/github.com/gammazero/nexus/v3/router#WebsocketServer
 	EnableTrackingCookie bool `json:"enable_tracking_cookie"`
 	EnableRequestCapture bool `json:"enable_request_capture"`
 }
@@ -86,26 +86,14 @@ const (
 
 type DialFunc func(network, addr string) (net.Conn, error)
 
-// ConnectWebsocketPeer calls ConnectWebsocketPeerContext without a Dial
-// context.
-func ConnectWebsocketPeer(
-	routerURL string,
-	serialization serialize.Serialization,
-	tlsConfig *tls.Config,
-	dial DialFunc,
-	logger stdlog.StdLog,
-	wsCfg *WebsocketConfig) (wamp.Peer, error) {
-	return ConnectWebsocketPeerContext(context.Background(), routerURL, serialization, tlsConfig, dial, logger, wsCfg)
-}
-
-// ConnectWebsocketPeerContext creates a new websocket client with the
-// specified config, connects the client to the websocket server at the
-// specified URL, and returns the connected websocket peer.
+// ConnectWebsocketPeer creates a new websocket client with the specified
+// config, connects the client to the websocket server at the specified URL,
+// and returns the connected websocket peer.
 //
 // The provided Context must be non-nil.  If the context expires before the
 // connection is complete, an error is returned.  Once successfully connected,
 // any expiration of the context will not affect the connection.
-func ConnectWebsocketPeerContext(ctx context.Context, routerURL string, serialization serialize.Serialization, tlsConfig *tls.Config, dial DialFunc, logger stdlog.StdLog, wsCfg *WebsocketConfig) (wamp.Peer, error) {
+func ConnectWebsocketPeer(ctx context.Context, routerURL string, serialization serialize.Serialization, tlsConfig *tls.Config, dial DialFunc, logger stdlog.StdLog, wsCfg *WebsocketConfig) (wamp.Peer, error) {
 	var (
 		protocol    string
 		payloadType int

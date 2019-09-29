@@ -6,8 +6,8 @@ import (
 	"math/rand"
 	"testing"
 
-	"github.com/gammazero/nexus/client"
-	"github.com/gammazero/nexus/wamp"
+	"github.com/gammazero/nexus/v3/client"
+	"github.com/gammazero/nexus/v3/wamp"
 )
 
 func BenchmarkRpcIntegerList(b *testing.B) {
@@ -25,7 +25,7 @@ func BenchmarkRpcIntegerList(b *testing.B) {
 
 func BenchmarkRpcShortString(b *testing.B) {
 	shortString := randomString(128)
-	benchmarkRpc(b, identify, wamp.List{shortString}, func(result *wamp.Result) {
+	benchmarkRpc(b, identity, wamp.List{shortString}, func(result *wamp.Result) {
 		v, ok := wamp.AsString(result.Arguments[0])
 		if !ok {
 			panic("Can not typecast result to int64")
@@ -38,7 +38,7 @@ func BenchmarkRpcShortString(b *testing.B) {
 
 func BenchmarkRpcLargeString(b *testing.B) {
 	largeString := randomString(4096)
-	benchmarkRpc(b, identify, wamp.List{largeString}, func(result *wamp.Result) {
+	benchmarkRpc(b, identity, wamp.List{largeString}, func(result *wamp.Result) {
 		v, ok := wamp.AsString(result.Arguments[0])
 		if !ok {
 			panic("Can not typecast result to int64")
@@ -56,7 +56,7 @@ func BenchmarkRpcDict(b *testing.B) {
 	}
 	args := wamp.List{dict}
 
-	benchmarkRpc(b, identify, args, func(result *wamp.Result) {
+	benchmarkRpc(b, identity, args, func(result *wamp.Result) {
 		v, ok := wamp.AsDict(result.Arguments[0])
 		if !ok {
 			panic("Can not typecast result to int64")
@@ -87,7 +87,7 @@ func BenchmarkRPCProgress(b *testing.B) {
 	sendChunk := string(sendBytes)
 
 	// Define invocation handler.
-	handler := func(ctx context.Context, args wamp.List, kwargs, details wamp.Dict) *client.InvokeResult {
+	handler := func(ctx context.Context, inv *wamp.Invocation) client.InvokeResult {
 		// Read and send chunks of data until the buffer is empty.
 		for i := 0; i < b.N; i++ {
 			// Send a chunk of data.
@@ -97,7 +97,7 @@ func BenchmarkRPCProgress(b *testing.B) {
 			}
 		}
 		// Send total length as final result.
-		return &client.InvokeResult{Args: wamp.List{dataLen}}
+		return client.InvokeResult{Args: wamp.List{dataLen}}
 	}
 
 	// Register procedure.
@@ -119,8 +119,8 @@ func BenchmarkRPCProgress(b *testing.B) {
 
 	b.ResetTimer()
 
-	result, err := client.CallProgress(
-		context.Background(), chunkProc, nil, nil, nil, "", progHandler)
+	result, err := client.Call(
+		context.Background(), chunkProc, nil, nil, nil, progHandler)
 	if err != nil {
 		panic(err)
 	}
@@ -131,7 +131,10 @@ func BenchmarkRPCProgress(b *testing.B) {
 	totalLen, _ := wamp.AsInt64(result.Arguments[0])
 	// Panic if benchmark not valid
 	if int(totalLen) != dataLen {
-		panic("received wrong about of data")
+		panic("received wrong about of data in final result")
+	}
+	if recvLen != dataLen {
+		panic("received wrong about of data in progressive results")
 	}
 
 	client.Close()
@@ -159,7 +162,7 @@ func benchmarkRpc(b *testing.B, action client.InvocationHandler, callArgs wamp.L
 	b.ResetTimer()
 
 	for i := 0; i < b.N; i++ {
-		result, err = client.Call(ctx, "action", nil, callArgs, nil, "")
+		result, err = client.Call(ctx, "action", nil, callArgs, nil, nil)
 		if err != nil {
 			panic(err)
 		}
@@ -172,19 +175,19 @@ func benchmarkRpc(b *testing.B, action client.InvocationHandler, callArgs wamp.L
 	server.Close()
 }
 
-func sum(ctx context.Context, args wamp.List, kwargs, details wamp.Dict) *client.InvokeResult {
+func sum(ctx context.Context, inv *wamp.Invocation) client.InvokeResult {
 	var sum int64
-	for i := range args {
-		n, ok := wamp.AsInt64(args[i])
+	for _, arg := range inv.Arguments {
+		n, ok := wamp.AsInt64(arg)
 		if ok {
 			sum += n
 		}
 	}
-	return &client.InvokeResult{Args: wamp.List{sum}}
+	return client.InvokeResult{Args: wamp.List{sum}}
 }
 
-func identify(ctx context.Context, args wamp.List, kwargs, details wamp.Dict) *client.InvokeResult {
-	return &client.InvokeResult{Args: args}
+func identity(ctx context.Context, inv *wamp.Invocation) client.InvokeResult {
+	return client.InvokeResult{Args: inv.Arguments}
 }
 
 func randomString(n int) string {

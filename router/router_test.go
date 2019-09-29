@@ -8,9 +8,9 @@ import (
 	"time"
 
 	"github.com/fortytw2/leaktest"
-	"github.com/gammazero/nexus/stdlog"
-	"github.com/gammazero/nexus/transport"
-	"github.com/gammazero/nexus/wamp"
+	"github.com/gammazero/nexus/v3/stdlog"
+	"github.com/gammazero/nexus/v3/transport"
+	"github.com/gammazero/nexus/v3/wamp"
 )
 
 const (

@@ -8,17 +8,13 @@ import (
 	"os"
 	"strings"
 
-	"github.com/gammazero/nexus/transport"
-	"github.com/gammazero/nexus/wamp"
+	"github.com/gammazero/nexus/v3/transport"
+	"github.com/gammazero/nexus/v3/wamp"
 )
-
-func ConnectNet(routerURL string, cfg Config) (*Client, error) {
-	return ConnectNetContext(context.Background(), routerURL, cfg)
-}
 
 // ConnectNet creates a new client connected a WAMP router over a websocket,
 // TCP socket, or unix socket.  The new client joins the realm specified in the
-// Config.
+// Config.  The context may be used to cancel or timeout connecting to a router.
 //
 // For websocket clients, the routerURL has the form "ws://host:port/" or
 // "wss://host:port/", for websocket or websocket with TLS respectively.  The
@@ -36,7 +32,7 @@ func ConnectNet(routerURL string, cfg Config) (*Client, error) {
 // For Unix socket clients, the routerURL has the form "unix://path".  The path
 // portion specifies a path on the local file system where the Unix socket is
 // created.  TLS is not used for unix socket.
-func ConnectNetContext(ctx context.Context, routerURL string, cfg Config) (*Client, error) {
+func ConnectNet(ctx context.Context, routerURL string, cfg Config) (*Client, error) {
 	if cfg.Logger == nil {
 		cfg.Logger = log.New(os.Stderr, "", 0)
 	}
@@ -56,17 +52,17 @@ func ConnectNetContext(ctx context.Context, routerURL string, cfg Config) (*Clie
 		routerURL = u.String()
 		fallthrough
 	case "ws", "wss":
-		p, err = transport.ConnectWebsocketPeerContext(ctx, routerURL, cfg.Serialization,
+		p, err = transport.ConnectWebsocketPeer(ctx, routerURL, cfg.Serialization,
 			cfg.TlsCfg, cfg.Dial, cfg.Logger, &cfg.WsCfg)
 	case "tcp":
-		p, err = transport.ConnectRawSocketPeerContext(ctx, u.Scheme, u.Host,
+		p, err = transport.ConnectRawSocketPeer(ctx, u.Scheme, u.Host,
 			cfg.Serialization, cfg.Logger, cfg.RecvLimit)
 	case "tcps":
-		p, err = transport.ConnectTlsRawSocketPeerContext(ctx, "tcp", u.Host,
+		p, err = transport.ConnectTlsRawSocketPeer(ctx, "tcp", u.Host,
 			cfg.Serialization, cfg.TlsCfg, cfg.Logger, cfg.RecvLimit)
 	case "unix":
 		path := strings.TrimRight(u.Host+u.Path, "/")
-		p, err = transport.ConnectRawSocketPeerContext(ctx, u.Scheme, path,
+		p, err = transport.ConnectRawSocketPeer(ctx, u.Scheme, path,
 			cfg.Serialization, cfg.Logger, cfg.RecvLimit)
 	default:
 		err = fmt.Errorf("invalid url: %s", routerURL)

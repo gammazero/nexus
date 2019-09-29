@@ -4,8 +4,8 @@ import (
 	"testing"
 	"time"
 
-	"github.com/gammazero/nexus/client"
-	"github.com/gammazero/nexus/wamp"
+	"github.com/gammazero/nexus/v3/client"
+	"github.com/gammazero/nexus/v3/wamp"
 )
 
 func TestWhitelistAttribute(t *testing.T) {
@@ -19,11 +19,8 @@ func TestWhitelistAttribute(t *testing.T) {
 	if err != nil {
 		t.Fatal("Failed to connect client:", err)
 	}
-	sync1 := make(chan struct{})
-	evtHandler1 := func(args wamp.List, kwargs wamp.Dict, details wamp.Dict) {
-		sync1 <- struct{}{}
-	}
-	err = subscriber1.Subscribe(testTopic, evtHandler1, nil)
+	sub1Events := make(chan *wamp.Event)
+	err = subscriber1.SubscribeChan(testTopic, sub1Events, nil)
 	if err != nil {
 		t.Fatal("subscribe error:", err)
 	}
@@ -37,11 +34,8 @@ func TestWhitelistAttribute(t *testing.T) {
 	if err != nil {
 		t.Fatal("Failed to connect client:", err)
 	}
-	sync2 := make(chan struct{})
-	evtHandler2 := func(args wamp.List, kwargs wamp.Dict, details wamp.Dict) {
-		sync2 <- struct{}{}
-	}
-	err = subscriber2.Subscribe(testTopic, evtHandler2, nil)
+	sub2Events := make(chan *wamp.Event)
+	err = subscriber2.SubscribeChan(testTopic, sub2Events, nil)
 	if err != nil {
 		t.Fatal("subscribe error:", err)
 	}
@@ -59,14 +53,14 @@ func TestWhitelistAttribute(t *testing.T) {
 
 	// Make sure the event was received by subscriber1
 	select {
-	case <-sync1:
+	case <-sub1Events:
 	case <-time.After(200 * time.Millisecond):
 		t.Fatal("Subscriber1 did not get published event")
 	}
 
 	// Make sure the event was not received by subscriber2
 	select {
-	case <-sync2:
+	case <-sub2Events:
 		t.Fatal("Subscriber2 received published event")
 	case <-time.After(200 * time.Millisecond):
 	}
@@ -78,13 +72,13 @@ func TestWhitelistAttribute(t *testing.T) {
 
 	// Make sure the event was received by subscriber2
 	select {
-	case <-sync2:
+	case <-sub2Events:
 	case <-time.After(200 * time.Millisecond):
 		t.Fatal("Subscriber2 did not get published event")
 	}
 	// Make sure the event was not received by subscriber1
 	select {
-	case <-sync1:
+	case <-sub1Events:
 		t.Fatal("Subscriber1 received published event")
 	case <-time.After(200 * time.Millisecond):
 	}
@@ -96,13 +90,13 @@ func TestWhitelistAttribute(t *testing.T) {
 
 	// Make sure the event was received by subscriber1
 	select {
-	case <-sync1:
+	case <-sub1Events:
 	case <-time.After(200 * time.Millisecond):
 		t.Fatal("Subscriber1 did not get published event")
 	}
 	// Make sure the event was received by subscriber2
 	select {
-	case <-sync2:
+	case <-sub2Events:
 	case <-time.After(200 * time.Millisecond):
 		t.Fatal("Subscriber2 did not get published event")
 	}
@@ -135,11 +129,8 @@ func TestBlacklistAttribute(t *testing.T) {
 		t.Error("Broker does not have", featureSubBlackWhiteListing, "feature")
 	}
 
-	sync1 := make(chan struct{})
-	evtHandler1 := func(args wamp.List, kwargs wamp.Dict, details wamp.Dict) {
-		sync1 <- struct{}{}
-	}
-	err = subscriber1.Subscribe(testTopic, evtHandler1, nil)
+	sub1Events := make(chan *wamp.Event)
+	err = subscriber1.SubscribeChan(testTopic, sub1Events, nil)
 	if err != nil {
 		t.Fatal("subscribe error:", err)
 	}
@@ -153,11 +144,8 @@ func TestBlacklistAttribute(t *testing.T) {
 	if err != nil {
 		t.Fatal("Failed to connect client:", err)
 	}
-	sync2 := make(chan struct{})
-	evtHandler2 := func(args wamp.List, kwargs wamp.Dict, details wamp.Dict) {
-		sync2 <- struct{}{}
-	}
-	err = subscriber2.Subscribe(testTopic, evtHandler2, nil)
+	sub2Events := make(chan *wamp.Event)
+	err = subscriber2.SubscribeChan(testTopic, sub2Events, nil)
 	if err != nil {
 		t.Fatal("subscribe error:", err)
 	}
@@ -175,14 +163,14 @@ func TestBlacklistAttribute(t *testing.T) {
 
 	// Make sure the event was received by subscriber1
 	select {
-	case <-sync1:
+	case <-sub1Events:
 	case <-time.After(200 * time.Millisecond):
 		t.Fatal("Subscriber1 did not get published event")
 	}
 
 	// Make sure the event was not received by subscriber2
 	select {
-	case <-sync2:
+	case <-sub2Events:
 		t.Fatal("Subscriber2 received published event")
 	case <-time.After(200 * time.Millisecond):
 	}

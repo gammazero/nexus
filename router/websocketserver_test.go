@@ -1,14 +1,15 @@
 package router
 
 import (
+	"context"
 	"fmt"
 	"net/http"
 	"testing"
 
 	"github.com/fortytw2/leaktest"
-	"github.com/gammazero/nexus/transport"
-	"github.com/gammazero/nexus/transport/serialize"
-	"github.com/gammazero/nexus/wamp"
+	"github.com/gammazero/nexus/v3/transport"
+	"github.com/gammazero/nexus/v3/transport/serialize"
+	"github.com/gammazero/nexus/v3/wamp"
 	"github.com/gorilla/websocket"
 )
 
@@ -49,7 +50,7 @@ func TestWSHandshakeJSON(t *testing.T) {
 		EnableCompression: true,
 	}
 	client, err := transport.ConnectWebsocketPeer(
-		fmt.Sprintf("ws://%s/", wsAddr), serialize.JSON, nil, nil, r.Logger(), &wsCfg)
+		context.Background(), fmt.Sprintf("ws://%s/", wsAddr), serialize.JSON, nil, nil, r.Logger(), &wsCfg)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -82,7 +83,7 @@ func TestWSHandshakeMsgpack(t *testing.T) {
 	defer closer.Close()
 
 	client, err := transport.ConnectWebsocketPeer(
-		fmt.Sprintf("ws://%s/", wsAddr), serialize.MSGPACK, nil, nil, r.Logger(), nil)
+		context.Background(), fmt.Sprintf("ws://%s/", wsAddr), serialize.MSGPACK, nil, nil, r.Logger(), nil)
 	if err != nil {
 		t.Fatal(err)
 	}

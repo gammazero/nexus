@@ -6,9 +6,9 @@ import (
 	"os"
 	"os/signal"
 
-	"github.com/gammazero/nexus/client"
-	"github.com/gammazero/nexus/examples/newclient"
-	"github.com/gammazero/nexus/wamp"
+	"github.com/gammazero/nexus/v3/client"
+	"github.com/gammazero/nexus/v3/examples/newclient"
+	"github.com/gammazero/nexus/v3/wamp"
 )
 
 const procedureName = "sum"
@@ -43,14 +43,14 @@ func main() {
 	}
 }
 
-func sum(ctx context.Context, args wamp.List, kwargs, details wamp.Dict) *client.InvokeResult {
+func sum(ctx context.Context, inv *wamp.Invocation) client.InvokeResult {
 	log.Println("Calculating sum")
 	var sum int64
-	for i := range args {
-		n, ok := wamp.AsInt64(args[i])
+	for _, arg := range inv.Arguments {
+		n, ok := wamp.AsInt64(arg)
 		if ok {
 			sum += n
 		}
 	}
-	return &client.InvokeResult{Args: wamp.List{sum}}
+	return client.InvokeResult{Args: wamp.List{sum}}
 }

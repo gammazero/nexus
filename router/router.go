@@ -14,36 +14,11 @@ import (
 	"sync"
 	"time"
 
-	"github.com/gammazero/nexus/stdlog"
-	"github.com/gammazero/nexus/wamp"
+	"github.com/gammazero/nexus/v3/stdlog"
+	"github.com/gammazero/nexus/v3/wamp"
 )
 
 const helloTimeout = 5 * time.Second
-
-// Deprecated: replaced by Config
-//
-// RouterConfig is a type alias for the deprecated RouterConfig.
-// router.Config replaces router.RouterConfig
-type RouterConfig = Config
-
-// Config configures the router with realms, and optionally a template for
-// creating new realms.
-type Config struct {
-	// RealmConfigs defines the configurations for realms within the router.
-	RealmConfigs []*RealmConfig `json:"realms"`
-
-	// RealmTemplate, if defined, is used by the router to create new realms
-	// when a client requests to join a realm that does not yet exist.  If
-	// RealmTemplate is nil (the default), then clients must join existing
-	// realms.
-	//
-	// Caution, enabling a realm template that allows anonymous authentication
-	// allows unauthenticated clients to create new realms.
-	RealmTemplate *RealmConfig `json:"realm_template"`
-
-	// Enable debug logging for router, realm, broker, dealer
-	Debug bool
-}
 
 // A Router handles new Peers and routes requests to the requested Realm.
 type Router interface {

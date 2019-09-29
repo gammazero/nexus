@@ -4,8 +4,8 @@ import (
 	"sync"
 	"testing"
 
-	"github.com/gammazero/nexus/client"
-	"github.com/gammazero/nexus/wamp"
+	"github.com/gammazero/nexus/v3/client"
+	"github.com/gammazero/nexus/v3/wamp"
 )
 
 const benchMsgCount = 5
@@ -49,13 +49,13 @@ func BenchmarkPub512Sub(b *testing.B) {
 func benchPubSub(subCount int, b *testing.B) {
 	var allDone sync.WaitGroup
 
-	evtHandler := func(args wamp.List, kwargs wamp.Dict, details wamp.Dict) {
+	eventHandler := func(ev *wamp.Event) {
 		allDone.Done()
 	}
 
 	subs := make([]*client.Client, subCount)
 	for i := range subs {
-		subs[i] = connectSubscriber(evtHandler)
+		subs[i] = connectSubscriber(eventHandler)
 	}
 
 	// Connect publisher session.

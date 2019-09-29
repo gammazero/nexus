@@ -7,7 +7,7 @@ import (
 	"time"
 
 	"github.com/fortytw2/leaktest"
-	"github.com/gammazero/nexus/wamp"
+	"github.com/gammazero/nexus/v3/wamp"
 )
 
 const (
@@ -26,17 +26,21 @@ func TestPubSub(t *testing.T) {
 	}
 
 	errChan := make(chan error)
-	evtHandler := func(args wamp.List, kwargs wamp.Dict, details wamp.Dict) {
-		arg, _ := wamp.AsString(args[0])
+	eventHandler := func(event *wamp.Event) {
+		if len(event.Arguments) == 0 {
+			errChan <- errors.New("missing arg")
+			return
+		}
+		arg, _ := wamp.AsString(event.Arguments[0])
 		if arg != "hello world" {
-			errChan <- errors.New("event missing or bad args")
+			errChan <- errors.New("bad arg")
 			return
 		}
 		errChan <- nil
 	}
 
 	// Subscribe to event.
-	err = subscriber.Subscribe(testTopic, evtHandler, nil)
+	err = subscriber.Subscribe(testTopic, eventHandler, nil)
 	if err != nil {
 		t.Fatal("subscribe error:", err)
 	}
@@ -94,13 +98,17 @@ func TestPubSubWildcard(t *testing.T) {
 	}
 
 	errChan := make(chan error)
-	evtHandler := func(args wamp.List, kwargs wamp.Dict, details wamp.Dict) {
-		arg, _ := wamp.AsString(args[0])
-		if arg != "hello world" {
-			errChan <- errors.New("event missing or bad args")
+	eventHandler := func(event *wamp.Event) {
+		if len(event.Arguments) == 0 {
+			errChan <- errors.New("missing arg")
 			return
 		}
-		origTopic, _ := wamp.AsURI(details["topic"])
+		arg, _ := wamp.AsString(event.Arguments[0])
+		if arg != "hello world" {
+			errChan <- errors.New("bad arg")
+			return
+		}
+		origTopic, _ := wamp.AsURI(event.Details["topic"])
 		if origTopic != testTopic {
 			errChan <- errors.New("wrong original topic")
 			return
@@ -109,7 +117,7 @@ func TestPubSubWildcard(t *testing.T) {
 	}
 
 	// Subscribe to event with wildcard match.
-	err = subscriber.Subscribe(testTopicWC, evtHandler, wamp.SetOption(nil, "match", "wildcard"))
+	err = subscriber.Subscribe(testTopicWC, eventHandler, wamp.SetOption(nil, "match", "wildcard"))
 	if err != nil {
 		t.Fatal("subscribe error:", err)
 	}
@@ -156,12 +164,10 @@ func TestUnsubscribeWrongTopic(t *testing.T) {
 		t.Fatal("Failed to connect client:", err)
 	}
 
-	evtHandler := func(args wamp.List, kwargs wamp.Dict, details wamp.Dict) {
-		return
-	}
+	eventHandler := func(_ *wamp.Event) { return }
 
 	// Subscribe to event.
-	err = subscriber.Subscribe(testTopic, evtHandler, nil)
+	err = subscriber.Subscribe(testTopic, eventHandler, nil)
 	if err != nil {
 		t.Fatal("subscribe error:", err)
 	}
@@ -179,7 +185,7 @@ func TestUnsubscribeWrongTopic(t *testing.T) {
 
 	// Subscribe to other event.
 	topic2 := "nexus.test.topic2"
-	err = subscriber2.Subscribe(topic2, evtHandler, nil)
+	err = subscriber2.Subscribe(topic2, eventHandler, nil)
 	if err != nil {
 		t.Fatal("subscribe error:", err)
 	}
@@ -219,14 +225,12 @@ func TestSubscribeBurst(t *testing.T) {
 		t.Fatal("Failed to connect client:", err)
 	}
 
-	evtHandler := func(args wamp.List, kwargs wamp.Dict, details wamp.Dict) {
-		return
-	}
+	eventHandler := func(_ *wamp.Event) { return }
 
 	for i := 0; i < 10; i++ {
 		// Subscribe to event.
 		topic := fmt.Sprintf("test.topic%d", i)
-		err = sub.Subscribe(topic, evtHandler, nil)
+		err = sub.Subscribe(topic, eventHandler, nil)
 		if err != nil {
 			t.Fatal("subscribe error:", err)
 		}

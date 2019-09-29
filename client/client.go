@@ -14,9 +14,9 @@ import (
 	"sync"
 	"time"
 
-	"github.com/gammazero/nexus/stdlog"
-	"github.com/gammazero/nexus/transport/serialize"
-	"github.com/gammazero/nexus/wamp"
+	"github.com/gammazero/nexus/v3/stdlog"
+	"github.com/gammazero/nexus/v3/transport/serialize"
+	"github.com/gammazero/nexus/v3/wamp"
 )
 
 const (
@@ -61,13 +61,6 @@ var clientRoles = wamp.Dict{
 	},
 }
 
-// InvokeResult represents the result of invoking a procedure.
-type InvokeResult struct {
-	Args   wamp.List
-	Kwargs wamp.Dict
-	Err    wamp.URI
-}
-
 // A Client routes messages to/from a WAMP router.
 type Client struct {
 	sess *wamp.Session
@@ -89,14 +82,26 @@ type Client struct {
 	log   stdlog.StdLog
 	debug bool
 
-	cancel context.CancelFunc
-	ctx    context.Context
+	cancel     context.CancelFunc
+	ctx        context.Context
+	cancelMode string
 
 	closed bool
 
 	routerGoodbye *wamp.Goodbye
 	idGen         *wamp.SyncIDGen
 }
+
+// InvokeResult represents the result of invoking a procedure.
+type InvokeResult struct {
+	Args   wamp.List
+	Kwargs wamp.Dict
+	Err    wamp.URI
+}
+
+// InvocationCanceled is returned from an InvocationHandler to indicate that
+// the invocation was canceled.
+var InvocationCanceled = InvokeResult{Err: wamp.ErrCanceled}
 
 // NewClient takes a connected Peer, joins the realm specified in cfg, and if
 // successful, returns a new client.
@@ -136,9 +141,10 @@ func NewClient(p wamp.Peer, cfg Config) (*Client, error) {
 		invHandlerKill: map[wamp.ID]context.CancelFunc{},
 		progGate:       map[context.Context]wamp.ID{},
 
-		log:   cfg.Logger,
-		debug: cfg.Debug,
-		idGen: new(wamp.SyncIDGen),
+		log:        cfg.Logger,
+		debug:      cfg.Debug,
+		cancelMode: wamp.CancelModeKillNoWait,
+		idGen:      new(wamp.SyncIDGen),
 	}
 	c.ctx, c.cancel = context.WithCancel(context.Background())
 	go c.run() // start the core goroutine
@@ -161,19 +167,6 @@ func (c *Client) ID() wamp.ID { return c.sess.ID }
 // client was created, or the stdout logger if one was not provided in Config.
 func (c *Client) Logger() stdlog.StdLog { return c.log }
 
-// AuthFunc takes the CHALLENGE message and returns the signature string and
-// any WELCOME message details.  If the signature is accepted, the details are
-// used to populate the welcome message, as well as the session attributes.
-//
-// In response to a CHALLENGE message, the Client MUST send an AUTHENTICATE
-// message.  Therefore, AuthFunc does not return an error.  If an error is
-// encountered within AuthFunc, then an empty signature should be returned
-// since the client cannot give a valid signature response.
-//
-// This is used in the AuthHandler map, in a Config, and is used when the
-// client joins a realm.
-type AuthFunc func(challenge *wamp.Challenge) (signature string, details wamp.Dict)
-
 // RealmDetails returns the realm information received in the WELCOME message.
 func (c *Client) RealmDetails() wamp.Dict { return c.sess.Details }
 
@@ -184,7 +177,7 @@ func (c *Client) HasFeature(role, feature string) bool {
 }
 
 // EventHandler is a function that handles a publish event.
-type EventHandler func(args wamp.List, kwargs, details wamp.Dict)
+type EventHandler func(event *wamp.Event)
 
 // Subscribe subscribes the client to the specified topic or topic pattern.
 //
@@ -234,6 +227,11 @@ func (c *Client) Subscribe(topic string, fn EventHandler, options wamp.Dict) err
 	default:
 		return unexpectedMsgError(msg, wamp.SUBSCRIBED)
 	}
+}
+
+func (c *Client) SubscribeChan(topic string, events chan<- *wamp.Event, options wamp.Dict) error {
+	handler := func(ev *wamp.Event) { events <- ev }
+	return c.Subscribe(topic, handler, options)
 }
 
 // SubscriptionID returns the subscription ID for the specified topic.  If the
@@ -375,7 +373,7 @@ func (c *Client) Publish(topic string, options wamp.Dict, args wamp.List, kwargs
 // to receive them, SendProgress() may be called from within an
 // InvocationHandler for each progressive result to send to the caller.  It is
 // not required that the handler send any progressive results.
-type InvocationHandler func(context.Context, wamp.List, wamp.Dict, wamp.Dict) (result *InvokeResult)
+type InvocationHandler func(context.Context, *wamp.Invocation) InvokeResult
 
 // Register registers the client to handle invocations of the specified
 // procedure.  The InvocationHandler is set to be called for each procedure
@@ -487,6 +485,10 @@ func (c *Client) Unregister(procedure string) error {
 	return nil
 }
 
+// ProgressHandler is a type of function that is registered to asynchronously
+// handle progressive results while Call is waiting for a final response.
+type ProgressHandler func(*wamp.Result)
+
 // Call calls the procedure corresponding to the given URI.
 //
 // If an ERROR message is received from the router, the error value returned
@@ -500,37 +502,13 @@ func (c *Client) Unregister(procedure string) error {
 // deadline that cancels the call when the deadline expires.  There is no
 // separate Cancel() API to do this.  If the call is canceled before a result
 // is received, then a CANCEL message is sent to the router to cancel the call
-// according to the specified mode.
+// according to the specified mode.  The client's cancel mode can be set using
+// SetCallCancelMode().
 //
 // If the context is canceled or times out, then error returned will not be a
 // RPCError.  This allows the caller to distinguish between cancellation
 // initiated by the client (by canceling context), and cancellation initialed
 // elsewhere.
-//
-// Cancel Mode
-//
-// cancelMode must be one of the following: "kill", "killnowait', "skip".
-// Setting to "" specifies using the default value: "killnowait".  cancelMode
-// is an option for a CANCEL message, not for the CALL message, which is why it
-// is specified as a parameter to the Call() API, and not a message option for
-// CALL.
-//
-// Cancel Mode Behavior
-//
-// "skip": The pending call is canceled and ERROR is sent immediately back to
-// the caller.  No INTERRUPT is sent to the callee and the result is discarded
-// when received.
-//
-// "kill": INTERRUPT is sent to the client, but ERROR is not returned to the
-// caller until after the callee has responded to the canceled call.  In this
-// case the caller may receive RESULT or ERROR depending whether the callee
-// finishes processing the invocation or the interrupt first.
-//
-// "killnowait": The pending call is canceled and ERROR is sent immediately
-// back to the caller.  INTERRUPT is sent to the callee and any response to the
-// invocation or interrupt from the callee is discarded when received.
-//
-// If the callee does not support call canceling, then behavior is "skip".
 //
 // Call Timeout
 //
@@ -555,40 +533,18 @@ func (c *Client) Unregister(procedure string) error {
 //
 // Progressive Call Results
 //
-// To request progressive call results, use the CallProgress function.
-func (c *Client) Call(ctx context.Context, procedure string, options wamp.Dict, args wamp.List, kwargs wamp.Dict, cancelMode string) (*wamp.Result, error) {
-	return c.CallProgress(ctx, procedure, options, args, kwargs, cancelMode, nil)
-}
-
-// ProgressCallback is a type of function that is registered to asynchronously
-// handle progressive results during the a call to CallProgress().
-type ProgressCallback func(*wamp.Result)
-
-// CallProgress is the same as Call with the addition of a progress callback
-// function as the last parameter.
-//
-// A caller can indicate its willingness to receive progressive results by
-// calling CallProgress and supplying a callback function to handle progressive
-// results that are returned before the final result.  Like Call(),
-// CallProgress() returns the when the final result is returned by the callee.
-// The progress callback is guaranteed not to be called after CallProgress()
-// returns.
+// A caller indicates its willingness to receive progressive results by
+// supplying a ProgressHandler function to handle progressive results that are
+// returned before the final result.  Call returns the when the final result is
+// returned by the callee. The progress handler is guaranteed not to be called
+// after Call returns.
 //
 // There is no need to set the "receive_progress" option, as this is
 // automatically set if a progress callback is provided.
 //
 // IMPORTANT: If the context has a timeout, then this needs to be sufficient to
 // receive all progressive results as well as the final result.
-func (c *Client) CallProgress(ctx context.Context, procedure string, options wamp.Dict, args wamp.List, kwargs wamp.Dict, cancelMode string, progcb ProgressCallback) (*wamp.Result, error) {
-	switch cancelMode {
-	case wamp.CancelModeKill, wamp.CancelModeKillNoWait, wamp.CancelModeSkip:
-	case "":
-		cancelMode = wamp.CancelModeKillNoWait
-	default:
-		return nil, fmt.Errorf("cancel mode not one of: '%s', '%s', '%s'",
-			wamp.CancelModeKill, wamp.CancelModeKillNoWait, wamp.CancelModeSkip)
-	}
-
+func (c *Client) Call(ctx context.Context, procedure string, options wamp.Dict, args wamp.List, kwargs wamp.Dict, progcb ProgressHandler) (*wamp.Result, error) {
 	if !c.Connected() {
 		return nil, ErrNotConn
 	}
@@ -626,13 +582,12 @@ func (c *Client) CallProgress(ctx context.Context, procedure string, options wam
 	})
 
 	// Wait to receive RESULT message.
-	var msg wamp.Message
-	var err error
-	msg, err = c.waitForReplyWithCancel(ctx, id, cancelMode, procedure, progChan)
+	msg, err := c.waitForReplyWithCancel(ctx, id, procedure, progChan)
 
 	// Finish handling any remaining progressive results before returning the
 	// final result.
-	if progDone != nil {
+	if progcb != nil {
+		close(progChan)
 		<-progDone
 	}
 
@@ -648,6 +603,40 @@ func (c *Client) CallProgress(ctx context.Context, procedure string, options wam
 	default:
 		return nil, unexpectedMsgError(msg, wamp.RESULT)
 	}
+}
+
+// SetCallCancelMode sets the client's call cancel mode to one of the
+// following: "kill", "killnowait', "skip".  Setting to "" specifies using the
+// default value: "killnowait".  The cancel mode is an option that is sent in a
+// CANCEL message when a CALL is canceled.
+//
+// Cancel Mode Behavior
+//
+// "skip": The pending call is canceled and ERROR is sent immediately back to
+// the caller.  No INTERRUPT is sent to the callee and the result is discarded
+// when received.
+//
+// "kill": INTERRUPT is sent to the client, but ERROR is not returned to the
+// caller until after the callee has responded to the canceled call.  In this
+// case the caller may receive RESULT or ERROR depending whether the callee
+// finishes processing the invocation or the interrupt first.
+//
+// "killnowait": The pending call is canceled and ERROR is sent immediately
+// back to the caller.  INTERRUPT is sent to the callee and any response to the
+// invocation or interrupt from the callee is discarded when received.
+//
+// If the callee does not support call canceling, then behavior is "skip".
+func (c *Client) SetCallCancelMode(cancelMode string) error {
+	switch cancelMode {
+	case wamp.CancelModeKill, wamp.CancelModeKillNoWait, wamp.CancelModeSkip:
+	case "":
+		cancelMode = wamp.CancelModeKillNoWait
+	default:
+		return fmt.Errorf("cancel mode not one of: %q, %q, %q",
+			wamp.CancelModeKill, wamp.CancelModeKillNoWait, wamp.CancelModeSkip)
+	}
+	c.cancelMode = cancelMode
+	return nil
 }
 
 // RPCError is a wrapper for a WAMP ERROR message that is received as a result
@@ -732,10 +721,6 @@ func (c *Client) RouterGoodbye() *wamp.Goodbye {
 // that was passed into the invocation handler.  This context is responsible
 // for associating progressive results with the call in progress.
 func (c *Client) SendProgress(ctx context.Context, args wamp.List, kwArgs wamp.Dict) error {
-	if !c.Connected() {
-		return ErrNotConn
-	}
-
 	// Lookup the request ID using ctx.  If there is no request ID, this means
 	// that the caller is not accepting progressive results, or that the
 	// invocation handler has been closed because the call was canceled.
@@ -749,12 +734,15 @@ func (c *Client) SendProgress(ctx context.Context, args wamp.List, kwArgs wamp.D
 		// Caller is not accepting progressive results or call canceled.
 		return ErrCallerNoProg
 	}
-	return c.sess.SendCtx(ctx, &wamp.Yield{
+	if c.sess.SendCtx(ctx, &wamp.Yield{
 		Request:     req,
 		Options:     wamp.Dict{wamp.OptProgress: true},
 		Arguments:   args,
 		ArgumentsKw: kwArgs,
-	})
+	}) != nil {
+		return ErrNotConn
+	}
+	return nil
 }
 
 // joinRealm joins a WAMP realm, handling challenge/response authentication if
@@ -969,10 +957,7 @@ func (c *Client) waitForReply(id wamp.ID) (wamp.Message, error) {
 // IMPORTANT: Must not block on anything requiring run() goroutine, since the
 // run() goroutine may be blocked waiting for a reply to be read from the
 // awaiting reply channel.
-func (c *Client) waitForReplyWithCancel(ctx context.Context, id wamp.ID, mode, procedure string, progChan chan *wamp.Result) (wamp.Message, error) {
-	if progChan != nil {
-		defer close(progChan)
-	}
+func (c *Client) waitForReplyWithCancel(ctx context.Context, id wamp.ID, procedure string, progChan chan<- *wamp.Result) (wamp.Message, error) {
 	var wait chan wamp.Message
 	var ok bool
 	c.sess.Lock()
@@ -1006,11 +991,11 @@ CollectResults:
 		err = ctx.Err()
 		if c.debug {
 			c.log.Printf("Call to %q canceled by caller (mode=%s): %s",
-				procedure, mode, err)
+				procedure, c.cancelMode, err)
 		}
 		c.sess.Send(&wamp.Cancel{
 			Request: id,
-			Options: wamp.SetOption(nil, wamp.OptMode, mode),
+			Options: wamp.SetOption(nil, wamp.OptMode, c.cancelMode),
 		})
 		// Wait for the ERROR from the dealer.
 		timer := time.NewTimer(c.responseTimeout)
@@ -1127,7 +1112,7 @@ func (c *Client) runHandleEvent(msg *wamp.Event) {
 			msg.Subscription)
 		return
 	}
-	handler(msg.Arguments, msg.ArgumentsKw, msg.Details)
+	handler(msg)
 }
 
 // runHandleInvocation processes an INVOCATION message from the router
@@ -1135,6 +1120,7 @@ func (c *Client) runHandleEvent(msg *wamp.Event) {
 func (c *Client) runHandleInvocation(msg *wamp.Invocation) {
 	timeout, _ := wamp.AsInt64(msg.Details[wamp.OptTimeout])
 	progResOK, _ := msg.Details[wamp.OptReceiveProgress].(bool)
+	reqID := msg.Request
 
 	c.sess.Lock()
 	handler, ok := c.invHandlers[msg.Registration]
@@ -1149,7 +1135,7 @@ func (c *Client) runHandleInvocation(msg *wamp.Invocation) {
 		// problem with the registration ID argument.
 		c.sess.Send(&wamp.Error{
 			Type:      wamp.INVOCATION,
-			Request:   msg.Request,
+			Request:   reqID,
 			Details:   wamp.Dict{},
 			Error:     wamp.ErrInvalidArgument,
 			Arguments: wamp.List{errMsg},
@@ -1168,13 +1154,13 @@ func (c *Client) runHandleInvocation(msg *wamp.Invocation) {
 	} else {
 		ctx, cancel = context.WithCancel(context.Background())
 	}
-	c.invHandlerKill[msg.Request] = cancel
+	c.invHandlerKill[reqID] = cancel
 	c.activeInvHandlers.Add(1)
 
 	// If caller is accepting progressive results, create map entry to allow
 	// progress to be sent.
 	if progResOK {
-		c.progGate[ctx] = msg.Request
+		c.progGate[ctx] = reqID
 	}
 	c.sess.Unlock()
 
@@ -1185,33 +1171,31 @@ func (c *Client) runHandleInvocation(msg *wamp.Invocation) {
 		// Create channel to hold result.  Channel must be buffered.
 		// Otherwise, canceling the call will leak the goroutine that is
 		// blocked forever waiting to send the result to the channel.
-		resChan := make(chan *InvokeResult, 1)
+		resChan := make(chan InvokeResult, 1)
 		go func() {
 			// The Context is passed into the handler to tell the client
 			// application to stop whatever it is doing if it cares to pay
 			// attention.
-			resChan <- handler(ctx, msg.Arguments, msg.ArgumentsKw,
-				msg.Details)
+			resChan <- handler(ctx, msg)
 		}()
 
 		// Remove the kill switch when done processing invocation.
 		defer func() {
 			c.sess.Lock()
 			delete(c.progGate, ctx)
-			delete(c.invHandlerKill, msg.Request)
+			delete(c.invHandlerKill, reqID)
 			c.sess.Unlock()
 			c.activeInvHandlers.Done()
 		}()
 
 		// Wait for the handler to finish or for the call be to canceled.
-		var result *InvokeResult
+		var result InvokeResult
 		select {
 		case result = <-resChan:
 			// If the handler returns a nil result, this means the handler
 			// canceled the call.
-			if result == nil {
-				result = &InvokeResult{Err: wamp.ErrCanceled}
-				c.log.Println("INVOCATION", msg.Request, "canceled by callee")
+			if result.Err == wamp.ErrCanceled {
+				c.log.Println("INVOCATION", reqID, "canceled by callee")
 			}
 		case <-c.Done():
 			c.log.Print("Client stopping, invocation handler canceled")
@@ -1221,20 +1205,20 @@ func (c *Client) runHandleInvocation(msg *wamp.Invocation) {
 		case <-ctx.Done():
 			// Received an INTERRUPT message from the router.
 			// Note: handler is also just as likely to return on INTERRUPT.
-			result = &InvokeResult{Err: wamp.ErrCanceled}
+			result = InvokeResult{Err: wamp.ErrCanceled}
 			var reason string
 			if ctx.Err() == context.DeadlineExceeded {
 				reason = "callee due to timeout"
 			} else {
 				reason = "router"
 			}
-			c.log.Println("INVOCATION", msg.Request, "canceled by", reason)
+			c.log.Println("INVOCATION", reqID, "canceled by", reason)
 		}
 
 		if result.Err != "" {
 			c.sess.SendCtx(c.ctx, &wamp.Error{
 				Type:        wamp.INVOCATION,
-				Request:     msg.Request,
+				Request:     reqID,
 				Details:     wamp.Dict{},
 				Arguments:   result.Args,
 				ArgumentsKw: result.Kwargs,
@@ -1243,7 +1227,7 @@ func (c *Client) runHandleInvocation(msg *wamp.Invocation) {
 			return
 		}
 		c.sess.SendCtx(c.ctx, &wamp.Yield{
-			Request:     msg.Request,
+			Request:     reqID,
 			Options:     wamp.Dict{},
 			Arguments:   result.Args,
 			ArgumentsKw: result.Kwargs,

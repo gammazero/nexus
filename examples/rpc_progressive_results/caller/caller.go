@@ -22,8 +22,8 @@ import (
 	"os"
 	"strings"
 
-	"github.com/gammazero/nexus/examples/newclient"
-	"github.com/gammazero/nexus/wamp"
+	"github.com/gammazero/nexus/v3/examples/newclient"
+	"github.com/gammazero/nexus/v3/wamp"
 )
 
 const (
@@ -59,8 +59,8 @@ func main() {
 
 	// Call the example procedure, specifying the size of chunks to send as
 	// progressive results.
-	result, err := caller.CallProgress(
-		ctx, procedureName, nil, wamp.List{chunkSize}, nil, "", progHandler)
+	result, err := caller.Call(
+		ctx, procedureName, nil, wamp.List{chunkSize}, nil, progHandler)
 	if err != nil {
 		logger.Println("Failed to call procedure:", err)
 		return

@@ -7,8 +7,8 @@ import (
 	"time"
 
 	"github.com/fortytw2/leaktest"
-	"github.com/gammazero/nexus/client"
-	"github.com/gammazero/nexus/wamp"
+	"github.com/gammazero/nexus/v3/client"
+	"github.com/gammazero/nexus/v3/wamp"
 )
 
 const (
@@ -31,7 +31,7 @@ func TestRPCProgressiveCallResults(t *testing.T) {
 	}
 
 	// Handler sends progressive results.
-	handler := func(ctx context.Context, args wamp.List, kwargs, details wamp.Dict) *client.InvokeResult {
+	handler := func(ctx context.Context, inv *wamp.Invocation) client.InvokeResult {
 		e := callee.SendProgress(ctx, wamp.List{"Alpha"}, nil)
 		if e != nil {
 			fmt.Println("Error sending Alpha progress:", e)
@@ -48,13 +48,13 @@ func TestRPCProgressiveCallResults(t *testing.T) {
 		}
 
 		var sum int64
-		for i := range args {
-			n, ok := wamp.AsInt64(args[i])
+		for _, arg := range inv.Arguments {
+			n, ok := wamp.AsInt64(arg)
 			if ok {
 				sum += n
 			}
 		}
-		return &client.InvokeResult{Args: wamp.List{sum}}
+		return client.InvokeResult{Args: wamp.List{sum}}
 	}
 
 	// Register procedure
@@ -80,7 +80,7 @@ func TestRPCProgressiveCallResults(t *testing.T) {
 	// Test calling the procedure.
 	callArgs := wamp.List{1, 2, 3, 4, 5, 6, 7, 8, 9, 10}
 	ctx := context.Background()
-	result, err := caller.CallProgress(ctx, progProc, nil, callArgs, nil, "", progHandler)
+	result, err := caller.Call(ctx, progProc, nil, callArgs, nil, progHandler)
 	if err != nil {
 		t.Fatal("Failed to call procedure:", err)
 	}
@@ -127,7 +127,7 @@ func TestRPCProgressiveCallInterrupt(t *testing.T) {
 
 	// Handler sends progressive results.
 	var sendProgErr error
-	handler := func(ctx context.Context, args wamp.List, kwargs, details wamp.Dict) *client.InvokeResult {
+	handler := func(ctx context.Context, inv *wamp.Invocation) client.InvokeResult {
 		defer close(sentFinal)
 		// Send a progressive result.  This should go through just fine.
 		e := callee.SendProgress(ctx, wamp.List{"Alpha"}, nil)
@@ -171,7 +171,7 @@ func TestRPCProgressiveCallInterrupt(t *testing.T) {
 			sendProgErr = fmt.Errorf("error sending progress: %s", e)
 			// Normally the callee should cancel the call, but this test makes
 			// sure a callee that keeps trying to send is handled correctly.
-			//return &client.InvokeResult{Err: wamp.ErrCanceled}
+			//return client.InvokeResult{Err: wamp.ErrCanceled}
 		}
 
 		// This progressive result receives the same error as the previous.
@@ -182,7 +182,7 @@ func TestRPCProgressiveCallInterrupt(t *testing.T) {
 
 		// This goes nowhere (gets put in dead buffered channel), because the
 		// invocation handler has been closed and not handle the message.
-		return &client.InvokeResult{Args: wamp.List{"final"}}
+		return client.InvokeResult{Args: wamp.List{"final"}}
 	}
 
 	// Register procedure
@@ -209,7 +209,7 @@ func TestRPCProgressiveCallInterrupt(t *testing.T) {
 	recvProgErr := make(chan error)
 	go func() {
 		ctx := context.Background()
-		_, e := caller.CallProgress(ctx, progProc, nil, nil, nil, "", progHandler)
+		_, e := caller.Call(ctx, progProc, nil, nil, nil, progHandler)
 		recvProgErr <- e
 	}()
 
@@ -262,11 +262,11 @@ func TestProgressStress(t *testing.T) {
 	var sendCount, recvCount int
 
 	// Define invocation handler.
-	handler := func(ctx context.Context, args wamp.List, kwargs, details wamp.Dict) *client.InvokeResult {
+	handler := func(ctx context.Context, inv *wamp.Invocation) client.InvokeResult {
 		// Get chunksize requested by caller, use default if not set.
 		var chunkSize int
-		if len(args) != 0 {
-			i, _ := wamp.AsInt64(args[0])
+		if len(inv.Arguments) != 0 {
+			i, _ := wamp.AsInt64(inv.Arguments[0])
 			chunkSize = int(i)
 		}
 		if chunkSize == 0 {
@@ -287,7 +287,7 @@ func TestProgressStress(t *testing.T) {
 			e := callee.SendProgress(ctx, wamp.List{string(chunk)}, nil)
 			if e != nil {
 				// If send failed, return an error saying the call canceled.
-				return nil
+				return client.InvocationCanceled
 			}
 			sendCount++
 		}
@@ -297,12 +297,12 @@ func TestProgressStress(t *testing.T) {
 			e := callee.SendProgress(ctx, wamp.List{string(chunk)}, nil)
 			if e != nil {
 				// If send failed, return an error saying the call canceled.
-				return nil
+				return client.InvocationCanceled
 			}
 			sendCount++
 		}
 		// Send total length as final result.
-		return &client.InvokeResult{Args: wamp.List{dataLen}}
+		return client.InvokeResult{Args: wamp.List{dataLen}}
 	}
 
 	// Register procedure.
@@ -345,8 +345,8 @@ func TestProgressStress(t *testing.T) {
 	for i := 16; i <= 256; i += 16 {
 		// Call the example procedure, specifying the size of chunks to send as
 		// progressive results.
-		result, err := caller.CallProgress(
-			ctx, chunkProc, nil, wamp.List{i}, nil, "", progHandler)
+		result, err := caller.Call(
+			ctx, chunkProc, nil, wamp.List{i}, nil, progHandler)
 		if err != nil {
 			t.Fatal(err)
 		}

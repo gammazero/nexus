@@ -5,8 +5,8 @@ import (
 	"os"
 	"os/signal"
 
-	"github.com/gammazero/nexus/examples/newclient"
-	"github.com/gammazero/nexus/wamp"
+	"github.com/gammazero/nexus/v3/examples/newclient"
+	"github.com/gammazero/nexus/v3/wamp"
 )
 
 const exampleTopic = "example.hello"
@@ -21,15 +21,15 @@ func main() {
 	defer subscriber.Close()
 
 	// Define function to handle events received.
-	evtHandler := func(args wamp.List, kwargs wamp.Dict, details wamp.Dict) {
+	eventHandler := func(event *wamp.Event) {
 		logger.Println("Received", exampleTopic, "event")
-		if len(args) != 0 {
-			logger.Println("  Event Message:", args[0])
+		if len(event.Arguments) != 0 {
+			logger.Println("  Event Message:", event.Arguments[0])
 		}
 	}
 
 	// Subscribe to topic.
-	err = subscriber.Subscribe(exampleTopic, evtHandler, nil)
+	err = subscriber.Subscribe(exampleTopic, eventHandler, nil)
 	if err != nil {
 		logger.Fatal("subscribe error:", err)
 	}

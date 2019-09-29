@@ -1,11 +1,12 @@
 package main
 
 import (
+	"context"
 	"log"
 	"os"
 
-	"github.com/gammazero/nexus/client"
-	"github.com/gammazero/nexus/wamp"
+	"github.com/gammazero/nexus/v3/client"
+	"github.com/gammazero/nexus/v3/wamp"
 )
 
 const (
@@ -23,7 +24,7 @@ func main() {
 	}
 
 	// Connect publisher session.
-	publisher, err := client.ConnectNet(addr, cfg)
+	publisher, err := client.ConnectNet(context.Background(), addr, cfg)
 	if err != nil {
 		logger.Fatal(err)
 	}

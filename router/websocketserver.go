@@ -14,9 +14,9 @@ import (
 	"strings"
 	"time"
 
-	"github.com/gammazero/nexus/transport"
-	"github.com/gammazero/nexus/transport/serialize"
-	"github.com/gammazero/nexus/wamp"
+	"github.com/gammazero/nexus/v3/transport"
+	"github.com/gammazero/nexus/v3/transport/serialize"
+	"github.com/gammazero/nexus/v3/wamp"
 	"github.com/gorilla/websocket"
 )
 
@@ -221,18 +221,10 @@ func (s *WebsocketServer) AllowOrigins(origins []string) error {
 	return nil
 }
 
-// Deprecated: Set WebsocketServer.Upgrader and WebsockServer.Xxx members
-// directly.
-func (s *WebsocketServer) SetConfig(wsCfg transport.WebsocketConfig) {
-	s.Upgrader.EnableCompression = wsCfg.EnableCompression
-
-	s.EnableTrackingCookie = wsCfg.EnableTrackingCookie
-	s.EnableRequestCapture = wsCfg.EnableRequestCapture
-}
-
 // ListenAndServe listens on the specified TCP address and starts a goroutine
 // that accepts new client connections until the returned io.closer is closed.
 func (s *WebsocketServer) ListenAndServe(address string) (io.Closer, error) {
+	// Call Listen separate from Serve to check for error listening.
 	l, err := net.Listen("tcp", address)
 	if err != nil {
 		s.router.Logger().Print(err)
@@ -254,8 +246,8 @@ func (s *WebsocketServer) ListenAndServe(address string) (io.Closer, error) {
 // then certFile and keyFile, if specified, are used to load an X509
 // certificate.
 func (s *WebsocketServer) ListenAndServeTLS(address string, tlscfg *tls.Config, certFile, keyFile string) (io.Closer, error) {
-	// With Go 1.9, code below, until tls.Listen, can be removed when using:
-	//go server.ServeTLS(l, certFile, keyFile)
+	// Load certificate here, instead of in ServeTLS, to check for error before
+	// serving.
 	var hasCert bool
 	if tlscfg == nil {
 		tlscfg = &tls.Config{}
@@ -271,7 +263,8 @@ func (s *WebsocketServer) ListenAndServeTLS(address string, tlscfg *tls.Config, 
 		tlscfg.Certificates = append(tlscfg.Certificates, cert)
 	}
 
-	l, err := tls.Listen("tcp", address, tlscfg)
+	// Call Listen separate from Serve to check for error listening.
+	l, err := net.Listen("tcp", address)
 	if err != nil {
 		s.router.Logger().Print(err)
 		return nil, err
@@ -283,10 +276,7 @@ func (s *WebsocketServer) ListenAndServeTLS(address string, tlscfg *tls.Config, 
 		Addr:      l.Addr().String(),
 		TLSConfig: tlscfg,
 	}
-
-	go server.Serve(l)
-	//go server.ServeTLS(l, certFile, keyFile)
-
+	go server.ServeTLS(l, "", "")
 	return l, nil
 }
 

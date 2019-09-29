@@ -1,6 +1,7 @@
 package aat
 
 import (
+	"context"
 	"crypto/tls"
 	"errors"
 	"flag"
@@ -14,12 +15,12 @@ import (
 	"time"
 
 	"github.com/fortytw2/leaktest"
-	"github.com/gammazero/nexus/client"
-	"github.com/gammazero/nexus/router"
-	"github.com/gammazero/nexus/router/auth"
-	"github.com/gammazero/nexus/stdlog"
-	"github.com/gammazero/nexus/transport/serialize"
-	"github.com/gammazero/nexus/wamp"
+	"github.com/gammazero/nexus/v3/client"
+	"github.com/gammazero/nexus/v3/router"
+	"github.com/gammazero/nexus/v3/router/auth"
+	"github.com/gammazero/nexus/v3/stdlog"
+	"github.com/gammazero/nexus/v3/transport/serialize"
+	"github.com/gammazero/nexus/v3/wamp"
 )
 
 const (
@@ -280,17 +281,17 @@ func connectClientCfg(cfg client.Config) (*client.Client, error) {
 	switch scheme {
 	case "http", "ws", "tcp":
 		addr = fmt.Sprintf("%s://%s/", scheme, tcpAddr)
-		cli, err = client.ConnectNet(addr, cfg)
+		cli, err = client.ConnectNet(context.Background(), addr, cfg)
 	case "https", "wss", "tcps":
 		// If TLS requested, set up TLS configuration to skip verification.
 		cfg.TlsCfg = &tls.Config{
 			InsecureSkipVerify: true,
 		}
 		addr = fmt.Sprintf("%s://%s/", scheme, tcpAddr)
-		cli, err = client.ConnectNet(addr, cfg)
+		cli, err = client.ConnectNet(context.Background(), addr, cfg)
 	case "unix":
 		addr = fmt.Sprintf("%s://%s/", scheme, unixAddr)
-		cli, err = client.ConnectNet(addr, cfg)
+		cli, err = client.ConnectNet(context.Background(), addr, cfg)
 	default:
 		cli, err = client.ConnectLocal(nxr, cfg)
 	}

@@ -23,9 +23,9 @@ import (
 	"os"
 	"os/signal"
 
-	"github.com/gammazero/nexus/client"
-	"github.com/gammazero/nexus/examples/newclient"
-	"github.com/gammazero/nexus/wamp"
+	"github.com/gammazero/nexus/v3/client"
+	"github.com/gammazero/nexus/v3/examples/newclient"
+	"github.com/gammazero/nexus/v3/wamp"
 )
 
 const procedureName = "example.progress.text"
@@ -41,8 +41,8 @@ func main() {
 
 	// Handler is a closure used to capture the callee, since this is not
 	// provided as a parameter to this callback.
-	handler := func(ctx context.Context, args wamp.List, kwargs, details wamp.Dict) *client.InvokeResult {
-		return sendData(ctx, callee, args)
+	handler := func(ctx context.Context, inv *wamp.Invocation) client.InvokeResult {
+		return sendData(ctx, callee, inv.Arguments)
 	}
 
 	// Register procedure.
@@ -69,7 +69,7 @@ func main() {
 // sendData sends the body of data in chunks of the requested size.  The final
 // result message contains the sha256 hash of the data to allow the caller to
 // verify that all the data was correctly received.
-func sendData(ctx context.Context, callee *client.Client, args wamp.List) *client.InvokeResult {
+func sendData(ctx context.Context, callee *client.Client, args wamp.List) client.InvokeResult {
 	// Compute the base64-encoded sha256 hash of the data.
 	h := sha256.New()
 	h.Write([]byte(gettysburg))
@@ -94,12 +94,12 @@ func sendData(ctx context.Context, callee *client.Client, args wamp.List) *clien
 		err := callee.SendProgress(ctx, wamp.List{string(chunk)}, nil)
 		if err != nil {
 			// If send failed, return an error saying the call canceled.
-			return &client.InvokeResult{Err: wamp.ErrCanceled}
+			return client.InvokeResult{Err: wamp.ErrCanceled}
 		}
 	}
 
 	// Send sha256 hash as final result.
-	return &client.InvokeResult{Args: wamp.List{hash64}}
+	return client.InvokeResult{Args: wamp.List{hash64}}
 }
 
 // This is the body of data that is sent in chunks.

@@ -1,12 +1,13 @@
 package main
 
 import (
+	"context"
 	"log"
 	"os"
 	"os/signal"
 
-	"github.com/gammazero/nexus/client"
-	"github.com/gammazero/nexus/wamp"
+	"github.com/gammazero/nexus/v3/client"
+	"github.com/gammazero/nexus/v3/wamp"
 )
 
 const (
@@ -24,22 +25,22 @@ func main() {
 	}
 
 	// Connect subscriber session.
-	subscriber, err := client.ConnectNet(addr, cfg)
+	subscriber, err := client.ConnectNet(context.Background(), addr, cfg)
 	if err != nil {
 		logger.Fatal(err)
 	}
 	defer subscriber.Close()
 
 	// Define function to handle events received.
-	evtHandler := func(args wamp.List, kwargs wamp.Dict, details wamp.Dict) {
+	eventHandler := func(event *wamp.Event) {
 		logger.Println("Received", exampleTopic, "event")
-		if len(args) != 0 {
-			logger.Println("  Event Message:", args[0])
+		if len(event.Arguments) != 0 {
+			logger.Println("  Event Message:", event.Arguments[0])
 		}
 	}
 
 	// Subscribe to topic.
-	err = subscriber.Subscribe(exampleTopic, evtHandler, nil)
+	err = subscriber.Subscribe(exampleTopic, eventHandler, nil)
 	if err != nil {
 		logger.Fatal("subscribe error:", err)
 	}

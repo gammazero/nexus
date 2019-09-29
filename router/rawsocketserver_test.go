@@ -1,12 +1,13 @@
 package router
 
 import (
+	"context"
 	"testing"
 
 	"github.com/fortytw2/leaktest"
-	"github.com/gammazero/nexus/transport"
-	"github.com/gammazero/nexus/transport/serialize"
-	"github.com/gammazero/nexus/wamp"
+	"github.com/gammazero/nexus/v3/transport"
+	"github.com/gammazero/nexus/v3/transport/serialize"
+	"github.com/gammazero/nexus/v3/wamp"
 )
 
 const tcpAddr = "127.0.0.1:8181"
@@ -25,8 +26,8 @@ func TestRSHandshakeJSON(t *testing.T) {
 	}
 	defer clsr.Close()
 
-	client, err := transport.ConnectRawSocketPeer("tcp", tcpAddr,
-		serialize.JSON, r.Logger(), 0)
+	client, err := transport.ConnectRawSocketPeer(context.Background(), "tcp",
+		tcpAddr, serialize.JSON, r.Logger(), 0)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -57,8 +58,8 @@ func TestRSHandshakeMsgpack(t *testing.T) {
 	}
 	defer clsr.Close()
 
-	client, err := transport.ConnectRawSocketPeer("tcp", tcpAddr,
-		serialize.MSGPACK, r.Logger(), 0)
+	client, err := transport.ConnectRawSocketPeer(context.Background(), "tcp",
+		tcpAddr, serialize.MSGPACK, r.Logger(), 0)
 	if err != nil {
 		t.Fatal(err)
 	}

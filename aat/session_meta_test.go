@@ -7,8 +7,8 @@ import (
 	"time"
 
 	"github.com/fortytw2/leaktest"
-	"github.com/gammazero/nexus/client"
-	"github.com/gammazero/nexus/wamp"
+	"github.com/gammazero/nexus/v3/client"
+	"github.com/gammazero/nexus/v3/wamp"
 )
 
 const (
@@ -37,24 +37,9 @@ func TestMetaEventOnJoin(t *testing.T) {
 		t.Error("Dealer does not have", featureSessionMetaAPI, "feature")
 	}
 
-	var onJoinID wamp.ID
-	errChan := make(chan error)
-	evtHandler := func(args wamp.List, kwargs wamp.Dict, details wamp.Dict) {
-		if len(args) == 0 {
-			errChan <- errors.New("missing argument")
-			return
-		}
-		details = wamp.NormalizeDict(args[0])
-		if details == nil {
-			errChan <- errors.New("argument was not wamp.Dict")
-			return
-		}
-		onJoinID, _ = wamp.AsID(details["session"])
-		errChan <- nil
-	}
-
 	// Subscribe to event.
-	err = subscriber.Subscribe(metaOnJoin, evtHandler, nil)
+	onJoinEvents := make(chan *wamp.Event)
+	err = subscriber.SubscribeChan(metaOnJoin, onJoinEvents, nil)
 	if err != nil {
 		t.Fatal("subscribe error:", err)
 	}
@@ -63,7 +48,7 @@ func TestMetaEventOnJoin(t *testing.T) {
 	var timeout bool
 	for !timeout {
 		select {
-		case <-errChan:
+		case <-onJoinEvents:
 		case <-time.After(200 * time.Millisecond):
 			timeout = true
 		}
@@ -75,11 +60,25 @@ func TestMetaEventOnJoin(t *testing.T) {
 		t.Fatal("Failed to connect client:", err)
 	}
 
+	var onJoinID wamp.ID
+	onJoin := func(event *wamp.Event) error {
+		args := event.Arguments
+		if len(args) == 0 {
+			return errors.New("missing argument")
+		}
+		details := wamp.NormalizeDict(args[0])
+		if details == nil {
+			return errors.New("argument was not wamp.Dict")
+		}
+		onJoinID, _ = wamp.AsID(details["session"])
+		return nil
+	}
+
 	// Make sure the event was received.
 	select {
-	case err = <-errChan:
-		if err != nil {
-			t.Fatal("Event error:", err)
+	case event := <-onJoinEvents:
+		if err = onJoin(event); err != nil {
+			t.Fatalf("Event error: %s", err)
 		}
 	case <-time.After(200 * time.Millisecond):
 		t.Fatal("did not get published event")
@@ -109,12 +108,12 @@ func TestMetaEventOnLeave(t *testing.T) {
 	}
 
 	argsChan := make(chan wamp.List)
-	evtHandler := func(args wamp.List, kwargs wamp.Dict, details wamp.Dict) {
-		argsChan <- args
+	eventHandler := func(event *wamp.Event) {
+		argsChan <- event.Arguments
 	}
 
 	// Subscribe to event.
-	err = subscriber.Subscribe(metaOnLeave, evtHandler, nil)
+	err = subscriber.Subscribe(metaOnLeave, eventHandler, nil)
 	if err != nil {
 		t.Fatal("subscribe error:", err)
 	}
@@ -190,15 +189,13 @@ func TestMetaProcSessionCount(t *testing.T) {
 	}
 
 	// Subscribe to on_join and on_leave events.
-	sync := make(chan struct{})
-	evtHandler := func(args wamp.List, kwargs wamp.Dict, details wamp.Dict) {
-		sync <- struct{}{}
-	}
-	err = subscriber.Subscribe(metaOnJoin, evtHandler, nil)
+	onJoinEvents := make(chan *wamp.Event)
+	err = subscriber.SubscribeChan(metaOnJoin, onJoinEvents, nil)
 	if err != nil {
 		t.Fatal("subscribe error:", err)
 	}
-	err = subscriber.Subscribe(metaOnLeave, evtHandler, nil)
+	onLeaveEvents := make(chan *wamp.Event)
+	err = subscriber.SubscribeChan(metaOnLeave, onLeaveEvents, nil)
 	if err != nil {
 		t.Fatal("subscribe error:", err)
 	}
@@ -207,7 +204,8 @@ func TestMetaProcSessionCount(t *testing.T) {
 	var timeout bool
 	for !timeout {
 		select {
-		case <-sync:
+		case <-onLeaveEvents:
+		case <-onJoinEvents:
 		case <-time.After(200 * time.Millisecond):
 			timeout = true
 		}
@@ -215,7 +213,7 @@ func TestMetaProcSessionCount(t *testing.T) {
 
 	// Call meta procedure to get session count.
 	ctx := context.Background()
-	result, err := caller.Call(ctx, metaCount, nil, nil, nil, "")
+	result, err := caller.Call(ctx, metaCount, nil, nil, nil, nil)
 	if err != nil {
 		t.Fatal("Call error:", err)
 	}
@@ -234,13 +232,13 @@ func TestMetaProcSessionCount(t *testing.T) {
 	}
 	// Wait for router to register new session.
 	select {
-	case <-sync:
+	case <-onJoinEvents:
 	case <-time.After(5 * time.Second):
 		t.Fatal("Timed out waiting for router to register new session")
 	}
 
 	// Call meta procedure to get session count.
-	result, err = caller.Call(ctx, metaCount, nil, nil, nil, "")
+	result, err = caller.Call(ctx, metaCount, nil, nil, nil, nil)
 	if err != nil {
 		t.Fatal("Call error:", err)
 	}
@@ -258,13 +256,13 @@ func TestMetaProcSessionCount(t *testing.T) {
 	}
 	// Wait for router to register client leaving.
 	select {
-	case <-sync:
+	case <-onLeaveEvents:
 	case <-time.After(5 * time.Second):
 		t.Fatal("Timed out waiting for router to register client leaving")
 	}
 
 	// Call meta procedure to get session count.
-	result, err = caller.Call(ctx, metaCount, nil, nil, nil, "")
+	result, err = caller.Call(ctx, metaCount, nil, nil, nil, nil)
 	if err != nil {
 		t.Fatal("Call error:", err)
 	}
@@ -308,11 +306,8 @@ func TestMetaProcSessionList(t *testing.T) {
 	}
 
 	// Subscribe to on_leave event.
-	sync := make(chan struct{})
-	evtHandler := func(args wamp.List, kwargs wamp.Dict, details wamp.Dict) {
-		sync <- struct{}{}
-	}
-	err = subscriber.Subscribe(metaOnLeave, evtHandler, nil)
+	eventChan := make(chan *wamp.Event)
+	err = subscriber.SubscribeChan(metaOnLeave, eventChan, nil)
 	if err != nil {
 		t.Fatal("subscribe error:", err)
 	}
@@ -321,7 +316,7 @@ func TestMetaProcSessionList(t *testing.T) {
 	var timeout bool
 	for !timeout {
 		select {
-		case <-sync:
+		case <-eventChan:
 		case <-time.After(200 * time.Millisecond):
 			timeout = true
 		}
@@ -329,7 +324,7 @@ func TestMetaProcSessionList(t *testing.T) {
 
 	// Call meta procedure to get session list.
 	ctx := context.Background()
-	result, err := caller.Call(ctx, metaList, nil, nil, nil, "")
+	result, err := caller.Call(ctx, metaList, nil, nil, nil, nil)
 	if err != nil {
 		t.Fatal("Call error:", err)
 	}
@@ -363,10 +358,10 @@ func TestMetaProcSessionList(t *testing.T) {
 		t.Fatal("Failed to disconnect client:", err)
 	}
 	// Wait for router to register client leaving.
-	<-sync
+	<-eventChan
 
 	// Call meta procedure to get session list.
-	result, err = caller.Call(ctx, metaList, nil, nil, nil, "")
+	result, err = caller.Call(ctx, metaList, nil, nil, nil, nil)
 	if err != nil {
 		t.Fatal("Call error:", err)
 	}
@@ -424,11 +419,8 @@ func TestMetaProcSessionGet(t *testing.T) {
 	}
 
 	// Subscribe to on_leave event.
-	sync := make(chan struct{})
-	evtHandler := func(args wamp.List, kwargs wamp.Dict, details wamp.Dict) {
-		sync <- struct{}{}
-	}
-	err = subscriber.Subscribe(metaOnLeave, evtHandler, nil)
+	eventChan := make(chan *wamp.Event)
+	err = subscriber.SubscribeChan(metaOnLeave, eventChan, nil)
 	if err != nil {
 		t.Fatal("subscribe error:", err)
 	}
@@ -436,7 +428,7 @@ func TestMetaProcSessionGet(t *testing.T) {
 	// Call meta procedure to get session info.
 	ctx := context.Background()
 	args := wamp.List{sess.ID()}
-	result, err := caller.Call(ctx, metaGet, nil, args, nil, "")
+	result, err := caller.Call(ctx, metaGet, nil, args, nil, nil)
 	if err != nil {
 		t.Fatal("Call error:", err)
 	}
@@ -461,7 +453,7 @@ func TestMetaProcSessionGet(t *testing.T) {
 	var timeout bool
 	for !timeout {
 		select {
-		case <-sync:
+		case <-eventChan:
 		case <-time.After(200 * time.Millisecond):
 			timeout = true
 		}
@@ -474,10 +466,10 @@ func TestMetaProcSessionGet(t *testing.T) {
 		t.Fatal("Failed to disconnect client:", err)
 	}
 	// Wait for router to register client leaving.
-	<-sync
+	<-eventChan
 
 	// Call meta procedure to get session list.
-	result, err = caller.Call(ctx, metaGet, nil, wamp.List{sid}, nil, "")
+	result, err = caller.Call(ctx, metaGet, nil, wamp.List{sid}, nil, nil)
 	if err == nil {
 		t.Fatal("Expected error")
 	}

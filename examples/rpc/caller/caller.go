@@ -5,8 +5,8 @@ import (
 	"log"
 	"os"
 
-	"github.com/gammazero/nexus/examples/newclient"
-	"github.com/gammazero/nexus/wamp"
+	"github.com/gammazero/nexus/v3/examples/newclient"
+	"github.com/gammazero/nexus/v3/wamp"
 )
 
 func main() {
@@ -23,7 +23,7 @@ func main() {
 	callArgs := wamp.List{"America/New_York", "America/Los_Angeles", "Asia/Shanghai"}
 	ctx := context.Background()
 	logger.Println("Call remote procedure to time in specified timezones")
-	result, err := caller.Call(ctx, "worldtime", nil, callArgs, nil, "")
+	result, err := caller.Call(ctx, "worldtime", nil, callArgs, nil, nil)
 	if err != nil {
 		logger.Fatal(err)
 	}
@@ -36,7 +36,7 @@ func main() {
 	// external rpc client to be running.
 	callArgs = wamp.List{1, 2, 3, 4, 5, 6, 7, 8, 9, 10}
 	logger.Println("Call remote procedure to sum numbers 1-10")
-	result, err = caller.Call(ctx, "sum", nil, callArgs, nil, "")
+	result, err = caller.Call(ctx, "sum", nil, callArgs, nil, nil)
 	if err != nil {
 		logger.Fatal(err)
 	}

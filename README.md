@@ -36,6 +36,16 @@ Nexus is a software package that provides a WAMP router library, client library,
 ## Quick Start
 
 ### Installation
+
+If using modules and importing a package, no installation is needed, but use v3 as that is the first version that is compatible with modules:
+```
+import (
+	"github.com/gammazero/nexus/v3/client"
+	"github.com/gammazero/nexus/v3/wamp"
+)
+```
+
+If not using modules:
 ```
 go get github.com/gammazero/nexus/...
 ```
@@ -49,7 +59,7 @@ go get -u github.com/gorilla/websocket
 The nexus router library is generally used to build a WAMP router or embed one in your server.  A very basic stand-alone router, nexusd, is provided and can be built and run as follows:
 
 ```
-cd $GOPATH/src/github.com/gammazero/nexus/nexusd/
+cd nexus/nexusd/
 go build
 vi etc/nexus.json
 ./nexusd
@@ -59,11 +69,11 @@ vi etc/nexus.json
 
 Look at the examples to see how to create simple clients and servers.  Examples of using advanced profile features are available in the [full documentation](https://github.com/gammazero/nexus/wiki).
 
-https://github.com/gammazero/nexus/tree/master/examples
+https://github.com/gammazero/nexus/tree/v3/examples
 
 ## Contributing
 
-Please read the [Contributing](https://github.com/gammazero/nexus/blob/master/CONTRIBUTING.md#contributing-to-nexus) guide if you are interested in becoming a contributor to this project.
+Please read the [Contributing](https://github.com/gammazero/nexus/blob/v3/CONTRIBUTING.md#contributing-to-nexus) guide if you are interested in becoming a contributor to this project.
 
 ## Status
 

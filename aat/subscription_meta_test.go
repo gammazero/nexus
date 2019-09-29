@@ -7,8 +7,8 @@ import (
 	"testing"
 	"time"
 
-	"github.com/gammazero/nexus/client"
-	"github.com/gammazero/nexus/wamp"
+	"github.com/gammazero/nexus/v3/client"
+	"github.com/gammazero/nexus/v3/wamp"
 )
 
 const (
@@ -33,72 +33,24 @@ func TestMetaEventOnCreateOnSubscribe(t *testing.T) {
 		t.Error("Broker does not have", featureSubMetaAPI, "feature")
 	}
 
-	var onCreateID, onCreateSessID wamp.ID
-	errChanC := make(chan error)
-	onCreateHandler := func(args wamp.List, kwargs wamp.Dict, details wamp.Dict) {
-		if len(args) != 2 {
-			errChanC <- errors.New("wrong number of arguments")
-			return
-		}
-		dict, ok := wamp.AsDict(args[1])
-		if !ok {
-			errChanC <- errors.New("arg 1 was not wamp.Dict")
-			return
-		}
-		onCreateSessID, ok = wamp.AsID(args[0])
-		if !ok {
-			errChanC <- errors.New("argument 0 (session) was not wamp.ID")
-			return
-		}
-		onCreateID, _ = wamp.AsID(dict["id"])
-		if u, _ := wamp.AsURI(dict["uri"]); u != wamp.URI("some.topic") {
-			errChanC <- fmt.Errorf(
-				"on_create had wrong topic, got '%v' want 'some.topic'", u)
-			return
-		}
-		if s, _ := wamp.AsString(dict["created"]); s == "" {
-			errChanC <- errors.New("on_create missing created time")
-			return
-		}
-		errChanC <- nil
-	}
-
-	var onSubSubID, onSubSessID wamp.ID
-	errChanS := make(chan error)
-	onSubHandler := func(args wamp.List, kwargs wamp.Dict, details wamp.Dict) {
-		if len(args) != 2 {
-			errChanS <- errors.New("wrong number of arguments")
-			return
-		}
-		var ok bool
-		onSubSessID, ok = wamp.AsID(args[0])
-		if !ok {
-			errChanS <- errors.New("argument 0 (session) was not wamp.ID")
-			return
-		}
-		onSubSubID, ok = wamp.AsID(args[1])
-		if !ok {
-			errChanS <- errors.New("argument 1 (subscription) was not wamp.ID")
-			return
-		}
-		errChanS <- nil
-	}
-
-	// Subscribe to event.
-	err = subscriber.Subscribe(metaOnCreate, onCreateHandler, nil)
+	// Subscribe to on_create meta event.
+	onCreateEvents := make(chan *wamp.Event)
+	err = subscriber.SubscribeChan(metaOnCreate, onCreateEvents, nil)
 	if err != nil {
 		t.Fatal("subscribe error:", err)
 	}
 
-	err = subscriber.Subscribe(metaOnSubscribe, onSubHandler, nil)
+	// Subscribe to on_subscribe meta event.
+	onSubEvents := make(chan *wamp.Event)
+	err = subscriber.SubscribeChan(metaOnSubscribe, onSubEvents, nil)
 	if err != nil {
 		t.Fatal("subscribe error:", err)
 	}
 
 	select {
-	case <-errChanC:
+	case <-onCreateEvents:
 		t.Fatal("Received on_create when subscribing to meta event")
-	case <-errChanS:
+	case <-onSubEvents:
 		t.Fatal("Received on_subscribe when subscribing to meta event")
 	case <-time.After(200 * time.Millisecond):
 	}
@@ -110,9 +62,7 @@ func TestMetaEventOnCreateOnSubscribe(t *testing.T) {
 	}
 
 	// Subscribe to something to generate meta on_subcribe event
-	nullHandler := func(args wamp.List, kwargs wamp.Dict, details wamp.Dict) {
-		return
-	}
+	nullHandler := func(_ *wamp.Event) { return }
 	err = sess.Subscribe("some.topic", nullHandler, nil)
 	if err != nil {
 		t.Fatal("subscribe error:", err)
@@ -122,10 +72,36 @@ func TestMetaEventOnCreateOnSubscribe(t *testing.T) {
 		t.Fatal("client does not have subscription ID")
 	}
 
+	var onCreateID, onCreateSessID wamp.ID
+	onCreate := func(event *wamp.Event) error {
+		args := event.Arguments
+		if len(args) != 2 {
+			return errors.New("wrong number of arguments")
+		}
+		dict, ok := wamp.AsDict(args[1])
+		if !ok {
+			return errors.New("arg 1 was not wamp.Dict")
+		}
+		onCreateSessID, ok = wamp.AsID(args[0])
+		if !ok {
+			return errors.New("argument 0 (session) was not wamp.ID")
+		}
+		onCreateID, _ = wamp.AsID(dict["id"])
+		if u, _ := wamp.AsURI(dict["uri"]); u != wamp.URI("some.topic") {
+			return fmt.Errorf(
+				"on_create had wrong topic, got '%v' want 'some.topic'", u)
+		}
+		if s, _ := wamp.AsString(dict["created"]); s == "" {
+			return errors.New("on_create missing created time")
+		}
+		return nil
+	}
+
 	// Make sure the on_create event was received.
+	var event *wamp.Event
 	select {
-	case err = <-errChanC:
-		if err != nil {
+	case event = <-onCreateEvents:
+		if err = onCreate(event); err != nil {
 			t.Fatal("Event error:", err)
 		}
 	case <-time.After(200 * time.Millisecond):
@@ -138,10 +114,28 @@ func TestMetaEventOnCreateOnSubscribe(t *testing.T) {
 		t.Fatal("meta event did not return expected subscription ID")
 	}
 
+	var onSubSubID, onSubSessID wamp.ID
+	onSub := func(event *wamp.Event) error {
+		args := event.Arguments
+		if len(args) != 2 {
+			return errors.New("wrong number of arguments")
+		}
+		var ok bool
+		onSubSessID, ok = wamp.AsID(args[0])
+		if !ok {
+			return errors.New("argument 0 (session) was not wamp.ID")
+		}
+		onSubSubID, ok = wamp.AsID(args[1])
+		if !ok {
+			return errors.New("argument 1 (subscription) was not wamp.ID")
+		}
+		return nil
+	}
+
 	// Make sure the on_subscribe event was received.
 	select {
-	case err = <-errChanS:
-		if err != nil {
+	case event = <-onSubEvents:
+		if err = onSub(event); err != nil {
 			t.Fatal("Event error:", err)
 		}
 	case <-time.After(200 * time.Millisecond):
@@ -182,71 +176,24 @@ func TestMetaEventOnUnsubscribeOnDelete(t *testing.T) {
 		t.Fatal("Failed to connect client:", err)
 	}
 
-	var onUnsubSubID, onUnsubSessID wamp.ID
-	errChan := make(chan error)
-	onUnsubHandler := func(args wamp.List, kwargs wamp.Dict, details wamp.Dict) {
-		if len(args) != 2 {
-			errChan <- errors.New("wrong number of arguments")
-			return
-		}
-		var ok bool
-		onUnsubSessID, ok = wamp.AsID(args[0])
-		if !ok {
-			errChan <- errors.New("argument 0 (session) was not wamp.ID")
-			return
-		}
-		onUnsubSubID, ok = wamp.AsID(args[1])
-		if !ok {
-			errChan <- errors.New("argument 1 (subscription) was not wamp.ID")
-			return
-		}
-		errChan <- nil
-	}
-
-	var onDelSubID, onDelSessID wamp.ID
-	errChanD := make(chan error)
-	onDelHandler := func(args wamp.List, kwargs wamp.Dict, details wamp.Dict) {
-		if len(args) != 2 {
-			errChanD <- errors.New("wrong number of arguments")
-			return
-		}
-		var ok bool
-		onDelSessID, ok = wamp.AsID(args[0])
-		if !ok {
-			errChanD <- errors.New("argument 0 (session) was not wamp.ID")
-			return
-		}
-		onDelSubID, ok = wamp.AsID(args[1])
-		if !ok {
-			errChanD <- errors.New("argument 1 (subscription) was not wamp.ID")
-			return
-		}
-		errChanD <- nil
-	}
-
-	// Clear any meta events from subscription removal in previous tests.
-	select {
-	case <-errChan:
-	case <-errChanD:
-	case <-time.After(200 * time.Millisecond):
-	}
-
 	// Subscribe to on_unsubscribe event.
-	err = subscriber.Subscribe(metaOnUnsubscribe, onUnsubHandler, nil)
+	onUnsubEvents := make(chan *wamp.Event)
+	err = subscriber.SubscribeChan(metaOnUnsubscribe, onUnsubEvents, nil)
 	if err != nil {
 		t.Fatal("subscribe error:", err)
 	}
 
 	// Subscribe to on_delete event.
-	err = subscriber.Subscribe(metaOnDelete, onDelHandler, nil)
+	onDelEvents := make(chan *wamp.Event)
+	err = subscriber.SubscribeChan(metaOnDelete, onDelEvents, nil)
 	if err != nil {
 		t.Fatal("subscribe error:", err)
 	}
 
 	select {
-	case <-errChan:
+	case <-onUnsubEvents:
 		t.Fatal("Received on_unsubscribe when unsubscribing to meta event")
-	case <-errChanD:
+	case <-onDelEvents:
 		t.Fatal("Received on_delete when unsubscribing to meta event")
 	case <-time.After(200 * time.Millisecond):
 	}
@@ -259,26 +206,41 @@ func TestMetaEventOnUnsubscribeOnDelete(t *testing.T) {
 
 	// Subscribe to something and then unsubscribe to generate meta on_subcribe
 	// event.
-	nullHandler := func(args wamp.List, kwargs wamp.Dict, details wamp.Dict) {
-		return
-	}
-	err = sess.Subscribe("some.topic", nullHandler, nil)
-	if err != nil {
+	nullHandler := func(_ *wamp.Event) { return }
+	if err = sess.Subscribe("some.topic", nullHandler, nil); err != nil {
 		t.Fatal("subscribe error:", err)
 	}
 	subID, ok := sess.SubscriptionID("some.topic")
 	if !ok {
 		t.Fatal("client does not have subscription ID")
 	}
-	err = sess.Unsubscribe("some.topic")
-	if err != nil {
+	if err = sess.Unsubscribe("some.topic"); err != nil {
 		t.Fatal("unsubscribe error:", err)
 	}
 
+	var onUnsubSubID, onUnsubSessID wamp.ID
+	onUnsub := func(event *wamp.Event) error {
+		args := event.Arguments
+		if len(args) != 2 {
+			return errors.New("wrong number of arguments")
+		}
+		var ok bool
+		onUnsubSessID, ok = wamp.AsID(args[0])
+		if !ok {
+			return errors.New("argument 0 (session) was not wamp.ID")
+		}
+		onUnsubSubID, ok = wamp.AsID(args[1])
+		if !ok {
+			return errors.New("argument 1 (subscription) was not wamp.ID")
+		}
+		return nil
+	}
+
 	// Make sure the unsubscribe event was received.
+	var event *wamp.Event
 	select {
-	case err = <-errChan:
-		if err != nil {
+	case event := <-onUnsubEvents:
+		if err = onUnsub(event); err != nil {
 			t.Fatal("Event error:", err)
 		}
 	case <-time.After(200 * time.Millisecond):
@@ -291,10 +253,28 @@ func TestMetaEventOnUnsubscribeOnDelete(t *testing.T) {
 		t.Fatal("meta event did not return expected subscription ID")
 	}
 
+	var onDelSubID, onDelSessID wamp.ID
+	onDel := func(event *wamp.Event) error {
+		args := event.Arguments
+		if len(args) != 2 {
+			return errors.New("wrong number of arguments")
+		}
+		var ok bool
+		onDelSessID, ok = wamp.AsID(args[0])
+		if !ok {
+			return errors.New("argument 0 (session) was not wamp.ID")
+		}
+		onDelSubID, ok = wamp.AsID(args[1])
+		if !ok {
+			return errors.New("argument 1 (subscription) was not wamp.ID")
+		}
+		return nil
+	}
+
 	// Make sure the delete event was received.
 	select {
-	case err = <-errChanD:
-		if err != nil {
+	case event = <-onDelEvents:
+		if err = onDel(event); err != nil {
 			t.Fatal("Event error:", err)
 		}
 	case <-time.After(200 * time.Millisecond):
@@ -332,9 +312,7 @@ func TestMetaProcSubGet(t *testing.T) {
 	defer subscriber.Close()
 
 	// Subscribe to something
-	nullHandler := func(args wamp.List, kwargs wamp.Dict, details wamp.Dict) {
-		return
-	}
+	nullHandler := func(_ *wamp.Event) { return }
 	err = subscriber.Subscribe(testTopicWC, nullHandler, wamp.Dict{"match": "wildcard"})
 	if err != nil {
 		t.Fatal("subscribe error:", err)
@@ -353,7 +331,7 @@ func TestMetaProcSubGet(t *testing.T) {
 
 	ctx, cancel := context.WithTimeout(context.Background(), time.Second)
 	defer cancel()
-	result, err := caller.Call(ctx, metaSubGet, nil, wamp.List{subID}, nil, "")
+	result, err := caller.Call(ctx, metaSubGet, nil, wamp.List{subID}, nil, nil)
 	if err != nil {
 		t.Fatal("error calling", metaSubGet, err)
 	}
@@ -382,7 +360,7 @@ func TestMetaProcSubGet(t *testing.T) {
 	cancel()
 	ctx, cancel = context.WithTimeout(context.Background(), time.Second)
 	defer cancel()
-	result, err = caller.Call(ctx, metaSubGet, nil, wamp.List{subID}, nil, "")
+	result, err = caller.Call(ctx, metaSubGet, nil, wamp.List{subID}, nil, nil)
 	if err == nil {
 		t.Fatal("expected error")
 	}

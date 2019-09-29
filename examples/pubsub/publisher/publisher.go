@@ -4,8 +4,8 @@ import (
 	"log"
 	"os"
 
-	"github.com/gammazero/nexus/examples/newclient"
-	"github.com/gammazero/nexus/wamp"
+	"github.com/gammazero/nexus/v3/examples/newclient"
+	"github.com/gammazero/nexus/v3/wamp"
 )
 
 const exampleTopic = "example.hello"

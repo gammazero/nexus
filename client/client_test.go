@@ -12,12 +12,12 @@ import (
 	"time"
 
 	"github.com/fortytw2/leaktest"
-	"github.com/gammazero/nexus/router"
-	"github.com/gammazero/nexus/router/auth"
-	"github.com/gammazero/nexus/stdlog"
-	"github.com/gammazero/nexus/transport"
-	"github.com/gammazero/nexus/wamp"
-	"github.com/gammazero/nexus/wamp/crsign"
+	"github.com/gammazero/nexus/v3/router"
+	"github.com/gammazero/nexus/v3/router/auth"
+	"github.com/gammazero/nexus/v3/stdlog"
+	"github.com/gammazero/nexus/v3/transport"
+	"github.com/gammazero/nexus/v3/wamp"
+	"github.com/gammazero/nexus/v3/wamp/crsign"
 )
 
 const (
@@ -199,13 +199,13 @@ func TestSubscribe(t *testing.T) {
 
 	testTopic := "nexus.test.topic"
 	errChan := make(chan error)
-	evtHandler := func(args wamp.List, kwargs wamp.Dict, details wamp.Dict) {
-		arg, _ := wamp.AsString(args[0])
+	eventHandler := func(event *wamp.Event) {
+		arg, _ := wamp.AsString(event.Arguments[0])
 		if arg != "hello world" {
 			errChan <- errors.New("event missing or bad args")
 			return
 		}
-		origTopic, _ := wamp.AsURI(details["topic"])
+		origTopic, _ := wamp.AsURI(event.Details["topic"])
 		if origTopic != wamp.URI(testTopic) {
 			errChan <- errors.New("wrong original topic")
 			return
@@ -215,13 +215,13 @@ func TestSubscribe(t *testing.T) {
 
 	// Expect invalid URI error if not setting match option.
 	wcTopic := "nexus..topic"
-	err = sub.Subscribe(wcTopic, evtHandler, nil)
+	err = sub.Subscribe(wcTopic, eventHandler, nil)
 	if err == nil {
 		t.Fatal("expected invalid uri error")
 	}
 
 	// Subscribe should work with match set to wildcard.
-	err = sub.Subscribe(wcTopic, evtHandler, wamp.SetOption(nil, "match", "wildcard"))
+	err = sub.Subscribe(wcTopic, eventHandler, wamp.SetOption(nil, "match", "wildcard"))
 	if err != nil {
 		t.Fatal("subscribe error:", err)
 	}
@@ -302,8 +302,8 @@ func TestRemoteProcedureCall(t *testing.T) {
 	}
 
 	// Test registering a valid procedure.
-	handler := func(ctx context.Context, args wamp.List, kwargs, details wamp.Dict) *InvokeResult {
-		return &InvokeResult{Args: wamp.List{args[0].(int) * 37}}
+	handler := func(ctx context.Context, inv *wamp.Invocation) InvokeResult {
+		return InvokeResult{Args: wamp.List{inv.Arguments[0].(int) * 37}}
 	}
 	procName := "myproc"
 	if err = callee.Register(procName, handler, nil); err != nil {
@@ -321,7 +321,7 @@ func TestRemoteProcedureCall(t *testing.T) {
 	// Test calling the procedure.
 	callArgs := wamp.List{73}
 	ctx := context.Background()
-	result, err := caller.Call(ctx, procName, nil, callArgs, nil, "")
+	result, err := caller.Call(ctx, procName, nil, callArgs, nil, nil)
 	if err != nil {
 		t.Fatal("failed to call procedure:", err)
 	}
@@ -336,7 +336,7 @@ func TestRemoteProcedureCall(t *testing.T) {
 
 	// Test calling unregistered procedure.
 	callArgs = wamp.List{555}
-	result, err = caller.Call(ctx, procName, nil, callArgs, nil, "")
+	result, err = caller.Call(ctx, procName, nil, callArgs, nil, nil)
 	if err == nil {
 		t.Fatal("expected error calling unregistered procedure")
 	}
@@ -366,37 +366,37 @@ func TestProgressiveCall(t *testing.T) {
 		t.Fatal("failed to connect test clients:", err)
 	}
 
-	// Hanbdler sends progressive results.
-	handler := func(ctx context.Context, args wamp.List, kwargs, details wamp.Dict) *InvokeResult {
+	// Handler sends progressive results.
+	handler := func(ctx context.Context, inv *wamp.Invocation) InvokeResult {
 		senderr := callee.SendProgress(ctx, wamp.List{"Alpha"}, nil)
 		if senderr != nil {
 			fmt.Println("Error sending Alpha progress:", senderr)
-			return &InvokeResult{Err: "test.failed"}
+			return InvokeResult{Err: "test.failed"}
 		}
 		time.Sleep(500 * time.Millisecond)
 
 		senderr = callee.SendProgress(ctx, wamp.List{"Bravo"}, nil)
 		if senderr != nil {
 			fmt.Println("Error sending Bravo progress:", senderr)
-			return &InvokeResult{Err: "test.failed"}
+			return InvokeResult{Err: "test.failed"}
 		}
 		time.Sleep(500 * time.Millisecond)
 
 		senderr = callee.SendProgress(ctx, wamp.List{"Charlie"}, nil)
 		if senderr != nil {
 			fmt.Println("Error sending Charlie progress:", senderr)
-			return &InvokeResult{Err: "test.failed"}
+			return InvokeResult{Err: "test.failed"}
 		}
 		time.Sleep(500 * time.Millisecond)
 
 		var sum int64
-		for i := range args {
-			n, ok := wamp.AsInt64(args[i])
+		for _, arg := range inv.Arguments {
+			n, ok := wamp.AsInt64(arg)
 			if ok {
 				sum += n
 			}
 		}
-		return &InvokeResult{Args: wamp.List{sum}}
+		return InvokeResult{Args: wamp.List{sum}}
 	}
 
 	procName := "nexus.test.progproc"
@@ -409,16 +409,15 @@ func TestProgressiveCall(t *testing.T) {
 	progCount := 0
 	progHandler := func(result *wamp.Result) {
 		arg := result.Arguments[0].(string)
-		if (progCount == 0 && arg != "Alpha") || (progCount == 1 && arg != "Bravo") || (progCount == 2 && arg != "Charlie") {
-			return
+		if (progCount == 0 && arg == "Alpha") || (progCount == 1 && arg == "Bravo") || (progCount == 2 && arg == "Charlie") {
+			progCount++
 		}
-		progCount++
 	}
 
 	// Test calling the procedure.
 	callArgs := wamp.List{1, 2, 3, 4, 5, 6, 7, 8, 9, 10}
 	ctx := context.Background()
-	result, err := caller.CallProgress(ctx, procName, nil, callArgs, nil, "", progHandler)
+	result, err := caller.Call(ctx, procName, nil, callArgs, nil, progHandler)
 	if err != nil {
 		t.Fatal("Failed to call procedure:", err)
 	}
@@ -453,22 +452,25 @@ func TestTimeoutCancelRemoteProcedureCall(t *testing.T) {
 	}
 
 	// Test registering a valid procedure.
-	handler := func(ctx context.Context, args wamp.List, kwargs, details wamp.Dict) *InvokeResult {
+	handler := func(ctx context.Context, inv *wamp.Invocation) InvokeResult {
 		<-ctx.Done() // handler will block forever until canceled.
-		return &InvokeResult{Err: wamp.ErrCanceled}
+		return InvokeResult{Err: wamp.ErrCanceled}
 	}
 	procName := "myproc"
 	if err = callee.Register(procName, handler, nil); err != nil {
 		t.Fatal("failed to register procedure:", err)
 	}
 
+	if err = caller.SetCallCancelMode(wamp.CancelModeKillNoWait); err != nil {
+		t.Fatal(err)
+	}
 	errChan := make(chan error)
 	ctx, cancel := context.WithTimeout(context.Background(), time.Second)
 	defer cancel()
 	// Calling the procedure, should block.
 	go func() {
 		callArgs := wamp.List{73}
-		_, e := caller.Call(ctx, procName, nil, callArgs, nil, "killnowait")
+		_, e := caller.Call(ctx, procName, nil, callArgs, nil, nil)
 		errChan <- e
 	}()
 
@@ -506,9 +508,9 @@ func TestCancelRemoteProcedureCall(t *testing.T) {
 	}
 
 	// Test registering a valid procedure.
-	handler := func(ctx context.Context, args wamp.List, kwargs, details wamp.Dict) *InvokeResult {
+	handler := func(ctx context.Context, inv *wamp.Invocation) InvokeResult {
 		<-ctx.Done() // handler will block forever until canceled.
-		return &InvokeResult{Err: wamp.ErrCanceled}
+		return InvokeResult{Err: wamp.ErrCanceled}
 	}
 	procName := "myproc"
 	if err = callee.Register(procName, handler, nil); err != nil {
@@ -520,7 +522,7 @@ func TestCancelRemoteProcedureCall(t *testing.T) {
 	// Calling the procedure, should block.
 	go func() {
 		callArgs := wamp.List{73}
-		_, e := caller.Call(ctx, procName, nil, callArgs, nil, "killnowait")
+		_, e := caller.Call(ctx, procName, nil, callArgs, nil, nil)
 		errChan <- e
 	}()
 
@@ -562,9 +564,9 @@ func TestTimeoutRemoteProcedureCall(t *testing.T) {
 	}
 
 	// Test registering a valid procedure.
-	handler := func(ctx context.Context, args wamp.List, kwargs, details wamp.Dict) *InvokeResult {
+	handler := func(ctx context.Context, inv *wamp.Invocation) InvokeResult {
 		<-ctx.Done() // handler will block forever until canceled.
-		return &InvokeResult{Err: wamp.ErrCanceled}
+		return InvokeResult{Err: wamp.ErrCanceled}
 	}
 	procName := "myproc"
 	if err = callee.Register(procName, handler, nil); err != nil {
@@ -581,7 +583,7 @@ func TestTimeoutRemoteProcedureCall(t *testing.T) {
 	// Calling the procedure, should block.
 	go func() {
 		callArgs := wamp.List{73}
-		_, e := caller.Call(ctx, procName, opts, callArgs, nil, wamp.CancelModeKillNoWait)
+		_, e := caller.Call(ctx, procName, opts, callArgs, nil, nil)
 		errChan <- e
 	}()
 
@@ -673,27 +675,27 @@ func TestConnectContext(t *testing.T) {
 	}
 	ctx, cancel := context.WithCancel(context.Background())
 	cancel()
-	_, err := ConnectNetContext(ctx, "http://localhost:9999/ws", cfg)
+	_, err := ConnectNet(ctx, "http://localhost:9999/ws", cfg)
 	if err == nil || err.Error() != expect {
 		t.Fatalf("expected error %s, got %s", expect, err)
 	}
 
-	_, err = ConnectNetContext(ctx, "https://localhost:9999/ws", cfg)
+	_, err = ConnectNet(ctx, "https://localhost:9999/ws", cfg)
 	if err == nil || err.Error() != expect {
 		t.Fatalf("expected error %s, got %s", expect, err)
 	}
 
-	_, err = ConnectNetContext(ctx, "tcp://localhost:9999", cfg)
+	_, err = ConnectNet(ctx, "tcp://localhost:9999", cfg)
 	if err == nil || err.Error() != expect {
 		t.Fatalf("expected error %s, got %s", expect, err)
 	}
 
-	_, err = ConnectNetContext(ctx, "tcps://localhost:9999", cfg)
+	_, err = ConnectNet(ctx, "tcps://localhost:9999", cfg)
 	if err == nil || err.Error() != expect {
 		t.Fatalf("expected error %s, got %s", expect, err)
 	}
 
-	_, err = ConnectNetContext(ctx, "unix:///tmp/wamp.sock", cfg)
+	_, err = ConnectNet(ctx, "unix:///tmp/wamp.sock", cfg)
 	if err == nil || err.Error() != unixExpect {
 		t.Fatalf("expected error %s, got %s", expect, err)
 	}
@@ -731,16 +733,16 @@ func newNetTestCallee(routerURL string) (*Client, error) {
 		Logger:          logger,
 		Debug:           true,
 	}
-	cl, err := ConnectNet(routerURL, cfg)
+	cl, err := ConnectNet(context.Background(), routerURL, cfg)
 	if err != nil {
 		return nil, fmt.Errorf("connect error: %s", err)
 	}
 
-	sleep := func(ctx context.Context, args wamp.List, kwargs, details wamp.Dict) *InvokeResult {
+	sleep := func(ctx context.Context, inv *wamp.Invocation) InvokeResult {
 		logger.Println("sleep rpc start")
 		time.Sleep(5 * time.Second)
 		logger.Println("sleep rpc done")
-		return &InvokeResult{Kwargs: wamp.Dict{"success": true}}
+		return InvokeResult{Kwargs: wamp.Dict{"success": true}}
 	}
 
 	for ii := 0; ii < 40; ii++ {
@@ -765,14 +767,14 @@ func newNetTestKiller(routerURL string) (*Client, error) {
 		Logger:          logger,
 		Debug:           true,
 	}
-	cl, err := ConnectNet(routerURL, cfg)
+	cl, err := ConnectNet(context.Background(), routerURL, cfg)
 	if err != nil {
 		return nil, err
 	}
 
 	// Define function to handle on_join events received.
-	onJoin := func(args wamp.List, kwargs wamp.Dict, details wamp.Dict) {
-		details, ok := wamp.AsDict(args[0])
+	onJoin := func(event *wamp.Event) {
+		details, ok := wamp.AsDict(event.Arguments[0])
 		if !ok {
 			logger.Println("Client joined realm - no data provided")
 			return
@@ -780,7 +782,6 @@ func newNetTestKiller(routerURL string) (*Client, error) {
 		onJoinID, _ := wamp.AsID(details["session"])
 		logger.Printf("Client %v joined realm\n", onJoinID)
 
-		// OnJoin callback is sequential
 		go func() {
 			// Call meta procedure to kill new client
 			ctx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
@@ -788,7 +789,7 @@ func newNetTestKiller(routerURL string) (*Client, error) {
 			killArgs := wamp.List{onJoinID}
 			killKwArgs := wamp.Dict{"reason": "com.session.kill", "message": "because i can"}
 			var result *wamp.Result
-			result, err = cl.Call(ctx, string(wamp.MetaProcSessionKill), nil, killArgs, killKwArgs, "")
+			result, err = cl.Call(ctx, string(wamp.MetaProcSessionKill), nil, killArgs, killKwArgs, nil)
 			if err != nil {
 				logger.Printf("Kill new client failed err %s", err)
 			}
@@ -852,11 +853,11 @@ func TestInvocationHandlerMissedDone(t *testing.T) {
 	calledChan := make(chan struct{})
 
 	// Register procedure.
-	handler := func(ctx context.Context, args wamp.List, kwargs, details wamp.Dict) *InvokeResult {
+	handler := func(ctx context.Context, inv *wamp.Invocation) InvokeResult {
 		close(calledChan)
 		<-ctx.Done()
 		time.Sleep(2 * time.Second)
-		return &InvokeResult{Args: wamp.List{args[0].(int) * 37}}
+		return InvokeResult{Args: wamp.List{inv.Arguments[0].(int) * 37}}
 	}
 	procName := "myproc"
 	if err = callee.Register(procName, handler, nil); err != nil {
@@ -867,14 +868,14 @@ func TestInvocationHandlerMissedDone(t *testing.T) {
 	callArgs := wamp.List{73}
 	ctx := context.Background()
 
-	go caller.Call(ctx, procName, nil, callArgs, nil, "")
+	go caller.Call(ctx, procName, nil, callArgs, nil, nil)
 
 	<-calledChan
 
 	killArgs := wamp.List{callee.ID()}
 	killKwArgs := wamp.Dict{"reason": "com.session.kill", "message": "because i can"}
 	var result *wamp.Result
-	result, err = caller.Call(ctx, string(wamp.MetaProcSessionKill), nil, killArgs, killKwArgs, "")
+	result, err = caller.Call(ctx, string(wamp.MetaProcSessionKill), nil, killArgs, killKwArgs, nil)
 	if err != nil {
 		t.Log("Kill new client failed:", err)
 	}
@@ -918,7 +919,7 @@ func TestProgressDisconnect(t *testing.T) {
 		Logger:          calleeLog,
 		Debug:           true,
 	}
-	callee, err := ConnectNet(testURL, cfg)
+	callee, err := ConnectNet(context.Background(), testURL, cfg)
 	if err != nil {
 		t.Fatalf("connect error: %s", err)
 	}
@@ -930,13 +931,13 @@ func TestProgressDisconnect(t *testing.T) {
 	disconnected := make(chan struct{})
 
 	// Define invocation handler.
-	handler := func(ctx context.Context, args wamp.List, kwargs, details wamp.Dict) *InvokeResult {
+	handler := func(ctx context.Context, inv *wamp.Invocation) InvokeResult {
 		for {
 			// Send a chunk of data.
 			e := callee.SendProgress(ctx, wamp.List{"hello"}, nil)
 			if e != nil {
 				sendProgErr <- e
-				return nil
+				return InvocationCanceled
 			}
 			<-disconnected
 		}
@@ -950,13 +951,12 @@ func TestProgressDisconnect(t *testing.T) {
 
 	// Connect caller session.
 	cfg.Logger = log.New(os.Stderr, "CALLER> ", log.Lmicroseconds)
-	caller, err := ConnectNet(testURL, cfg)
+	caller, err := ConnectNet(context.Background(), testURL, cfg)
 	if err != nil {
 		t.Fatalf("connect error: %s", err)
 	}
 	defer caller.Close()
 
-	// The progress handler accumulates the chunks of data as they arrive.
 	progHandler := func(result *wamp.Result) {
 		close(disconnect)
 	}
@@ -967,7 +967,7 @@ func TestProgressDisconnect(t *testing.T) {
 
 	progErr := make(chan error)
 	go func() {
-		_, perr := caller.CallProgress(ctx, chunkProc, nil, nil, nil, "", progHandler)
+		_, perr := caller.Call(ctx, chunkProc, nil, nil, nil, progHandler)
 		progErr <- perr
 	}()
 

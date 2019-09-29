@@ -4,11 +4,24 @@ import (
 	"crypto/tls"
 	"time"
 
-	"github.com/gammazero/nexus/stdlog"
-	"github.com/gammazero/nexus/transport"
-	"github.com/gammazero/nexus/transport/serialize"
-	"github.com/gammazero/nexus/wamp"
+	"github.com/gammazero/nexus/v3/stdlog"
+	"github.com/gammazero/nexus/v3/transport"
+	"github.com/gammazero/nexus/v3/transport/serialize"
+	"github.com/gammazero/nexus/v3/wamp"
 )
+
+// AuthFunc takes the CHALLENGE message and returns the signature string and
+// any WELCOME message details.  If the signature is accepted, the details are
+// used to populate the welcome message, as well as the session attributes.
+//
+// In response to a CHALLENGE message, the Client MUST send an AUTHENTICATE
+// message.  Therefore, AuthFunc does not return an error.  If an error is
+// encountered within AuthFunc, then an empty signature should be returned
+// since the client cannot give a valid signature response.
+//
+// This is used in the AuthHandler map, in a Config, and is used when the
+// client joins a realm.
+type AuthFunc func(challenge *wamp.Challenge) (signature string, details wamp.Dict)
 
 // Config configures a client with everything needed to begin a session
 // with a WAMP router.
@@ -55,8 +68,3 @@ type Config struct {
 	// Websocket transport configuration.
 	WsCfg transport.WebsocketConfig
 }
-
-// Deprecated: replaced by Config
-//
-// ClientConfig is a type alias for the deprecated ClientConfig.
-type ClientConfig = Config

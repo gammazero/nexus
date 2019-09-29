@@ -7,8 +7,8 @@ import (
 	"time"
 
 	"github.com/fortytw2/leaktest"
-	"github.com/gammazero/nexus/client"
-	"github.com/gammazero/nexus/wamp"
+	"github.com/gammazero/nexus/v3/client"
+	"github.com/gammazero/nexus/v3/wamp"
 )
 
 func TestRPCRegisterAndCall(t *testing.T) {
@@ -22,21 +22,21 @@ func TestRPCRegisterAndCall(t *testing.T) {
 	proceed := make(chan struct{})
 
 	// Test registering a valid procedure.
-	handler := func(ctx context.Context, args wamp.List, kwargs, details wamp.Dict) *client.InvokeResult {
-		wait, _ := wamp.AsBool(kwargs["wait"])
+	handler := func(ctx context.Context, inv *wamp.Invocation) client.InvokeResult {
+		wait, _ := wamp.AsBool(inv.ArgumentsKw["wait"])
 		if wait {
 			<-proceed // wait until other call finishes
 		} else {
 			defer close(proceed)
 		}
 		var sum int64
-		for i := range args {
-			n, ok := wamp.AsInt64(args[i])
+		for _, arg := range inv.Arguments {
+			n, ok := wamp.AsInt64(arg)
 			if ok {
 				sum += n
 			}
 		}
-		return &client.InvokeResult{Args: wamp.List{sum}}
+		return client.InvokeResult{Args: wamp.List{sum}}
 	}
 
 	// Register procedure "sum"
@@ -70,13 +70,13 @@ func TestRPCRegisterAndCall(t *testing.T) {
 		kwArgs := wamp.Dict{
 			"wait": true,
 		}
-		result1, err1 = caller.Call(ctx, procName, nil, callArgs, kwArgs, "")
+		result1, err1 = caller.Call(ctx, procName, nil, callArgs, kwArgs, nil)
 	}()
 	go func() {
 		defer allDone.Done()
 		ctx, cancel := context.WithTimeout(context.Background(), time.Second)
 		defer cancel()
-		result2, err2 = caller2.Call(ctx, procName, nil, callArgs, nil, "")
+		result2, err2 = caller2.Call(ctx, procName, nil, callArgs, nil, nil)
 	}()
 
 	allDone.Wait()
@@ -128,7 +128,7 @@ func TestRPCCallUnregistered(t *testing.T) {
 	// Test calling unregistered procedure.
 	callArgs := wamp.List{555}
 	ctx := context.Background()
-	result, err := caller.Call(ctx, "NotRegistered", nil, callArgs, nil, "")
+	result, err := caller.Call(ctx, "NotRegistered", nil, callArgs, nil, nil)
 	if err == nil {
 		t.Fatal("expected error calling unregistered procedure")
 	}
@@ -178,10 +178,10 @@ func TestRPCCancelCall(t *testing.T) {
 
 	invkCanceled := make(chan struct{}, 1)
 	// Register procedure that waits.
-	handler := func(ctx context.Context, args wamp.List, kwargs, details wamp.Dict) *client.InvokeResult {
+	handler := func(ctx context.Context, inv *wamp.Invocation) client.InvokeResult {
 		<-ctx.Done() // handler will block forever until canceled.
 		invkCanceled <- struct{}{}
-		return &client.InvokeResult{Err: wamp.ErrCanceled}
+		return client.InvokeResult{Err: wamp.ErrCanceled}
 	}
 	procName := "myproc"
 	if err = callee.Register(procName, handler, nil); err != nil {
@@ -194,12 +194,16 @@ func TestRPCCancelCall(t *testing.T) {
 		t.Fatal("Failed to connect client:", err)
 	}
 
+	if err = caller.SetCallCancelMode(wamp.CancelModeKillNoWait); err != nil {
+		t.Fatal(err)
+	}
+
 	errChan := make(chan error)
 	ctx, cancel := context.WithCancel(context.Background())
 	// Calling the procedure, should block.
 	go func() {
 		callArgs := wamp.List{73}
-		_, e := caller.Call(ctx, procName, nil, callArgs, nil, "killnowait")
+		_, e := caller.Call(ctx, procName, nil, callArgs, nil, nil)
 		errChan <- e
 	}()
 
@@ -261,10 +265,10 @@ func TestRPCTimeoutCall(t *testing.T) {
 
 	invkCanceled := make(chan struct{}, 1)
 	// Register procedure that waits.
-	handler := func(ctx context.Context, args wamp.List, kwargs, details wamp.Dict) *client.InvokeResult {
+	handler := func(ctx context.Context, inv *wamp.Invocation) client.InvokeResult {
 		<-ctx.Done() // handler will block forever until canceled.
 		invkCanceled <- struct{}{}
-		return &client.InvokeResult{Err: wamp.ErrCanceled}
+		return client.InvokeResult{Err: wamp.ErrCanceled}
 	}
 	procName := "myproc"
 	if err = callee.Register(procName, handler, nil); err != nil {
@@ -283,7 +287,7 @@ func TestRPCTimeoutCall(t *testing.T) {
 	// Calling the procedure, should block.
 	go func() {
 		callArgs := wamp.List{73}
-		_, e := caller.Call(ctx, procName, opts, callArgs, nil, "killnowait")
+		_, e := caller.Call(ctx, procName, opts, callArgs, nil, nil)
 		errChan <- e
 	}()
 
@@ -348,20 +352,20 @@ func TestRPCResponseRouting(t *testing.T) {
 	ready.Add(2)
 
 	// Register procedure "hello"
-	hello := func(ctx context.Context, args wamp.List, kwargs, details wamp.Dict) *client.InvokeResult {
+	hello := func(ctx context.Context, inv *wamp.Invocation) client.InvokeResult {
 		ready.Done()
 		<-respond
-		return &client.InvokeResult{Args: wamp.List{"HELLO"}}
+		return client.InvokeResult{Args: wamp.List{"HELLO"}}
 	}
 	if err = callee.Register("hello", hello, nil); err != nil {
 		t.Fatal("Failed to register procedure:", err)
 	}
 
 	// Register procedure "world"
-	world := func(ctx context.Context, args wamp.List, kwargs, details wamp.Dict) *client.InvokeResult {
+	world := func(ctx context.Context, inv *wamp.Invocation) client.InvokeResult {
 		ready.Done()
 		<-respond
-		return &client.InvokeResult{Args: wamp.List{"WORLD"}}
+		return client.InvokeResult{Args: wamp.List{"WORLD"}}
 	}
 	// Register procedure "hello"
 	if err = callee.Register("world", world, nil); err != nil {
@@ -389,7 +393,7 @@ func TestRPCResponseRouting(t *testing.T) {
 	defer cancel()
 
 	go func() {
-		result1, err1 := callerHello.Call(ctx, "hello", nil, nil, nil, "")
+		result1, err1 := callerHello.Call(ctx, "hello", nil, nil, nil, nil)
 		if err1 != nil {
 			ec1 <- err1
 			return
@@ -397,7 +401,7 @@ func TestRPCResponseRouting(t *testing.T) {
 		rc1 <- result1
 	}()
 	go func() {
-		result2, err2 := callerWorld.Call(ctx, "world", nil, nil, nil, "")
+		result2, err2 := callerWorld.Call(ctx, "world", nil, nil, nil, nil)
 		if err2 != nil {
 			ec2 <- err2
 			return

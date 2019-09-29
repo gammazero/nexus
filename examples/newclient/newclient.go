@@ -7,6 +7,7 @@ all the sample clients.
 package newclient
 
 import (
+	"context"
 	"crypto/tls"
 	"crypto/x509"
 	"encoding/pem"
@@ -16,7 +17,7 @@ import (
 	"io/ioutil"
 	"log"
 
-	"github.com/gammazero/nexus/client"
+	"github.com/gammazero/nexus/v3/client"
 )
 
 const (
@@ -165,7 +166,7 @@ func NewClient(logger *log.Logger) (*client.Client, error) {
 	default:
 		return nil, errors.New("scheme must be one of: http, https, ws, wss, tcp, tcps, unix")
 	}
-	cli, err = client.ConnectNet(addr, cfg)
+	cli, err = client.ConnectNet(context.Background(), addr, cfg)
 	if err != nil {
 		return nil, err
 	}

@@ -12,9 +12,9 @@ import (
 	"time"
 
 	"github.com/fortytw2/leaktest"
-	"github.com/gammazero/nexus/client"
-	"github.com/gammazero/nexus/wamp"
-	"github.com/gammazero/nexus/wamp/crsign"
+	"github.com/gammazero/nexus/v3/client"
+	"github.com/gammazero/nexus/v3/wamp"
+	"github.com/gammazero/nexus/v3/wamp/crsign"
 	"golang.org/x/crypto/pbkdf2"
 )
 
@@ -154,7 +154,7 @@ func TestAuthz(t *testing.T) {
 	// Check that subscriber does not have special info provided by authorizer.
 	ctx := context.Background()
 	args := wamp.List{subscriber.ID()}
-	result, err := caller.Call(ctx, metaGet, nil, args, nil, "")
+	result, err := caller.Call(ctx, metaGet, nil, args, nil, nil)
 	if err != nil {
 		t.Fatal("Call error:", err)
 	}
@@ -164,21 +164,23 @@ func TestAuthz(t *testing.T) {
 	}
 
 	// Subscribe to event.
-	gotEvent := make(chan struct{})
-	evtHandler := func(args wamp.List, kwargs wamp.Dict, details wamp.Dict) {
-		arg, _ := wamp.AsString(args[0])
+	errChan := make(chan error)
+	evtHandler := func(ev *wamp.Event) {
+		arg, _ := wamp.AsString(ev.Arguments[0])
 		if arg != "hi" {
+			errChan <- errors.New("wrong argument in event")
 			return
 		}
-		close(gotEvent)
+		errChan <- nil
 	}
+
 	err = subscriber.Subscribe("nexus.interceptor", evtHandler, nil)
 	if err != nil {
 		t.Fatal("subscribe error:", err)
 	}
 
 	// Check that authorizer modified session with special info.
-	result, err = caller.Call(ctx, metaGet, nil, args, nil, "")
+	result, err = caller.Call(ctx, metaGet, nil, args, nil, nil)
 	if err != nil {
 		t.Fatal("Call error:", err)
 	}
@@ -191,14 +193,17 @@ func TestAuthz(t *testing.T) {
 	caller.Publish("nexus.interceptor.foobar.baz", nil, wamp.List{"hi"}, nil)
 	// Make sure the event was received.
 	select {
-	case <-gotEvent:
+	case err = <-errChan:
+		if err != nil {
+			t.Fatalf("Event error: %s", err)
+		}
 	case <-time.After(200 * time.Millisecond):
 		t.Fatal("did not get published event")
 	}
 
 	// Have caller call a procedure that will fail authz.
 	_, err = caller.Call(ctx, "need.ldap.auth",
-		wamp.Dict{wamp.OptAcknowledge: true}, nil, nil, "")
+		wamp.Dict{wamp.OptAcknowledge: true}, nil, nil, nil)
 	if err == nil {
 		t.Fatal("Expected error")
 	}

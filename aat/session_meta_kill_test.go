@@ -6,8 +6,8 @@ import (
 	"time"
 
 	"github.com/fortytw2/leaktest"
-	"github.com/gammazero/nexus/client"
-	"github.com/gammazero/nexus/wamp"
+	"github.com/gammazero/nexus/v3/client"
+	"github.com/gammazero/nexus/v3/wamp"
 )
 
 const (
@@ -45,7 +45,7 @@ func TestSessionKill(t *testing.T) {
 	defer cancel()
 	args := wamp.List{cli3.ID()}
 	kwArgs := wamp.Dict{"reason": reason, "message": message}
-	result, err := cli1.Call(ctx, metaKill, nil, args, kwArgs, "")
+	result, err := cli1.Call(ctx, metaKill, nil, args, kwArgs, nil)
 	if err != nil {
 		t.Fatal("Call error:", err)
 	}
@@ -84,7 +84,7 @@ func TestSessionKill(t *testing.T) {
 
 	// Test that trying to kill self receives error.
 	args = wamp.List{cli1.ID}
-	result, err = cli1.Call(ctx, metaKill, nil, args, kwArgs, "")
+	result, err = cli1.Call(ctx, metaKill, nil, args, kwArgs, nil)
 	if err == nil {
 		t.Fatal("Expected error")
 	}
@@ -101,7 +101,7 @@ func TestSessionKill(t *testing.T) {
 	defer c2()
 	args = wamp.List{wamp.ID(12345)}
 	kwArgs = wamp.Dict{"reason": reason, "message": message}
-	result, err = cli1.Call(ctx, metaKill, nil, args, kwArgs, "")
+	result, err = cli1.Call(ctx, metaKill, nil, args, kwArgs, nil)
 	if err == nil {
 		t.Error("Expected error")
 	} else if _, ok := err.(client.RPCError); !ok {
@@ -148,7 +148,7 @@ func TestSessionKillAll(t *testing.T) {
 	ctx, cancel := context.WithTimeout(context.Background(), time.Second)
 	defer cancel()
 	kwArgs := wamp.Dict{"reason": reason, "message": message}
-	result, err := cli1.Call(ctx, metaKillAll, nil, nil, kwArgs, "")
+	result, err := cli1.Call(ctx, metaKillAll, nil, nil, kwArgs, nil)
 	if err != nil {
 		t.Fatal("Call error:", err)
 	}
@@ -200,7 +200,7 @@ func TestSessionKillAll(t *testing.T) {
 	// Call killall again, with no reason.
 	ctx, c2 := context.WithTimeout(context.Background(), time.Second)
 	defer c2()
-	result, err = cli1.Call(ctx, metaKillAll, nil, nil, nil, "")
+	result, err = cli1.Call(ctx, metaKillAll, nil, nil, nil, nil)
 	if err != nil {
 		t.Fatal("Call error:", err)
 	}
@@ -242,7 +242,7 @@ func TestSessionModifyDetails(t *testing.T) {
 	defer cancel()
 	delta := wamp.Dict{"pi": 3.14, "authid": "bob"}
 	args := wamp.List{cli.ID(), delta}
-	result, err := cli.Call(ctx, metaModifyDetails, nil, args, nil, "")
+	result, err := cli.Call(ctx, metaModifyDetails, nil, args, nil, nil)
 	if err != nil {
 		t.Fatal("Call error:", err)
 	}
@@ -253,7 +253,7 @@ func TestSessionModifyDetails(t *testing.T) {
 	// Call session meta-procedure to get session information.
 	ctx = context.Background()
 	args = wamp.List{cli.ID()}
-	result, err = cli.Call(ctx, metaGet, nil, args, nil, "")
+	result, err = cli.Call(ctx, metaGet, nil, args, nil, nil)
 	if err != nil {
 		t.Fatal("Call error:", err)
 	}
@@ -284,8 +284,8 @@ func TestSessionKillDeadlock(t *testing.T) {
 	}
 
 	// Register procedure
-	handler := func(ctx context.Context, args wamp.List, kwargs, details wamp.Dict) *client.InvokeResult {
-		return &client.InvokeResult{Args: wamp.List{"done"}}
+	handler := func(ctx context.Context, inv *wamp.Invocation) client.InvokeResult {
+		return client.InvokeResult{Args: wamp.List{"done"}}
 	}
 	const procName = "dostuff"
 	if err = remoteCli.Register(procName, handler, nil); err != nil {
@@ -298,11 +298,8 @@ func TestSessionKillDeadlock(t *testing.T) {
 	}
 
 	// Subscribe to event.
-	localUnreg := make(chan struct{})
-	lEvtHandler := func(args wamp.List, kwargs wamp.Dict, details wamp.Dict) {
-		close(localUnreg)
-	}
-	err = localCli.Subscribe(string(wamp.MetaEventRegOnUnregister), lEvtHandler, nil)
+	onUnregEvents := make(chan *wamp.Event)
+	err = localCli.SubscribeChan(string(wamp.MetaEventRegOnUnregister), onUnregEvents, nil)
 	if err != nil {
 		t.Fatal("subscribe error:", err)
 	}
@@ -315,7 +312,7 @@ func TestSessionKillDeadlock(t *testing.T) {
 	defer cancel()
 	args := wamp.List{remoteCli.ID()}
 	kwArgs := wamp.Dict{"reason": reason, "message": message}
-	result, err := localCli.Call(ctx, metaKill, nil, args, kwArgs, "")
+	result, err := localCli.Call(ctx, metaKill, nil, args, kwArgs, nil)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -344,7 +341,7 @@ func TestSessionKillDeadlock(t *testing.T) {
 		}
 	}
 	select {
-	case <-localUnreg:
+	case <-onUnregEvents:
 	case <-time.After(5 * time.Second):
 		t.Error("Timed out waiting for local client to get on unregister event")
 	}

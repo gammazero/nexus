@@ -10,9 +10,9 @@ import (
 	"net"
 	"time"
 
-	"github.com/gammazero/nexus/stdlog"
-	"github.com/gammazero/nexus/transport/serialize"
-	"github.com/gammazero/nexus/wamp"
+	"github.com/gammazero/nexus/v3/stdlog"
+	"github.com/gammazero/nexus/v3/transport/serialize"
+	"github.com/gammazero/nexus/v3/wamp"
 )
 
 // rawSocketPeer implements the Peer interface, connecting the Send and Recv
@@ -49,15 +49,9 @@ const (
 	magic = 0x7f
 )
 
-// ConnectRawSocketPeer calls ConnectRawSocketPeerContext without a context.
-func ConnectRawSocketPeer(network, address string, serialization serialize.Serialization, logger stdlog.StdLog, recvLimit int) (wamp.Peer, error) {
-	return ConnectRawSocketPeerContext(context.Background(), network, address, serialization, logger, recvLimit)
-}
-
-// ConnectRawSocketPeerContext creates a new rawSocketPeer with the specified
-// config, and connects it to the WAMP router at the specified address.  The
-// network and address parameters are documented here:
-// https://golang.org/pkg/net/#Dial
+// ConnectRawSocketPeer creates a new rawSocketPeer with the specified config,
+// and connects it to the WAMP router at the specified address.  The network
+// and address parameters are documented here: https://golang.org/pkg/net/#Dial
 //
 // The provided Context must be non-nil.  If the context expires before the
 // connection is complete, an error is returned.  Once successfully connected,
@@ -66,7 +60,7 @@ func ConnectRawSocketPeer(network, address string, serialization serialize.Seria
 // If recvLimit is > 0, then the client will not receive messages with size
 // larger than the nearest power of 2 greater than or equal to recvLimit.  If
 // recvLimit is <= 0, then the default of 16M is used.
-func ConnectRawSocketPeerContext(ctx context.Context, network, address string, serialization serialize.Serialization, logger stdlog.StdLog, recvLimit int) (wamp.Peer, error) {
+func ConnectRawSocketPeer(ctx context.Context, network, address string, serialization serialize.Serialization, logger stdlog.StdLog, recvLimit int) (wamp.Peer, error) {
 	var (
 		protocol byte
 		conn     net.Conn
@@ -98,16 +92,10 @@ func ConnectRawSocketPeerContext(ctx context.Context, network, address string, s
 	return peer, nil
 }
 
-// ConnectTlsRawSocketPeer calls ConnectTlsRawSocketPeerContext without a Dial
-// context.
-func ConnectTlsRawSocketPeer(network, address string, serialization serialize.Serialization, tlsConfig *tls.Config, logger stdlog.StdLog, recvLimit int) (wamp.Peer, error) {
-	return ConnectTlsRawSocketPeerContext(context.Background(), network, address, serialization, tlsConfig, logger, recvLimit)
-}
-
-// ConnectTlsRawSocketPeerContext creates a new rawSocketPeer with the
-// specified config, and connects it, using TLS, to the WAMP router at the
-// specified address.  The network, address, and tlscfg parameters are
-// documented here: https://golang.org/pkg/crypto/tls/#Dial
+// ConnectTlsRawSocketPeer creates a new rawSocketPeer with the specified
+// config, and connects it, using TLS, to the WAMP router at the specified
+// address.  The network, address, and tlscfg parameters are documented here:
+// https://golang.org/pkg/crypto/tls/#Dial
 //
 // The provided Context must be non-nil.  If the context expires before the
 // connection is complete, an error is returned.  Once successfully connected,
@@ -116,7 +104,7 @@ func ConnectTlsRawSocketPeer(network, address string, serialization serialize.Se
 // If recvLimit is > 0, then the client will not receive messages with size
 // larger than the nearest power of 2 greater than or equal to recvLimit.  If
 // recvLimit is <= 0, then the default of 16M is used.
-func ConnectTlsRawSocketPeerContext(ctx context.Context, network, address string, serialization serialize.Serialization, tlsConfig *tls.Config, logger stdlog.StdLog, recvLimit int) (wamp.Peer, error) {
+func ConnectTlsRawSocketPeer(ctx context.Context, network, address string, serialization serialize.Serialization, tlsConfig *tls.Config, logger stdlog.StdLog, recvLimit int) (wamp.Peer, error) {
 	err := checkNetworkType(network)
 	if err != nil {
 		return nil, err

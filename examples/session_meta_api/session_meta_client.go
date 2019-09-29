@@ -7,9 +7,9 @@ import (
 	"os/signal"
 	"time"
 
-	"github.com/gammazero/nexus/client"
-	"github.com/gammazero/nexus/examples/newclient"
-	"github.com/gammazero/nexus/wamp"
+	"github.com/gammazero/nexus/v3/client"
+	"github.com/gammazero/nexus/v3/examples/newclient"
+	"github.com/gammazero/nexus/v3/wamp"
 )
 
 const (
@@ -23,15 +23,16 @@ const (
 
 func subscribeMetaOnJoin(subscriber *client.Client, logger *log.Logger) {
 	// Define function to handle on_join events received.
-	onJoin := func(args wamp.List, kwargs wamp.Dict, details wamp.Dict) {
-		details, ok := wamp.AsDict(args[0])
-		if !ok {
-			logger.Println("Client joined realm - no data provided")
-			return
+	onJoin := func(event *wamp.Event) {
+		if len(event.Arguments) != 0 {
+			if details, ok := wamp.AsDict(event.Arguments[0]); ok {
+				onJoinID, _ := wamp.AsID(details["session"])
+				authid, _ := wamp.AsString(details["authid"])
+				logger.Printf("Client %v joined realm (authid=%s)\n", onJoinID, authid)
+				return
+			}
 		}
-		onJoinID, _ := wamp.AsID(details["session"])
-		authid, _ := wamp.AsString(details["authid"])
-		logger.Printf("Client %v joined realm (authid=%s)\n", onJoinID, authid)
+		logger.Println("Client joined realm - no data provided")
 	}
 
 	// Subscribe to on_join topic.
@@ -44,13 +45,14 @@ func subscribeMetaOnJoin(subscriber *client.Client, logger *log.Logger) {
 
 func subscribeMetaOnLeave(subscriber *client.Client, logger *log.Logger) {
 	// Define function to handle on_leave events received.
-	onLeave := func(args wamp.List, kwargs wamp.Dict, details wamp.Dict) {
-		id, ok := wamp.AsID(args[0])
-		if !ok {
-			logger.Println("A client left the realm")
-			return
+	onLeave := func(event *wamp.Event) {
+		if len(event.Arguments) != 0 {
+			if id, ok := wamp.AsID(event.Arguments[0]); ok {
+				logger.Println("Client", id, "left realm")
+				return
+			}
 		}
-		logger.Println("Client", id, "left realm")
+		logger.Println("A client left the realm")
 	}
 
 	// Subscribe to on_leave topic.
@@ -65,7 +67,7 @@ func getSessionCount(caller *client.Client, logger *log.Logger) {
 	// Call meta procedure to get session count.
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 	defer cancel()
-	result, err := caller.Call(ctx, metaCount, nil, nil, nil, "")
+	result, err := caller.Call(ctx, metaCount, nil, nil, nil, nil)
 	if err != nil {
 		logger.Println("Call error:", err)
 		return

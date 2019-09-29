@@ -7,7 +7,7 @@ import (
 	"time"
 
 	"github.com/fortytw2/leaktest"
-	"github.com/gammazero/nexus/wamp"
+	"github.com/gammazero/nexus/v3/wamp"
 )
 
 const (
@@ -29,28 +29,8 @@ func TestAddTestament(t *testing.T) {
 		t.Error("Dealer does not have", featureTestamentMetaAPI, "feature")
 	}
 
-	errChan := make(chan error)
-	evtHandler := func(args wamp.List, kwargs wamp.Dict, details wamp.Dict) {
-		if len(args) == 0 {
-			errChan <- errors.New("missing argument")
-			return
-		}
-		val, ok := wamp.AsString(args[0])
-		if !ok {
-			errChan <- errors.New("Argument was not string")
-			return
-		}
-		if val != "foo" {
-			errChan <- errors.New("Argument value was invalid")
-			return
-		}
-		if len(kwargs) != 0 {
-			errChan <- errors.New("Received unexpected kwargs")
-		}
-		errChan <- nil
-	}
-
-	err = subscriber.Subscribe("testament.test", evtHandler, nil)
+	eventChan := make(chan *wamp.Event)
+	err = subscriber.SubscribeChan("testament.test", eventChan, nil)
 	if err != nil {
 		t.Fatal("subscribe error:", err)
 	}
@@ -58,27 +38,46 @@ func TestAddTestament(t *testing.T) {
 	if err != nil {
 		t.Fatal("Failed to connect client:", err)
 	}
-	_, err = sess.Call(context.Background(), metaAddTestament, wamp.Dict{}, wamp.List{
+	tstmtArgs := wamp.List{
 		"testament.test",
 		wamp.List{
 			"foo",
 		},
 		wamp.Dict{},
-	}, wamp.Dict{}, "")
+	}
+	_, err = sess.Call(context.Background(), metaAddTestament, nil, tstmtArgs, nil, nil)
 	if err != nil {
 		t.Fatal("Failed to add testament:", err)
 	}
 
-	// Disconnect client to generate wamp.session.on_leave event.
+	// Disconnect client to trigger testament
 	err = sess.Close()
 	if err != nil {
 		t.Fatal("Failed to disconnect client:", err)
 	}
 
+	checkEvent := func(event *wamp.Event) error {
+		args := event.Arguments
+		if len(args) == 0 {
+			return errors.New("missing argument")
+		}
+		val, ok := wamp.AsString(args[0])
+		if !ok {
+			return errors.New("Argument was not string")
+		}
+		if val != "foo" {
+			return errors.New("Argument value was invalid")
+		}
+		if len(event.ArgumentsKw) != 0 {
+			return errors.New("Received unexpected kwargs")
+		}
+		return nil
+	}
+
 	// Make sure the event was received.
 	select {
-	case err = <-errChan:
-		if err != nil {
+	case event := <-eventChan:
+		if err = checkEvent(event); err != nil {
 			t.Fatal("Event error:", err)
 		}
 	case <-time.After(200 * time.Millisecond):
@@ -99,21 +98,8 @@ func TestAddFlushTestament(t *testing.T) {
 		t.Fatal("Failed to connect client:", err)
 	}
 
-	errChan := make(chan error)
-	evtHandler := func(args wamp.List, kwargs wamp.Dict, details wamp.Dict) {
-		if len(args) == 0 {
-			errChan <- errors.New("missing argument")
-			return
-		}
-		_, ok := wamp.AsString(args[0])
-		if !ok {
-			errChan <- errors.New("Argument was not string")
-			return
-		}
-		errChan <- nil
-	}
-
-	err = subscriber.Subscribe("testament.test", evtHandler, nil)
+	eventChan := make(chan *wamp.Event)
+	err = subscriber.SubscribeChan("testament.test", eventChan, nil)
 	if err != nil {
 		t.Fatal("subscribe error:", err)
 	}
@@ -121,22 +107,24 @@ func TestAddFlushTestament(t *testing.T) {
 	if err != nil {
 		t.Fatal("Failed to connect client:", err)
 	}
-	_, err = sess.Call(context.Background(), metaAddTestament, wamp.Dict{}, wamp.List{
+	tstmtArgs := wamp.List{
 		"testament.test",
 		wamp.List{
 			"foo",
 		},
 		wamp.Dict{},
-	}, wamp.Dict{}, "")
+	}
+	_, err = sess.Call(context.Background(), metaAddTestament, nil, tstmtArgs, nil, nil)
 	if err != nil {
 		t.Fatal("Failed to add testament:", err)
 	}
-	_, err = sess.Call(context.Background(), metaFlushTestaments, wamp.Dict{}, wamp.List{}, wamp.Dict{}, "")
+	_, err = sess.Call(context.Background(), metaFlushTestaments, nil, nil, nil, nil)
 	if err != nil {
 		t.Fatal("Failed to flush testament:", err)
 	}
 
-	// Disconnect client to generate wamp.session.on_leave event.
+	// Disconnect client to trigge testament, which should not exist since it
+	// was flushed above.
 	err = sess.Close()
 	if err != nil {
 		t.Fatal("Failed to disconnect client:", err)
@@ -144,10 +132,8 @@ func TestAddFlushTestament(t *testing.T) {
 
 	// Make sure the event was received.
 	select {
-	case err = <-errChan:
-		if err == nil {
-			t.Fatal("Got event, shouldn't have event:", err)
-		}
+	case <-eventChan:
+		t.Fatal("should not have received event")
 	case <-time.After(200 * time.Millisecond):
 	}
 

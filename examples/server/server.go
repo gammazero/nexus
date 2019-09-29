@@ -15,9 +15,9 @@ import (
 	"path"
 	"time"
 
-	"github.com/gammazero/nexus/client"
-	"github.com/gammazero/nexus/router"
-	"github.com/gammazero/nexus/wamp"
+	"github.com/gammazero/nexus/v3/client"
+	"github.com/gammazero/nexus/v3/router"
+	"github.com/gammazero/nexus/v3/wamp"
 )
 
 const (
@@ -155,8 +155,8 @@ func main() {
 func createLocalCallee(nxr router.Router, realm string) (*client.Client, error) {
 	logger := log.New(os.Stdout, "CALLEE> ", log.LstdFlags)
 	cfg := client.Config{
-		Realm:         realm,
-		Logger:        logger,
+		Realm:  realm,
+		Logger: logger,
 	}
 	callee, err := client.ConnectLocal(nxr, cfg)
 	if err != nil {
@@ -176,12 +176,12 @@ func createLocalCallee(nxr router.Router, realm string) (*client.Client, error) 
 // worldTime is a RPC function that returns times for the specified timezones.
 // This function is registered by the local callee client that is embedded in
 // the server.
-func worldTime(ctx context.Context, args wamp.List, kwargs, details wamp.Dict) *client.InvokeResult {
+func worldTime(ctx context.Context, inv *wamp.Invocation) client.InvokeResult {
 	now := time.Now()
 	results := wamp.List{fmt.Sprintf("UTC: %s", now.UTC())}
 
-	for i := range args {
-		locName, ok := wamp.AsString(args[i])
+	for _, arg := range inv.Arguments {
+		locName, ok := wamp.AsString(arg)
 		if !ok {
 			continue
 		}
@@ -193,5 +193,5 @@ func worldTime(ctx context.Context, args wamp.List, kwargs, details wamp.Dict) *
 		results = append(results, fmt.Sprintf("%s: %s", locName, now.In(loc)))
 	}
 
-	return &client.InvokeResult{Args: results}
+	return client.InvokeResult{Args: results}
 }

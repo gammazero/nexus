@@ -6,8 +6,8 @@ import (
 	"testing"
 	"time"
 
-	"github.com/gammazero/nexus/transport"
-	"github.com/gammazero/nexus/wamp"
+	"github.com/gammazero/nexus/v3/transport"
+	"github.com/gammazero/nexus/v3/wamp"
 )
 
 func newTestDealer() (*dealer, wamp.Peer) {

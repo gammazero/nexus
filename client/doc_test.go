@@ -5,8 +5,8 @@ import (
 	"log"
 	"time"
 
-	"github.com/gammazero/nexus/router"
-	"github.com/gammazero/nexus/wamp"
+	"github.com/gammazero/nexus/v3/router"
+	"github.com/gammazero/nexus/v3/wamp"
 )
 
 func ExampleConnectLocal() {
@@ -34,7 +34,8 @@ func ExampleConnectLocal() {
 
 func ExampleConnectNet() {
 	// Configure and connect client.
-	c, err := ConnectNet("unix:///tmp/app.sock", Config{Realm: "nexus.realm1"})
+	ctx := context.Background()
+	c, err := ConnectNet(ctx, "unix:///tmp/app.sock", Config{Realm: "nexus.realm1"})
 	if err != nil {
 		log.Fatal(err)
 	}
@@ -43,8 +44,9 @@ func ExampleConnectNet() {
 
 func ExampleClient_Call() {
 	// Configure and connect caller client.
+	ctx := context.Background()
 	cfg := Config{Realm: "nexus.realm1"}
-	caller, err := ConnectNet("ws://localhost:8080/", cfg)
+	caller, err := ConnectNet(ctx, "ws://localhost:8080/", cfg)
 	if err != nil {
 		log.Fatal(err)
 	}
@@ -56,7 +58,7 @@ func ExampleClient_Call() {
 
 	// Test calling the "sum" procedure with args 1..10.
 	callArgs := wamp.List{1, 2, 3, 4, 5, 6, 7, 8, 9, 10}
-	result, err := caller.Call(ctx, "sum", nil, callArgs, nil, "")
+	result, err := caller.Call(ctx, "sum", nil, callArgs, nil, nil)
 	if err != nil {
 		log.Fatal(err)
 	}
@@ -66,10 +68,11 @@ func ExampleClient_Call() {
 	log.Println("The sum is:", sum)
 }
 
-func ExampleClient_CallProgress() {
+func ExampleClient_Call_progressive() {
 	// Configure and connect caller client.
+	ctx := context.Background()
 	cfg := Config{Realm: "nexus.realm1"}
-	caller, err := ConnectNet("ws://localhost:8080/", cfg)
+	caller, err := ConnectNet(ctx, "ws://localhost:8080/", cfg)
 	if err != nil {
 		log.Fatal(err)
 	}
@@ -88,8 +91,8 @@ func ExampleClient_CallProgress() {
 
 	// Call the example procedure "run.test".  The argument specifies how
 	// frequently to send progress updates.
-	result, err := caller.CallProgress(
-		ctx, "run.test", nil, wamp.List{time.Second * 2}, nil, "", progHandler)
+	result, err := caller.Call(
+		ctx, "run.test", nil, wamp.List{time.Second * 2}, nil, progHandler)
 	if err != nil {
 		log.Fatal("Failed to call procedure:", err)
 	}
@@ -106,21 +109,22 @@ func ExampleClient_CallProgress() {
 
 func ExampleClient_Register() {
 	// Configure and connect callee client.
+	ctx := context.Background()
 	cfg := Config{Realm: "nexus.realm1"}
-	callee, err := ConnectNet("tcp://localhost:8080/", cfg)
+	callee, err := ConnectNet(ctx, "tcp://localhost:8080/", cfg)
 	if err != nil {
 		log.Fatal(err)
 	}
 	defer callee.Close()
 
 	// Define function that is called to perform remote procedure.
-	sum := func(ctx context.Context, args wamp.List, kwargs, details wamp.Dict) *InvokeResult {
+	sum := func(ctx context.Context, inv *wamp.Invocation) InvokeResult {
 		var sum int64
-		for i := range args {
-			n, _ := wamp.AsInt64(args[i])
+		for _, arg := range inv.Arguments {
+			n, _ := wamp.AsInt64(arg)
 			sum += n
 		}
-		return &InvokeResult{Args: wamp.List{sum}}
+		return InvokeResult{Args: wamp.List{sum}}
 	}
 
 	// Register procedure "sum"
@@ -134,17 +138,18 @@ func ExampleClient_Register() {
 
 func ExampleClient_Register_progressive() {
 	// Configure and connect callee client.
+	ctx := context.Background()
 	cfg := Config{Realm: "nexus.realm1"}
-	callee, err := ConnectNet("tcp://localhost:8080/", cfg)
+	callee, err := ConnectNet(ctx, "tcp://localhost:8080/", cfg)
 	if err != nil {
 		log.Fatal(err)
 	}
 	defer callee.Close()
 
 	// Define function that is called to perform remote procedure.
-	sendData := func(ctx context.Context, args wamp.List, kwargs, details wamp.Dict) *InvokeResult {
+	sendData := func(ctx context.Context, inv *wamp.Invocation) InvokeResult {
 		// Get update interval from caller.
-		interval, _ := wamp.AsInt64(args[0])
+		interval, _ := wamp.AsInt64(inv.Arguments[0])
 
 		// Send simulated progress every interval.
 		ticker := time.NewTicker(time.Duration(interval))
@@ -154,11 +159,11 @@ func ExampleClient_Register_progressive() {
 			percentDone += 20
 			if e := callee.SendProgress(ctx, wamp.List{percentDone}, nil); e != nil {
 				// If send failed, return error saying the call is canceled.
-				return nil
+				return InvocationCanceled
 			}
 		}
 		// Send true as final result.
-		return &InvokeResult{Args: wamp.List{true}}
+		return InvokeResult{Args: wamp.List{true}}
 	}
 
 	// Register example procedure.
@@ -172,17 +177,18 @@ func ExampleClient_Register_progressive() {
 
 func ExampleClient_SendProgress() {
 	// Configure and connect callee client.
+	ctx := context.Background()
 	cfg := Config{Realm: "nexus.realm1"}
-	callee, err := ConnectNet("ws://localhost:8080/", cfg)
+	callee, err := ConnectNet(ctx, "ws://localhost:8080/", cfg)
 	if err != nil {
 		log.Fatal(err)
 	}
 	defer callee.Close()
 
 	// Define function that is called to perform remote procedure.
-	sendData := func(ctx context.Context, args wamp.List, kwargs, details wamp.Dict) *InvokeResult {
+	sendData := func(ctx context.Context, inv *wamp.Invocation) InvokeResult {
 		// Get update interval from caller.
-		interval, _ := wamp.AsInt64(args[0])
+		interval, _ := wamp.AsInt64(inv.Arguments[0])
 
 		// Send simulated progress every interval.
 		ticker := time.NewTicker(time.Duration(interval))
@@ -192,11 +198,11 @@ func ExampleClient_SendProgress() {
 			percentDone += 20
 			if e := callee.SendProgress(ctx, wamp.List{percentDone}, nil); e != nil {
 				// If send failed, return error saying the call is canceled.
-				return nil
+				return InvocationCanceled
 			}
 		}
 		// Send true as final result.
-		return &InvokeResult{Args: wamp.List{true}}
+		return InvokeResult{Args: wamp.List{true}}
 	}
 
 	// Register example procedure.
@@ -216,16 +222,17 @@ func ExampleClient_Subscribe() {
 	)
 
 	// Configure and connect subscriber client.
+	ctx := context.Background()
 	cfg := Config{Realm: "nexus.realm1"}
-	subscriber, err := ConnectNet("ws://localhost:8080/", cfg)
+	subscriber, err := ConnectNet(ctx, "ws://localhost:8080/", cfg)
 	if err != nil {
 		log.Fatal(err)
 	}
 	defer subscriber.Close()
 
 	// Define specific event handler.
-	handler := func(args wamp.List, kwargs wamp.Dict, details wamp.Dict) {
-		eventData, _ := wamp.AsString(args[0])
+	handler := func(event *wamp.Event) {
+		eventData, _ := wamp.AsString(event.Arguments[0])
 		log.Printf("Event data for topic %s: %s", site1DbErrors, eventData)
 	}
 
@@ -236,11 +243,11 @@ func ExampleClient_Subscribe() {
 	}
 
 	// Define pattern-based event handler.
-	patHandler := func(args wamp.List, kwargs wamp.Dict, details wamp.Dict) {
+	patHandler := func(event *wamp.Event) {
 		// Events received for pattern-based (prefix and wildcard)
 		// subscriptions contain the matched topic in the details.
-		eventTopic, _ := wamp.AsURI(details["topic"])
-		eventData, _ := wamp.AsString(args[0])
+		eventTopic, _ := wamp.AsURI(event.Details["topic"])
+		eventData, _ := wamp.AsString(event.Arguments[0])
 		log.Printf("Event data for topic %s: %s", eventTopic, eventData)
 	}
 
