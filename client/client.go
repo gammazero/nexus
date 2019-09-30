@@ -27,40 +27,6 @@ const (
 	CBOR    = serialize.CBOR
 )
 
-// Features supported by nexus client.
-var clientRoles = wamp.Dict{
-	"publisher": wamp.Dict{
-		"features": wamp.Dict{
-			"subscriber_blackwhite_listing": true,
-			"publisher_exclusion":           true,
-		},
-	},
-	"subscriber": wamp.Dict{
-		"features": wamp.Dict{
-			"pattern_based_subscription": true,
-			"publisher_identification":   true,
-		},
-	},
-	"callee": wamp.Dict{
-		"features": wamp.Dict{
-			"pattern_based_registration": true,
-			"shared_registration":        true,
-			"call_canceling":             true,
-			"call_timeout":               true,
-			"caller_identification":      true,
-			"progressive_call_results":   true,
-		},
-	},
-	"caller": wamp.Dict{
-		"features": wamp.Dict{
-			"call_canceling":           true,
-			"call_timeout":             true,
-			"caller_identification":    true,
-			"progressive_call_results": true,
-		},
-	},
-}
-
 // A Client routes messages to/from a WAMP router.
 type Client struct {
 	sess *wamp.Session
@@ -229,6 +195,8 @@ func (c *Client) Subscribe(topic string, fn EventHandler, options wamp.Dict) err
 	}
 }
 
+// SubscribeChan subscribes the client to the specified topic or topic pattern.
+// Events are written to the provided channel.
 func (c *Client) SubscribeChan(topic string, events chan<- *wamp.Event, options wamp.Dict) error {
 	handler := func(ev *wamp.Event) { events <- ev }
 	return c.Subscribe(topic, handler, options)
@@ -325,17 +293,19 @@ func (c *Client) Publish(topic string, options wamp.Dict, args wamp.List, kwargs
 		return ErrNotConn
 	}
 
-	if options == nil {
-		options = make(wamp.Dict)
-	}
-
-	// Check if the client is asking for a PUBLISHED response.
-	pubAck, _ := options[wamp.OptAcknowledge].(bool)
-
 	id := c.idGen.Next()
-	if pubAck {
-		c.expectReply(id)
+
+	var pubAck bool
+	if options == nil {
+		options = wamp.Dict{}
+	} else {
+		// Check if the client is asking for a PUBLISHED response.
+		pubAck, _ = options[wamp.OptAcknowledge].(bool)
+		if pubAck {
+			c.expectReply(id)
+		}
 	}
+
 	c.sess.Send(&wamp.Publish{
 		Request:     id,
 		Options:     options,
