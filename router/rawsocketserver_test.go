@@ -27,7 +27,7 @@ func TestRSHandshakeJSON(t *testing.T) {
 	defer clsr.Close()
 
 	client, err := transport.ConnectRawSocketPeer(context.Background(), "tcp",
-		tcpAddr, serialize.JSON, r.Logger(), 0)
+		tcpAddr, serialize.JSON, nil, r.Logger(), 0)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -59,7 +59,7 @@ func TestRSHandshakeMsgpack(t *testing.T) {
 	defer clsr.Close()
 
 	client, err := transport.ConnectRawSocketPeer(context.Background(), "tcp",
-		tcpAddr, serialize.MSGPACK, r.Logger(), 0)
+		tcpAddr, serialize.MSGPACK, nil, r.Logger(), 0)
 	if err != nil {
 		t.Fatal(err)
 	}

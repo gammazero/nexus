@@ -8,6 +8,7 @@ import (
 	"io"
 	"io/ioutil"
 	"net"
+	"strings"
 	"time"
 
 	"github.com/gammazero/nexus/v3/stdlog"
@@ -50,8 +51,10 @@ const (
 )
 
 // ConnectRawSocketPeer creates a new rawSocketPeer with the specified config,
-// and connects it to the WAMP router at the specified address.  The network
-// and address parameters are documented here: https://golang.org/pkg/net/#Dial
+// and connects it, to the WAMP router at the specified address.  If a non-nil
+// tlsConfig is given, then TLS is used to secure the connection.
+// Docuemntation of tls.Config is here:
+// https://golang.org/pkg/crypto/tls/#Config
 //
 // The provided Context must be non-nil.  If the context expires before the
 // connection is complete, an error is returned.  Once successfully connected,
@@ -60,51 +63,7 @@ const (
 // If recvLimit is > 0, then the client will not receive messages with size
 // larger than the nearest power of 2 greater than or equal to recvLimit.  If
 // recvLimit is <= 0, then the default of 16M is used.
-func ConnectRawSocketPeer(ctx context.Context, network, address string, serialization serialize.Serialization, logger stdlog.StdLog, recvLimit int) (wamp.Peer, error) {
-	var (
-		protocol byte
-		conn     net.Conn
-		err      error
-		peer     *rawSocketPeer
-	)
-
-	err = checkNetworkType(network)
-	if err != nil {
-		return nil, err
-	}
-
-	protocol, err = getProtoByte(serialization)
-	if err != nil {
-		return nil, err
-	}
-
-	var d net.Dialer
-	conn, err = d.DialContext(ctx, network, address)
-	if err != nil {
-		return nil, err
-	}
-
-	peer, err = clientHandshake(conn, logger, protocol, recvLimit)
-	if err != nil {
-		conn.Close()
-		return nil, err
-	}
-	return peer, nil
-}
-
-// ConnectTlsRawSocketPeer creates a new rawSocketPeer with the specified
-// config, and connects it, using TLS, to the WAMP router at the specified
-// address.  The network, address, and tlscfg parameters are documented here:
-// https://golang.org/pkg/crypto/tls/#Dial
-//
-// The provided Context must be non-nil.  If the context expires before the
-// connection is complete, an error is returned.  Once successfully connected,
-// any expiration of the context will not affect the connection.
-//
-// If recvLimit is > 0, then the client will not receive messages with size
-// larger than the nearest power of 2 greater than or equal to recvLimit.  If
-// recvLimit is <= 0, then the default of 16M is used.
-func ConnectTlsRawSocketPeer(ctx context.Context, network, address string, serialization serialize.Serialization, tlsConfig *tls.Config, logger stdlog.StdLog, recvLimit int) (wamp.Peer, error) {
+func ConnectRawSocketPeer(ctx context.Context, network, addr string, serialization serialize.Serialization, tlsConfig *tls.Config, logger stdlog.StdLog, recvLimit int) (wamp.Peer, error) {
 	err := checkNetworkType(network)
 	if err != nil {
 		return nil, err
@@ -116,27 +75,44 @@ func ConnectTlsRawSocketPeer(ctx context.Context, network, address string, seria
 	}
 
 	var d net.Dialer
-	rawConn, err := d.DialContext(ctx, network, address)
+	conn, err := d.DialContext(ctx, network, addr)
 	if err != nil {
 		return nil, err
 	}
 
-	conn := tls.Client(rawConn, tlsConfig)
-	errChannel := make(chan error, 1)
-
-	go func() {
-		errChannel <- conn.Handshake()
-	}()
-
-	// Wait for TLS handshake to complete or context to expire
-	select {
-	case err = <-errChannel:
-		if err != nil {
-			rawConn.Close()
-			return nil, err
+	if tlsConfig != nil {
+		colonPos := strings.LastIndex(addr, ":")
+		if colonPos == -1 {
+			colonPos = len(addr)
 		}
-	case <-ctx.Done():
-		return nil, ctx.Err()
+		hostname := addr[:colonPos]
+
+		// If no ServerName, infer ServerName from hostname to connect to.
+		if tlsConfig.ServerName == "" {
+			// Make a copy to avoid polluting argument.
+			c := tlsConfig.Clone()
+			c.ServerName = hostname
+			tlsConfig = c
+		}
+
+		tlsConn := tls.Client(conn, tlsConfig)
+		errChannel := make(chan error, 1)
+		go func() {
+			errChannel <- tlsConn.Handshake()
+		}()
+
+		// Wait for TLS handshake to complete or context to expire.
+		select {
+		case err = <-errChannel:
+			if err != nil {
+				conn.Close()
+				return nil, err
+			}
+		case <-ctx.Done():
+			conn.Close()
+			return nil, ctx.Err()
+		}
+		conn = tlsConn
 	}
 
 	peer, err := clientHandshake(conn, logger, protocol, recvLimit)
@@ -503,7 +479,7 @@ func byteToLength(b byte) int {
 	return int(1 << (b + 9))
 }
 
-// checkNetworkType checks for acceptable network type.
+// checkNetworkType checks for acceptable network types, and returns if
 func checkNetworkType(network string) error {
 	switch network {
 	case "tcp", "tcp4", "tcp6", "unix":

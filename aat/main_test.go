@@ -290,7 +290,7 @@ func connectClientCfg(cfg client.Config) (*client.Client, error) {
 		addr = fmt.Sprintf("%s://%s/", scheme, tcpAddr)
 		cli, err = client.ConnectNet(context.Background(), addr, cfg)
 	case "unix":
-		addr = fmt.Sprintf("%s://%s/", scheme, unixAddr)
+		addr = fmt.Sprintf("%s://%s", scheme, unixAddr)
 		cli, err = client.ConnectNet(context.Background(), addr, cfg)
 	default:
 		cli, err = client.ConnectLocal(nxr, cfg)

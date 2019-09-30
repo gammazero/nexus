@@ -52,10 +52,6 @@ type Config struct {
 	// use TLS.
 	TlsCfg *tls.Config
 
-	// Supplies alternate Dial function for the websocket dialer.
-	// See https://godoc.org/github.com/gorilla/websocket#Dialer
-	Dial transport.DialFunc
-
 	// Client receive limit for use with RawSocket transport.
 	// If recvLimit is > 0, then the client will not receive messages with size
 	// larger than the nearest power of 2 greater than or equal to recvLimit.

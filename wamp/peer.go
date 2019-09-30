@@ -11,6 +11,8 @@ type Peer interface {
 	// Sends the message to the peer.
 	Send(Message) error
 
+	// SendCtx sends the message to the peer, and uses a context to cancel or
+	// timeout sending the message when blocked waiting to write to the peer.
 	SendCtx(context.Context, Message) error
 
 	// TrySend performs a non-blocking send.  Returns error if blocked.
@@ -36,6 +38,8 @@ func RecvTimeout(p Peer, t time.Duration) (Message, error) {
 	}
 }
 
+// SendCtx sends a message to the write-only channel, using a context to cancel
+// sending if blocked.
 func SendCtx(ctx context.Context, wr chan<- Message, msg Message) error {
 	select {
 	case <-ctx.Done():

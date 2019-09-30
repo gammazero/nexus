@@ -16,8 +16,15 @@ import (
 	"github.com/gorilla/websocket"
 )
 
+// DialFunc is an alternate Dial function for the websocket dialer.
+type DialFunc func(network, addr string) (net.Conn, error)
+
 // WebsocketConfig is used to configure client websocket settings.
 type WebsocketConfig struct {
+	// Supplies alternate Dial function for the websocket dialer.
+	// See https://godoc.org/github.com/gorilla/websocket#Dialer
+	Dial DialFunc
+
 	// Request per message write compression, if allowed by server.
 	EnableCompression bool `json:"enable_compression"`
 
@@ -30,11 +37,6 @@ type WebsocketConfig struct {
 	// ProxyURL is an optional URL of the proxy to use for websocket requests.
 	// If not defined, the proxy defined by the environment is used if defined.
 	ProxyURL string
-
-	// Deprecated server config options.
-	// See: https://godoc.org/github.com/gammazero/nexus/v3/router#WebsocketServer
-	EnableTrackingCookie bool `json:"enable_tracking_cookie"`
-	EnableRequestCapture bool `json:"enable_request_capture"`
 }
 
 // WebsocketError is returned on failure to connect to a websocket, and
@@ -84,8 +86,6 @@ const (
 	ctrlTimeout = 5 * time.Second
 )
 
-type DialFunc func(network, addr string) (net.Conn, error)
-
 // ConnectWebsocketPeer creates a new websocket client with the specified
 // config, connects the client to the websocket server at the specified URL,
 // and returns the connected websocket peer.
@@ -93,7 +93,7 @@ type DialFunc func(network, addr string) (net.Conn, error)
 // The provided Context must be non-nil.  If the context expires before the
 // connection is complete, an error is returned.  Once successfully connected,
 // any expiration of the context will not affect the connection.
-func ConnectWebsocketPeer(ctx context.Context, routerURL string, serialization serialize.Serialization, tlsConfig *tls.Config, dial DialFunc, logger stdlog.StdLog, wsCfg *WebsocketConfig) (wamp.Peer, error) {
+func ConnectWebsocketPeer(ctx context.Context, routerURL string, serialization serialize.Serialization, tlsConfig *tls.Config, logger stdlog.StdLog, wsCfg *WebsocketConfig) (wamp.Peer, error) {
 	var (
 		protocol    string
 		payloadType int
@@ -121,10 +121,10 @@ func ConnectWebsocketPeer(ctx context.Context, routerURL string, serialization s
 		Subprotocols:    []string{protocol},
 		TLSClientConfig: tlsConfig,
 		Proxy:           http.ProxyFromEnvironment,
-		NetDial:         dial,
 	}
 
 	if wsCfg != nil {
+		dialer.NetDial = wsCfg.Dial
 		if wsCfg.ProxyURL != "" {
 			proxyURL, err := url.Parse(wsCfg.ProxyURL)
 			if err != nil {
@@ -133,7 +133,7 @@ func ConnectWebsocketPeer(ctx context.Context, routerURL string, serialization s
 			dialer.Proxy = http.ProxyURL(proxyURL)
 		}
 		dialer.Jar = wsCfg.Jar
-		dialer.EnableCompression = true
+		dialer.EnableCompression = wsCfg.EnableCompression
 	}
 
 	conn, rsp, err := dialer.DialContext(ctx, routerURL, nil)

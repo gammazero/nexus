@@ -135,7 +135,6 @@ func NewClient(logger *log.Logger) (*client.Client, error) {
 	if compress {
 		cfg.WsCfg.EnableCompression = true
 	}
-	cfg.WsCfg.EnableTrackingCookie = true
 
 	// Create client with requested transport type.
 	var cli *client.Client
