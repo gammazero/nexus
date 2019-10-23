@@ -35,6 +35,12 @@ type WebsocketConfig struct {
 	// See: https://godoc.org/github.com/gammazero/nexus/router#WebsocketServer
 	EnableTrackingCookie bool `json:"enable_tracking_cookie"`
 	EnableRequestCapture bool `json:"enable_request_capture"`
+
+	// KeepAlive configures a websocket "ping/pong" heartbeat when set to a
+	// non-zero value.  KeepAlive is the interval between websocket "pings".
+	// If a "pong" response is not received after 2 intervals have elapsed then
+	// the websocket connection is closed.
+	KeepAlive time.Duration
 }
 
 // WebsocketError is returned on failure to connect to a websocket, and
@@ -136,6 +142,8 @@ func ConnectWebsocketPeerContext(ctx context.Context, routerURL string, serializ
 		NetDial:         dial,
 	}
 
+	var keepAlive time.Duration = 0
+
 	if wsCfg != nil {
 		if wsCfg.ProxyURL != "" {
 			proxyURL, err := url.Parse(wsCfg.ProxyURL)
@@ -146,6 +154,7 @@ func ConnectWebsocketPeerContext(ctx context.Context, routerURL string, serializ
 		}
 		dialer.Jar = wsCfg.Jar
 		dialer.EnableCompression = true
+		keepAlive = wsCfg.KeepAlive
 	}
 
 	conn, rsp, err := dialer.DialContext(ctx, routerURL, nil)
@@ -155,7 +164,7 @@ func ConnectWebsocketPeerContext(ctx context.Context, routerURL string, serializ
 			Response: rsp,
 		}
 	}
-	return NewWebsocketPeer(conn, serializer, payloadType, logger, 0, 0), nil
+	return NewWebsocketPeer(conn, serializer, payloadType, logger, keepAlive, 0), nil
 }
 
 // NewWebsocketPeer creates a websocket peer from an existing websocket
