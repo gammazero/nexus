@@ -791,7 +791,7 @@ func (r *realm) sessionCount(msg *wamp.Invocation) wamp.Message {
 // IDs for all sessions currently attached to the realm.
 func (r *realm) sessionList(msg *wamp.Invocation) wamp.Message {
 	var filter []string
-	if len(msg.Arguments) != 0 {
+	if len(msg.Arguments) != 0 && msg.Arguments[0] != nil {
 		filterList, ok := wamp.AsList(msg.Arguments[0])
 		if !ok {
 			return &wamp.Error{
