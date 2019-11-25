@@ -536,7 +536,7 @@ func (r *realm) authzMessage(sess *wamp.Session, msg wamp.Message) bool {
 
 	if !isAuthz {
 		skipResponse := false
-		errRsp := &wamp.Error{Type: msg.MessageType()}
+		errRsp := &wamp.Error{Type: msg.MessageType(), Details: wamp.Dict{}}
 		// Get the Request from request types of messages.
 		switch msg := msg.(type) {
 		case *wamp.Publish:
@@ -746,6 +746,7 @@ func (r *realm) sessionCount(msg *wamp.Invocation) wamp.Message {
 				Type:    wamp.INVOCATION,
 				Error:   wamp.ErrInvalidArgument,
 				Request: msg.Request,
+				Details: wamp.Dict{},
 			}
 		}
 		filter, ok = wamp.ListToStrings(filterList)
@@ -754,6 +755,7 @@ func (r *realm) sessionCount(msg *wamp.Invocation) wamp.Message {
 				Type:    wamp.INVOCATION,
 				Error:   wamp.ErrInvalidArgument,
 				Request: msg.Request,
+				Details: wamp.Dict{},
 			}
 		}
 	}
@@ -798,6 +800,7 @@ func (r *realm) sessionList(msg *wamp.Invocation) wamp.Message {
 				Type:    wamp.INVOCATION,
 				Error:   wamp.ErrInvalidArgument,
 				Request: msg.Request,
+				Details: wamp.Dict{},
 			}
 		}
 		filter, ok = wamp.ListToStrings(filterList)
@@ -806,6 +809,7 @@ func (r *realm) sessionList(msg *wamp.Invocation) wamp.Message {
 				Type:    wamp.INVOCATION,
 				Error:   wamp.ErrInvalidArgument,
 				Request: msg.Request,
+				Details: wamp.Dict{},
 			}
 		}
 	}

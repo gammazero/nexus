@@ -192,6 +192,7 @@ func (d *dealer) register(callee *wamp.Session, msg *wamp.Register) {
 			Request:   msg.Request,
 			Error:     wamp.ErrInvalidURI,
 			Arguments: wamp.List{errMsg},
+			Details:   wamp.Dict{},
 		})
 		return
 	}
@@ -208,6 +209,7 @@ func (d *dealer) register(callee *wamp.Session, msg *wamp.Register) {
 			Request:   msg.Request,
 			Error:     wamp.ErrInvalidURI,
 			Arguments: wamp.List{errMsg},
+			Details:   wamp.Dict{},
 		})
 		return
 	}
@@ -306,6 +308,7 @@ func (d *dealer) cancel(caller *wamp.Session, msg *wamp.Cancel) {
 			Request:   msg.Request,
 			Error:     wamp.ErrInvalidArgument,
 			Arguments: wamp.List{fmt.Sprint("invalid cancel mode ", mode)},
+			Details:   wamp.Dict{},
 		})
 		return
 	}

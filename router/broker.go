@@ -132,11 +132,13 @@ func (b *broker) publish(pub *wamp.Session, msg *wamp.Publish) {
 		errMsg := fmt.Sprintf(
 			"publish with invalid topic URI %v (URI strict checking %v)",
 			msg.Topic, b.strictURI)
+
 		b.trySend(pub, &wamp.Error{
 			Type:      msg.MessageType(),
 			Request:   msg.Request,
 			Error:     wamp.ErrInvalidURI,
 			Arguments: wamp.List{errMsg},
+			Details:   wamp.Dict{},
 		})
 		return
 	}
@@ -211,6 +213,7 @@ func (b *broker) subscribe(sub *wamp.Session, msg *wamp.Subscribe) {
 			Request:   msg.Request,
 			Error:     wamp.ErrInvalidURI,
 			Arguments: wamp.List{errMsg},
+			Details:   wamp.Dict{},
 		})
 		return
 	}
@@ -381,6 +384,7 @@ func (b *broker) syncUnsubscribe(subscriber *wamp.Session, msg *wamp.Unsubscribe
 			Type:    msg.MessageType(),
 			Request: msg.Request,
 			Error:   wamp.ErrNoSuchSubscription,
+			Details: wamp.Dict{},
 		})
 		b.log.Println("Error unsubscribing: no such subscription", subID)
 		return
