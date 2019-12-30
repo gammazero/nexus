@@ -94,6 +94,9 @@ func AsBool(v interface{}) (bool, bool) {
 
 // AsDict is an extended type assertion for Dict.
 func AsDict(v interface{}) (Dict, bool) {
+	if v == nil {
+		return nil, true
+	}
 	n := NormalizeDict(v)
 	return n, n != nil
 }
@@ -105,6 +108,8 @@ func AsList(v interface{}) (List, bool) {
 		return v, true
 	case []interface{}:
 		return List(v), true
+	case nil:
+		return nil, true
 	}
 	val := reflect.ValueOf(v)
 	if val.Kind() != reflect.Slice {
