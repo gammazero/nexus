@@ -701,6 +701,13 @@ func (c *Client) SendProgress(ctx context.Context, args wamp.List, kwArgs wamp.D
 	c.sess.Unlock()
 
 	if !ok {
+		// progGate value may have been removed if session was disconnected.
+		select {
+		case <-ctx.Done():
+			return ErrNotConn
+		default:
+		}
+
 		// Caller is not accepting progressive results or call canceled.
 		return ErrCallerNoProg
 	}
