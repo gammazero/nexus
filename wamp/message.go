@@ -101,7 +101,7 @@ func NewMessage(t MessageType) Message {
 		return &Goodbye{}
 	// case HEARTBEAT: return &Heartbeat{}
 	case ERROR:
-		return &Error{}
+		return &Error{Type: t, Details: Dict{}}
 	case PUBLISH:
 		return &Publish{}
 	case PUBLISHED:
