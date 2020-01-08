@@ -34,8 +34,8 @@ func TestAsList(t *testing.T) {
 	if l, ok = AsList(numConv); ok || l != nil {
 		t.Error(shouldFailMsg)
 	}
-	if l, ok = AsList(nil); ok || l != nil {
-		t.Error(shouldFailMsg)
+	if l, ok = AsList(nil); !ok && l == nil {
+		t.Error(failMsg)
 	}
 }
 
@@ -53,8 +53,8 @@ func TestAsDict(t *testing.T) {
 	if d, ok = AsDict(interface{}(numConv)); ok || d != nil {
 		t.Error(shouldFailMsg)
 	}
-	if d, ok = AsDict(nil); ok || d != nil {
-		t.Error(shouldFailMsg)
+	if d, ok = AsDict(nil); !ok && d == nil {
+		t.Error(failMsg)
 	}
 }
 
