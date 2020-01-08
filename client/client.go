@@ -703,7 +703,7 @@ func (c *Client) SendProgress(ctx context.Context, args wamp.List, kwArgs wamp.D
 	if !ok {
 		// progGate value may have been removed if session was disconnected.
 		select {
-		case <-ctx.Done():
+		case <-c.Done():
 			return ErrNotConn
 		default:
 		}
