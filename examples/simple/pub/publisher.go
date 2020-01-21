@@ -33,7 +33,7 @@ func main() {
 	// Publish to topic.
 	err = publisher.Publish(exampleTopic, nil, wamp.List{"hello world"}, nil)
 	if err != nil {
-		logger.Fatal("subscribe error:", err)
+		logger.Fatal("publish error:", err)
 	}
 	logger.Println("Published", exampleTopic, "event")
 }
