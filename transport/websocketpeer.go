@@ -39,6 +39,17 @@ type WebsocketConfig struct {
 	ProxyURL string
 }
 
+// WebsocketConnection is a closable connection which reads and writes raw
+// message data, handles pong requests and has a subprotocol
+type WebsocketConnection interface {
+	Close() error
+	WriteControl(messageType int, data []byte, deadline time.Time) error
+	WriteMessage(messageType int, data []byte) error
+	ReadMessage() (messageType int, p []byte, err error)
+	SetPongHandler(h func(appData string) error)
+	Subprotocol() string
+}
+
 // WebsocketError is returned on failure to connect to a websocket, and
 // contains the http response if one is available.
 type WebsocketError struct {
@@ -57,7 +68,7 @@ func (e *WebsocketError) Error() string {
 // websocketPeer implements the Peer interface, connecting the Send and Recv
 // methods to a websocket.
 type websocketPeer struct {
-	conn        *websocket.Conn
+	conn        WebsocketConnection
 	serializer  serialize.Serializer
 	payloadType int
 
@@ -153,7 +164,7 @@ func ConnectWebsocketPeer(ctx context.Context, routerURL string, serialization s
 // A non-zero keepAlive value configures a websocket "ping/pong" heartbeat,
 // sending websocket "pings" every keepAlive interval.  If a "pong" response
 // is not received after 2 intervals have elapsed then the websocket is closed.
-func NewWebsocketPeer(conn *websocket.Conn, serializer serialize.Serializer, payloadType int, logger stdlog.StdLog, keepAlive time.Duration, outQueueSize int) wamp.Peer {
+func NewWebsocketPeer(conn WebsocketConnection, serializer serialize.Serializer, payloadType int, logger stdlog.StdLog, keepAlive time.Duration, outQueueSize int) wamp.Peer {
 	w := &websocketPeer{
 		conn:        conn,
 		serializer:  serializer,
