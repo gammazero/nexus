@@ -23,11 +23,17 @@ func usage() {
 
 func main() {
 	var cfgFile string
+	var showVersion bool
 	fs := flag.NewFlagSet("nexus", flag.ExitOnError)
 	fs.StringVar(&cfgFile, "c", "etc/nexus.json", "Path to config file")
+	fs.BoolVar(&showVersion, "version", false, "print version")
 	fs.Usage = usage
 	if err := fs.Parse(os.Args[1:]); err != nil {
 		os.Exit(1)
+	}
+	if showVersion {
+		fmt.Println("version", router.Version)
+		os.Exit(0)
 	}
 	// Read config file.
 	conf := LoadConfig(cfgFile)

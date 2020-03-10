@@ -36,11 +36,11 @@ benchmark:
 service: $(SERVICE_DIR)/nexusd
 
 $(SERVICE_DIR)/nexusd:
-	@cd $(SERVICE_DIR); go build
+	@cd $(SERVICE_DIR) && $(MAKE)
 	@echo "===> built $(SERVICE_DIR)/nexusd"
 
 clean:
-	@rm -f $(SERVICE_DIR)/nexusd
+	@cd $(SERVICE_DIR) && $(MAKE) clean
 	@rm -f $(SERVICE_DIR)/*.log
 	@GO111MODULE=off go clean ./...
 	@GO111MODULE=off go clean -cache

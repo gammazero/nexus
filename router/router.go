@@ -20,6 +20,8 @@ import (
 
 const helloTimeout = 5 * time.Second
 
+var Version string
+
 // A Router handles new Peers and routes requests to the requested Realm.
 type Router interface {
 	// Attach connects a client to the router and to the requested realm.
@@ -62,7 +64,7 @@ func NewRouter(config *Config, logger stdlog.StdLog) (Router, error) {
 	if logger == nil {
 		logger = log.New(os.Stdout, "", log.LstdFlags)
 	}
-	logger.Println("Starting router")
+	logger.Println("Starting router", Version)
 
 	r := &router{
 		realms:        map[wamp.URI]*realm{},
