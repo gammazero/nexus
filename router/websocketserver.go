@@ -344,7 +344,7 @@ func (s *WebsocketServer) addProtocol(proto string, payloadType int, serializer 
 	return nil
 }
 
-func (s *WebsocketServer) handleWebsocket(conn *websocket.Conn, transportDetails wamp.Dict) {
+func (s *WebsocketServer) handleWebsocket(conn transport.WebsocketConnection, transportDetails wamp.Dict) {
 	var serializer serialize.Serializer
 	var payloadType int
 	// Get serializer and payload type for protocol.
