@@ -39,8 +39,7 @@ type WebsocketConfig struct {
 	ProxyURL string
 }
 
-// WebsocketConnection is a closable connection which reads and writes raw
-// message data, handles pong requests and has a subprotocol
+// WebsocketConnection is the interface that a websocket connection must implement.
 type WebsocketConnection interface {
 	Close() error
 	WriteControl(messageType int, data []byte, deadline time.Time) error
