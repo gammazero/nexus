@@ -1,17 +1,11 @@
 module github.com/gammazero/nexus/v3
 
-go 1.13
+go 1.14
 
 require (
 	github.com/davecgh/go-spew v1.1.1
 	github.com/fortytw2/leaktest v1.3.0
-	github.com/gorilla/websocket v1.4.1
-	github.com/ugorji/go v1.1.7
-	github.com/ugorji/go/codec v1.1.7
-	golang.org/x/crypto v0.0.0-20200302210943-78000ba7a073
-	golang.org/x/net v0.0.0-20190912160710-24e19bdeb0f2 // indirect
-	golang.org/x/sync v0.0.0-20190911185100-cd5d95a43a6e // indirect
-	golang.org/x/sys v0.0.0-20190913121621-c3b328c6e5a7 // indirect
-	golang.org/x/text v0.3.2 // indirect
-	golang.org/x/tools v0.0.0-20190914235951-31e00f45c22e // indirect
+	github.com/gorilla/websocket v1.4.2
+	github.com/ugorji/go/codec v1.1.13
+	golang.org/x/crypto v0.0.0-20201016220609-9e8e0b390897
 )
