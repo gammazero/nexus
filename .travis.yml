@@ -1,9 +1,12 @@
+os:
+  - osx
+  - linux
+
 language: go
 
 go:
   - 1.14.x
   - 1.15.x
-  - tip
 
 env:
   global:
