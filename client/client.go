@@ -197,6 +197,11 @@ func (c *Client) Subscribe(topic string, fn EventHandler, options wamp.Dict) err
 
 // SubscribeChan subscribes the client to the specified topic or topic pattern.
 // Events are written to the provided channel.
+//
+// No other incoming messages can be processed while blocked on writing events
+// to this channel.  When waiting for a message that is not delivered to this
+// channel, that message will never be seen if a previously received event
+// cannot be written to this channel.
 func (c *Client) SubscribeChan(topic string, events chan<- *wamp.Event, options wamp.Dict) error {
 	handler := func(ev *wamp.Event) { events <- ev }
 	return c.Subscribe(topic, handler, options)
