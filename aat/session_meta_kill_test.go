@@ -275,7 +275,6 @@ func TestSessionModifyDetails(t *testing.T) {
 }
 
 func TestSessionKillDeadlock(t *testing.T) {
-	t.Skip("Needs investifation - intermittend timeout")
 	// Test fix for co-recursive deadlock between dealer goroutine and meta
 	// session inbound message handler (issue #180)
 
@@ -298,8 +297,9 @@ func TestSessionKillDeadlock(t *testing.T) {
 		t.Fatal("Failed to connect client:", err)
 	}
 
-	// Subscribe to event.
-	onUnregEvents := make(chan *wamp.Event)
+	// Subscribe to event.  Note this needs to be a buffered channel so that
+	// event can be "handled" while the test is waiting for a response.
+	onUnregEvents := make(chan *wamp.Event, 1)
 	err = localCli.SubscribeChan(string(wamp.MetaEventRegOnUnregister), onUnregEvents, nil)
 	if err != nil {
 		t.Fatal("subscribe error:", err)
