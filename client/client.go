@@ -644,26 +644,26 @@ func (c *Client) Close() error {
 	if c.Connected() {
 		// Leave the realm and stop receiving messages.
 
-		// Send GOODBYE to router.  The router will respond with a GOODBYE
-		// message which is handled by receiveFromRouter, and causes run() to
-		// exit.
-		//
-		// Make an effort to say goodbye, but do not wait around if blocked.
-		if c.sess.TrySend(&wamp.Goodbye{
+		// Make an effort to say goodbye, but do not wait a long time to send.
+		sendCtx, cancel := context.WithTimeout(context.Background(), 2*c.responseTimeout)
+		defer cancel()
+
+		var stopped bool
+		if c.sess.SendCtx(sendCtx, &wamp.Goodbye{
 			Details: wamp.Dict{},
 			Reason:  wamp.CloseRealm,
 		}) == nil {
-			// Wait for run() to exit, but do not wait longer that a normal
-			// response timeout.
-			timer := time.NewTimer(c.responseTimeout)
+			// The router should respond with a GOODBYE message, which causes
+			// run() to exit.  Wait for run() to exit, but only wait for
+			// whatever time remains on the context.
 			select {
 			case <-c.Done():
-				timer.Stop()
-			case <-timer.C:
-				c.sess.EndRecv(nil) // force run() to exit
-				<-c.Done()
+				stopped = true
+			case <-sendCtx.Done():
 			}
-		} else {
+		}
+
+		if !stopped {
 			c.sess.EndRecv(nil) // force run() to exit
 			<-c.Done()
 		}
