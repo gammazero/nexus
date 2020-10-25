@@ -37,6 +37,12 @@ type WebsocketConfig struct {
 	// ProxyURL is an optional URL of the proxy to use for websocket requests.
 	// If not defined, the proxy defined by the environment is used if defined.
 	ProxyURL string
+
+	// KeepAlive configures a websocket "ping/pong" heartbeat when set to a
+	// non-zero value.  KeepAlive is the interval between websocket "pings".
+	// If a "pong" response is not received after 2 intervals have elapsed then
+	// the websocket connection is closed.
+	KeepAlive time.Duration
 }
 
 // WebsocketConnection is the interface that a websocket connection must implement.
@@ -133,6 +139,8 @@ func ConnectWebsocketPeer(ctx context.Context, routerURL string, serialization s
 		Proxy:           http.ProxyFromEnvironment,
 	}
 
+	var keepAlive time.Duration = 0
+
 	if wsCfg != nil {
 		dialer.NetDial = wsCfg.Dial
 		if wsCfg.ProxyURL != "" {
@@ -144,6 +152,7 @@ func ConnectWebsocketPeer(ctx context.Context, routerURL string, serialization s
 		}
 		dialer.Jar = wsCfg.Jar
 		dialer.EnableCompression = wsCfg.EnableCompression
+		keepAlive = wsCfg.KeepAlive
 	}
 
 	conn, rsp, err := dialer.DialContext(ctx, routerURL, nil)
@@ -153,7 +162,7 @@ func ConnectWebsocketPeer(ctx context.Context, routerURL string, serialization s
 			Response: rsp,
 		}
 	}
-	return NewWebsocketPeer(conn, serializer, payloadType, logger, 0, 0), nil
+	return NewWebsocketPeer(conn, serializer, payloadType, logger, keepAlive, 0), nil
 }
 
 // NewWebsocketPeer creates a websocket peer from an existing websocket

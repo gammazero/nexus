@@ -300,15 +300,27 @@ func connectClientCfg(cfg client.Config) (*client.Client, error) {
 		return nil, err
 	}
 
-	if cfg.WsCfg.Jar != nil {
-		switch scheme {
-		case "http", "https", "ws", "wss":
-			// OK, websocket scheme.
-		default:
-			// Programming error in test.
+	// Check that websocket-only config are not set when not using websockets.
+	switch scheme {
+	case "http", "https", "ws", "wss":
+		// OK, websocket scheme.
+	default:
+		// Programming error in test.
+		if cfg.WsCfg.EnableCompression != false {
+			panic("EnableCompression set non-websocket client")
+		}
+		if cfg.WsCfg.Jar != nil {
 			panic("CookieJar provided for non-websocket client")
 		}
+		if cfg.WsCfg.ProxyURL != "" {
+			panic("ProsyURL provided for non-websocket client")
+		}
+		if cfg.WsCfg.KeepAlive != 0 {
+			panic("KeepAlive provided for non-websocket client")
+		}
+	}
 
+	if cfg.WsCfg.Jar != nil {
 		cookieURL, err := client.CookieURL(addr)
 		if err != nil {
 			return nil, err
@@ -329,8 +341,6 @@ func connectClientCfg(cfg client.Config) (*client.Client, error) {
 			return nil, err
 		}
 	}
-
-	//cli.SetDebug(true)
 
 	return cli, nil
 }
@@ -363,6 +373,7 @@ func TestHandshake(t *testing.T) {
 			os.Exit(1)
 		}
 		cfg.WsCfg.Jar = jar
+		cfg.WsCfg.KeepAlive = keepAliveInterval
 	}
 
 	cli, err := connectClientCfg(cfg)
