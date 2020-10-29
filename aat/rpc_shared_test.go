@@ -19,9 +19,8 @@ func TestRPCSharedRoundRobin(t *testing.T) {
 	}
 
 	// Check for feature support in router.
-	const featureSharedReg = "shared_registration"
-	if !callee1.HasFeature("dealer", featureSharedReg) {
-		t.Error("Dealer does not have", featureSharedReg, "feature")
+	if !callee1.HasFeature(wamp.RoleDealer, wamp.FeatureSharedReg) {
+		t.Error("Dealer does not support", wamp.FeatureSharedReg)
 	}
 
 	testProc1 := func(ctx context.Context, inv *wamp.Invocation) client.InvokeResult {

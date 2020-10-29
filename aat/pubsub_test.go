@@ -92,9 +92,8 @@ func TestPubSubWildcard(t *testing.T) {
 	}
 
 	// Check for feature support in router.
-	const featurePatternSub = "pattern_based_subscription"
-	if !subscriber.HasFeature("broker", featurePatternSub) {
-		t.Error("Broker does not have", featurePatternSub, "feature")
+	if !subscriber.HasFeature(wamp.RoleBroker, wamp.FeaturePatternSub) {
+		t.Error("Broker does not support", wamp.FeaturePatternSub)
 	}
 
 	errChan := make(chan error)

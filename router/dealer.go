@@ -11,19 +11,6 @@ import (
 )
 
 const (
-	roleCallee = "callee"
-	roleCaller = "caller"
-
-	featureCallCanceling    = "call_canceling"
-	featureCallTimeout      = "call_timeout"
-	featureCallerIdent      = "caller_identification"
-	featurePatternBasedReg  = "pattern_based_registration"
-	featureProgCallResults  = "progressive_call_results"
-	featureSessionMetaAPI   = "session_meta_api"
-	featureSharedReg        = "shared_registration"
-	featureRegMetaAPI       = "registration_meta_api"
-	featureTestamentMetaAPI = "testament_meta_api"
-
 	// sendResultDeadline is the amount of time until the dealer gives up
 	// trying to send a RESULT to a blocked caller.  This is different that the
 	// CALL timeout which spedifies how long the callee may take to answer.
@@ -35,15 +22,15 @@ const (
 // Role information for this broker.
 var dealerRole = wamp.Dict{
 	"features": wamp.Dict{
-		featureCallCanceling:    true,
-		featureCallTimeout:      true,
-		featureCallerIdent:      true,
-		featurePatternBasedReg:  true,
-		featureProgCallResults:  true,
-		featureSessionMetaAPI:   true,
-		featureSharedReg:        true,
-		featureRegMetaAPI:       true,
-		featureTestamentMetaAPI: true,
+		wamp.FeatureCallCanceling:    true,
+		wamp.FeatureCallTimeout:      true,
+		wamp.FeatureCallerIdent:      true,
+		wamp.FeaturePatternBasedReg:  true,
+		wamp.FeatureProgCallResults:  true,
+		wamp.FeatureSessionMetaAPI:   true,
+		wamp.FeatureSharedReg:        true,
+		wamp.FeatureRegMetaAPI:       true,
+		wamp.FeatureTestamentMetaAPI: true,
 	},
 }
 
@@ -680,7 +667,7 @@ func (d *dealer) syncCall(caller *wamp.Session, msg *wamp.Call) {
 	timeout, _ := wamp.AsInt64(msg.Options[wamp.OptTimeout])
 	if timeout > 0 {
 		// Check that callee supports call_timeout.
-		if callee.HasFeature(roleCallee, featureCallTimeout) {
+		if callee.HasFeature(wamp.RoleCallee, wamp.FeatureCallTimeout) {
 			details[wamp.OptTimeout] = timeout
 		}
 
@@ -695,7 +682,7 @@ func (d *dealer) syncCall(caller *wamp.Session, msg *wamp.Call) {
 	// registration was created, and this was allowed by the dealer.
 	if reg.disclose {
 		if callee.ID == metaID {
-			details[roleCaller] = caller.ID
+			details[wamp.RoleCaller] = caller.ID
 		}
 		discloseCaller(caller, details)
 	} else {
@@ -714,7 +701,7 @@ func (d *dealer) syncCall(caller *wamp.Session, msg *wamp.Call) {
 				})
 				return
 			}
-			if callee.HasFeature(roleCallee, featureCallerIdent) {
+			if callee.HasFeature(wamp.RoleCallee, wamp.FeatureCallerIdent) {
 				discloseCaller(caller, details)
 			}
 		}
@@ -729,7 +716,7 @@ func (d *dealer) syncCall(caller *wamp.Session, msg *wamp.Call) {
 		// The Callee must support call canceling, as this is necessary to stop
 		// progressive results if the caller session is closed during
 		// progressive result delivery.
-		if callee.HasFeature(roleCallee, featureProgCallResults) && callee.HasFeature(roleCallee, featureCallCanceling) {
+		if callee.HasFeature(wamp.RoleCallee, wamp.FeatureProgCallResults) && callee.HasFeature(wamp.RoleCallee, wamp.FeatureCallCanceling) {
 			details[wamp.OptReceiveProgress] = true
 		}
 	}
@@ -813,7 +800,7 @@ func (d *dealer) syncCancel(caller *wamp.Session, msg *wamp.Cancel, mode string,
 	if mode != wamp.CancelModeSkip {
 		// Check that callee supports call canceling to see if it is alright to
 		// send INTERRUPT to callee.
-		if !invk.callee.HasFeature(roleCallee, featureCallCanceling) {
+		if !invk.callee.HasFeature(wamp.RoleCallee, wamp.FeatureCallCanceling) {
 			// Cancel in dealer without sending INTERRUPT to callee.
 			d.log.Println("Callee", invk.callee, "does not support call canceling")
 		} else {
@@ -1289,13 +1276,13 @@ func (d *dealer) trySend(sess *wamp.Session, msg wamp.Message) bool {
 
 // discloseCaller adds caller identity information to INVOCATION.Details.
 func discloseCaller(caller *wamp.Session, details wamp.Dict) {
-	details[roleCaller] = caller.ID
+	details[wamp.RoleCaller] = caller.ID
 	// These values are not required by the specification, but are here for
 	// compatibility with Crossbar.
 	caller.Lock()
 	for _, f := range []string{"authid", "authrole"} {
 		if val, ok := caller.Details[f]; ok {
-			details[fmt.Sprintf("%s_%s", roleCaller, f)] = val
+			details[fmt.Sprintf("%s_%s", wamp.RoleCaller, f)] = val
 		}
 	}
 	caller.Unlock()

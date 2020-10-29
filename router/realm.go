@@ -599,8 +599,8 @@ func (r *realm) authClient(sid wamp.ID, client wamp.Peer, details wamp.Dict) (*w
 			"authmethod":   "local",
 			"authprovider": "static",
 			"roles": wamp.Dict{
-				"broker": r.broker.role(),
-				"dealer": r.dealer.role(),
+				wamp.RoleBroker: r.broker.role(),
+				wamp.RoleDealer: r.dealer.role(),
 			},
 		}
 		return &wamp.Welcome{Details: details}, nil
@@ -641,8 +641,8 @@ func (r *realm) authClient(sid wamp.ID, client wamp.Peer, details wamp.Dict) (*w
 	}
 	welcome.Details["authmethod"] = method
 	welcome.Details["roles"] = wamp.Dict{
-		"broker": r.broker.role(),
-		"dealer": r.dealer.role(),
+		wamp.RoleBroker: r.broker.role(),
+		wamp.RoleDealer: r.dealer.role(),
 	}
 	return welcome, nil
 }
