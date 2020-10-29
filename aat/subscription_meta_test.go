@@ -28,9 +28,8 @@ func TestMetaEventOnCreateOnSubscribe(t *testing.T) {
 	}
 
 	// Check for feature support in router.
-	const featureSubMetaAPI = "subscription_meta_api"
-	if !subscriber.HasFeature("broker", featureSubMetaAPI) {
-		t.Error("Broker does not have", featureSubMetaAPI, "feature")
+	if !subscriber.HasFeature(wamp.RoleBroker, wamp.FeatureSubMetaAPI) {
+		t.Error("Broker does not support", wamp.FeatureSubMetaAPI)
 	}
 
 	// Subscribe to on_create meta event.

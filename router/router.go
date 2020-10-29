@@ -202,7 +202,7 @@ func (r *router) AttachClient(client wamp.Peer, transportDetails wamp.Dict) erro
 	// Hello.Details.roles|dict, where the keys can be: publisher, subscriber,
 	// caller, callee.  Check that client has at least one supported role.
 	var rolesOK bool
-	for _, role := range []string{"publisher", "subscriber", "caller", "callee"} {
+	for _, role := range []string{wamp.RolePublisher, wamp.RoleSubscriber, wamp.RoleCallee, wamp.RoleCaller} {
 		if sess.HasRole(role) {
 			rolesOK = true
 			break

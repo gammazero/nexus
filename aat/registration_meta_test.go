@@ -26,9 +26,8 @@ func TestMetaEventRegOnCreateRegOnRegister(t *testing.T) {
 	}
 
 	// Check for feature support in router.
-	const featureRegMetaAPI = "registration_meta_api"
-	if !subscriber.HasFeature("dealer", featureRegMetaAPI) {
-		t.Error("Dealer does not have", featureRegMetaAPI, "feature")
+	if !subscriber.HasFeature(wamp.RoleDealer, wamp.FeatureRegMetaAPI) {
+		t.Error("Dealer does not support", wamp.FeatureRegMetaAPI)
 	}
 
 	// Subscribe to event.

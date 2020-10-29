@@ -25,9 +25,8 @@ func TestRPCProgressiveCallResults(t *testing.T) {
 	}
 
 	// Check for feature support in router.
-	const featureProgCallResults = "progressive_call_results"
-	if !callee.HasFeature("dealer", featureProgCallResults) {
-		t.Error("Dealer does not have", featureProgCallResults, "feature")
+	if !callee.HasFeature(wamp.RoleDealer, wamp.FeatureProgCallResults) {
+		t.Error("Dealer does not support", wamp.FeatureProgCallResults)
 	}
 
 	// Handler sends progressive results.

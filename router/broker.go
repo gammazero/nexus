@@ -8,27 +8,18 @@ import (
 )
 
 const (
-	rolePub = "publisher"
-	roleSub = "subscriber"
-
-	featurePatternSub           = "pattern_based_subscription"
-	featurePubExclusion         = "publisher_exclusion"
-	featurePubIdent             = "publisher_identification"
-	featureSubBlackWhiteListing = "subscriber_blackwhite_listing"
-	featureSubMetaAPI           = "subscription_meta_api"
-
 	detailTopic = "topic"
 )
 
 // Role information for this broker.
 var brokerRole = wamp.Dict{
 	"features": wamp.Dict{
-		featurePatternSub:           true,
-		featurePubExclusion:         true,
-		featurePubIdent:             true,
-		featureSessionMetaAPI:       true,
-		featureSubBlackWhiteListing: true,
-		featureSubMetaAPI:           true,
+		wamp.FeaturePatternSub:           true,
+		wamp.FeaturePubExclusion:         true,
+		wamp.FeaturePubIdent:             true,
+		wamp.FeatureSessionMetaAPI:       true,
+		wamp.FeatureSubBlackWhiteListing: true,
+		wamp.FeatureSubMetaAPI:           true,
 	},
 }
 
@@ -143,8 +134,15 @@ func (b *broker) publish(pub *wamp.Session, msg *wamp.Publish) {
 		return
 	}
 
+	// The check that publisher announced support for publisher_exclusion is omitted here as it is assumed that if a publisher is asking for this then it
+
 	excludePub := true
 	if exclude, ok := msg.Options[wamp.OptExcludeMe].(bool); ok {
+		if !pub.HasFeature(wamp.RolePublisher, wamp.FeaturePubExclusion) {
+			b.log.Println(wamp.RolePublisher, "included", wamp.OptExcludeMe,
+				"option but did not announce support for",
+				wamp.FeaturePubExclusion)
+		}
 		excludePub = exclude
 	}
 
@@ -491,7 +489,7 @@ func (b *broker) syncPubEvent(pub *wamp.Session, msg *wamp.Publish, pubID wamp.I
 			details[detailTopic] = msg.Topic
 		}
 
-		if disclose && subscriber.HasFeature(roleSub, featurePubIdent) {
+		if disclose && subscriber.HasFeature(wamp.RoleSubscriber, wamp.FeaturePubIdent) {
 			disclosePublisher(pub, details)
 		}
 
@@ -605,13 +603,13 @@ func (b *broker) trySend(sess *wamp.Session, msg wamp.Message) bool {
 
 // disclosePublisher adds publisher identity information to EVENT.Details.
 func disclosePublisher(pub *wamp.Session, details wamp.Dict) {
-	details[rolePub] = pub.ID
+	details[wamp.RolePublisher] = pub.ID
 	// These values are not required by the specification, but are here for
 	// compatibility with Crossbar.
 	pub.Lock()
 	for _, f := range []string{"authid", "authrole"} {
 		if val, ok := pub.Details[f]; ok {
-			details[fmt.Sprintf("%s_%s", rolePub, f)] = val
+			details[fmt.Sprintf("%s_%s", wamp.RolePublisher, f)] = val
 		}
 	}
 	pub.Unlock()

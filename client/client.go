@@ -88,7 +88,7 @@ func NewClient(p wamp.Peer, cfg Config) (*Client, error) {
 	sess := wamp.NewSession(p, welcome.ID, welcome.Details, welcome.Details)
 
 	// Check that router has at least one supported role.
-	if !sess.HasRole("broker") && !sess.HasRole("dealer") {
+	if !sess.HasRole(wamp.RoleBroker) && !sess.HasRole(wamp.RoleDealer) {
 		p.Close()
 		return nil, ErrRouterNoRoles
 	}

@@ -124,9 +124,8 @@ func TestBlacklistAttribute(t *testing.T) {
 	}
 
 	// Check for feature support in router.
-	const featureSubBlackWhiteListing = "subscriber_blackwhite_listing"
-	if !subscriber1.HasFeature("broker", featureSubBlackWhiteListing) {
-		t.Error("Broker does not have", featureSubBlackWhiteListing, "feature")
+	if !subscriber1.HasFeature(wamp.RoleBroker, wamp.FeatureSubBlackWhiteListing) {
+		t.Error("Broker does not support", wamp.FeatureSubBlackWhiteListing)
 	}
 
 	sub1Events := make(chan *wamp.Event)

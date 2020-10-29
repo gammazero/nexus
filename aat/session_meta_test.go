@@ -29,12 +29,11 @@ func TestMetaEventOnJoin(t *testing.T) {
 	}
 
 	// Check for feature support in router.
-	const featureSessionMetaAPI = "session_meta_api"
-	if !subscriber.HasFeature("broker", featureSessionMetaAPI) {
-		t.Error("Broker does not have", featureSessionMetaAPI, "feature")
+	if !subscriber.HasFeature(wamp.RoleBroker, wamp.FeatureSessionMetaAPI) {
+		t.Error("Broker does not support", wamp.FeatureSessionMetaAPI)
 	}
-	if !subscriber.HasFeature("dealer", featureSessionMetaAPI) {
-		t.Error("Dealer does not have", featureSessionMetaAPI, "feature")
+	if !subscriber.HasFeature(wamp.RoleDealer, wamp.FeatureSessionMetaAPI) {
+		t.Error("Dealer does not support", wamp.FeatureSessionMetaAPI)
 	}
 
 	// Subscribe to event.

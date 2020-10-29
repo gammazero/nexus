@@ -24,9 +24,8 @@ func TestAddTestament(t *testing.T) {
 	}
 
 	// Check for feature support in router.
-	const featureTestamentMetaAPI = "testament_meta_api"
-	if !subscriber.HasFeature("dealer", featureTestamentMetaAPI) {
-		t.Error("Dealer does not have", featureTestamentMetaAPI, "feature")
+	if !subscriber.HasFeature(wamp.RoleDealer, wamp.FeatureTestamentMetaAPI) {
+		t.Error("Dealer does not support", wamp.FeatureTestamentMetaAPI)
 	}
 
 	eventChan := make(chan *wamp.Event)

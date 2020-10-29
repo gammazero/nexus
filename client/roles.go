@@ -4,34 +4,35 @@ import "github.com/gammazero/nexus/v3/wamp"
 
 // Features supported by nexus client.
 var clientRoles = wamp.Dict{
-	"publisher": wamp.Dict{
+	wamp.RolePublisher: wamp.Dict{
 		"features": wamp.Dict{
-			"subscriber_blackwhite_listing": true,
-			"publisher_exclusion":           true,
+			wamp.FeatureSubBlackWhiteListing: true,
+			wamp.FeaturePubExclusion:         true,
+			wamp.FeaturePubIdent:             true,
 		},
 	},
-	"subscriber": wamp.Dict{
+	wamp.RoleSubscriber: wamp.Dict{
 		"features": wamp.Dict{
-			"pattern_based_subscription": true,
-			"publisher_identification":   true,
+			wamp.FeaturePatternSub: true,
+			wamp.FeaturePubIdent:   true,
 		},
 	},
-	"callee": wamp.Dict{
+	wamp.RoleCallee: wamp.Dict{
 		"features": wamp.Dict{
-			"pattern_based_registration": true,
-			"shared_registration":        true,
-			"call_canceling":             true,
-			"call_timeout":               true,
-			"caller_identification":      true,
-			"progressive_call_results":   true,
+			wamp.FeaturePatternBasedReg: true,
+			wamp.FeatureSharedReg:       true,
+			wamp.FeatureCallCanceling:   true,
+			wamp.FeatureCallTimeout:     true,
+			wamp.FeatureCallerIdent:     true,
+			wamp.FeatureProgCallResults: true,
 		},
 	},
-	"caller": wamp.Dict{
+	wamp.RoleCaller: wamp.Dict{
 		"features": wamp.Dict{
-			"call_canceling":           true,
-			"call_timeout":             true,
-			"caller_identification":    true,
-			"progressive_call_results": true,
+			wamp.FeatureCallCanceling:   true,
+			wamp.FeatureCallTimeout:     true,
+			wamp.FeatureCallerIdent:     true,
+			wamp.FeatureProgCallResults: true,
 		},
 	},
 }

@@ -171,9 +171,8 @@ func TestRPCCancelCall(t *testing.T) {
 	defer callee.Close()
 
 	// Check for feature support in router.
-	const featureCallCanceling = "call_canceling"
-	if !callee.HasFeature("dealer", featureCallCanceling) {
-		t.Error("Dealer does not have", featureCallCanceling, "feature")
+	if !callee.HasFeature(wamp.RoleDealer, wamp.FeatureCallCanceling) {
+		t.Error("Dealer does not support", wamp.FeatureCallCanceling)
 	}
 
 	invkCanceled := make(chan struct{}, 1)
@@ -258,9 +257,8 @@ func TestRPCTimeoutCall(t *testing.T) {
 	}
 
 	// Check for feature support in router.
-	const featureCallTimeout = "call_timeout"
-	if !callee.HasFeature("dealer", featureCallTimeout) {
-		t.Error("Dealer does not have", featureCallTimeout, "feature")
+	if !callee.HasFeature(wamp.RoleDealer, wamp.FeatureCallTimeout) {
+		t.Error("Dealer does not support", wamp.FeatureCallTimeout)
 	}
 
 	invkCanceled := make(chan struct{}, 1)
