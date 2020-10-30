@@ -487,14 +487,18 @@ type ProgressHandler func(*wamp.Result)
 //
 // Call Timeout
 //
-// The nexus router also supports call timeout.  If a timeout is provided in
-// the options, and the callee supports call timeout, then the timeout value is
-// passed to the callee so that the invocation can be canceled by the callee
-// if the timeout is reached before a response is returned.  This is the
-// behavior implemented by the nexus client in the callee role.
+// If a timeout is provided in the options, and the callee supports call
+// timeout, then the timeout value is passed to the callee so that the
+// invocation can be canceled by the callee if the timeout is reached before a
+// response is returned.  This is the behavior implemented by the nexus client
+// in the callee role.
 //
-// To request a remote call timeout, specify a timeout in milliseconds:
-//   options["timeout"] = 30000
+// The nexus router also supports automatic call cancellation by the router,
+// after the timeout specified in the call options.  This way, the router will
+// automatically cancel the call even if the callee does not support it.
+//
+// To request automatic call timeout, by the router and callee, specify a
+// timeout in milliseconds: options["timeout"] = 30000
 //
 // Caller Identification
 //

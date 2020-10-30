@@ -1,6 +1,7 @@
 package router
 
 import (
+	"context"
 	"fmt"
 	"math/rand"
 	"strings"
@@ -51,10 +52,11 @@ type registration struct {
 
 // invocation tracks in-progress invocation
 type invocation struct {
-	callID     requestID
-	callee     *wamp.Session
-	canceled   bool
-	retryCount int
+	callID      requestID
+	callee      *wamp.Session
+	canceled    bool
+	retryCount  int
+	timerCancel context.CancelFunc
 }
 
 type requestID struct {
@@ -659,6 +661,8 @@ func (d *dealer) syncCall(caller *wamp.Session, msg *wamp.Call) {
 	}
 	details := wamp.Dict{}
 
+	var timerCancel context.CancelFunc
+
 	// A Caller might want to issue a call providing a timeout for the call to
 	// finish.
 	//
@@ -671,9 +675,26 @@ func (d *dealer) syncCall(caller *wamp.Session, msg *wamp.Call) {
 			details[wamp.OptTimeout] = timeout
 		}
 
-		// TODO: Start a goroutine to cancel the pending call on timeout.
-		// Should be implemented like Cancel with mode=killnowait, and error
-		// message argument should say "call timeout"
+		// Context that cancels timer if canceled, or cancels pending call if
+		// timeout.
+		var timerCtx context.Context
+		timerCtx, timerCancel = context.WithTimeout(context.Background(),
+			time.Duration(timeout)*time.Millisecond)
+
+		// Start a goroutine to cancel the pending call on timeout.  Works like
+		// Cancel with mode=killnowait, and includes an error message argument
+		// "call timeout"
+		go func() {
+			<-timerCtx.Done()
+			if timerCtx.Err() == context.Canceled {
+				return // timer was canceled (got response from callee).
+			}
+			d.actionChan <- func() {
+				errArgs := wamp.List{"call timeout"}
+				d.syncCancel(caller, &wamp.Cancel{Request: msg.Request},
+					wamp.CancelModeKillNoWait, wamp.ErrCanceled, errArgs)
+			}
+		}()
 	}
 
 	// TODO: handle trust levels
@@ -734,8 +755,9 @@ func (d *dealer) syncCall(caller *wamp.Session, msg *wamp.Call) {
 	d.calls[reqID] = caller
 	invocationID := d.idGen.Next()
 	d.invocations[invocationID] = &invocation{
-		callID: reqID,
-		callee: callee,
+		callID:      reqID,
+		callee:      callee,
+		timerCancel: timerCancel,
 	}
 	d.invocationByCall[reqID] = invocationID
 
@@ -795,6 +817,11 @@ func (d *dealer) syncCancel(caller *wamp.Session, msg *wamp.Cancel, mode string,
 		return
 	}
 	invk.canceled = true
+
+	// Stop any call timeout timer.
+	if invk.timerCancel != nil {
+		invk.timerCancel()
+	}
 
 	// If mode is "kill" or "killnowait", then send INTERRUPT.
 	if mode != wamp.CancelModeSkip {
@@ -894,6 +921,11 @@ func (d *dealer) syncYield(callee *wamp.Session, msg *wamp.Yield, canRetry bool)
 		// If this is a progressive response, then set progress=true.
 		details[wamp.OptProgress] = true
 	} else {
+		// Stop any call timeout timer.
+		if invk.timerCancel != nil {
+			invk.timerCancel()
+		}
+
 		// Clean up the invocation, unless need to retry.
 		defer func() {
 			if keepInvocation {
@@ -946,6 +978,11 @@ func (d *dealer) syncError(msg *wamp.Error) {
 			msg.Request, "(response to canceled call)")
 		return
 	}
+	// Stop any call timeout timer.
+	if invk.timerCancel != nil {
+		invk.timerCancel()
+	}
+
 	delete(d.invocations, msg.Request)
 	callID := invk.callID
 
@@ -1042,6 +1079,12 @@ func (d *dealer) syncRemoveSession(sess *wamp.Session) []*wamp.Publish {
 
 		// If there is a pending invocation for the call, remove it.
 		if invkID, ok := d.invocationByCall[req]; ok {
+			if invk, ok := d.invocations[invkID]; ok {
+				// Stop any call timeout timer.
+				if invk.timerCancel != nil {
+					invk.timerCancel()
+				}
+			}
 			delete(d.invocationByCall, req)
 			delete(d.invocations, invkID)
 		}
