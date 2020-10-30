@@ -25,7 +25,7 @@ const (
 	msgpackWebsocketProtocol = "wamp.2.msgpack"
 	cborWebsocketProtocol    = "wamp.2.cbor"
 
-	defaultOutQueueSize = 16
+	defaultOutQueueSize = 64
 )
 
 type protocol struct {
