@@ -661,8 +661,6 @@ func (d *dealer) syncCall(caller *wamp.Session, msg *wamp.Call) {
 	}
 	details := wamp.Dict{}
 
-	var timerCancel context.CancelFunc
-
 	// A Caller might want to issue a call providing a timeout for the call to
 	// finish.
 	//
@@ -673,28 +671,9 @@ func (d *dealer) syncCall(caller *wamp.Session, msg *wamp.Call) {
 		// Check that callee supports call_timeout.
 		if callee.HasFeature(wamp.RoleCallee, wamp.FeatureCallTimeout) {
 			details[wamp.OptTimeout] = timeout
+		} else {
+			timeout = 0
 		}
-
-		// Context that cancels timer if canceled, or cancels pending call if
-		// timeout.
-		var timerCtx context.Context
-		timerCtx, timerCancel = context.WithTimeout(context.Background(),
-			time.Duration(timeout)*time.Millisecond)
-
-		// Start a goroutine to cancel the pending call on timeout.  Works like
-		// Cancel with mode=killnowait, and includes an error message argument
-		// "call timeout"
-		go func() {
-			<-timerCtx.Done()
-			if timerCtx.Err() == context.Canceled {
-				return // timer was canceled (got response from callee).
-			}
-			d.actionChan <- func() {
-				errArgs := wamp.List{"call timeout"}
-				d.syncCancel(caller, &wamp.Cancel{Request: msg.Request},
-					wamp.CancelModeKillNoWait, wamp.ErrCanceled, errArgs)
-			}
-		}()
 	}
 
 	// TODO: handle trust levels
@@ -754,11 +733,11 @@ func (d *dealer) syncCall(caller *wamp.Session, msg *wamp.Call) {
 	}
 	d.calls[reqID] = caller
 	invocationID := d.idGen.Next()
-	d.invocations[invocationID] = &invocation{
-		callID:      reqID,
-		callee:      callee,
-		timerCancel: timerCancel,
+	invk := &invocation{
+		callID: reqID,
+		callee: callee,
 	}
+	d.invocations[invocationID] = invk
 	d.invocationByCall[reqID] = invocationID
 
 	// Send INVOCATION to the endpoint that has registered the requested
@@ -777,6 +756,31 @@ func (d *dealer) syncCall(caller *wamp.Session, msg *wamp.Call) {
 			Error:     wamp.ErrNetworkFailure,
 			Arguments: wamp.List{"callee blocked - cannot call procedure"},
 		})
+		return
+	}
+
+	if timeout != 0 {
+		// Context removed timer if canceled, or cancels call on timeout.
+		var timerCtx context.Context
+		timerCtx, invk.timerCancel = context.WithTimeout(context.Background(),
+			time.Duration(timeout)*time.Millisecond)
+
+		// Start goroutine to cancel pending call on timeout.  Works like
+		// Cancel with mode=killnowait, and includes an error message argument
+		// "call timeout"
+		go func() {
+			<-timerCtx.Done()
+			if timerCtx.Err() == context.Canceled {
+				// Timer canceled.  Got response from callee, or caller
+				// canceled or ended session.
+				return
+			}
+			d.actionChan <- func() {
+				errArgs := wamp.List{"call timeout"}
+				d.syncCancel(caller, &wamp.Cancel{Request: msg.Request},
+					wamp.CancelModeKillNoWait, wamp.ErrCanceled, errArgs)
+			}
+		}()
 	}
 }
 
