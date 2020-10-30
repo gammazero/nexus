@@ -661,6 +661,8 @@ func (d *dealer) syncCall(caller *wamp.Session, msg *wamp.Call) {
 	}
 	details := wamp.Dict{}
 
+	var timerCancel context.CancelFunc
+
 	// A Caller might want to issue a call providing a timeout for the call to
 	// finish.
 	//
