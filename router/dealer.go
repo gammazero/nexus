@@ -1061,6 +1061,10 @@ func (d *dealer) syncRemoveSession(sess *wamp.Session) []*wamp.Publish {
 		if !ok {
 			continue
 		}
+		// Stop any call timeout timer.
+		if invk.timerCancel != nil {
+			invk.timerCancel()
+		}
 		if errArgs == nil {
 			errArgs = wamp.List{"callee gone"}
 		}
