@@ -1,6 +1,7 @@
 package router
 
 import (
+	"context"
 	"fmt"
 	"math/rand"
 	"strings"
@@ -51,10 +52,11 @@ type registration struct {
 
 // invocation tracks in-progress invocation
 type invocation struct {
-	callID     requestID
-	callee     *wamp.Session
-	canceled   bool
-	retryCount int
+	callID      requestID
+	callee      *wamp.Session
+	canceled    bool
+	retryCount  int
+	timerCancel context.CancelFunc
 }
 
 type requestID struct {
@@ -669,11 +671,9 @@ func (d *dealer) syncCall(caller *wamp.Session, msg *wamp.Call) {
 		// Check that callee supports call_timeout.
 		if callee.HasFeature(wamp.RoleCallee, wamp.FeatureCallTimeout) {
 			details[wamp.OptTimeout] = timeout
+		} else {
+			timeout = 0
 		}
-
-		// TODO: Start a goroutine to cancel the pending call on timeout.
-		// Should be implemented like Cancel with mode=killnowait, and error
-		// message argument should say "call timeout"
 	}
 
 	// TODO: handle trust levels
@@ -733,10 +733,11 @@ func (d *dealer) syncCall(caller *wamp.Session, msg *wamp.Call) {
 	}
 	d.calls[reqID] = caller
 	invocationID := d.idGen.Next()
-	d.invocations[invocationID] = &invocation{
+	invk := &invocation{
 		callID: reqID,
 		callee: callee,
 	}
+	d.invocations[invocationID] = invk
 	d.invocationByCall[reqID] = invocationID
 
 	// Send INVOCATION to the endpoint that has registered the requested
@@ -755,6 +756,31 @@ func (d *dealer) syncCall(caller *wamp.Session, msg *wamp.Call) {
 			Error:     wamp.ErrNetworkFailure,
 			Arguments: wamp.List{"callee blocked - cannot call procedure"},
 		})
+		return
+	}
+
+	if timeout != 0 {
+		// Context removed timer if canceled, or cancels call on timeout.
+		var timerCtx context.Context
+		timerCtx, invk.timerCancel = context.WithTimeout(context.Background(),
+			time.Duration(timeout)*time.Millisecond)
+
+		// Start goroutine to cancel pending call on timeout.  Works like
+		// Cancel with mode=killnowait, and includes an error message argument
+		// "call timeout"
+		go func() {
+			<-timerCtx.Done()
+			if timerCtx.Err() == context.Canceled {
+				// Timer canceled.  Got response from callee, or caller
+				// canceled or ended session.
+				return
+			}
+			d.actionChan <- func() {
+				errArgs := wamp.List{"call timeout"}
+				d.syncCancel(caller, &wamp.Cancel{Request: msg.Request},
+					wamp.CancelModeKillNoWait, wamp.ErrCanceled, errArgs)
+			}
+		}()
 	}
 }
 
@@ -795,6 +821,11 @@ func (d *dealer) syncCancel(caller *wamp.Session, msg *wamp.Cancel, mode string,
 		return
 	}
 	invk.canceled = true
+
+	// Stop any call timeout timer.
+	if invk.timerCancel != nil {
+		invk.timerCancel()
+	}
 
 	// If mode is "kill" or "killnowait", then send INTERRUPT.
 	if mode != wamp.CancelModeSkip {
@@ -894,6 +925,11 @@ func (d *dealer) syncYield(callee *wamp.Session, msg *wamp.Yield, canRetry bool)
 		// If this is a progressive response, then set progress=true.
 		details[wamp.OptProgress] = true
 	} else {
+		// Stop any call timeout timer.
+		if invk.timerCancel != nil {
+			invk.timerCancel()
+		}
+
 		// Clean up the invocation, unless need to retry.
 		defer func() {
 			if keepInvocation {
@@ -946,6 +982,11 @@ func (d *dealer) syncError(msg *wamp.Error) {
 			msg.Request, "(response to canceled call)")
 		return
 	}
+	// Stop any call timeout timer.
+	if invk.timerCancel != nil {
+		invk.timerCancel()
+	}
+
 	delete(d.invocations, msg.Request)
 	callID := invk.callID
 
@@ -1020,6 +1061,10 @@ func (d *dealer) syncRemoveSession(sess *wamp.Session) []*wamp.Publish {
 		if !ok {
 			continue
 		}
+		// Stop any call timeout timer.
+		if invk.timerCancel != nil {
+			invk.timerCancel()
+		}
 		if errArgs == nil {
 			errArgs = wamp.List{"callee gone"}
 		}
@@ -1042,6 +1087,12 @@ func (d *dealer) syncRemoveSession(sess *wamp.Session) []*wamp.Publish {
 
 		// If there is a pending invocation for the call, remove it.
 		if invkID, ok := d.invocationByCall[req]; ok {
+			if invk, ok := d.invocations[invkID]; ok {
+				// Stop any call timeout timer.
+				if invk.timerCancel != nil {
+					invk.timerCancel()
+				}
+			}
 			delete(d.invocationByCall, req)
 			delete(d.invocations, invkID)
 		}

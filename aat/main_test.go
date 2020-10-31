@@ -33,7 +33,9 @@ const (
 	certFile = "cert.pem"
 	keyFile  = "rsakey.pem"
 
-	keepAliveInterval = time.Second * 5
+	keepAliveInterval = 5 * time.Second
+
+	clientResponseTimeout = 5 * time.Second
 )
 
 var (
@@ -236,7 +238,7 @@ func TestMain(m *testing.M) {
 	}
 	cfg := client.Config{
 		Realm:           testAuthRealm,
-		ResponseTimeout: time.Second,
+		ResponseTimeout: clientResponseTimeout,
 	}
 	cli, err = connectClientCfg(cfg)
 	if err != nil {
@@ -348,7 +350,7 @@ func connectClientCfg(cfg client.Config) (*client.Client, error) {
 func connectClient() (*client.Client, error) {
 	cfg := client.Config{
 		Realm:           testRealm,
-		ResponseTimeout: time.Second,
+		ResponseTimeout: clientResponseTimeout,
 	}
 	cli, err := connectClientCfg(cfg)
 	if err != nil {
@@ -362,7 +364,7 @@ func TestHandshake(t *testing.T) {
 
 	cfg := client.Config{
 		Realm:           testRealm,
-		ResponseTimeout: time.Second,
+		ResponseTimeout: clientResponseTimeout,
 	}
 
 	switch scheme {

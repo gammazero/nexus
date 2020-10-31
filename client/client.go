@@ -354,6 +354,9 @@ type InvocationHandler func(context.Context, *wamp.Invocation) InvokeResult
 // procedure.  The InvocationHandler is set to be called for each procedure
 // call received.
 //
+// If the registration handler wants to cancel the call without returning a
+// result, then is should return InvocationCanceled.
+//
 // Register Options
 //
 // To request a pattern-based registration set:
@@ -487,14 +490,18 @@ type ProgressHandler func(*wamp.Result)
 //
 // Call Timeout
 //
-// The nexus router also supports call timeout.  If a timeout is provided in
-// the options, and the callee supports call timeout, then the timeout value is
-// passed to the callee so that the invocation can be canceled by the callee
-// if the timeout is reached before a response is returned.  This is the
-// behavior implemented by the nexus client in the callee role.
+// If a timeout is provided in the options, and the callee supports call
+// timeout, then the timeout value is passed to the callee so that the
+// invocation can be canceled by the callee if the timeout is reached before a
+// response is returned.  This is the behavior implemented by the nexus client
+// in the callee role.
 //
-// To request a remote call timeout, specify a timeout in milliseconds:
-//   options["timeout"] = 30000
+// The nexus router also supports automatic call cancellation by the router,
+// after the timeout specified in the call options.  This way, the router will
+// automatically cancel the call even if the callee does not support it.
+//
+// To request automatic call timeout, by the router and callee, specify a
+// timeout in milliseconds: options["timeout"] = 30000
 //
 // Caller Identification
 //
@@ -510,15 +517,16 @@ type ProgressHandler func(*wamp.Result)
 //
 // A caller indicates its willingness to receive progressive results by
 // supplying a ProgressHandler function to handle progressive results that are
-// returned before the final result.  Call returns the when the final result is
+// returned before the final result.  Call returns when the final result is
 // returned by the callee. The progress handler is guaranteed not to be called
 // after Call returns.
 //
 // There is no need to set the "receive_progress" option, as this is
 // automatically set if a progress callback is provided.
 //
-// IMPORTANT: If the context has a timeout, then this needs to be sufficient to
-// receive all progressive results as well as the final result.
+// IMPORTANT: If the context has a timeout, then the amount of time needs to be
+// sufficient for the caller to receive all progressive results as well as the
+// final result.
 func (c *Client) Call(ctx context.Context, procedure string, options wamp.Dict, args wamp.List, kwargs wamp.Dict, progcb ProgressHandler) (*wamp.Result, error) {
 	if !c.Connected() {
 		return nil, ErrNotConn
@@ -1174,8 +1182,8 @@ func (c *Client) runHandleInvocation(msg *wamp.Invocation) {
 		var result InvokeResult
 		select {
 		case result = <-resChan:
-			// If the handler returns a nil result, this means the handler
-			// canceled the call.
+			// If the handler returns InvocationCanceled, this means the
+			// handler canceled the call.
 			if result.Err == wamp.ErrCanceled {
 				c.log.Println("INVOCATION", reqID, "canceled by callee")
 			}
