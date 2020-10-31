@@ -368,3 +368,130 @@ func TestProgressStress(t *testing.T) {
 		recvLen = 0
 	}
 }
+
+// Test that cancellng the call due to call_timeout, while in the middle of
+// receiving progressive results, is handled correctly by the dealer, callee
+// and the caller.
+func TestRPCProgressiveCallTimeout(t *testing.T) {
+	defer leaktest.Check(t)()
+	// Connect callee session.
+	callee, err := connectClient()
+	if err != nil {
+		t.Fatal("Failed to connect client:", err)
+	}
+
+	gotProgRsp := make(chan struct{})
+	releaseCallee := make(chan struct{})
+	sentFinal := make(chan struct{})
+
+	// Handler sends progressive results.
+	var sendProgErr error
+	handler := func(ctx context.Context, inv *wamp.Invocation) client.InvokeResult {
+		defer close(sentFinal)
+		// Send a progressive result.  This should go through just fine.
+		e := callee.SendProgress(ctx, wamp.List{"Alpha"}, nil)
+		if e != nil {
+			fmt.Println("Error sending Alpha progress:", e)
+		}
+
+		// Give caller time to receive first message before closing.
+		time.Sleep(50 * time.Millisecond)
+
+		// Wait for the timeout to happen
+		<-releaseCallee
+
+		// This first result will cause the dealer to respond with INTERRUPT.
+		// An error is not returned here, since the result was sent to dealer.
+		e = callee.SendProgress(ctx, wamp.List{"Bravo"}, nil)
+		if e != nil {
+			fmt.Println("Error sending Bravo progress:", e)
+			if e.Error() != "caller not accepting progressive results" {
+				sendProgErr = fmt.Errorf("error sending progress: %s", e)
+			}
+			return client.InvocationCanceled
+		}
+
+		// Give time for this client to process INTERRUPTs.
+		time.Sleep(50 * time.Millisecond)
+
+		e = callee.SendProgress(ctx, wamp.List{"Charlie"}, nil)
+		if e != nil {
+			fmt.Println("Error sending progress:", e)
+			if e.Error() != "caller not accepting progressive results" {
+				sendProgErr = fmt.Errorf("error sending progress: %s", e)
+			}
+			return client.InvocationCanceled
+		}
+
+		// This goes nowhere (gets put in dead buffered channel), because the
+		// invocation handler is closed and will not handle the message.
+		return client.InvokeResult{Args: wamp.List{"final"}}
+	}
+
+	// Register procedure
+	if err = callee.Register(progProc, handler, nil); err != nil {
+		t.Fatal("Failed to register procedure:", err)
+	}
+
+	// Connect caller session.
+	caller, err := connectClient()
+	if err != nil {
+		t.Fatal("Failed to connect client:", err)
+	}
+
+	progHandler := func(result *wamp.Result) {
+		arg := result.Arguments[0].(string)
+		fmt.Println("Caller received progress response:", arg)
+		select {
+		case gotProgRsp <- struct{}{}:
+		default:
+		}
+	}
+
+	// Test calling the procedure.
+	recvProgErr := make(chan error)
+	go func() {
+		ctx := context.Background()
+		opts := wamp.Dict{"timeout": 1000}
+		_, e := caller.Call(ctx, progProc, opts, nil, nil, progHandler)
+		recvProgErr <- e
+	}()
+
+	// Wait for progressive results to start being returned
+	<-gotProgRsp
+
+	err = <-recvProgErr
+	if err == nil {
+		t.Fatal("expected error from CallProgress")
+	}
+	rpce, ok := err.(client.RPCError)
+	if !ok {
+		t.Fatal("error should be RPCError type")
+	}
+	if rpce.Err.Error != wamp.ErrCanceled {
+		t.Errorf("unexpected error returned from CallProgress: %v", rpce)
+	}
+	close(releaseCallee)
+
+	select {
+	case <-sentFinal:
+		t.Error("Callee should not have finished sending progressive results")
+	default:
+	}
+
+	<-sentFinal
+
+	if sendProgErr != nil {
+		t.Error(sendProgErr)
+	}
+
+	err = callee.Close()
+	if err != nil {
+		t.Error("Failed to disconnect client:", err)
+	}
+
+	err = caller.Close()
+	if err != nil {
+		t.Error("Failed to disconnect client:", err)
+	}
+}
