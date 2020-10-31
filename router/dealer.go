@@ -300,7 +300,7 @@ func (d *dealer) cancel(caller *wamp.Session, msg *wamp.Cancel) {
 		return
 	}
 	d.actionChan <- func() {
-		d.syncCancel(caller, msg, mode, wamp.ErrCanceled)
+		d.syncCancel(caller, msg, mode, wamp.ErrCanceled, nil)
 	}
 }
 
@@ -758,7 +758,7 @@ func (d *dealer) syncCall(caller *wamp.Session, msg *wamp.Call) {
 	}
 }
 
-func (d *dealer) syncCancel(caller *wamp.Session, msg *wamp.Cancel, mode string, reason wamp.URI) {
+func (d *dealer) syncCancel(caller *wamp.Session, msg *wamp.Cancel, mode string, reason wamp.URI, errArgs wamp.List) {
 	reqID := requestID{
 		session: caller.ID,
 		request: msg.Request,
@@ -832,13 +832,18 @@ func (d *dealer) syncCancel(caller *wamp.Session, msg *wamp.Cancel, mode string,
 	delete(d.invocationByCall, reqID)
 	delete(d.invocations, invocationID)
 
-	// Send error to the caller.
-	d.trySend(caller, &wamp.Error{
+	errMsg := &wamp.Error{
 		Type:    wamp.CALL,
 		Request: msg.Request,
 		Error:   reason,
 		Details: wamp.Dict{},
-	})
+	}
+	if len(errArgs) != 0 {
+		errMsg.Arguments = errArgs
+	}
+
+	// Send error to the caller.
+	d.trySend(caller, errMsg)
 }
 
 func (d *dealer) syncYield(callee *wamp.Session, msg *wamp.Yield, canRetry bool) bool {
@@ -928,7 +933,7 @@ func (d *dealer) syncYield(callee *wamp.Session, msg *wamp.Yield, canRetry bool)
 		}
 		d.log.Printf("!!! Dropped %s to caller %s: %s", res.MessageType(), caller, err)
 		d.syncCancel(caller, &wamp.Cancel{Request: callID.request},
-			wamp.CancelModeKillNoWait, wamp.ErrCanceled)
+			wamp.CancelModeKillNoWait, wamp.ErrCanceled, nil)
 	}
 	return false
 }
@@ -1004,6 +1009,26 @@ func (d *dealer) syncRemoveSession(sess *wamp.Session) []*wamp.Publish {
 		})
 	}
 	delete(d.calleeRegIDSet, sess)
+
+	// Cancel any pending invocations for a callee that is leaving.
+	var errArgs wamp.List
+	for iid, invk := range d.invocations {
+		if sess != invk.callee {
+			continue
+		}
+		caller, ok := d.calls[invk.callID]
+		if !ok {
+			continue
+		}
+		if errArgs == nil {
+			errArgs = wamp.List{"callee gone"}
+		}
+		d.syncCancel(caller, &wamp.Cancel{Request: invk.callID.request},
+			wamp.CancelModeSkip, wamp.ErrCanceled, errArgs)
+
+		d.log.Println("Dealer canceled invocation", iid, "for call",
+			invk.callID.request, "because callee is gone")
+	}
 
 	// Remove any pending calls for the removed session.
 	for req, caller := range d.calls {
