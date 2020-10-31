@@ -285,6 +285,68 @@ func TestRemovePeer(t *testing.T) {
 	}
 }
 
+func TestCancelOnCalleeGone(t *testing.T) {
+	dealer, metaClient := newTestDealer()
+
+	calleeRoles := wamp.Dict{
+		"roles": wamp.Dict{
+			"callee": wamp.Dict{
+				"features": wamp.Dict{
+					"call_canceling": true,
+				},
+			},
+		},
+	}
+
+	// Register a procedure.
+	callee := newTestPeer()
+	calleeSess := wamp.NewSession(callee, 0, nil, calleeRoles)
+	dealer.register(calleeSess,
+		&wamp.Register{Request: 123, Procedure: testProcedure})
+	rsp := <-callee.Recv()
+	_, ok := rsp.(*wamp.Registered)
+	if !ok {
+		t.Fatal("did not receive REGISTERED response")
+	}
+
+	if err := checkMetaReg(metaClient, calleeSess.ID); err != nil {
+		t.Fatal("Registration meta event fail:", err)
+	}
+
+	caller := newTestPeer()
+	callerSession := wamp.NewSession(caller, 0, nil, nil)
+
+	// Test calling valid procedure
+	dealer.call(callerSession,
+		&wamp.Call{Request: 125, Procedure: testProcedure})
+
+	// Test that callee received an INVOCATION message.
+	rsp = <-callee.Recv()
+	_, ok = rsp.(*wamp.Invocation)
+	if !ok {
+		t.Fatal("expected INVOCATION, got:", rsp.MessageType())
+	}
+
+	callee.Close()
+	dealer.removeSession(calleeSess)
+
+	// Check that caller receives the ERROR message.
+	rsp = <-caller.Recv()
+	rslt, ok := rsp.(*wamp.Error)
+	if !ok {
+		t.Fatal("expected ERROR, got:", rsp.MessageType())
+	}
+	if rslt.Error != wamp.ErrCanceled {
+		t.Fatal("wrong error, want", wamp.ErrCanceled, "got", rslt.Error)
+	}
+	if len(rslt.Arguments) == 0 {
+		t.Fatal("expected response argument")
+	}
+	if s, _ := wamp.AsString(rslt.Arguments[0]); s != "callee gone" {
+		t.Fatal("Did not get error message from caller")
+	}
+}
+
 // ----- WAMP v.2 Testing -----
 
 func TestCancelCallModeKill(t *testing.T) {
