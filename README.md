@@ -75,18 +75,11 @@ https://github.com/gammazero/nexus/tree/v3/examples
 
 Please read the [Contributing](https://github.com/gammazero/nexus/blob/v3/CONTRIBUTING.md#contributing-to-nexus) guide if you are interested in becoming a contributor to this project.
 
+Please report any problems, or request changes and new functionality by opening an [issue](https://github.com/gammazero/nexus/issues).
+
 ## Status
 
-A stable release of nexus is available with support for most advanced profile features.  Nexus is in active development, to add remaining advanced profile features, examples, automated tests, and documentation.
-
-### TODO
-
-These features listed here are being added.  If there are are specific items needed, or if any changes in current functionality are needed, then please open an [issue](https://github.com/gammazero/nexus/issues).
-
-- more documentation and examples
-- event history
-- call trust levels
-- publisher trust levels
+The currently maintained version of this module is 3.x.  Earlier major versions are no longer supported.
 
 ## Advanced Profile Feature Support
 
