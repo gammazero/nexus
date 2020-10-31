@@ -1023,6 +1023,8 @@ func (d *dealer) syncRemoveSession(sess *wamp.Session) []*wamp.Publish {
 		if errArgs == nil {
 			errArgs = wamp.List{"callee gone"}
 		}
+		// Use CancelModeSkip so as not to send an INTERRUPT to a callee that
+		// is no longer there.
 		d.syncCancel(caller, &wamp.Cancel{Request: invk.callID.request},
 			wamp.CancelModeSkip, wamp.ErrCanceled, errArgs)
 
