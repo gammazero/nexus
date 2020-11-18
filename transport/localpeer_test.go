@@ -8,7 +8,7 @@ import (
 	"github.com/gammazero/nexus/v3/wamp"
 )
 
-func _TestSendRecv(t *testing.T) {
+func TestSendRecv(t *testing.T) {
 	c, r := LinkedPeers()
 
 	go c.Send(&wamp.Hello{})
@@ -37,10 +37,11 @@ func _TestSendRecv(t *testing.T) {
 }
 
 func TestDropOnBlockedClient(t *testing.T) {
-	_, r := LinkedPeers()
+	const qsize = 5
+	_, r := LinkedPeersQSize(qsize)
 
 	// Check that r -> c drops when full
-	for i := 0; i < linkedPeersOutQueueSize; i++ {
+	for i := 0; i < qsize; i++ {
 		r.TrySend(&wamp.Publish{})
 	}
 	done := make(chan struct{})

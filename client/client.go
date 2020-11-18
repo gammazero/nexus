@@ -720,7 +720,6 @@ func (c *Client) SendProgress(ctx context.Context, args wamp.List, kwArgs wamp.D
 			return ErrNotConn
 		default:
 		}
-
 		// Caller is not accepting progressive results or call canceled.
 		return ErrCallerNoProg
 	}
@@ -730,7 +729,13 @@ func (c *Client) SendProgress(ctx context.Context, args wamp.List, kwArgs wamp.D
 		Arguments:   args,
 		ArgumentsKw: kwArgs,
 	}) != nil {
-		return ErrNotConn
+		select {
+		case <-c.Done():
+			return ErrNotConn
+		default:
+		}
+		// Caller is not accepting progressive results or call canceled.
+		return ErrCallerNoProg
 	}
 	return nil
 }
