@@ -382,46 +382,35 @@ func TestRPCProgressiveCallTimeout(t *testing.T) {
 
 	gotProgRsp := make(chan struct{})
 	releaseCallee := make(chan struct{})
-	sentFinal := make(chan struct{})
+	sendProgErr := make(chan error)
 
 	// Handler sends progressive results.
-	var sendProgErr error
 	handler := func(ctx context.Context, inv *wamp.Invocation) client.InvokeResult {
-		defer close(sentFinal)
 		// Send a progressive result.  This should go through just fine.
 		e := callee.SendProgress(ctx, wamp.List{"Alpha"}, nil)
 		if e != nil {
-			fmt.Println("Error sending Alpha progress:", e)
+			sendProgErr <- e
+			return client.InvocationCanceled
 		}
-
-		// Give caller time to receive first message before closing.
-		time.Sleep(50 * time.Millisecond)
 
 		// Wait for the timeout to happen
 		<-releaseCallee
 
-		// This first result will cause the dealer to respond with INTERRUPT.
-		// An error is not returned here, since the result was sent to dealer.
+		// Wait for client to process interrupt
+		<-ctx.Done()
+
+		// Sending more progressive results; one should result in error.
 		e = callee.SendProgress(ctx, wamp.List{"Bravo"}, nil)
 		if e != nil {
-			fmt.Println("Error sending Bravo progress:", e)
-			if e.Error() != "caller not accepting progressive results" {
-				sendProgErr = fmt.Errorf("error sending progress: %s", e)
-			}
+			sendProgErr <- e
+			return client.InvocationCanceled
+		}
+		if e = callee.SendProgress(ctx, wamp.List{"Charlie"}, nil); e != nil {
+			sendProgErr <- e
 			return client.InvocationCanceled
 		}
 
-		// Give time for this client to process INTERRUPTs.
-		time.Sleep(50 * time.Millisecond)
-
-		e = callee.SendProgress(ctx, wamp.List{"Charlie"}, nil)
-		if e != nil {
-			fmt.Println("Error sending progress:", e)
-			if e.Error() != "caller not accepting progressive results" {
-				sendProgErr = fmt.Errorf("error sending progress: %s", e)
-			}
-			return client.InvocationCanceled
-		}
+		sendProgErr <- nil
 
 		// This goes nowhere (gets put in dead buffered channel), because the
 		// invocation handler is closed and will not handle the message.
@@ -474,15 +463,12 @@ func TestRPCProgressiveCallTimeout(t *testing.T) {
 	close(releaseCallee)
 
 	select {
-	case <-sentFinal:
-		t.Error("Callee should not have finished sending progressive results")
-	default:
-	}
-
-	<-sentFinal
-
-	if sendProgErr != nil {
-		t.Error(sendProgErr)
+	case err = <-sendProgErr:
+		if err != client.ErrCallerNoProg {
+			t.Error("unexpected callee error:", err)
+		}
+	case <-time.After(5 * time.Second):
+		t.Fatal("Callee should have finished sending progressive results")
 	}
 
 	err = callee.Close()
