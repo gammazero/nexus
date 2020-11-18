@@ -1,5 +1,5 @@
 #
-# Python WAMP client: publisher
+# Python WAMP client: publisher and caller
 #
 # Install dependencies:
 #     https://github.com/crossbario/autobahn-python/wiki/Autobahn-on-Ubuntu
