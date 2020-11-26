@@ -22,6 +22,10 @@ type Config struct {
 
 	// Enable debug logging for router, realm, broker, dealer
 	Debug bool
+	// Interval in seconds for logging memory stats.  O to disable.
+	// Logs Alloc, Mallocs, Frees, and NumGC.  For a description of these, see
+	// https://golang.org/pkg/runtime/#MemStats
+	MemStatsLogSec int `json:"mem_stats_log_sec"`
 }
 
 // RealmConfig configures a single realm in the router.  The router
