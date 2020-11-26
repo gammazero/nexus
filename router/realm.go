@@ -398,7 +398,7 @@ func (r *realm) handleSession(sess *wamp.Session) error {
 	r.closeLock.Unlock()
 
 	if r.debug {
-		r.log.Println("Started session", sess)
+		r.log.Println("Handling messages for session", sess)
 	}
 	go func() {
 		shutdown, killAll, err := r.handleInboundMessages(sess)

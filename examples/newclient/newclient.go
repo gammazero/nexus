@@ -25,10 +25,10 @@ const (
 	defaultAddr  = "localhost"
 	defaultUnix  = "/tmp/exmpl_nexus_sock"
 
-	defaultWsPort   = 8000
+	defaultWsPort   = 8080
 	defaultWssPort  = 8443
-	defaultTcpPort  = 8080
-	defaultTcpsPort = 8081
+	defaultTcpPort  = 8000
+	defaultTcpsPort = 8001
 )
 
 func NewClient(logger *log.Logger) (*client.Client, error) {

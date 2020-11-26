@@ -32,10 +32,10 @@ func main() {
 		netAddr  = "localhost"
 		unixAddr = "/tmp/exmpl_nexus_sock"
 
-		wsPort   = 8000
+		wsPort   = 8080
 		wssPort  = 8443
-		tcpPort  = 8080
-		tcpsPort = 8081
+		tcpPort  = 8000
+		tcpsPort = 8001
 	)
 	flag.StringVar(&netAddr, "netaddr", netAddr, "network address to listen on")
 	flag.StringVar(&unixAddr, "unixaddr", unixAddr, "unix address to listen on")

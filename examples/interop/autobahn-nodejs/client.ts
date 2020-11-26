@@ -5,7 +5,7 @@ export class AuthobanClient {
     connectP: Promise<any>;
     connection: Connection;
 
-    constructor(private options: { debug?: boolean, port?:number, realm?:string } = { debug: false, port: 8008 }) {
+    constructor(private options: { debug?: boolean, port?:number, realm?:string } = { debug: false, port: 8080 }) {
     }
 
     connect(): Promise<any> {

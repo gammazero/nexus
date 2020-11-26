@@ -1,11 +1,11 @@
 #
-# Python WAMP client: subscriber
+# Python WAMP client: subscriber and callee
 #
 # Install dependencies:
-#     https://github.com/crossbario/autobahn-python/wiki/Autobahn-on-Ubuntu
+#     make
 #
 # Run this client:
-#    ./pyenv1/bin/python sub_callee.py
+#    ./pyenv/bin/python sub_callee.py
 #
 from __future__ import print_function
 from twisted.internet.defer import inlineCallbacks, returnValue
@@ -72,6 +72,6 @@ class MyComponent(ApplicationSession):
 
 
 if __name__ == '__main__':
-    runner = ApplicationRunner(url=u"ws://localhost:8000/ws", realm=realm)
+    runner = ApplicationRunner(url=u"ws://localhost:8080/ws", realm=realm)
     runner.run(MyComponent)
     print("Received", event_count, "events")

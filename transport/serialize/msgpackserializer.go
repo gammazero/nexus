@@ -12,7 +12,6 @@ var mh *codec.MsgpackHandle
 
 func init() {
 	mh = new(codec.MsgpackHandle)
-	mh.RawToString = true
 	mh.WriteExt = true
 	mh.MapType = reflect.TypeOf(map[string]interface{}(nil))
 }
