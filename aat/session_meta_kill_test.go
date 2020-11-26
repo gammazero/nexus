@@ -159,28 +159,29 @@ func TestSessionKillAll(t *testing.T) {
 	// Check that client-3 was booted.
 	select {
 	case <-cli3.Done():
-	case <-time.After(time.Second):
+	case <-time.After(3 * time.Second):
 		t.Fatal("Client 3 did not shutdown")
 	}
 	// Check for expected GOODBYE message.
 	goodbye := cli3.RouterGoodbye()
 	if goodbye == nil {
 		t.Error("Did not receive goodbye from router")
-	}
-	if goodbye.Reason != reason {
-		t.Error("Did not get expected GOODBYE.Reason, got:", goodbye.Reason)
-	}
-	gm, ok := wamp.AsString(goodbye.Details["message"])
-	if !ok {
-		t.Error("Expected message in GOODBYE")
-	} else if gm != message {
-		t.Error("Did not get expected goodbye message, got:", gm)
+	} else {
+		if goodbye.Reason != reason {
+			t.Error("Did not get expected GOODBYE.Reason, got:", goodbye.Reason)
+		}
+		gm, ok := wamp.AsString(goodbye.Details["message"])
+		if !ok {
+			t.Error("Expected message in GOODBYE")
+		} else if gm != message {
+			t.Error("Did not get expected goodbye message, got:", gm)
+		}
 	}
 
 	// Check that client-2 was booted.
 	select {
 	case <-cli2.Done():
-	case <-time.After(time.Second):
+	case <-time.After(3 * time.Second):
 		t.Fatal("Client 2 did not shutdown")
 	}
 
@@ -211,19 +212,19 @@ func TestSessionKillAll(t *testing.T) {
 	// Check that client-4 was booted.
 	select {
 	case <-cli4.Done():
-	case <-time.After(time.Second):
+	case <-time.After(3 * time.Second):
 		t.Fatal("Client 4 did not shutdown")
 	}
 
 	// Check for expected GOODBYE message.
 	goodbye = cli4.RouterGoodbye()
 	if goodbye == nil {
-		t.Error("Did not receive goodbye from router")
+		t.Fatal("Did not receive goodbye from router")
 	}
 	if goodbye.Reason != wamp.CloseNormal {
 		t.Error("Did not get expected GOODBYE.Reason, got:", goodbye.Reason)
 	}
-	if _, ok = goodbye.Details["message"]; ok {
+	if _, ok := goodbye.Details["message"]; ok {
 		t.Error("Should not have received message in GOODBYE.Details")
 	}
 }
