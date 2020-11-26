@@ -19,7 +19,7 @@
     "router": {
         "realms": [
             {
-                "uri": "nexus.realm1",
+                "uri": "realm1",
                 "strict_uri": false,
                 "allow_disclose": true,
                 "anonymous_auth": true,
@@ -29,6 +29,7 @@
                 "enable_meta_modify": false
             }
         ],
-        "debug": false
+        "debug": false,
+        "mem_stats_log_sec": 0
     }
 }

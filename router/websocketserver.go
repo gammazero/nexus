@@ -378,7 +378,7 @@ func (s *WebsocketServer) handleWebsocket(conn transport.WebsocketConnection, tr
 	}
 	peer := transport.NewWebsocketPeer(conn, serializer, payloadType, s.router.Logger(), s.KeepAlive, qsize)
 	if err := s.router.AttachClient(peer, transportDetails); err != nil {
-		s.router.Logger().Println("Error attaching to router:", err)
+		s.router.Logger().Println("Client cannot attach to router:", err)
 	}
 }
 

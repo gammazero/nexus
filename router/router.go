@@ -11,6 +11,7 @@ import (
 	"fmt"
 	"log"
 	"os"
+	"runtime"
 	"sync"
 	"time"
 
@@ -90,7 +91,21 @@ func NewRouter(config *Config, logger stdlog.StdLog) (Router, error) {
 	}
 
 	go r.run()
+
+	if config.MemStatsLogSec != 0 {
+		go r.logMemStats(time.Duration(config.MemStatsLogSec) * time.Second)
+	}
+
 	return r, nil
+}
+
+func (r *router) logMemStats(interval time.Duration) {
+	var m runtime.MemStats
+	for {
+		time.Sleep(interval)
+		runtime.ReadMemStats(&m)
+		r.log.Printf("MemStats: Alloc=%d Mallocs=%d Frees=%d NumGC=%d", m.Alloc, m.Mallocs, m.Frees, m.NumGC)
+	}
 }
 
 // Logger returns the StdLog that the router uses for logging.
@@ -259,7 +274,7 @@ func (r *router) AttachClient(client wamp.Peer, transportDetails wamp.Dict) erro
 
 	client.Send(welcome) // Blocking OK; this is session goroutine.
 	if r.debug {
-		r.log.Println("Created session:", sid)
+		r.log.Println("Finished attaching session:", sid)
 	}
 	return nil
 }
