@@ -3,7 +3,7 @@ import {AuthobanClient} from "./client"
 
 function main() {
 
-    let arithmeticServer = new AuthobanClient({realm:"nexus.examples",port:8000})
+    let arithmeticServer = new AuthobanClient({realm:"nexus.examples",port:8080})
 
     let arrayToSum = [1,2,3,4,5]
 

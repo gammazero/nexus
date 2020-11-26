@@ -4,7 +4,7 @@ export class WampClient {
     connectP: Promise<any>;
     ws: any;
 
-    constructor(private options: { debug?: boolean, port?:number, realm?:string } = { debug: false, port: 8008 }) {
+    constructor(private options: { debug?: boolean, port?:number, realm?:string } = { debug: false, port: 8080 }) {
     }
 
     connect(): Promise<any> {

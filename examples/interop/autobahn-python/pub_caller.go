@@ -19,7 +19,7 @@ import (
 )
 
 const (
-	addr  = "ws://localhost:8000/ws"
+	addr  = "ws://localhost:8080/ws"
 	realm = "realm1"
 
 	topic = "example.hello"
@@ -30,8 +30,9 @@ const (
 
 func main() {
 	cfg := client.Config{
-		Realm:  realm,
-		Logger: log.New(os.Stderr, "go-client> ", 0),
+		Realm:         realm,
+		Logger:        log.New(os.Stderr, "go-client> ", 0),
+		Serialization: client.MSGPACK,
 	}
 	cli, err := client.ConnectNet(context.Background(), addr, cfg)
 	if err != nil {

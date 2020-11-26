@@ -2,10 +2,10 @@
 # Python WAMP client: publisher and caller
 #
 # Install dependencies:
-#     https://github.com/crossbario/autobahn-python/wiki/Autobahn-on-Ubuntu
+#     make
 #
 # Run this client:
-#    ./pyenv1/bin/python pub_caller.py
+#    ./pyenv/bin/python pub_caller.py
 #
 from __future__ import print_function
 from twisted.internet.defer import inlineCallbacks
@@ -43,7 +43,6 @@ class MyComponent(ApplicationSession):
 
 
         def on_prog(msg):
-            print("here")
             print("partial result: {}".format(msg))
 
         print('Calling procedure:', procedure2)
@@ -56,5 +55,5 @@ class MyComponent(ApplicationSession):
 
 
 if __name__ == '__main__':
-    runner = ApplicationRunner(url=u"ws://localhost:8000/ws", realm=realm)
+    runner = ApplicationRunner(url=u"ws://localhost:8080/ws", realm=realm)
     runner.run(MyComponent)

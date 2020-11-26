@@ -436,14 +436,80 @@ func TestMsgPackToJSON(t *testing.T) {
 	}
 }
 
-func BenchmarkJSON(b *testing.B) {
-	details := detailRolesFeatures()
-	hello := &wamp.Hello{Realm: "nexus.realm", Details: details}
-	s := &JSONSerializer{}
+func TestMessagePackBytesString(t *testing.T) {
+	msgBytes := []byte{0x1, 0x2, 0x3, 0x4, 0x5, 0x6, 0x7, 0x8, 0x9, 0x10}
+	msgString := "hello world"
+	call := &wamp.Call{
+		Request:     123456,
+		Options:     wamp.Dict{},
+		Procedure:   wamp.URI("test.echo.payload"),
+		Arguments:   wamp.List{msgBytes, msgString},
+		ArgumentsKw: wamp.Dict{},
+	}
+	s := &MessagePackSerializer{}
+	b, err := s.Serialize(call)
+	if err != nil {
+		t.Fatal("Serialization error: ", err)
+	}
+	if len(b) == 0 {
+		t.Fatal("no serialized data")
+	}
 
+	msg, err := s.Deserialize(b)
+	if err != nil {
+		t.Fatal("desrialization error: ", err)
+	}
+	call, ok := msg.(*wamp.Call)
+	if !ok {
+		t.Fatal("wrong message type; expected CALL, got", msg.MessageType())
+	}
+	if len(call.Arguments) != 2 {
+		t.Fatal("expected 1 argument, got", len(call.Arguments))
+	}
+
+	arg1, ok := call.Arguments[0].([]byte)
+	if !ok {
+		t.Error("1st argument is not []byte")
+	} else if !bytes.Equal(arg1, msgBytes) {
+		t.Error("wrong value for 1st argument")
+	}
+
+	arg2, ok := call.Arguments[1].(string)
+	if !ok {
+		t.Error("2nd argument is not string")
+	} else if arg2 != msgString {
+		t.Error("wrong value for 2nd argument")
+	}
+}
+
+func BenchmarkSerialize(b *testing.B) {
+	msgBytes := []byte{0x1, 0x2, 0x3, 0x4, 0x5, 0x6, 0x7, 0x8, 0x9, 0x10}
+	msgString := "hello world"
+	call := &wamp.Call{
+		Request:     123456,
+		Options:     wamp.Dict{},
+		Procedure:   wamp.URI("test.echo.payload"),
+		Arguments:   wamp.List{msgBytes, msgString},
+		ArgumentsKw: wamp.Dict{},
+	}
+
+	b.Run("JSON", func(b *testing.B) {
+		benchmarkSerialize(b, &JSONSerializer{}, call)
+	})
+
+	b.Run("MSGPACK", func(b *testing.B) {
+		benchmarkSerialize(b, &MessagePackSerializer{}, call)
+	})
+
+	b.Run("CBOR", func(b *testing.B) {
+		benchmarkSerialize(b, &CBORSerializer{}, call)
+	})
+}
+
+func benchmarkSerialize(b *testing.B, s Serializer, msg wamp.Message) {
 	b.ResetTimer()
 	for i := 0; i < b.N; i++ {
-		data, err := s.Serialize(hello)
+		data, err := s.Serialize(msg)
 		if err != nil {
 			panic("serialization error: " + err.Error())
 		}

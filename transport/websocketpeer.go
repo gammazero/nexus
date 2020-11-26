@@ -257,7 +257,7 @@ sendLoop:
 	for {
 		select {
 		case msg := <-w.wr:
-			b, err := w.serializer.Serialize(msg.(wamp.Message))
+			b, err := w.serializer.Serialize(msg)
 			if err != nil {
 				w.log.Print(err)
 				continue sendLoop
@@ -295,7 +295,7 @@ recvLoop:
 	for {
 		select {
 		case msg := <-w.wr:
-			b, err := w.serializer.Serialize(msg.(wamp.Message))
+			b, err := w.serializer.Serialize(msg)
 			if err != nil {
 				w.log.Print(err)
 				continue recvLoop
