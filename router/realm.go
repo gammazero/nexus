@@ -73,9 +73,11 @@ type realm struct {
 }
 
 var (
+	emptyDict = wamp.Dict{}
+
 	shutdownGoodbye = &wamp.Goodbye{
 		Reason:  wamp.ErrSystemShutdown,
-		Details: wamp.Dict{},
+		Details: emptyDict,
 	}
 )
 
@@ -497,7 +499,7 @@ func (r *realm) handleInboundMessages(sess *wamp.Session) (bool, bool, error) {
 			// Handle client leaving realm.
 			sess.TrySend(&wamp.Goodbye{
 				Reason:  wamp.ErrGoodbyeAndOut,
-				Details: wamp.Dict{},
+				Details: emptyDict,
 			})
 			if r.debug {
 				r.log.Println("GOODBYE from session", sess, "reason:",
@@ -536,7 +538,7 @@ func (r *realm) authzMessage(sess *wamp.Session, msg wamp.Message) bool {
 
 	if !isAuthz {
 		skipResponse := false
-		errRsp := &wamp.Error{Type: msg.MessageType(), Details: wamp.Dict{}}
+		errRsp := &wamp.Error{Type: msg.MessageType(), Details: emptyDict}
 		// Get the Request from request types of messages.
 		switch msg := msg.(type) {
 		case *wamp.Publish:
@@ -717,7 +719,7 @@ func (r *realm) metaProcedureHandler() {
 				r.metaPeer.Send(&wamp.Error{
 					Type:    msg.MessageType(),
 					Request: msg.Request,
-					Details: wamp.Dict{},
+					Details: emptyDict,
 					Error:   wamp.ErrNoSuchProcedure,
 				})
 				continue
@@ -746,7 +748,7 @@ func (r *realm) sessionCount(msg *wamp.Invocation) wamp.Message {
 				Type:    wamp.INVOCATION,
 				Error:   wamp.ErrInvalidArgument,
 				Request: msg.Request,
-				Details: wamp.Dict{},
+				Details: emptyDict,
 			}
 		}
 		filter, ok = wamp.ListToStrings(filterList)
@@ -755,7 +757,7 @@ func (r *realm) sessionCount(msg *wamp.Invocation) wamp.Message {
 				Type:    wamp.INVOCATION,
 				Error:   wamp.ErrInvalidArgument,
 				Request: msg.Request,
-				Details: wamp.Dict{},
+				Details: emptyDict,
 			}
 		}
 	}
@@ -800,7 +802,7 @@ func (r *realm) sessionList(msg *wamp.Invocation) wamp.Message {
 				Type:    wamp.INVOCATION,
 				Error:   wamp.ErrInvalidArgument,
 				Request: msg.Request,
-				Details: wamp.Dict{},
+				Details: emptyDict,
 			}
 		}
 		filter, ok = wamp.ListToStrings(filterList)
@@ -809,7 +811,7 @@ func (r *realm) sessionList(msg *wamp.Invocation) wamp.Message {
 				Type:    wamp.INVOCATION,
 				Error:   wamp.ErrInvalidArgument,
 				Request: msg.Request,
-				Details: wamp.Dict{},
+				Details: emptyDict,
 			}
 		}
 	}
@@ -1058,7 +1060,7 @@ func (r *realm) testamentAdd(msg *wamp.Invocation) wamp.Message {
 	}
 	options, ok := wamp.AsDict(msg.ArgumentsKw["publish_options"])
 	if !ok {
-		options = wamp.Dict{}
+		options = emptyDict
 	}
 	scope, ok := wamp.AsString(msg.ArgumentsKw["scope"])
 	if !ok || scope == "" {
@@ -1184,7 +1186,7 @@ func (r *realm) cleanSessionDetails(details wamp.Dict) wamp.Dict {
 			continue
 		}
 		if altTrans == nil {
-			altTrans = wamp.Dict{}
+			altTrans = emptyDict
 		}
 		altTrans[n] = v
 	}
@@ -1198,7 +1200,7 @@ func makeError(req wamp.ID, uri wamp.URI) *wamp.Error {
 	return &wamp.Error{
 		Type:    wamp.INVOCATION,
 		Request: req,
-		Details: wamp.Dict{},
+		Details: emptyDict,
 		Error:   uri,
 	}
 }
@@ -1208,9 +1210,9 @@ func makeGoodbye(reason wamp.URI, message string) *wamp.Goodbye {
 	if reason == wamp.URI("") {
 		reason = wamp.CloseNormal
 	}
-	details := wamp.Dict{}
+	details := emptyDict
 	if message != "" {
-		details["message"] = message
+		details = wamp.Dict{"message": message}
 	}
 	return &wamp.Goodbye{
 		Reason:  reason,

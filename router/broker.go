@@ -129,7 +129,7 @@ func (b *broker) publish(pub *wamp.Session, msg *wamp.Publish) {
 			Request:   msg.Request,
 			Error:     wamp.ErrInvalidURI,
 			Arguments: wamp.List{errMsg},
-			Details:   wamp.Dict{},
+			Details:   emptyDict,
 		})
 		return
 	}
@@ -158,7 +158,7 @@ func (b *broker) publish(pub *wamp.Session, msg *wamp.Publish) {
 				b.trySend(pub, &wamp.Error{
 					Type:    msg.MessageType(),
 					Request: msg.Request,
-					Details: wamp.Dict{},
+					Details: emptyDict,
 					Error:   wamp.ErrOptionDisallowedDiscloseMe,
 				})
 			}
@@ -211,7 +211,7 @@ func (b *broker) subscribe(sub *wamp.Session, msg *wamp.Subscribe) {
 			Request:   msg.Request,
 			Error:     wamp.ErrInvalidURI,
 			Arguments: wamp.List{errMsg},
-			Details:   wamp.Dict{},
+			Details:   emptyDict,
 		})
 		return
 	}
@@ -382,7 +382,7 @@ func (b *broker) syncUnsubscribe(subscriber *wamp.Session, msg *wamp.Unsubscribe
 			Type:    msg.MessageType(),
 			Request: msg.Request,
 			Error:   wamp.ErrNoSuchSubscription,
-			Details: wamp.Dict{},
+			Details: emptyDict,
 		})
 		b.log.Println("Error unsubscribing: no such subscription", subID)
 		return
@@ -486,7 +486,7 @@ func (b *broker) syncPubEvent(pub *wamp.Session, msg *wamp.Publish, pubID wamp.I
 		// policy, a Broker MUST supply the original PUBLISH.Topic as provided
 		// by the Publisher in EVENT.Details.topic|uri.
 		if sendTopic {
-			details[detailTopic] = msg.Topic
+			details = wamp.Dict{detailTopic: msg.Topic}
 		}
 
 		if disclose && subscriber.HasFeature(wamp.RoleSubscriber, wamp.FeaturePubIdent) {
@@ -534,9 +534,9 @@ func (b *broker) syncPubSubMeta(metaTopic wamp.URI, subSessID, subID wamp.ID) {
 		if len(metaSub.subscribers) == 0 {
 			return
 		}
-		details := wamp.Dict{}
+		details := emptyDict
 		if sendTopic {
-			details[detailTopic] = metaTopic
+			details = wamp.Dict{detailTopic: metaTopic}
 		}
 		for subscriber := range metaSub.subscribers {
 			// Do not send the meta event to the session that is causing the
@@ -565,9 +565,9 @@ func (b *broker) syncPubSubCreateMeta(topic wamp.URI, subSessID wamp.ID, sub *su
 		if len(metaSub.subscribers) == 0 {
 			return
 		}
-		details := wamp.Dict{}
+		details := emptyDict
 		if sendTopic {
-			details[detailTopic] = wamp.MetaEventSubOnCreate
+			details = wamp.Dict{detailTopic: wamp.MetaEventSubOnCreate}
 		}
 		subDetails := wamp.Dict{
 			"id":          sub.id,
@@ -746,7 +746,7 @@ func (b *broker) subGet(msg *wamp.Invocation) wamp.Message {
 		return &wamp.Error{
 			Type:    msg.MessageType(),
 			Request: msg.Request,
-			Details: wamp.Dict{},
+			Details: emptyDict,
 			Error:   wamp.ErrNoSuchSubscription,
 		}
 	}
@@ -781,7 +781,7 @@ func (b *broker) subListSubscribers(msg *wamp.Invocation) wamp.Message {
 		return &wamp.Error{
 			Type:    msg.MessageType(),
 			Request: msg.Request,
-			Details: wamp.Dict{},
+			Details: emptyDict,
 			Error:   wamp.ErrNoSuchSubscription,
 		}
 	}
@@ -815,7 +815,7 @@ func (b *broker) subCountSubscribers(msg *wamp.Invocation) wamp.Message {
 		return &wamp.Error{
 			Type:    msg.MessageType(),
 			Request: msg.Request,
-			Details: wamp.Dict{},
+			Details: emptyDict,
 			Error:   wamp.ErrNoSuchSession,
 		}
 	}

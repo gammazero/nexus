@@ -181,7 +181,7 @@ func (d *dealer) register(callee *wamp.Session, msg *wamp.Register) {
 			Request:   msg.Request,
 			Error:     wamp.ErrInvalidURI,
 			Arguments: wamp.List{errMsg},
-			Details:   wamp.Dict{},
+			Details:   emptyDict,
 		})
 		return
 	}
@@ -198,7 +198,7 @@ func (d *dealer) register(callee *wamp.Session, msg *wamp.Register) {
 			Request:   msg.Request,
 			Error:     wamp.ErrInvalidURI,
 			Arguments: wamp.List{errMsg},
-			Details:   wamp.Dict{},
+			Details:   emptyDict,
 		})
 		return
 	}
@@ -215,7 +215,7 @@ func (d *dealer) register(callee *wamp.Session, msg *wamp.Register) {
 			d.trySend(callee, &wamp.Error{
 				Type:    msg.MessageType(),
 				Request: msg.Request,
-				Details: wamp.Dict{},
+				Details: emptyDict,
 				Error:   wamp.ErrOptionDisallowedDiscloseMe,
 			})
 			return
@@ -297,7 +297,7 @@ func (d *dealer) cancel(caller *wamp.Session, msg *wamp.Cancel) {
 			Request:   msg.Request,
 			Error:     wamp.ErrInvalidArgument,
 			Arguments: wamp.List{fmt.Sprint("invalid cancel mode ", mode)},
-			Details:   wamp.Dict{},
+			Details:   emptyDict,
 		})
 		return
 	}
@@ -469,7 +469,7 @@ func (d *dealer) syncRegister(callee *wamp.Session, msg *wamp.Register, match, i
 			d.trySend(callee, &wamp.Error{
 				Type:    msg.MessageType(),
 				Request: msg.Request,
-				Details: wamp.Dict{},
+				Details: emptyDict,
 				Error:   wamp.ErrProcedureAlreadyExists,
 			})
 			return metaPubs
@@ -484,7 +484,7 @@ func (d *dealer) syncRegister(callee *wamp.Session, msg *wamp.Register, match, i
 			d.trySend(callee, &wamp.Error{
 				Type:    msg.MessageType(),
 				Request: msg.Request,
-				Details: wamp.Dict{},
+				Details: emptyDict,
 				Error:   wamp.ErrProcedureAlreadyExists,
 			})
 			return metaPubs
@@ -542,7 +542,7 @@ func (d *dealer) syncUnregister(callee *wamp.Session, msg *wamp.Unregister) []*w
 		d.trySend(callee, &wamp.Error{
 			Type:    msg.MessageType(),
 			Request: msg.Request,
-			Details: wamp.Dict{},
+			Details: emptyDict,
 			Error:   wamp.ErrNoSuchRegistration,
 		})
 		return metaPubs
@@ -625,7 +625,7 @@ func (d *dealer) syncCall(caller *wamp.Session, msg *wamp.Call) {
 		d.trySend(caller, &wamp.Error{
 			Type:    msg.MessageType(),
 			Request: msg.Request,
-			Details: wamp.Dict{},
+			Details: emptyDict,
 			Error:   wamp.ErrNoSuchProcedure,
 		})
 		return
@@ -696,7 +696,7 @@ func (d *dealer) syncCall(caller *wamp.Session, msg *wamp.Call) {
 				d.trySend(caller, &wamp.Error{
 					Type:    msg.MessageType(),
 					Request: msg.Request,
-					Details: wamp.Dict{},
+					Details: emptyDict,
 					Error:   wamp.ErrOptionDisallowedDiscloseMe,
 				})
 				return
@@ -752,7 +752,7 @@ func (d *dealer) syncCall(caller *wamp.Session, msg *wamp.Call) {
 		d.syncError(&wamp.Error{
 			Type:      wamp.INVOCATION,
 			Request:   invocationID,
-			Details:   wamp.Dict{},
+			Details:   emptyDict,
 			Error:     wamp.ErrNetworkFailure,
 			Arguments: wamp.List{"callee blocked - cannot call procedure"},
 		})
@@ -867,7 +867,7 @@ func (d *dealer) syncCancel(caller *wamp.Session, msg *wamp.Cancel, mode string,
 		Type:    wamp.CALL,
 		Request: msg.Request,
 		Error:   reason,
-		Details: wamp.Dict{},
+		Details: emptyDict,
 	}
 	if len(errArgs) != 0 {
 		errMsg.Arguments = errArgs
@@ -918,13 +918,13 @@ func (d *dealer) syncYield(callee *wamp.Session, msg *wamp.Yield, canRetry bool)
 	// Find caller for this result.
 	caller, ok := d.calls[callID]
 
-	details := wamp.Dict{}
-
+	var details wamp.Dict
 	var keepInvocation bool
 	if progress {
 		// If this is a progressive response, then set progress=true.
-		details[wamp.OptProgress] = true
+		details = wamp.Dict{wamp.OptProgress: true}
 	} else {
+		details = emptyDict
 		// Stop any call timeout timer.
 		if invk.timerCancel != nil {
 			invk.timerCancel()
@@ -1267,7 +1267,7 @@ func (d *dealer) regGet(msg *wamp.Invocation) wamp.Message {
 		return &wamp.Error{
 			Type:    msg.MessageType(),
 			Request: msg.Request,
-			Details: wamp.Dict{},
+			Details: emptyDict,
 			Error:   wamp.ErrNoSuchRegistration,
 		}
 	}
@@ -1300,7 +1300,7 @@ func (d *dealer) regListCallees(msg *wamp.Invocation) wamp.Message {
 		return &wamp.Error{
 			Type:    msg.MessageType(),
 			Request: msg.Request,
-			Details: wamp.Dict{},
+			Details: emptyDict,
 			Error:   wamp.ErrNoSuchRegistration,
 		}
 	}
@@ -1334,7 +1334,7 @@ func (d *dealer) regCountCallees(msg *wamp.Invocation) wamp.Message {
 		return &wamp.Error{
 			Type:    msg.MessageType(),
 			Request: msg.Request,
-			Details: wamp.Dict{},
+			Details: emptyDict,
 			Error:   wamp.ErrNoSuchRegistration,
 		}
 	}

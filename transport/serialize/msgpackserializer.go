@@ -28,8 +28,7 @@ type MessagePackSerializer struct{}
 // Serialize encodes a Message into a msgpack payload.
 func (s *MessagePackSerializer) Serialize(msg wamp.Message) ([]byte, error) {
 	var b []byte
-	return b, codec.NewEncoderBytes(&b, mh).Encode(
-		msgToList(msg))
+	return b, codec.NewEncoderBytes(&b, mh).Encode(msgToList(msg))
 }
 
 // Deserialize decodes a msgpack payload into a Message.
