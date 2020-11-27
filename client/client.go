@@ -69,6 +69,8 @@ type InvokeResult struct {
 // the invocation was canceled.
 var InvocationCanceled = InvokeResult{Err: wamp.ErrCanceled}
 
+var emptyDict = wamp.Dict{}
+
 // NewClient takes a connected Peer, joins the realm specified in cfg, and if
 // successful, returns a new client.
 //
@@ -164,7 +166,7 @@ func (c *Client) Subscribe(topic string, fn EventHandler, options wamp.Dict) err
 	}
 
 	if options == nil {
-		options = wamp.Dict{}
+		options = emptyDict
 	}
 	id := c.idGen.Next()
 	c.expectReply(id)
@@ -302,7 +304,7 @@ func (c *Client) Publish(topic string, options wamp.Dict, args wamp.List, kwargs
 
 	var pubAck bool
 	if options == nil {
-		options = wamp.Dict{}
+		options = emptyDict
 	} else {
 		// Check if the client is asking for a PUBLISHED response.
 		pubAck, _ = options[wamp.OptAcknowledge].(bool)
@@ -376,7 +378,7 @@ func (c *Client) Register(procedure string, fn InvocationHandler, options wamp.D
 	id := c.idGen.Next()
 	c.expectReply(id)
 	if options == nil {
-		options = wamp.Dict{}
+		options = emptyDict
 	}
 	c.sess.Send(&wamp.Register{
 		Request:   id,
@@ -658,7 +660,7 @@ func (c *Client) Close() error {
 
 		var stopped bool
 		if c.sess.SendCtx(sendCtx, &wamp.Goodbye{
-			Details: wamp.Dict{},
+			Details: emptyDict,
 			Reason:  wamp.CloseRealm,
 		}) == nil {
 			// The router should respond with a GOODBYE message, which causes
@@ -1131,7 +1133,7 @@ func (c *Client) runHandleInvocation(msg *wamp.Invocation) {
 		c.sess.Send(&wamp.Error{
 			Type:      wamp.INVOCATION,
 			Request:   reqID,
-			Details:   wamp.Dict{},
+			Details:   emptyDict,
 			Error:     wamp.ErrInvalidArgument,
 			Arguments: wamp.List{errMsg},
 		})
@@ -1214,7 +1216,7 @@ func (c *Client) runHandleInvocation(msg *wamp.Invocation) {
 			c.sess.SendCtx(c.ctx, &wamp.Error{
 				Type:        wamp.INVOCATION,
 				Request:     reqID,
-				Details:     wamp.Dict{},
+				Details:     emptyDict,
 				Arguments:   result.Args,
 				ArgumentsKw: result.Kwargs,
 				Error:       result.Err,
@@ -1223,7 +1225,7 @@ func (c *Client) runHandleInvocation(msg *wamp.Invocation) {
 		}
 		c.sess.SendCtx(c.ctx, &wamp.Yield{
 			Request:     reqID,
-			Options:     wamp.Dict{},
+			Options:     emptyDict,
 			Arguments:   result.Args,
 			ArgumentsKw: result.Kwargs,
 		})
