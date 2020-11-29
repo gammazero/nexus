@@ -534,19 +534,18 @@ func (c *Client) Call(ctx context.Context, procedure string, options wamp.Dict, 
 		return nil, ErrNotConn
 	}
 
-	if options == nil {
-		options = wamp.Dict{}
-	}
-
 	// If caller is willing to receive progressive results, create a channel to
 	// receive these on.  Then, start a goroutine to receive progressive
 	// results and call the callback for each.
 	var progChan chan *wamp.Result
 	var progDone chan struct{}
 	if progcb != nil {
-		progChan = make(chan *wamp.Result)
+		if options == nil {
+			options = wamp.Dict{}
+		}
 		options[wamp.OptReceiveProgress] = true
 
+		progChan = make(chan *wamp.Result)
 		progDone = make(chan struct{})
 		go func() {
 			for result := range progChan {
@@ -554,6 +553,8 @@ func (c *Client) Call(ctx context.Context, procedure string, options wamp.Dict, 
 			}
 			close(progDone)
 		}()
+	} else if options == nil {
+		options = emptyDict
 	}
 
 	id := c.idGen.Next()
@@ -892,9 +893,11 @@ func unexpectedMsgError(msg wamp.Message, expected wamp.MessageType) error {
 		extra = append(extra, reason)
 	}
 	if len(details) != 0 {
-		var ds []string
+		ds := make([]string, len(details))
+		var i int
 		for k, v := range details {
-			ds = append(ds, fmt.Sprintf("%s=%v", k, v))
+			ds[i] = fmt.Sprintf("%s=%v", k, v)
+			i++
 		}
 		extra = append(extra, strings.Join(ds, " "))
 	}
