@@ -129,7 +129,7 @@ func (b *broker) publish(pub *wamp.Session, msg *wamp.Publish) {
 			Request:   msg.Request,
 			Error:     wamp.ErrInvalidURI,
 			Arguments: wamp.List{errMsg},
-			Details:   emptyDict,
+			Details:   wamp.Dict{},
 		})
 		return
 	}
@@ -159,7 +159,7 @@ func (b *broker) publish(pub *wamp.Session, msg *wamp.Publish) {
 				b.trySend(pub, &wamp.Error{
 					Type:    msg.MessageType(),
 					Request: msg.Request,
-					Details: emptyDict,
+					Details: wamp.Dict{},
 					Error:   wamp.ErrOptionDisallowedDiscloseMe,
 				})
 			}
@@ -212,7 +212,7 @@ func (b *broker) subscribe(sub *wamp.Session, msg *wamp.Subscribe) {
 			Request:   msg.Request,
 			Error:     wamp.ErrInvalidURI,
 			Arguments: wamp.List{errMsg},
-			Details:   emptyDict,
+			Details:   wamp.Dict{},
 		})
 		return
 	}
@@ -383,7 +383,7 @@ func (b *broker) syncUnsubscribe(subscriber *wamp.Session, msg *wamp.Unsubscribe
 			Type:    msg.MessageType(),
 			Request: msg.Request,
 			Error:   wamp.ErrNoSuchSubscription,
-			Details: emptyDict,
+			Details: wamp.Dict{},
 		})
 		b.log.Println("Error unsubscribing: no such subscription", subID)
 		return
@@ -460,6 +460,8 @@ func (b *broker) syncRemoveSession(subscriber *wamp.Session) {
 // syncPubEvent sends an event to all subscribers that are not excluded from
 // receiving the event.
 func (b *broker) syncPubEvent(pub *wamp.Session, msg *wamp.Publish, pubID wamp.ID, sub *subscription, excludePublisher, sendTopic, disclose bool, filter PublishFilter) {
+	var events []*wamp.Event
+	var subs []*wamp.Session
 	for subscriber, _ := range sub.subscribers {
 		// Do not send event to publisher.
 		if subscriber == pub && excludePublisher {
@@ -481,31 +483,50 @@ func (b *broker) syncPubEvent(pub *wamp.Session, msg *wamp.Publish, pubID wamp.I
 			}
 		}
 
-		details := emptyDict
+		details := wamp.Dict{}
 
 		// If a subscription was established with a pattern-based matching
 		// policy, a Broker MUST supply the original PUBLISH.Topic as provided
 		// by the Publisher in EVENT.Details.topic|uri.
 		if sendTopic {
-			details = wamp.Dict{detailTopic: msg.Topic}
+			details[detailTopic] = msg.Topic
 		}
 
 		if disclose && subscriber.HasFeature(wamp.RoleSubscriber, wamp.FeaturePubIdent) {
-			if !sendTopic {
-				details = wamp.Dict{}
-			}
 			disclosePublisher(pub, details)
 		}
 
 		// TODO: Handle publication trust levels
 
-		b.trySend(subscriber, &wamp.Event{
+		events = append(events, &wamp.Event{
 			Publication:  pubID,
 			Subscription: sub.id,
-			Arguments:    msg.Arguments,
-			ArgumentsKw:  msg.ArgumentsKw,
 			Details:      details,
 		})
+		subs = append(subs, subscriber)
+	}
+	// If the same event is published to multiple clients, then make copies of
+	// the arguments.  This is necessary so that a change to the arguments by a
+	// local client does not affect the message sent to another client.
+	for i, event := range events {
+		if i == len(events)-1 {
+			// No copy needed for last event.
+			event.Arguments = msg.Arguments
+			event.ArgumentsKw = msg.ArgumentsKw
+		} else {
+			if len(msg.Arguments) != 0 {
+				event.Arguments = make([]interface{}, len(msg.Arguments))
+				copy(event.Arguments, msg.Arguments)
+			}
+			if len(msg.ArgumentsKw) != 0 {
+				event.ArgumentsKw = make(map[string]interface{}, len(msg.ArgumentsKw))
+				for k, v := range msg.ArgumentsKw {
+					event.ArgumentsKw[k] = v
+				}
+			}
+		}
+
+		b.trySend(subs[i], event)
 	}
 }
 
@@ -535,19 +556,6 @@ func (b *broker) syncPubMeta(metaTopic wamp.URI, sendMeta func(metaSub *subscrip
 func (b *broker) syncPubSubMeta(metaTopic wamp.URI, subSessID, subID wamp.ID) {
 	pubID := wamp.GlobalID() // create here so that it is same for all events
 	b.syncPubMeta(metaTopic, func(metaSub *subscription, sendTopic bool) {
-		if len(metaSub.subscribers) == 0 {
-			return
-		}
-		details := emptyDict
-		if sendTopic {
-			details = wamp.Dict{detailTopic: metaTopic}
-		}
-		event := &wamp.Event{
-			Publication:  pubID,
-			Subscription: metaSub.id,
-			Details:      details,
-			Arguments:    wamp.List{subSessID, subID},
-		}
 		for subscriber := range metaSub.subscribers {
 			// Do not send the meta event to the session that is causing the
 			// meta event to be generated.  This prevents useless events that
@@ -555,7 +563,18 @@ func (b *broker) syncPubSubMeta(metaTopic wamp.URI, subSessID, subID wamp.ID) {
 			if subscriber.ID == subSessID {
 				continue
 			}
-			b.trySend(subscriber, event)
+			// Need to send separate event message to each subscriber, since
+			// local clients could modify contents.
+			details := wamp.Dict{}
+			if sendTopic {
+				details[detailTopic] = metaTopic
+			}
+			b.trySend(subscriber, &wamp.Event{
+				Publication:  pubID,
+				Subscription: metaSub.id,
+				Details:      details,
+				Arguments:    wamp.List{subSessID, subID},
+			})
 		}
 	})
 }
@@ -567,34 +586,32 @@ func (b *broker) syncPubSubMeta(metaTopic wamp.URI, subSessID, subID wamp.ID) {
 func (b *broker) syncPubSubCreateMeta(topic wamp.URI, subSessID wamp.ID, sub *subscription) {
 	pubID := wamp.GlobalID() // create here so that it is same for all events
 	b.syncPubMeta(wamp.MetaEventSubOnCreate, func(metaSub *subscription, sendTopic bool) {
-		if len(metaSub.subscribers) == 0 {
-			return
-		}
-		details := emptyDict
-		if sendTopic {
-			details = wamp.Dict{detailTopic: wamp.MetaEventSubOnCreate}
-		}
-		subDetails := wamp.Dict{
-			"id":          sub.id,
-			"created":     sub.created,
-			"uri":         sub.topic,
-			wamp.OptMatch: sub.match,
-		}
-		event := &wamp.Event{
-			Publication:  pubID,
-			Subscription: metaSub.id,
-			Details:      details,
-			Arguments:    wamp.List{subSessID, subDetails},
-		}
-
 		for subscriber := range metaSub.subscribers {
+			details := wamp.Dict{}
+			if sendTopic {
+				details[detailTopic] = wamp.MetaEventSubOnCreate
+			}
+			subDetails := wamp.Dict{
+				"id":          sub.id,
+				"created":     sub.created,
+				"uri":         sub.topic,
+				wamp.OptMatch: sub.match,
+			}
+
 			// Do not send the meta event to the session that is causing the
 			// meta event to be generated.  This prevents useless events that
 			// could lead to race conditions on the client.
 			if subscriber.ID == subSessID {
 				continue
 			}
-			b.trySend(subscriber, event)
+			// Need to send separate event message to each subscriber, since
+			// local clients could modify contents.
+			b.trySend(subscriber, &wamp.Event{
+				Publication:  pubID,
+				Subscription: metaSub.id,
+				Details:      details,
+				Arguments:    wamp.List{subSessID, subDetails},
+			})
 		}
 	})
 }
@@ -752,7 +769,7 @@ func (b *broker) subGet(msg *wamp.Invocation) wamp.Message {
 		return &wamp.Error{
 			Type:    msg.MessageType(),
 			Request: msg.Request,
-			Details: emptyDict,
+			Details: wamp.Dict{},
 			Error:   wamp.ErrNoSuchSubscription,
 		}
 	}
@@ -787,7 +804,7 @@ func (b *broker) subListSubscribers(msg *wamp.Invocation) wamp.Message {
 		return &wamp.Error{
 			Type:    msg.MessageType(),
 			Request: msg.Request,
-			Details: emptyDict,
+			Details: wamp.Dict{},
 			Error:   wamp.ErrNoSuchSubscription,
 		}
 	}
@@ -821,7 +838,7 @@ func (b *broker) subCountSubscribers(msg *wamp.Invocation) wamp.Message {
 		return &wamp.Error{
 			Type:    msg.MessageType(),
 			Request: msg.Request,
-			Details: emptyDict,
+			Details: wamp.Dict{},
 			Error:   wamp.ErrNoSuchSession,
 		}
 	}
