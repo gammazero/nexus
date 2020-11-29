@@ -134,14 +134,15 @@ func (b *broker) publish(pub *wamp.Session, msg *wamp.Publish) {
 		return
 	}
 
-	// The check that publisher announced support for publisher_exclusion is omitted here as it is assumed that if a publisher is asking for this then it
-
 	excludePub := true
 	if exclude, ok := msg.Options[wamp.OptExcludeMe].(bool); ok {
 		if !pub.HasFeature(wamp.RolePublisher, wamp.FeaturePubExclusion) {
 			b.log.Println(wamp.RolePublisher, "included", wamp.OptExcludeMe,
 				"option but did not announce support for",
 				wamp.FeaturePubExclusion)
+			// Do not return error here, even though published did not announce
+			// for publisher_exclusion.  Assume that publisher supports it
+			// since specify option that requires it.
 		}
 		excludePub = exclude
 	}
@@ -480,7 +481,7 @@ func (b *broker) syncPubEvent(pub *wamp.Session, msg *wamp.Publish, pubID wamp.I
 			}
 		}
 
-		details := wamp.Dict{}
+		details := emptyDict
 
 		// If a subscription was established with a pattern-based matching
 		// policy, a Broker MUST supply the original PUBLISH.Topic as provided
@@ -490,6 +491,9 @@ func (b *broker) syncPubEvent(pub *wamp.Session, msg *wamp.Publish, pubID wamp.I
 		}
 
 		if disclose && subscriber.HasFeature(wamp.RoleSubscriber, wamp.FeaturePubIdent) {
+			if !sendTopic {
+				details = wamp.Dict{}
+			}
 			disclosePublisher(pub, details)
 		}
 
@@ -538,6 +542,12 @@ func (b *broker) syncPubSubMeta(metaTopic wamp.URI, subSessID, subID wamp.ID) {
 		if sendTopic {
 			details = wamp.Dict{detailTopic: metaTopic}
 		}
+		event := &wamp.Event{
+			Publication:  pubID,
+			Subscription: metaSub.id,
+			Details:      details,
+			Arguments:    wamp.List{subSessID, subID},
+		}
 		for subscriber := range metaSub.subscribers {
 			// Do not send the meta event to the session that is causing the
 			// meta event to be generated.  This prevents useless events that
@@ -545,12 +555,7 @@ func (b *broker) syncPubSubMeta(metaTopic wamp.URI, subSessID, subID wamp.ID) {
 			if subscriber.ID == subSessID {
 				continue
 			}
-			b.trySend(subscriber, &wamp.Event{
-				Publication:  pubID,
-				Subscription: metaSub.id,
-				Details:      details,
-				Arguments:    wamp.List{subSessID, subID},
-			})
+			b.trySend(subscriber, event)
 		}
 	})
 }
@@ -575,6 +580,12 @@ func (b *broker) syncPubSubCreateMeta(topic wamp.URI, subSessID wamp.ID, sub *su
 			"uri":         sub.topic,
 			wamp.OptMatch: sub.match,
 		}
+		event := &wamp.Event{
+			Publication:  pubID,
+			Subscription: metaSub.id,
+			Details:      details,
+			Arguments:    wamp.List{subSessID, subDetails},
+		}
 
 		for subscriber := range metaSub.subscribers {
 			// Do not send the meta event to the session that is causing the
@@ -583,12 +594,7 @@ func (b *broker) syncPubSubCreateMeta(topic wamp.URI, subSessID wamp.ID, sub *su
 			if subscriber.ID == subSessID {
 				continue
 			}
-			b.trySend(subscriber, &wamp.Event{
-				Publication:  pubID,
-				Subscription: metaSub.id,
-				Details:      details,
-				Arguments:    wamp.List{subSessID, subDetails},
-			})
+			b.trySend(subscriber, event)
 		}
 	})
 }

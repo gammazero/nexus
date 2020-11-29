@@ -317,9 +317,11 @@ func (d *dealer) yield(callee *wamp.Session, msg *wamp.Yield) {
 		panic("dealer.Yield with nil session or message")
 	}
 	var again bool
+	progress, _ := msg.Options[wamp.OptProgress].(bool)
+
 	done := make(chan struct{})
 	d.actionChan <- func() {
-		again = d.syncYield(callee, msg, true)
+		again = d.syncYield(callee, msg, progress, true)
 		done <- struct{}{}
 	}
 	<-done
@@ -340,7 +342,7 @@ func (d *dealer) yield(callee *wamp.Session, msg *wamp.Yield) {
 				retry = false
 			}
 			d.actionChan <- func() {
-				again = d.syncYield(callee, msg, retry)
+				again = d.syncYield(callee, msg, progress, retry)
 				done <- struct{}{}
 			}
 			<-done
@@ -760,7 +762,7 @@ func (d *dealer) syncCall(caller *wamp.Session, msg *wamp.Call) {
 	}
 
 	if timeout != 0 {
-		// Context removed timer if canceled, or cancels call on timeout.
+		// Timer removed if context canceled, call cancelled if timeout.
 		var timerCtx context.Context
 		timerCtx, invk.timerCancel = context.WithTimeout(context.Background(),
 			time.Duration(timeout)*time.Millisecond)
@@ -877,9 +879,7 @@ func (d *dealer) syncCancel(caller *wamp.Session, msg *wamp.Cancel, mode string,
 	d.trySend(caller, errMsg)
 }
 
-func (d *dealer) syncYield(callee *wamp.Session, msg *wamp.Yield, canRetry bool) bool {
-	progress, _ := msg.Options[wamp.OptProgress].(bool)
-
+func (d *dealer) syncYield(callee *wamp.Session, msg *wamp.Yield, progress, canRetry bool) bool {
 	// Find and delete pending invocation.
 	invk, ok := d.invocations[msg.Request]
 	if !ok {
@@ -1028,12 +1028,14 @@ func (d *dealer) syncRemoveSession(sess *wamp.Session) []*wamp.Publish {
 			continue
 		}
 
+		args := wamp.List{sess.ID, regID}
+
 		// Publish wamp.registration.on_unregister meta event.  Fired when a
 		// callee session is removed from a registration.
 		metaPubs = append(metaPubs, &wamp.Publish{
 			Request:   wamp.GlobalID(),
 			Topic:     wamp.MetaEventRegOnUnregister,
-			Arguments: wamp.List{sess.ID, regID},
+			Arguments: args,
 		})
 
 		if !delReg {
@@ -1046,7 +1048,7 @@ func (d *dealer) syncRemoveSession(sess *wamp.Session) []*wamp.Publish {
 		metaPubs = append(metaPubs, &wamp.Publish{
 			Request:   wamp.GlobalID(),
 			Topic:     wamp.MetaEventRegOnDelete,
-			Arguments: wamp.List{sess.ID, regID},
+			Arguments: args,
 		})
 	}
 	delete(d.calleeRegIDSet, sess)
