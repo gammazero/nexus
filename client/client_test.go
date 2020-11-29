@@ -23,6 +23,11 @@ import (
 const (
 	testRealm   = "nexus.test"
 	testAddress = "localhost:8999"
+
+	testRealm2 = "nexus.test2"
+
+	testTopic  = "test.topic1"
+	testTopic2 = "test.topic2"
 )
 
 var logger stdlog.StdLog
@@ -69,26 +74,49 @@ func connectedTestClients() (*Client, *Client, router.Router, error) {
 	return c1, c2, r, nil
 }
 
-func newTestClient(r router.Router) (*Client, error) {
-	cfg := Config{
-		Realm:           testRealm,
-		ResponseTimeout: 500 * time.Millisecond,
-		Logger:          logger,
-		Debug:           false,
-	}
-	return ConnectLocal(r, cfg)
-}
+type realmConfigMutator func(*router.RealmConfig)
 
-func TestJoinRealm(t *testing.T) {
-	defer leaktest.Check(t)()
-
+func newTestRealmConfig(realmName string, fns ...realmConfigMutator) *router.RealmConfig {
 	realmConfig := &router.RealmConfig{
-		URI:              wamp.URI(testRealm),
+		URI:              wamp.URI(realmName),
 		StrictURI:        true,
 		AnonymousAuth:    true,
 		AllowDisclose:    true,
 		RequireLocalAuth: true,
 	}
+	for _, fn := range fns {
+		fn(realmConfig)
+	}
+	return realmConfig
+}
+
+type clientConfigMutator func(*Config)
+
+func newTestClientConfig(realmName string, fns ...clientConfigMutator) *Config {
+	clientConfig := &Config{
+		Realm:           realmName,
+		ResponseTimeout: 500 * time.Millisecond,
+		Logger:          logger,
+		Debug:           false,
+	}
+	for _, fn := range fns {
+		fn(clientConfig)
+	}
+	return clientConfig
+}
+
+func newTestClientWithConfig(r router.Router, clientConfig *Config) (*Client, error) {
+	return ConnectLocal(r, *clientConfig)
+}
+
+func newTestClient(r router.Router) (*Client, error) {
+	return newTestClientWithConfig(r, newTestClientConfig(testRealm))
+}
+
+func TestJoinRealm(t *testing.T) {
+	defer leaktest.Check(t)()
+
+	realmConfig := newTestRealmConfig(testRealm)
 	r, err := getTestRouter(realmConfig)
 	if err != nil {
 		t.Fatal(err)
@@ -101,7 +129,7 @@ func TestJoinRealm(t *testing.T) {
 	}
 
 	if client.ID() == wamp.ID(0) {
-		t.Fatal("Invalid client ID")
+		t.Fatalf("Expected non-0 client id, saw %q", client.ID())
 	}
 
 	realmInfo := client.RealmDetails()
@@ -701,39 +729,50 @@ func TestConnectContext(t *testing.T) {
 	}
 }
 
-func createTestServer() (router.Router, io.Closer, error) {
-	realmConfig := &router.RealmConfig{
-		URI:            wamp.URI(testRealm),
+func createTestRealmConfig(t *testing.T, realmName string) *router.RealmConfig {
+	realmConfig := router.RealmConfig{
+		URI:            wamp.URI(realmName),
 		StrictURI:      true,
 		AnonymousAuth:  true,
 		AllowDisclose:  true,
 		EnableMetaKill: true,
 	}
+	return &realmConfig
+}
+
+func createTestServerWithConfig(t *testing.T, realmConfig *router.RealmConfig, addr string) (router.Router, io.Closer, error) {
 	r, err := getTestRouter(realmConfig)
 	if err != nil {
 		return nil, nil, err
 	}
 
 	// Create and run server.
-	closer, err := router.NewWebsocketServer(r).ListenAndServe(testAddress)
+	closer, err := router.NewWebsocketServer(r).ListenAndServe(addr)
 	if err != nil {
 		log.Fatal(err)
 	}
-	log.Printf("Websocket server listening on ws://%s/", testAddress)
+	log.Printf("Websocket server listening on ws://%s/", addr)
 
 	return r, closer, nil
 }
 
-func newNetTestCallee(routerURL string) (*Client, error) {
-	logger := log.New(os.Stderr, "CALLEE> ", log.Lmicroseconds)
-	cfg := Config{
-		Realm:           testRealm,
+func createTestServer(t *testing.T) (router.Router, io.Closer, error) {
+	return createTestServerWithConfig(t, createTestRealmConfig(t, testRealm), testAddress)
+}
+
+func newNetTestClientConfig(realmName string, logger *log.Logger) *Config {
+	clientConfig := Config{
+		Realm:           realmName,
 		ResponseTimeout: 10 * time.Millisecond,
 		Serialization:   MSGPACK,
 		Logger:          logger,
 		Debug:           true,
 	}
-	cl, err := ConnectNet(context.Background(), routerURL, cfg)
+	return &clientConfig
+}
+
+func newNetTestCalleeWithConfig(routerURL string, clientConfig *Config) (*Client, error) {
+	cl, err := ConnectNet(context.Background(), routerURL, *clientConfig)
 	if err != nil {
 		return nil, fmt.Errorf("connect error: %s", err)
 	}
@@ -757,17 +796,16 @@ func newNetTestCallee(routerURL string) (*Client, error) {
 	return cl, nil
 }
 
-func newNetTestKiller(routerURL string) (*Client, error) {
-	logger := log.New(os.Stderr, "KILLER> ", log.Lmicroseconds)
+func newNetTestCallee(routerURL string) (*Client, error) {
+	return newNetTestCalleeWithConfig(
+		routerURL,
+		newNetTestClientConfig(testRealm, log.New(os.Stderr, "CALLEE> ", log.Lmicroseconds)),
+	)
+}
 
-	cfg := Config{
-		Realm:           testRealm,
-		ResponseTimeout: 10 * time.Second,
-		Serialization:   MSGPACK,
-		Logger:          logger,
-		Debug:           true,
-	}
-	cl, err := ConnectNet(context.Background(), routerURL, cfg)
+func newNetTestKillerWithConfig(t *testing.T, routerURL string, clientConfig *Config) (*Client, error) {
+	logger := clientConfig.Logger
+	cl, err := ConnectNet(context.Background(), routerURL, *clientConfig)
 	if err != nil {
 		return nil, err
 	}
@@ -802,23 +840,31 @@ func newNetTestKiller(routerURL string) (*Client, error) {
 	// Subscribe to on_join topic.
 	err = cl.Subscribe(string(wamp.MetaEventSessionOnJoin), onJoin, nil)
 	if err != nil {
-		logger.Fatal("subscribe error:", err)
+		t.Fatalf("subscribe error: %v", err)
 	}
 	logger.Println("Subscribed to", wamp.MetaEventSessionOnJoin)
 
 	return cl, nil
 }
 
+func newNetTestKiller(t *testing.T, routerURL string) (*Client, error) {
+	return newNetTestKillerWithConfig(
+		t,
+		routerURL,
+		newNetTestClientConfig(testRealm, log.New(os.Stderr, "KILLER> ", log.Lmicroseconds)),
+	)
+}
+
 // Test for races in client when session is killed by router.
 func TestClientRace(t *testing.T) {
 	// Create a websocket server
-	r, closer, err := createTestServer()
+	r, closer, err := createTestServer(t)
 	if err != nil {
 		t.Fatal("failed to connect test clients:", err)
 	}
 
 	testUrl := fmt.Sprintf("ws://%s/ws", testAddress)
-	killer, err := newNetTestKiller(testUrl)
+	killer, err := newNetTestKiller(t, testUrl)
 	if err != nil {
 		t.Fatal("failed to connect caller:", err)
 	}
@@ -902,7 +948,7 @@ func TestProgressDisconnect(t *testing.T) {
 	defer leaktest.Check(t)()
 
 	// Create a websocket server
-	r, closer, err := createTestServer()
+	r, closer, err := createTestServer(t)
 	if err != nil {
 		t.Fatal("failed to connect test clients:", err)
 	}
@@ -987,4 +1033,81 @@ func TestProgressDisconnect(t *testing.T) {
 	if err != context.Canceled && err != ErrNotConn {
 		t.Fatalf("wrong error from SendProgress: %s", err)
 	}
+}
+
+type testEmptyDictLeakAuthorizer struct {
+}
+
+func (*testEmptyDictLeakAuthorizer) Authorize(sess *wamp.Session, message wamp.Message) (bool, error) {
+	var (
+		subMsg *wamp.Subscribe
+		ok     bool
+	)
+	if subMsg, ok = message.(*wamp.Subscribe); !ok {
+		panic(fmt.Sprintf("I can only handle %T, saw %T", subMsg, message))
+	}
+	if v, ok := subMsg.Options["leaktest"]; ok {
+		panic(fmt.Sprintf("leaktest should be empty, saw %v", v))
+	}
+	subMsg.Options["leaktest"] = "oops"
+	return true, nil
+}
+
+func TestEmptyDictLeak(t *testing.T) {
+	defer leaktest.Check(t)()
+
+	// realm configs
+	realm1Config := newTestRealmConfig(testRealm, func(config *router.RealmConfig) {
+		config.Authorizer = new(testEmptyDictLeakAuthorizer)
+		config.RequireLocalAuthz = true
+	})
+	realm2Config := newTestRealmConfig(testRealm2, func(config *router.RealmConfig) {
+		config.Authorizer = new(testEmptyDictLeakAuthorizer)
+		config.RequireLocalAuthz = true
+	})
+
+	// client configs
+	client1Config := newTestClientConfig(testRealm)
+	client2Config := newTestClientConfig(testRealm2)
+
+	// construct routers
+	router1, err := getTestRouter(realm1Config)
+	if err != nil {
+		t.Fatal(err)
+	}
+	router2, err := getTestRouter(realm2Config)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	// create local clients to each realm
+	client1, err := newTestClientWithConfig(router1, client1Config)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if client1.ID() == wamp.ID(0) {
+		t.Fatalf("Expected non-0 client id, saw %q", client1.ID())
+	}
+	client2, err := newTestClientWithConfig(router2, client2Config)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if client2.ID() == wamp.ID(0) {
+		t.Fatalf("Expected non-0 client id, saw %q", client2.ID())
+	}
+
+	// subscribe to topics in each realm and test for leak
+	err = client1.Subscribe(testTopic, func(*wamp.Event) {}, nil)
+	if err != nil {
+		t.Fatalf("Error during subscribe: %v", err)
+	}
+	err = client2.Subscribe(testTopic2, func(*wamp.Event) {}, nil)
+	if err != nil {
+		t.Fatalf("Error during subscribe: %v", err)
+	}
+
+	client1.Close()
+	client2.Close()
+	router1.Close()
+	router2.Close()
 }
