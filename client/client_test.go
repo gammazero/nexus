@@ -1135,8 +1135,6 @@ func TestEventContentSafety(t *testing.T) {
 	errChan := make(chan error)
 	gate := make(chan struct{}, 1)
 	eventHandler := func(event *wamp.Event) {
-		fmt.Println("before")
-		defer fmt.Println("after")
 		gate <- struct{}{}
 		_, ok := event.Details["oops"]
 		if ok {
@@ -1155,6 +1153,7 @@ func TestEventContentSafety(t *testing.T) {
 			<-gate
 			return
 		}
+
 		event.Details["oops"] = true
 		event.Arguments[0] = "oops"
 		errChan <- nil

@@ -30,6 +30,8 @@ func (p *testPeer) SendCtx(ctx context.Context, msg Message) error {
 func (p *testPeer) Recv() <-chan Message { return p.in }
 func (p *testPeer) Close()               { close(p.in) }
 
+func (p *testPeer) IsLocal() bool { return true }
+
 func TestRecvTimeout(t *testing.T) {
 	p := newTestPeer()
 	msg, err := RecvTimeout(p, time.Millisecond)

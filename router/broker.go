@@ -460,8 +460,6 @@ func (b *broker) syncRemoveSession(subscriber *wamp.Session) {
 // syncPubEvent sends an event to all subscribers that are not excluded from
 // receiving the event.
 func (b *broker) syncPubEvent(pub *wamp.Session, msg *wamp.Publish, pubID wamp.ID, sub *subscription, excludePublisher, sendTopic, disclose bool, filter PublishFilter) {
-	var events []*wamp.Event
-	var subs []*wamp.Session
 	for subscriber, _ := range sub.subscribers {
 		// Do not send event to publisher.
 		if subscriber == pub && excludePublisher {
@@ -483,50 +481,40 @@ func (b *broker) syncPubEvent(pub *wamp.Session, msg *wamp.Publish, pubID wamp.I
 			}
 		}
 
-		details := wamp.Dict{}
+		// TODO: Handle publication trust levels
 
+		event := &wamp.Event{
+			Publication:  pubID,
+			Subscription: sub.id,
+			Arguments:    msg.Arguments,
+			ArgumentsKw:  msg.ArgumentsKw,
+			Details:      wamp.Dict{},
+		}
 		// If a subscription was established with a pattern-based matching
 		// policy, a Broker MUST supply the original PUBLISH.Topic as provided
 		// by the Publisher in EVENT.Details.topic|uri.
 		if sendTopic {
-			details[detailTopic] = msg.Topic
+			event.Details[detailTopic] = msg.Topic
 		}
-
 		if disclose && subscriber.HasFeature(wamp.RoleSubscriber, wamp.FeaturePubIdent) {
-			disclosePublisher(pub, details)
+			disclosePublisher(pub, event.Details)
 		}
 
-		// TODO: Handle publication trust levels
-
-		events = append(events, &wamp.Event{
-			Publication:  pubID,
-			Subscription: sub.id,
-			Details:      details,
-		})
-		subs = append(subs, subscriber)
-	}
-	// If the same event is published to multiple clients, then make copies of
-	// the arguments.  This is necessary so that a change to the arguments by a
-	// local client does not affect the message sent to another client.
-	for i, event := range events {
-		if i == len(events)-1 {
-			// No copy needed for last event.
-			event.Arguments = msg.Arguments
-			event.ArgumentsKw = msg.ArgumentsKw
-		} else {
+		if subscriber.Peer.IsLocal() {
 			if len(msg.Arguments) != 0 {
 				event.Arguments = make([]interface{}, len(msg.Arguments))
 				copy(event.Arguments, msg.Arguments)
 			}
 			if len(msg.ArgumentsKw) != 0 {
-				event.ArgumentsKw = make(map[string]interface{}, len(msg.ArgumentsKw))
+				argsKw := make(map[string]interface{}, len(msg.ArgumentsKw))
 				for k, v := range msg.ArgumentsKw {
-					event.ArgumentsKw[k] = v
+					argsKw[k] = v
 				}
+				event.ArgumentsKw = argsKw
 			}
 		}
 
-		b.trySend(subs[i], event)
+		b.trySend(subscriber, event)
 	}
 }
 
@@ -556,6 +544,20 @@ func (b *broker) syncPubMeta(metaTopic wamp.URI, sendMeta func(metaSub *subscrip
 func (b *broker) syncPubSubMeta(metaTopic wamp.URI, subSessID, subID wamp.ID) {
 	pubID := wamp.GlobalID() // create here so that it is same for all events
 	b.syncPubMeta(metaTopic, func(metaSub *subscription, sendTopic bool) {
+		makeEvent := func() *wamp.Event {
+			evt := &wamp.Event{
+				Publication:  pubID,
+				Subscription: metaSub.id,
+				Details:      wamp.Dict{},
+				Arguments:    wamp.List{subSessID, subID},
+			}
+			if sendTopic {
+				evt.Details[detailTopic] = metaTopic
+			}
+			return evt
+		}
+		var event *wamp.Event
+
 		for subscriber := range metaSub.subscribers {
 			// Do not send the meta event to the session that is causing the
 			// meta event to be generated.  This prevents useless events that
@@ -563,18 +565,18 @@ func (b *broker) syncPubSubMeta(metaTopic wamp.URI, subSessID, subID wamp.ID) {
 			if subscriber.ID == subSessID {
 				continue
 			}
-			// Need to send separate event message to each subscriber, since
-			// local clients could modify contents.
-			details := wamp.Dict{}
-			if sendTopic {
-				details[detailTopic] = metaTopic
+
+			// Need to send separate event message to each local subscriber,
+			// since local clients could modify contents.
+			if subscriber.Peer.IsLocal() {
+				b.trySend(subscriber, makeEvent())
+				continue
 			}
-			b.trySend(subscriber, &wamp.Event{
-				Publication:  pubID,
-				Subscription: metaSub.id,
-				Details:      details,
-				Arguments:    wamp.List{subSessID, subID},
-			})
+
+			if event == nil {
+				event = makeEvent()
+			}
+			b.trySend(subscriber, event)
 		}
 	})
 }
@@ -586,32 +588,47 @@ func (b *broker) syncPubSubMeta(metaTopic wamp.URI, subSessID, subID wamp.ID) {
 func (b *broker) syncPubSubCreateMeta(topic wamp.URI, subSessID wamp.ID, sub *subscription) {
 	pubID := wamp.GlobalID() // create here so that it is same for all events
 	b.syncPubMeta(wamp.MetaEventSubOnCreate, func(metaSub *subscription, sendTopic bool) {
-		for subscriber := range metaSub.subscribers {
-			details := wamp.Dict{}
+		makeEvent := func() *wamp.Event {
+			evt := &wamp.Event{
+				Publication:  pubID,
+				Subscription: metaSub.id,
+				Details:      wamp.Dict{},
+				Arguments: wamp.List{
+					subSessID,
+					wamp.Dict{
+						"id":          sub.id,
+						"created":     sub.created,
+						"uri":         sub.topic,
+						wamp.OptMatch: sub.match,
+					},
+				},
+			}
 			if sendTopic {
-				details[detailTopic] = wamp.MetaEventSubOnCreate
+				evt.Details[detailTopic] = wamp.MetaEventSubOnCreate
 			}
-			subDetails := wamp.Dict{
-				"id":          sub.id,
-				"created":     sub.created,
-				"uri":         sub.topic,
-				wamp.OptMatch: sub.match,
-			}
+			return evt
+		}
+		var event *wamp.Event
 
+		for subscriber := range metaSub.subscribers {
 			// Do not send the meta event to the session that is causing the
 			// meta event to be generated.  This prevents useless events that
 			// could lead to race conditions on the client.
 			if subscriber.ID == subSessID {
 				continue
 			}
-			// Need to send separate event message to each subscriber, since
-			// local clients could modify contents.
-			b.trySend(subscriber, &wamp.Event{
-				Publication:  pubID,
-				Subscription: metaSub.id,
-				Details:      details,
-				Arguments:    wamp.List{subSessID, subDetails},
-			})
+
+			// Need to send separate event message to each locsl subscriber,
+			// since local clients could modify contents.
+			if subscriber.Peer.IsLocal() {
+				b.trySend(subscriber, makeEvent())
+				continue
+			}
+
+			if event == nil {
+				event = makeEvent()
+			}
+			b.trySend(subscriber, event)
 		}
 	})
 }

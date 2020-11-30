@@ -23,6 +23,9 @@ type Peer interface {
 
 	// Recv returns a channel of messages from the peer.
 	Recv() <-chan Message
+
+	// IsLocal returns true if the session is local.
+	IsLocal() bool
 }
 
 // RecvTimeout receives a message from a peer within the specified time.

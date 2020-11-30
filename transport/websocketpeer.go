@@ -223,6 +223,8 @@ func (w *websocketPeer) Send(msg wamp.Message) error {
 	return wamp.SendCtx(w.ctxSender, w.wr, msg)
 }
 
+func (w *websocketPeer) IsLocal() bool { return false }
+
 // Close closes the websocket peer.  This closes the local send channel, and
 // sends a close control message to the websocket to tell the other side to
 // close.
