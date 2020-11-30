@@ -69,8 +69,6 @@ type InvokeResult struct {
 // the invocation was canceled.
 var InvocationCanceled = InvokeResult{Err: wamp.ErrCanceled}
 
-var emptyDict = wamp.Dict{}
-
 // NewClient takes a connected Peer, joins the realm specified in cfg, and if
 // successful, returns a new client.
 //
@@ -166,7 +164,7 @@ func (c *Client) Subscribe(topic string, fn EventHandler, options wamp.Dict) err
 	}
 
 	if options == nil {
-		options = emptyDict
+		options = wamp.Dict{}
 	}
 	id := c.idGen.Next()
 	c.expectReply(id)
@@ -304,7 +302,7 @@ func (c *Client) Publish(topic string, options wamp.Dict, args wamp.List, kwargs
 
 	var pubAck bool
 	if options == nil {
-		options = emptyDict
+		options = wamp.Dict{}
 	} else {
 		// Check if the client is asking for a PUBLISHED response.
 		pubAck, _ = options[wamp.OptAcknowledge].(bool)
@@ -378,7 +376,7 @@ func (c *Client) Register(procedure string, fn InvocationHandler, options wamp.D
 	id := c.idGen.Next()
 	c.expectReply(id)
 	if options == nil {
-		options = emptyDict
+		options = wamp.Dict{}
 	}
 	c.sess.Send(&wamp.Register{
 		Request:   id,
@@ -534,17 +532,17 @@ func (c *Client) Call(ctx context.Context, procedure string, options wamp.Dict, 
 		return nil, ErrNotConn
 	}
 
+	if options == nil {
+		options = wamp.Dict{}
+	}
+
 	// If caller is willing to receive progressive results, create a channel to
 	// receive these on.  Then, start a goroutine to receive progressive
 	// results and call the callback for each.
 	var progChan chan *wamp.Result
 	var progDone chan struct{}
 	if progcb != nil {
-		if options == nil {
-			options = wamp.Dict{}
-		}
 		options[wamp.OptReceiveProgress] = true
-
 		progChan = make(chan *wamp.Result)
 		progDone = make(chan struct{})
 		go func() {
@@ -553,8 +551,6 @@ func (c *Client) Call(ctx context.Context, procedure string, options wamp.Dict, 
 			}
 			close(progDone)
 		}()
-	} else if options == nil {
-		options = emptyDict
 	}
 
 	id := c.idGen.Next()
@@ -661,7 +657,7 @@ func (c *Client) Close() error {
 
 		var stopped bool
 		if c.sess.SendCtx(sendCtx, &wamp.Goodbye{
-			Details: emptyDict,
+			Details: wamp.Dict{},
 			Reason:  wamp.CloseRealm,
 		}) == nil {
 			// The router should respond with a GOODBYE message, which causes
@@ -1136,7 +1132,7 @@ func (c *Client) runHandleInvocation(msg *wamp.Invocation) {
 		c.sess.Send(&wamp.Error{
 			Type:      wamp.INVOCATION,
 			Request:   reqID,
-			Details:   emptyDict,
+			Details:   wamp.Dict{},
 			Error:     wamp.ErrInvalidArgument,
 			Arguments: wamp.List{errMsg},
 		})
@@ -1219,7 +1215,7 @@ func (c *Client) runHandleInvocation(msg *wamp.Invocation) {
 			c.sess.SendCtx(c.ctx, &wamp.Error{
 				Type:        wamp.INVOCATION,
 				Request:     reqID,
-				Details:     emptyDict,
+				Details:     wamp.Dict{},
 				Arguments:   result.Args,
 				ArgumentsKw: result.Kwargs,
 				Error:       result.Err,
@@ -1228,7 +1224,7 @@ func (c *Client) runHandleInvocation(msg *wamp.Invocation) {
 		}
 		c.sess.SendCtx(c.ctx, &wamp.Yield{
 			Request:     reqID,
-			Options:     emptyDict,
+			Options:     wamp.Dict{},
 			Arguments:   result.Args,
 			ArgumentsKw: result.Kwargs,
 		})

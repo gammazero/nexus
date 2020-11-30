@@ -1043,6 +1043,9 @@ func (*testEmptyDictLeakAuthorizer) Authorize(sess *wamp.Session, message wamp.M
 		subMsg *wamp.Subscribe
 		ok     bool
 	)
+	if _, ok = message.(*wamp.Goodbye); ok {
+		return true, nil
+	}
 	if subMsg, ok = message.(*wamp.Subscribe); !ok {
 		panic(fmt.Sprintf("I can only handle %T, saw %T", subMsg, message))
 	}
@@ -1110,4 +1113,73 @@ func TestEmptyDictLeak(t *testing.T) {
 	client2.Close()
 	router1.Close()
 	router2.Close()
+}
+
+func TestEventContentSafety(t *testing.T) {
+	defer leaktest.Check(t)()
+
+	// Connect two subscribers and one publisher to router
+	sub1, sub2, r, err := connectedTestClients()
+	if err != nil {
+		t.Fatal("failed to connect subscribers clients:", err)
+	}
+	defer sub1.Close()
+	defer sub2.Close()
+	defer r.Close()
+	pub, err := newTestClient(r)
+	if err != nil {
+		t.Fatal("failed to connect published client:", err)
+	}
+	defer pub.Close()
+
+	errChan := make(chan error)
+	gate := make(chan struct{}, 1)
+	eventHandler := func(event *wamp.Event) {
+		gate <- struct{}{}
+		_, ok := event.Details["oops"]
+		if ok {
+			errChan <- errors.New("should not have seen oops")
+			<-gate
+			return
+		}
+		arg, ok := event.Arguments[0].(string)
+		if !ok {
+			errChan <- errors.New("arg was not strings")
+			<-gate
+			return
+		}
+		if arg != "Hello" {
+			errChan <- fmt.Errorf("expected \"Hello\", got %q", arg)
+			<-gate
+			return
+		}
+
+		event.Details["oops"] = true
+		event.Arguments[0] = "oops"
+		errChan <- nil
+		<-gate
+	}
+
+	// Expect invalid URI error if not setting match option.
+	if err = sub1.Subscribe(testTopic, eventHandler, nil); err != nil {
+		t.Fatal(err)
+	}
+	if err = sub2.Subscribe(testTopic, eventHandler, nil); err != nil {
+		t.Fatal(err)
+	}
+
+	if err = pub.Publish(testTopic, nil, wamp.List{"Hello"}, nil); err != nil {
+		t.Fatal("Failed to publish:", err)
+	}
+
+	for i := 0; i < 2; i++ {
+		select {
+		case err = <-errChan:
+			if err != nil {
+				t.Fatal(err)
+			}
+		case <-time.After(3 * time.Second):
+			t.Fatal("did not get published event")
+		}
+	}
 }

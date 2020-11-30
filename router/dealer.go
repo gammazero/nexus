@@ -181,7 +181,7 @@ func (d *dealer) register(callee *wamp.Session, msg *wamp.Register) {
 			Request:   msg.Request,
 			Error:     wamp.ErrInvalidURI,
 			Arguments: wamp.List{errMsg},
-			Details:   emptyDict,
+			Details:   wamp.Dict{},
 		})
 		return
 	}
@@ -198,7 +198,7 @@ func (d *dealer) register(callee *wamp.Session, msg *wamp.Register) {
 			Request:   msg.Request,
 			Error:     wamp.ErrInvalidURI,
 			Arguments: wamp.List{errMsg},
-			Details:   emptyDict,
+			Details:   wamp.Dict{},
 		})
 		return
 	}
@@ -215,7 +215,7 @@ func (d *dealer) register(callee *wamp.Session, msg *wamp.Register) {
 			d.trySend(callee, &wamp.Error{
 				Type:    msg.MessageType(),
 				Request: msg.Request,
-				Details: emptyDict,
+				Details: wamp.Dict{},
 				Error:   wamp.ErrOptionDisallowedDiscloseMe,
 			})
 			return
@@ -297,7 +297,7 @@ func (d *dealer) cancel(caller *wamp.Session, msg *wamp.Cancel) {
 			Request:   msg.Request,
 			Error:     wamp.ErrInvalidArgument,
 			Arguments: wamp.List{fmt.Sprint("invalid cancel mode ", mode)},
-			Details:   emptyDict,
+			Details:   wamp.Dict{},
 		})
 		return
 	}
@@ -471,7 +471,7 @@ func (d *dealer) syncRegister(callee *wamp.Session, msg *wamp.Register, match, i
 			d.trySend(callee, &wamp.Error{
 				Type:    msg.MessageType(),
 				Request: msg.Request,
-				Details: emptyDict,
+				Details: wamp.Dict{},
 				Error:   wamp.ErrProcedureAlreadyExists,
 			})
 			return metaPubs
@@ -486,7 +486,7 @@ func (d *dealer) syncRegister(callee *wamp.Session, msg *wamp.Register, match, i
 			d.trySend(callee, &wamp.Error{
 				Type:    msg.MessageType(),
 				Request: msg.Request,
-				Details: emptyDict,
+				Details: wamp.Dict{},
 				Error:   wamp.ErrProcedureAlreadyExists,
 			})
 			return metaPubs
@@ -544,7 +544,7 @@ func (d *dealer) syncUnregister(callee *wamp.Session, msg *wamp.Unregister) []*w
 		d.trySend(callee, &wamp.Error{
 			Type:    msg.MessageType(),
 			Request: msg.Request,
-			Details: emptyDict,
+			Details: wamp.Dict{},
 			Error:   wamp.ErrNoSuchRegistration,
 		})
 		return metaPubs
@@ -627,7 +627,7 @@ func (d *dealer) syncCall(caller *wamp.Session, msg *wamp.Call) {
 		d.trySend(caller, &wamp.Error{
 			Type:    msg.MessageType(),
 			Request: msg.Request,
-			Details: emptyDict,
+			Details: wamp.Dict{},
 			Error:   wamp.ErrNoSuchProcedure,
 		})
 		return
@@ -698,7 +698,7 @@ func (d *dealer) syncCall(caller *wamp.Session, msg *wamp.Call) {
 				d.trySend(caller, &wamp.Error{
 					Type:    msg.MessageType(),
 					Request: msg.Request,
-					Details: emptyDict,
+					Details: wamp.Dict{},
 					Error:   wamp.ErrOptionDisallowedDiscloseMe,
 				})
 				return
@@ -754,7 +754,7 @@ func (d *dealer) syncCall(caller *wamp.Session, msg *wamp.Call) {
 		d.syncError(&wamp.Error{
 			Type:      wamp.INVOCATION,
 			Request:   invocationID,
-			Details:   emptyDict,
+			Details:   wamp.Dict{},
 			Error:     wamp.ErrNetworkFailure,
 			Arguments: wamp.List{"callee blocked - cannot call procedure"},
 		})
@@ -869,7 +869,7 @@ func (d *dealer) syncCancel(caller *wamp.Session, msg *wamp.Cancel, mode string,
 		Type:    wamp.CALL,
 		Request: msg.Request,
 		Error:   reason,
-		Details: emptyDict,
+		Details: wamp.Dict{},
 	}
 	if len(errArgs) != 0 {
 		errMsg.Arguments = errArgs
@@ -918,13 +918,13 @@ func (d *dealer) syncYield(callee *wamp.Session, msg *wamp.Yield, progress, canR
 	// Find caller for this result.
 	caller, ok := d.calls[callID]
 
-	var details wamp.Dict
+	details := wamp.Dict{}
+
 	var keepInvocation bool
 	if progress {
 		// If this is a progressive response, then set progress=true.
-		details = wamp.Dict{wamp.OptProgress: true}
+		details[wamp.OptProgress] = true
 	} else {
-		details = emptyDict
 		// Stop any call timeout timer.
 		if invk.timerCancel != nil {
 			invk.timerCancel()
@@ -1028,14 +1028,12 @@ func (d *dealer) syncRemoveSession(sess *wamp.Session) []*wamp.Publish {
 			continue
 		}
 
-		args := wamp.List{sess.ID, regID}
-
 		// Publish wamp.registration.on_unregister meta event.  Fired when a
 		// callee session is removed from a registration.
 		metaPubs = append(metaPubs, &wamp.Publish{
 			Request:   wamp.GlobalID(),
 			Topic:     wamp.MetaEventRegOnUnregister,
-			Arguments: args,
+			Arguments: wamp.List{sess.ID, regID},
 		})
 
 		if !delReg {
@@ -1048,7 +1046,7 @@ func (d *dealer) syncRemoveSession(sess *wamp.Session) []*wamp.Publish {
 		metaPubs = append(metaPubs, &wamp.Publish{
 			Request:   wamp.GlobalID(),
 			Topic:     wamp.MetaEventRegOnDelete,
-			Arguments: args,
+			Arguments: wamp.List{sess.ID, regID},
 		})
 	}
 	delete(d.calleeRegIDSet, sess)
@@ -1269,7 +1267,7 @@ func (d *dealer) regGet(msg *wamp.Invocation) wamp.Message {
 		return &wamp.Error{
 			Type:    msg.MessageType(),
 			Request: msg.Request,
-			Details: emptyDict,
+			Details: wamp.Dict{},
 			Error:   wamp.ErrNoSuchRegistration,
 		}
 	}
@@ -1302,7 +1300,7 @@ func (d *dealer) regListCallees(msg *wamp.Invocation) wamp.Message {
 		return &wamp.Error{
 			Type:    msg.MessageType(),
 			Request: msg.Request,
-			Details: emptyDict,
+			Details: wamp.Dict{},
 			Error:   wamp.ErrNoSuchRegistration,
 		}
 	}
@@ -1336,7 +1334,7 @@ func (d *dealer) regCountCallees(msg *wamp.Invocation) wamp.Message {
 		return &wamp.Error{
 			Type:    msg.MessageType(),
 			Request: msg.Request,
-			Details: emptyDict,
+			Details: wamp.Dict{},
 			Error:   wamp.ErrNoSuchRegistration,
 		}
 	}

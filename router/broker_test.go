@@ -34,6 +34,8 @@ func (p *testPeer) SendCtx(ctx context.Context, msg wamp.Message) error {
 func (p *testPeer) Recv() <-chan wamp.Message { return p.in }
 func (p *testPeer) Close()                    { return }
 
+func (p *testPeer) IsLocal() bool { return true }
+
 func TestBasicSubscribe(t *testing.T) {
 	// Test subscribing to a topic.
 	broker := newBroker(logger, false, true, debug, nil)

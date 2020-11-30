@@ -41,18 +41,14 @@ func LinkedPeersQSize(queueSize int) (wamp.Peer, wamp.Peer) {
 	return c, r
 }
 
-// IsLocal returns true is the wamp.Peer is a localPeer.  These do not need
-// authentication since they are part of the same process.
-func IsLocal(p wamp.Peer) bool {
-	_, ok := p.(*localPeer)
-	return ok
-}
-
 // localPeer implements Peer
 type localPeer struct {
 	rd <-chan wamp.Message
 	wr chan<- wamp.Message
 }
+
+// IsLocal returns true is the wamp.Peer is a localPeer.
+func (p *localPeer) IsLocal() bool { return true }
 
 // Recv returns the channel this peer reads incoming messages from.
 func (p *localPeer) Recv() <-chan wamp.Message { return p.rd }
@@ -77,3 +73,10 @@ func (p *localPeer) Send(msg wamp.Message) error {
 // Close closes the outgoing channel, waking any readers waiting on data from
 // this peer.
 func (p *localPeer) Close() { close(p.wr) }
+
+// DEPRECATED
+// IsLocal returns true is the wamp.Peer is a localPeer.  These do not need
+// authentication since they are part of the same process.
+func IsLocal(p wamp.Peer) bool {
+	return p.IsLocal()
+}

@@ -186,6 +186,8 @@ func (rs *rawSocketPeer) Send(msg wamp.Message) error {
 	return wamp.SendCtx(rs.ctxSender, rs.wr, msg)
 }
 
+func (rs *rawSocketPeer) IsLocal() bool { return false }
+
 // Close closes the rawsocket peer.  This closes the local send channel, and
 // sends a close control message to the socket to tell the other side to
 // close.
