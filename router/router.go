@@ -104,7 +104,7 @@ func (r *router) logMemStats(interval time.Duration) {
 	for {
 		time.Sleep(interval)
 		runtime.ReadMemStats(&m)
-		r.log.Printf("MemStats: Alloc=%d Mallocs=%d Frees=%d NumGC=%d", m.Alloc, m.Mallocs, m.Frees, m.NumGC)
+		r.log.Printf("MemStats: Alloc=%d Mallocs=%d Frees=%d NumGC=%d HeapAlloc=%d", m.Alloc, m.Mallocs, m.Frees, m.NumGC, m.HeapAlloc)
 	}
 }
 
