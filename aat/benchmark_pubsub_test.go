@@ -1,6 +1,7 @@
 package aat
 
 import (
+	"fmt"
 	"sync"
 	"testing"
 
@@ -10,40 +11,12 @@ import (
 
 const benchMsgCount = 5
 
-func BenchmarkPub2Sub(b *testing.B) {
-	benchPubSub(2, b)
-}
-
-func BenchmarkPub4Sub(b *testing.B) {
-	benchPubSub(4, b)
-}
-
-func BenchmarkPub8Sub(b *testing.B) {
-	benchPubSub(4, b)
-}
-
-func BenchmarkPub16Sub(b *testing.B) {
-	benchPubSub(16, b)
-}
-
-func BenchmarkPub32Sub(b *testing.B) {
-	benchPubSub(32, b)
-}
-
-func BenchmarkPub64Sub(b *testing.B) {
-	benchPubSub(64, b)
-}
-
-func BenchmarkPub128Sub(b *testing.B) {
-	benchPubSub(128, b)
-}
-
-func BenchmarkPub256Sub(b *testing.B) {
-	benchPubSub(256, b)
-}
-
-func BenchmarkPub512Sub(b *testing.B) {
-	benchPubSub(512, b)
+func BenchmarkPubSub(b *testing.B) {
+	for i := 2; i <= 512; i <<= 1 {
+		b.Run(fmt.Sprintf("1Pub%03dSub", i), func(b *testing.B) {
+			benchPubSub(i, b)
+		})
+	}
 }
 
 func benchPubSub(subCount int, b *testing.B) {
