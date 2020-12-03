@@ -15,28 +15,72 @@ import (
 	"time"
 
 	"github.com/gammazero/nexus/v3/router"
+	"github.com/gammazero/nexus/v3/wamp"
 )
 
-func usage() {
-	fmt.Fprintf(os.Stderr, "usage: %s [-c nexus.json]\n", os.Args[0])
-}
-
 func main() {
-	var cfgFile string
-	var showVersion bool
-	fs := flag.NewFlagSet("nexus", flag.ExitOnError)
-	fs.StringVar(&cfgFile, "c", "etc/nexus.json", "Path to config file")
-	fs.BoolVar(&showVersion, "version", false, "print version")
-	fs.Usage = usage
-	if err := fs.Parse(os.Args[1:]); err != nil {
-		os.Exit(1)
-	}
+	var (
+		cfgFile, realm            string
+		wsAddr, tcpAddr, unixAddr string
+		showVersion, verbose      bool
+	)
+	flag.StringVar(&cfgFile, "c", "", "configuration file location")
+	flag.StringVar(&realm, "realm", "", "realm uri to use for first realm")
+
+	flag.StringVar(&wsAddr, "ws", "", "websocket address:port to listen on")
+	flag.StringVar(&tcpAddr, "tcp", "", "tcp address:port to listen on")
+	flag.StringVar(&unixAddr, "unix", "", "unix socket path to listen on")
+
+	flag.BoolVar(&showVersion, "version", false, "print version")
+	flag.BoolVar(&verbose, "verbose", false, "enable verbose logging")
+	flag.Parse()
+
 	if showVersion {
 		fmt.Println("version", router.Version)
 		os.Exit(0)
 	}
-	// Read config file.
-	conf := LoadConfig(cfgFile)
+
+	var conf *Config
+	if cfgFile == "" {
+		if wsAddr == "" && tcpAddr == "" && unixAddr == "" {
+			fmt.Fprintln(os.Stderr, "No servers configured")
+			fmt.Fprintln(os.Stderr, "Please provide at least one of:")
+			printFlags("c", "tcp", "unix", "ws")
+			os.Exit(1)
+		}
+		conf = new(Config)
+	} else {
+		// Read config file.
+		conf = LoadConfig(cfgFile)
+	}
+
+	if realm != "" {
+		if len(conf.Router.RealmConfigs) == 0 {
+			rc := &router.RealmConfig{
+				AllowDisclose: true,
+				AnonymousAuth: true,
+			}
+			conf.Router.RealmConfigs = append(conf.Router.RealmConfigs, rc)
+		}
+		conf.Router.RealmConfigs[0].URI = wamp.URI(realm)
+	} else if len(conf.Router.RealmConfigs) == 0 {
+		fmt.Fprintln(os.Stderr, "No realms configured")
+		fmt.Fprintln(os.Stderr, "Please provide one of:")
+		printFlags("c", "realm")
+		os.Exit(1)
+	}
+	if verbose {
+		conf.Router.Debug = true
+	}
+	if wsAddr != "" {
+		conf.WebSocket.Address = wsAddr
+	}
+	if tcpAddr != "" {
+		conf.RawSocket.TCPAddress = tcpAddr
+	}
+	if unixAddr != "" {
+		conf.RawSocket.UnixAddress = unixAddr
+	}
 
 	var logger *log.Logger
 	if conf.LogPath == "" {
@@ -107,7 +151,7 @@ func main() {
 			sockDesc = "websocket"
 		}
 		if err != nil {
-			logger.Print(err)
+			logger.Print("Cannot start websocket server: ", err)
 			os.Exit(1)
 		}
 		closers = append(closers, closer)
@@ -142,7 +186,7 @@ func main() {
 				sockDesc = "socket"
 			}
 			if err != nil {
-				logger.Print(err)
+				logger.Print("Cannot start TCP server: ", err)
 				os.Exit(1)
 			}
 			closers = append(closers, closer)
@@ -153,7 +197,7 @@ func main() {
 			// Run rawsocket Unix server.
 			closer, err := rss.ListenAndServe("unix", conf.RawSocket.UnixAddress)
 			if err != nil {
-				logger.Print(err)
+				logger.Print("Cannot start unix socket server: ", err)
 				os.Exit(1)
 			}
 			closers = append(closers, closer)
@@ -188,4 +232,14 @@ func main() {
 	}
 	r.Close()
 	close(exitChan)
+}
+
+func printFlags(flagNames ...string) {
+	for i := range flagNames {
+		f := flag.Lookup(flagNames[i])
+		if f == nil {
+			panic("no such flag: " + flagNames[i])
+		}
+		fmt.Fprintf(os.Stderr, "  -%s string\n\t%s\n", f.Name, f.Usage)
+	}
 }

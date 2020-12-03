@@ -729,35 +729,27 @@ func TestConnectContext(t *testing.T) {
 	}
 }
 
-func createTestRealmConfig(t *testing.T, realmName string) *router.RealmConfig {
-	realmConfig := router.RealmConfig{
-		URI:            wamp.URI(realmName),
+func createTestServer() (router.Router, io.Closer, error) {
+	realmConfig := &router.RealmConfig{
+		URI:            wamp.URI(testRealm),
 		StrictURI:      true,
 		AnonymousAuth:  true,
 		AllowDisclose:  true,
 		EnableMetaKill: true,
 	}
-	return &realmConfig
-}
-
-func createTestServerWithConfig(t *testing.T, realmConfig *router.RealmConfig, addr string) (router.Router, io.Closer, error) {
 	r, err := getTestRouter(realmConfig)
 	if err != nil {
 		return nil, nil, err
 	}
 
 	// Create and run server.
-	closer, err := router.NewWebsocketServer(r).ListenAndServe(addr)
+	closer, err := router.NewWebsocketServer(r).ListenAndServe(testAddress)
 	if err != nil {
-		log.Fatal(err)
+		return nil, nil, err
 	}
-	log.Printf("Websocket server listening on ws://%s/", addr)
+	log.Printf("Websocket server listening on ws://%s/", testAddress)
 
 	return r, closer, nil
-}
-
-func createTestServer(t *testing.T) (router.Router, io.Closer, error) {
-	return createTestServerWithConfig(t, createTestRealmConfig(t, testRealm), testAddress)
 }
 
 func newNetTestClientConfig(realmName string, logger *log.Logger) *Config {
@@ -858,7 +850,7 @@ func newNetTestKiller(t *testing.T, routerURL string) (*Client, error) {
 // Test for races in client when session is killed by router.
 func TestClientRace(t *testing.T) {
 	// Create a websocket server
-	r, closer, err := createTestServer(t)
+	r, closer, err := createTestServer()
 	if err != nil {
 		t.Fatal("failed to connect test clients:", err)
 	}
@@ -948,7 +940,7 @@ func TestProgressDisconnect(t *testing.T) {
 	defer leaktest.Check(t)()
 
 	// Create a websocket server
-	r, closer, err := createTestServer(t)
+	r, closer, err := createTestServer()
 	if err != nil {
 		t.Fatal("failed to connect test clients:", err)
 	}

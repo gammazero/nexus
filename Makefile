@@ -1,6 +1,6 @@
 SERVICE_DIR = nexusd
 
-.PHONY: all vet test service clean
+.PHONY: all vet test service clean install uninstall
 
 all: vet test service
 
@@ -36,11 +36,16 @@ benchmark:
 service: $(SERVICE_DIR)/nexusd
 
 $(SERVICE_DIR)/nexusd:
-	@cd $(SERVICE_DIR) && $(MAKE)
-	@echo "===> built $(SERVICE_DIR)/nexusd"
+	@$(MAKE) -C $(SERVICE_DIR)
+
+install: service
+	@$(MAKE) -C $(SERVICE_DIR) install
+
+uninstall:
+	@$(MAKE) -C $(SERVICE_DIR) uninstall
 
 clean:
-	@cd $(SERVICE_DIR) && $(MAKE) clean
+	@$(MAKE) -C $(SERVICE_DIR) clean
 	@rm -f $(SERVICE_DIR)/*.log
 	@GO111MODULE=off go clean ./...
 	@GO111MODULE=off go clean -cache

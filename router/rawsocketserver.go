@@ -38,7 +38,6 @@ func NewRawSocketServer(r Router) *RawSocketServer {
 func (s *RawSocketServer) ListenAndServe(network, address string) (io.Closer, error) {
 	l, err := net.Listen(network, address)
 	if err != nil {
-		s.router.Logger().Print(err)
 		return nil, err
 	}
 
@@ -71,7 +70,6 @@ func (s *RawSocketServer) ListenAndServeTLS(network, address string, tlscfg *tls
 
 	l, err := tls.Listen(network, address, tlscfg)
 	if err != nil {
-		s.router.Logger().Print(err)
 		return nil, err
 	}
 
