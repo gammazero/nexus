@@ -151,7 +151,7 @@ func main() {
 			sockDesc = "websocket"
 		}
 		if err != nil {
-			logger.Print("exit due to error")
+			logger.Print("Cannot start websocket server: ", err)
 			os.Exit(1)
 		}
 		closers = append(closers, closer)
@@ -186,7 +186,7 @@ func main() {
 				sockDesc = "socket"
 			}
 			if err != nil {
-				logger.Print("exit due to error")
+				logger.Print("Cannot start TCP server: ", err)
 				os.Exit(1)
 			}
 			closers = append(closers, closer)
@@ -197,7 +197,7 @@ func main() {
 			// Run rawsocket Unix server.
 			closer, err := rss.ListenAndServe("unix", conf.RawSocket.UnixAddress)
 			if err != nil {
-				logger.Print("exit due to error")
+				logger.Print("Cannot start unix socket server: ", err)
 				os.Exit(1)
 			}
 			closers = append(closers, closer)

@@ -227,7 +227,6 @@ func (s *WebsocketServer) ListenAndServe(address string) (io.Closer, error) {
 	// Call Listen separate from Serve to check for error listening.
 	l, err := net.Listen("tcp", address)
 	if err != nil {
-		s.router.Logger().Print(err)
 		return nil, err
 	}
 
@@ -266,7 +265,6 @@ func (s *WebsocketServer) ListenAndServeTLS(address string, tlscfg *tls.Config, 
 	// Call Listen separate from Serve to check for error listening.
 	l, err := net.Listen("tcp", address)
 	if err != nil {
-		s.router.Logger().Print(err)
 		return nil, err
 	}
 
