@@ -733,22 +733,16 @@ func (b *broker) subMatch(msg *wamp.Invocation) wamp.Message {
 			sync := make(chan struct{})
 			b.actionChan <- func() {
 				if sub, ok := b.topicSubscription[topic]; ok {
-					for subscriber := range sub.subscribers {
-						subIDs = append(subIDs, subscriber.ID)
-					}
+					subIDs = append(subIDs, sub.id)
 				}
 				for pfxTopic, sub := range b.pfxTopicSubscription {
 					if topic.PrefixMatch(pfxTopic) {
-						for subscriber := range sub.subscribers {
-							subIDs = append(subIDs, subscriber.ID)
-						}
+						subIDs = append(subIDs, sub.id)
 					}
 				}
 				for wcTopic, sub := range b.wcTopicSubscription {
 					if topic.WildcardMatch(wcTopic) {
-						for subscriber := range sub.subscribers {
-							subIDs = append(subIDs, subscriber.ID)
-						}
+						subIDs = append(subIDs, sub.id)
 					}
 				}
 				close(sync)

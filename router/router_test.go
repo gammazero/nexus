@@ -1008,9 +1008,10 @@ func TestSubscriptionMetaProcedures(t *testing.T) {
 		Options: wamp.Dict{"match": "wildcard"},
 	})
 	msg = <-subscriber.Recv()
-	if _, ok = msg.(*wamp.Subscribed); !ok {
+	if subscribed, ok = msg.(*wamp.Subscribed); !ok {
 		t.Fatal("expected SUBSCRIBED, got:", msg.MessageType())
 	}
+	wcSubscriptionID := subscribed.Subscription
 
 	// Call subscription meta-procedure to get subscriptions.
 	callID = wamp.GlobalID()
@@ -1114,6 +1115,12 @@ func TestSubscriptionMetaProcedures(t *testing.T) {
 	}
 	if len(subIDs) != 2 {
 		t.Error("expected 2 subscriptions for wamp.subscription.match, got", len(subIDs))
+	}
+	if subscriptionID != subIDs[0] && subscriptionID != subIDs[1] {
+		t.Fatal("did not match subscription ID")
+	}
+	if wcSubscriptionID != subIDs[0] && wcSubscriptionID != subIDs[1] {
+		t.Fatal("did not match wildcard subscription ID")
 	}
 
 	// ----- Test wamp.subscription.get meta procedure -----
