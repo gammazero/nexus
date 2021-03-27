@@ -7,6 +7,7 @@ package main
 import (
 	"flag"
 	"fmt"
+	"github.com/gammazero/nexus/v3/router/auth"
 	"io"
 	"log"
 	"os"
@@ -69,6 +70,21 @@ func main() {
 		printFlags("c", "realm")
 		os.Exit(1)
 	}
+
+	// TODO: need using flag for path
+	// build wamp-cra from json file
+	serverKeyStores := LoadWAMPCRAConfig("/home/andrew/nexus/nexusd/etc/auth.json")
+	var auths []auth.Authenticator
+
+	for _, ks := range serverKeyStores {
+		kstmp := ks
+		crAuth := auth.NewCRAuthenticator(&kstmp, time.Second)
+		auths = append(auths, crAuth)
+	}
+
+	conf.Router.RealmConfigs[0].Authenticators = auths
+
+
 	if verbose {
 		conf.Router.Debug = true
 	}
