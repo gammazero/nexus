@@ -52,6 +52,7 @@ type WebsocketConnection interface {
 	WriteMessage(messageType int, data []byte) error
 	ReadMessage() (messageType int, p []byte, err error)
 	SetPongHandler(h func(appData string) error)
+	SetPingHandler(h func(appData string) error)
 	Subprotocol() string
 }
 
@@ -255,6 +256,15 @@ func (w *websocketPeer) sendHandler() {
 	defer close(w.writerDone)
 	defer w.cancelSender()
 
+	pongs := make(chan string, 1) // capacity must be >= 1
+	w.conn.SetPingHandler(func(m string) error {
+		select {
+		case pongs <- m:
+		default:
+		}
+		return nil
+	})
+
 sendLoop:
 	for {
 		select {
@@ -271,6 +281,11 @@ sendLoop:
 				}
 				return
 			}
+		case m := <-pongs:
+			err := w.conn.WriteMessage(websocket.PongMessage, []byte(m))
+			if err != nil {
+				w.log.Print(err)
+			}
 		case <-w.ctxSender.Done():
 			return
 		}
@@ -280,6 +295,15 @@ sendLoop:
 func (w *websocketPeer) sendHandlerKeepAlive(keepAlive time.Duration) {
 	defer close(w.writerDone)
 	defer w.cancelSender()
+
+	pongs := make(chan string, 1) // capacity must be >= 1
+	w.conn.SetPingHandler(func(m string) error {
+		select {
+		case pongs <- m:
+		default:
+		}
+		return nil
+	})
 
 	var pendingPongs int32
 	w.conn.SetPongHandler(func(msg string) error {
@@ -322,6 +346,11 @@ recvLoop:
 				return
 			}
 			atomic.AddInt32(&pendingPongs, 1)
+		case m := <-pongs:
+			err := w.conn.WriteMessage(websocket.PongMessage, []byte(m))
+			if err != nil {
+				w.log.Print(err)
+			}
 		case <-senderDone:
 			return
 		}
