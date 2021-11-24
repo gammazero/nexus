@@ -132,7 +132,7 @@ func (r *router) AttachClient(client wamp.Peer, transportDetails wamp.Dict) erro
 		abortMsg := wamp.Abort{Reason: reason}
 		abortMsg.Details = wamp.Dict{}
 		if abortErr != nil {
-			abortMsg.Details["error"] = abortErr.Error()
+			abortMsg.Details[wamp.OptMessage] = abortErr.Error()
 			r.log.Println("Aborting client connection:", abortErr)
 		}
 		client.Send(&abortMsg) // Blocking OK; this is session goroutine.
