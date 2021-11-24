@@ -405,7 +405,7 @@ func (r *realm) handleSession(sess *wamp.Session) error {
 		if err != nil {
 			abortMsg := wamp.Abort{
 				Reason:  wamp.ErrProtocolViolation,
-				Details: wamp.Dict{"error": err.Error()},
+				Details: wamp.Dict{wamp.OptMessage: err.Error()},
 			}
 			r.log.Println("Aborting session", sess, ":", err)
 			sess.TrySend(&abortMsg)

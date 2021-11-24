@@ -820,7 +820,7 @@ func handleCRAuth(peer wamp.Peer, challenge *wamp.Challenge, authHandlers map[st
 	// If router sent back ABORT in response to client's authentication attempt
 	// return error.
 	if abort, ok := msg.(*wamp.Abort); ok {
-		authErr, _ := wamp.AsString(abort.Details[wamp.OptError])
+		authErr, _ := wamp.AsString(abort.Details[wamp.OptMessage])
 		if authErr == "" {
 			authErr = "authentication failed"
 		}
