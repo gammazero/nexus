@@ -2,6 +2,7 @@ package crsign
 
 import (
 	"crypto/sha256"
+	"encoding/base64"
 	"testing"
 
 	"github.com/gammazero/nexus/v3/wamp"
@@ -19,11 +20,14 @@ func TestCRSign(t *testing.T) {
 
 func TestRespondChallenge(t *testing.T) {
 	salt := []byte("salt123")
-	pass := "password"
+	secret := "password"
 
 	// Compute derived key.  Normally this would normally be precomputed and
 	// the router would read it and the salting from from storage.
-	dk := pbkdf2.Key([]byte(pass), salt, defaultIters, defaultKeyLen, sha256.New)
+	// Compute derived key.
+	dk := pbkdf2.Key([]byte(secret), salt, defaultIters, defaultKeyLen, sha256.New)
+	// Get base64 bytes of derived key.
+	derivedKey := []byte(base64.StdEncoding.EncodeToString(dk))
 
 	// Server creates CHALLENGE message containing challenge string and salting
 	// info that was used to create derived key.
@@ -38,17 +42,17 @@ func TestRespondChallenge(t *testing.T) {
 
 	// Client computes derived key from password and salting info, then signes
 	// challenge using derived key.  Response gets sent back to router.
-	sigClient := RespondChallenge(pass, chMsg, nil)
+	sigClient := RespondChallenge(secret, chMsg, nil)
 
 	// Router computes its own signature for the challenge and compares it with
 	// the client's.Sign challenge using derived key.
-	sigServer := SignChallenge(chStr, dk)
+	sigServer := SignChallenge(chStr, derivedKey)
 	if sigClient != sigServer {
 		t.Fatal("Client and server signatures do not match")
 	}
 
 	// Check that signature was what was expected.
-	if sigServer != "qczWyhq0mAtfNeqPCxorzlcz0t4jns97XBUHoTu2Brs=" {
+	if sigServer != "hk/2riA2JqydfL5wLoicrYfAt8uNeP6nikk9kqDhsnM=" {
 		t.Fatal("Wrong signature:", sigServer)
 	}
 }

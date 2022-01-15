@@ -72,7 +72,7 @@ const (
 //     }
 //     cli, err = client.ConnectNet(routerAddr, cfg)
 //
-func RespondChallenge(pass string, c *wamp.Challenge, h func() hash.Hash) string {
+func RespondChallenge(secret string, c *wamp.Challenge, h func() hash.Hash) string {
 	ch, _ := wamp.AsString(c.Extra["challenge"])
 	// If the client needed to lookup a user's key, this would require decoding
 	// the JSON-encoded challenge string and getting the authid.  For this
@@ -81,7 +81,7 @@ func RespondChallenge(pass string, c *wamp.Challenge, h func() hash.Hash) string
 	saltStr, _ := wamp.AsString(c.Extra["salt"])
 	// If no salt given, use raw password as key.
 	if saltStr == "" {
-		return SignChallenge(ch, []byte(pass))
+		return SignChallenge(ch, []byte(secret))
 	}
 
 	// If salting info give, then compute a derived key using PBKDF2.
@@ -98,9 +98,12 @@ func RespondChallenge(pass string, c *wamp.Challenge, h func() hash.Hash) string
 	if h == nil {
 		h = sha256.New
 	}
-	// Compute derived key.
-	dk := pbkdf2.Key([]byte(pass), salt, int(iters), int(keylen), h)
 
-	// Sign challenge using derived key.
-	return SignChallenge(ch, dk)
+	// Compute derived key.
+	dk := pbkdf2.Key([]byte(secret), salt, int(iters), int(keylen), sha256.New)
+	// Get base64 bytes of derived key.
+	derivedKey := []byte(base64.StdEncoding.EncodeToString(dk))
+
+	// Sign the challenge with the base64-encoded derived key.
+	return SignChallenge(ch, derivedKey)
 }

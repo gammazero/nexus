@@ -3,6 +3,7 @@ package aat
 import (
 	"context"
 	"crypto/sha256"
+	"encoding/base64"
 	"errors"
 	"fmt"
 	"net/http"
@@ -231,9 +232,10 @@ func (ks *serverKeyStore) AuthKey(authid, authmethod string) ([]byte, error) {
 	switch authmethod {
 	case "wampcra":
 		// Lookup the user's key.
-		pw := []byte(password)
+		secret := []byte(password)
 		salt := []byte(pwSalt)
-		return pbkdf2.Key(pw, salt, iterations, keylen, sha256.New), nil
+		dk := pbkdf2.Key([]byte(secret), salt, iterations, keylen, sha256.New)
+		return []byte(base64.StdEncoding.EncodeToString(dk)), nil
 	case "ticket":
 		// Lookup the user's key.
 		return []byte("ticketforjoe1234"), nil
