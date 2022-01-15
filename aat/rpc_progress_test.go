@@ -33,17 +33,17 @@ func TestRPCProgressiveCallResults(t *testing.T) {
 	handler := func(ctx context.Context, inv *wamp.Invocation) client.InvokeResult {
 		e := callee.SendProgress(ctx, wamp.List{"Alpha"}, nil)
 		if e != nil {
-			fmt.Println("Error sending Alpha progress:", e)
+			t.Log("Error sending Alpha progress:", e)
 		}
 
 		e = callee.SendProgress(ctx, wamp.List{"Bravo"}, nil)
 		if e != nil {
-			fmt.Println("Error sending Bravo progress:", e)
+			t.Log("Error sending Bravo progress:", e)
 		}
 
 		e = callee.SendProgress(ctx, wamp.List{"Charlie"}, nil)
 		if e != nil {
-			fmt.Println("Error sending Charlie progress:", e)
+			t.Log("Error sending Charlie progress:", e)
 		}
 
 		var sum int64
@@ -131,7 +131,7 @@ func TestRPCProgressiveCallInterrupt(t *testing.T) {
 		// Send a progressive result.  This should go through just fine.
 		e := callee.SendProgress(ctx, wamp.List{"Alpha"}, nil)
 		if e != nil {
-			fmt.Println("Error sending Alpha progress:", e)
+			t.Log("Error sending Alpha progress:", e)
 		}
 
 		// Give caller time to receive first message before closing.
@@ -144,7 +144,7 @@ func TestRPCProgressiveCallInterrupt(t *testing.T) {
 		// An error is not returned here, since the result was sent to dealer.
 		e = callee.SendProgress(ctx, wamp.List{"Bravo"}, nil)
 		if e != nil {
-			fmt.Println("Error sending Bravo progress:", e)
+			t.Log("Error sending Bravo progress:", e)
 		}
 
 		// This second result will cause the dealer to respond with INTERRUPT
@@ -152,7 +152,7 @@ func TestRPCProgressiveCallInterrupt(t *testing.T) {
 		// result.  If the result was sent to the dealer, then no error.
 		e = callee.SendProgress(ctx, wamp.List{"Charlie"}, nil)
 		if e != nil {
-			fmt.Println("Error sending progress:", e)
+			t.Log("Error sending progress:", e)
 		}
 
 		// Give time for this client to process INTERRUPTs.
@@ -197,7 +197,7 @@ func TestRPCProgressiveCallInterrupt(t *testing.T) {
 
 	progHandler := func(result *wamp.Result) {
 		arg := result.Arguments[0].(string)
-		fmt.Println("Caller received progress response:", arg)
+		t.Log("Caller received progress response:", arg)
 		select {
 		case callerKiller <- struct{}{}:
 		default:
@@ -329,9 +329,9 @@ func TestProgressStress(t *testing.T) {
 		// faster than the caller can process them.  The pause is long enough
 		// to ensure there are multiple retries.
 		//
-		// Pause on the 13th RESULT or every third call.
+		// Pause on the 13th RESULT of every third call.
 		if recvCount == 13 && result.Request%3 == 0 {
-			fmt.Println("Caller pausing to process", recvCount, "of result",
+			t.Log("Caller pausing to process result", recvCount, "of request",
 				result.Request)
 			time.Sleep(time.Millisecond * 250)
 		}
@@ -430,7 +430,7 @@ func TestRPCProgressiveCallTimeout(t *testing.T) {
 
 	progHandler := func(result *wamp.Result) {
 		arg := result.Arguments[0].(string)
-		fmt.Println("Caller received progress response:", arg)
+		t.Log("Caller received progress response:", arg)
 		select {
 		case gotProgRsp <- struct{}{}:
 		default:
