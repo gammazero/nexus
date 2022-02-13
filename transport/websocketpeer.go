@@ -90,7 +90,8 @@ type websocketPeer struct {
 
 	writerDone chan struct{}
 
-	log stdlog.StdLog
+	log              stdlog.StdLog
+	transportMetrics *TransportMetrics
 }
 
 const (
@@ -192,7 +193,8 @@ func NewWebsocketPeer(conn WebsocketConnection, serializer serialize.Serializer,
 		// messages to be put into an outbound queue that can grow.
 		wr: make(chan wamp.Message, outQueueSize),
 
-		log: logger,
+		log:              logger,
+		transportMetrics: NewTransportMetrics("websocket"),
 	}
 	w.ctxSender, w.cancelSender = context.WithCancel(context.Background())
 
@@ -250,6 +252,11 @@ func (w *websocketPeer) Close() {
 	w.conn.Close()
 }
 
+func (w *websocketPeer) WriteMessage(messageType int, msg []byte) error {
+	w.transportMetrics.CountOutgoing(len(msg))
+	return w.conn.WriteMessage(messageType, msg)
+}
+
 // sendHandler pulls messages from the write channel, and pushes them to the
 // websocket.
 func (w *websocketPeer) sendHandler() {
@@ -275,14 +282,14 @@ sendLoop:
 				continue sendLoop
 			}
 
-			if err = w.conn.WriteMessage(w.payloadType, b); err != nil {
+			if err = w.WriteMessage(w.payloadType, b); err != nil {
 				if !wamp.IsGoodbyeAck(msg) {
 					w.log.Print(err)
 				}
 				return
 			}
 		case m := <-pongs:
-			err := w.conn.WriteMessage(websocket.PongMessage, []byte(m))
+			err := w.WriteMessage(websocket.PongMessage, []byte(m))
 			if err != nil {
 				w.log.Print(err)
 			}
@@ -327,7 +334,7 @@ recvLoop:
 				continue recvLoop
 			}
 
-			if err = w.conn.WriteMessage(w.payloadType, b); err != nil {
+			if err = w.WriteMessage(w.payloadType, b); err != nil {
 				if !wamp.IsGoodbyeAck(msg) {
 					w.log.Print(err)
 				}
@@ -341,13 +348,13 @@ recvLoop:
 				return
 			}
 			// Send websocket ping.
-			err := w.conn.WriteMessage(websocket.PingMessage, pingMsg)
+			err := w.WriteMessage(websocket.PingMessage, pingMsg)
 			if err != nil {
 				return
 			}
 			atomic.AddInt32(&pendingPongs, 1)
 		case m := <-pongs:
-			err := w.conn.WriteMessage(websocket.PongMessage, []byte(m))
+			err := w.WriteMessage(websocket.PongMessage, []byte(m))
 			if err != nil {
 				w.log.Print(err)
 			}
@@ -387,6 +394,8 @@ func (w *websocketPeer) recvHandler() {
 			//w.log.Print(err)
 			return
 		}
+
+		w.transportMetrics.CountIncoming(len(b))
 
 		if msgType == websocket.CloseMessage {
 			return

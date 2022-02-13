@@ -9,6 +9,7 @@ import (
 	"fmt"
 	"io"
 	"log"
+	"net/http"
 	"os"
 	"os/signal"
 	"strings"
@@ -16,6 +17,7 @@ import (
 
 	"github.com/gammazero/nexus/v3/router"
 	"github.com/gammazero/nexus/v3/wamp"
+	"github.com/prometheus/client_golang/prometheus/promhttp"
 )
 
 func main() {
@@ -96,6 +98,19 @@ func main() {
 		}
 		defer f.Close()
 		logger = log.New(f, "", log.LstdFlags)
+	}
+
+	if conf.Metrics.Address != "" {
+		http.Handle("/metrics", promhttp.Handler())
+
+		go func() {
+			err := http.ListenAndServe(conf.Metrics.Address, nil)
+			if err != nil {
+				logger.Panicf("Could not start metrics server: %v", err)
+			}
+		}()
+
+		logger.Printf("Providing metrics endpoint on %v", conf.Metrics.Address)
 	}
 
 	// Create router and realms from config.

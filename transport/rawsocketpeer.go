@@ -36,7 +36,8 @@ type rawSocketPeer struct {
 
 	writerDone chan struct{}
 
-	log stdlog.StdLog
+	log              stdlog.StdLog
+	transportMetrics *TransportMetrics
 }
 
 const (
@@ -161,7 +162,8 @@ func newRawSocketPeer(conn net.Conn, serializer serialize.Serializer, logger std
 		// messages to be put into an outbound queue that can grow.
 		wr: make(chan wamp.Message, outQueueSize),
 
-		log: logger,
+		log:              logger,
+		transportMetrics: NewTransportMetrics("rawsocket"),
 	}
 	rs.ctxSender, rs.cancelSender = context.WithCancel(context.Background())
 
@@ -230,18 +232,23 @@ sendLoop:
 			}
 			lenBytes := intToBytes(len(b))
 			header := []byte{0x0, lenBytes[0], lenBytes[1], lenBytes[2]}
-			if _, err = rs.conn.Write(header); err != nil {
+			if _, err := rs.conn.Write(header); err != nil {
 				if !wamp.IsGoodbyeAck(msg) {
 					rs.log.Println("Error writing header:", err)
 				}
 				continue sendLoop
 			}
-			if _, err = rs.conn.Write(b); err != nil {
+
+			if _, err := rs.conn.Write(b); err != nil {
 				if !wamp.IsGoodbyeAck(msg) {
 					rs.log.Println("Error writing message:", msg, err)
 				}
 				continue sendLoop
 			}
+
+			// len(b) + Message Size header
+			rs.transportMetrics.CountOutgoing(len(b) + 4)
+
 		case <-senderDone:
 			return
 		}
@@ -282,6 +289,9 @@ MsgLoop:
 			rs.conn.Close()
 			break
 		}
+
+		// Parsed Packet Length + 4 Header Bytes
+		rs.transportMetrics.CountIncoming(length + 4)
 
 		var msg wamp.Message
 		switch header[0] & 0x07 {

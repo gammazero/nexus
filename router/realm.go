@@ -473,7 +473,6 @@ func (r *realm) handleInboundMessages(sess *wamp.Session) (bool, bool, error) {
 			r.broker.subscribe(sess, msg)
 		case *wamp.Unsubscribe:
 			r.broker.unsubscribe(sess, msg)
-
 		case *wamp.Register:
 			r.dealer.register(sess, msg)
 		case *wamp.Unregister:

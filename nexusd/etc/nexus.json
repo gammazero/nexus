@@ -15,6 +15,9 @@
         "cert_file": "",
         "key_file": ""
     },
+    "metrics": {
+        "address": ":9112"
+    },
     "log_path": "",
     "router": {
         "realms": [

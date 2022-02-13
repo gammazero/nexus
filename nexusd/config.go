@@ -49,6 +49,10 @@ type Config struct {
 		OutQueueSize int `json:"out_queue_size"`
 	}
 
+	Metrics struct {
+		Address string `json:"address"`
+	} `json:"metrics"`
+
 	// File to write log data to.  If not specified, log to stdout.
 	LogPath string `json:"log_path"`
 	// Router configuration parameters.
