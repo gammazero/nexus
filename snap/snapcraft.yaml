@@ -1,0 +1,37 @@
+name: nexus
+base: core20
+version: git
+summary: Full-feature WAMP v2 router and client written in Go
+description: |
+  nexus is a WAMP v2 router library, client library, and a router service,
+  that implements most of the features defined in the WAMP-protocol advanced profile.
+  The nexus project is written in Go and designed for highly concurrent asynchronous I/O.
+  The nexus router provides extended functionality. The router and client interoperate
+  with other WAMP implementations.
+
+architectures:
+  - build-on: amd64
+    run-on: amd64
+
+  - build-on: arm64
+    run-on: arm64
+
+grade: stable
+confinement: strict
+compression: lzo
+
+parts:
+  nexus:
+    plugin: go
+    source: .
+    prime:
+      - bin/nexusd
+
+apps:
+  nexus:
+    command: bin/nexusd
+    plugs:
+      - network
+      - network-bind
+      - home
+
