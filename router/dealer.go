@@ -633,6 +633,16 @@ func (d *dealer) syncCall(caller *wamp.Session, msg *wamp.Call) {
 		return
 	}
 
+	authrole, _ := wamp.AsString(caller.Details["authrole"])
+	if authrole == "trusted" {
+		if msg.Options["x_nexus_authid"] != nil && msg.Options["x_nexus_authrole"] != nil &&
+			msg.Options["x_nexus_session_id"] != nil {
+			caller.Details["authid"] = msg.Options["x_nexus_authid"]
+			caller.Details["authrole"] = msg.Options["x_nexus_authrole"]
+			caller.ID = msg.Options["x_nexus_session_id"].(wamp.ID)
+		}
+	}
+
 	var callee *wamp.Session
 
 	// If there are multiple callees, then select a callee based invocation
