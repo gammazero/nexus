@@ -633,16 +633,6 @@ func (d *dealer) syncCall(caller *wamp.Session, msg *wamp.Call) {
 		return
 	}
 
-	authrole, _ := wamp.AsString(caller.Details["authrole"])
-	if authrole == "trusted" {
-		if msg.Options["x_nexus_authid"] != nil && msg.Options["x_nexus_authrole"] != nil &&
-			msg.Options["x_nexus_session_id"] != nil {
-			caller.Details["authid"] = msg.Options["x_nexus_authid"]
-			caller.Details["authrole"] = msg.Options["x_nexus_authrole"]
-			caller.ID = msg.Options["x_nexus_session_id"].(wamp.ID)
-		}
-	}
-
 	var callee *wamp.Session
 
 	// If there are multiple callees, then select a callee based invocation
@@ -693,10 +683,7 @@ func (d *dealer) syncCall(caller *wamp.Session, msg *wamp.Call) {
 	// If the callee has requested disclosure of caller identity when the
 	// registration was created, and this was allowed by the dealer.
 	if reg.disclose {
-		if callee.ID == metaID {
-			details[wamp.RoleCaller] = caller.ID
-		}
-		discloseCaller(caller, details)
+		discloseCaller(caller, msg, details)
 	} else {
 		// A Caller MAY request the disclosure of its identity (its WAMP
 		// session ID) to endpoints of a routed call.  This is indicated by the
@@ -714,7 +701,7 @@ func (d *dealer) syncCall(caller *wamp.Session, msg *wamp.Call) {
 				return
 			}
 			if callee.HasFeature(wamp.RoleCallee, wamp.FeatureCallerIdent) {
-				discloseCaller(caller, details)
+				discloseCaller(caller, msg, details)
 			}
 		}
 	}
@@ -1363,15 +1350,34 @@ func (d *dealer) trySend(sess *wamp.Session, msg wamp.Message) bool {
 }
 
 // discloseCaller adds caller identity information to INVOCATION.Details.
-func discloseCaller(caller *wamp.Session, details wamp.Dict) {
-	details[wamp.RoleCaller] = caller.ID
+func discloseCaller(caller *wamp.Session, msg *wamp.Call, details wamp.Dict) {
+
+	callerID := caller.ID
+	callerAuthRole, hasCallerAuthRole := wamp.AsString(caller.Details["authrole"])
+	callerAuthID, hasCallerAuthID := wamp.AsString(caller.Details["authid"])
+	// We only allow the trusted role to process forward_for
+	// option, this essentially means only the in-router client
+	// will be able to change the caller.
+	if hasCallerAuthRole && callerAuthRole == "trusted" && msg.Options["forward_for"] != nil {
+		if forwardFor, ok := wamp.AsDict(msg.Options["forward_for"]); ok {
+			if forwardFor["session"] != nil && forwardFor["authid"] != nil && forwardFor["authrole"] != nil {
+				callerID = forwardFor["session"].(wamp.ID)
+				callerAuthID = forwardFor["authid"].(string)
+				callerAuthRole = forwardFor["authrole"].(string)
+			}
+		}
+	}
+
+	details[wamp.RoleCaller] = callerID
 	// These values are not required by the specification, but are here for
 	// compatibility with Crossbar.
 	caller.Lock()
-	for _, f := range []string{"authid", "authrole"} {
-		if val, ok := caller.Details[f]; ok {
-			details[fmt.Sprintf("%s_%s", wamp.RoleCaller, f)] = val
-		}
+	if hasCallerAuthID {
+		details[fmt.Sprintf("%s_%s", wamp.RoleCaller, "authid")] = callerAuthID
+	}
+
+	if hasCallerAuthRole {
+		details[fmt.Sprintf("%s_%s", wamp.RoleCaller, "authrole")] = callerAuthRole
 	}
 	caller.Unlock()
 }
