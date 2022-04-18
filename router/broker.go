@@ -497,7 +497,7 @@ func (b *broker) syncPubEvent(pub *wamp.Session, msg *wamp.Publish, pubID wamp.I
 			event.Details[detailTopic] = msg.Topic
 		}
 		if disclose && subscriber.HasFeature(wamp.RoleSubscriber, wamp.FeaturePubIdent) {
-			disclosePublisher(pub, event.Details)
+			disclosePublisher(pub, msg, event.Details)
 		}
 
 		if subscriber.Peer.IsLocal() {
@@ -642,15 +642,34 @@ func (b *broker) trySend(sess *wamp.Session, msg wamp.Message) bool {
 }
 
 // disclosePublisher adds publisher identity information to EVENT.Details.
-func disclosePublisher(pub *wamp.Session, details wamp.Dict) {
-	details[wamp.RolePublisher] = pub.ID
+func disclosePublisher(pub *wamp.Session, msg *wamp.Publish, details wamp.Dict) {
+	publisherID := pub.ID
+	publisherAuthRole, hasPublisherAuthRole := wamp.AsString(pub.Details["authrole"])
+	publisherAuthID, hasPublisherAuthID := wamp.AsString(pub.Details["authid"])
+	// We only allow the trusted role to process forward_for
+	// option, this essentially means only the in-router client
+	// will be able to change the publisher.
+	// This is useful to support eventual router-to-router links
+	if hasPublisherAuthRole && publisherAuthRole == "trusted" && msg.Options["forward_for"] != nil {
+		if forwardFor, ok := wamp.AsDict(msg.Options["forward_for"]); ok {
+			if forwardFor["session"] != nil && forwardFor["authid"] != nil && forwardFor["authrole"] != nil {
+				publisherID = forwardFor["session"].(wamp.ID)
+				publisherAuthID = forwardFor["authid"].(string)
+				publisherAuthRole = forwardFor["authrole"].(string)
+			}
+		}
+	}
+
+	details[wamp.RolePublisher] = publisherID
 	// These values are not required by the specification, but are here for
 	// compatibility with Crossbar.
 	pub.Lock()
-	for _, f := range []string{"authid", "authrole"} {
-		if val, ok := pub.Details[f]; ok {
-			details[fmt.Sprintf("%s_%s", wamp.RolePublisher, f)] = val
-		}
+	if hasPublisherAuthID {
+		details[fmt.Sprintf("%s_%s", wamp.RolePublisher, "authid")] = publisherAuthID
+	}
+
+	if hasPublisherAuthRole {
+		details[fmt.Sprintf("%s_%s", wamp.RolePublisher, "authrole")] = publisherAuthRole
 	}
 	pub.Unlock()
 }

@@ -1358,6 +1358,7 @@ func discloseCaller(caller *wamp.Session, msg *wamp.Call, details wamp.Dict) {
 	// We only allow the trusted role to process forward_for
 	// option, this essentially means only the in-router client
 	// will be able to change the caller.
+	// This is useful to support eventual router-to-router links
 	if hasCallerAuthRole && callerAuthRole == "trusted" && msg.Options["forward_for"] != nil {
 		if forwardFor, ok := wamp.AsDict(msg.Options["forward_for"]); ok {
 			if forwardFor["session"] != nil && forwardFor["authid"] != nil && forwardFor["authrole"] != nil {
