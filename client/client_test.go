@@ -691,7 +691,7 @@ func (ks *serverKeyStore) AuthRole(authid string) (string, error) {
 
 func TestConnectContext(t *testing.T) {
 	const (
-		expect     = "dial tcp: operation was canceled"
+		expect     = "dial tcp: lookup localhost: operation was canceled"
 		unixExpect = "dial unix /tmp/wamp.sock: operation was canceled"
 	)
 

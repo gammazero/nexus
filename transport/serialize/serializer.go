@@ -15,8 +15,9 @@ import (
 )
 
 const (
+	AUTO Serialization = iota
 	// Use JSON-encoded strings as a payload.
-	JSON Serialization = iota
+	JSON
 	// Use msgpack-encoded strings as a payload.
 	MSGPACK
 	// Use CBOR encoding as a payload
