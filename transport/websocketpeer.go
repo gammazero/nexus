@@ -112,30 +112,26 @@ const (
 // any expiration of the context will not affect the connection.
 func ConnectWebsocketPeer(ctx context.Context, routerURL string, serialization serialize.Serialization, tlsConfig *tls.Config, logger stdlog.StdLog, wsCfg *WebsocketConfig) (wamp.Peer, error) {
 	var (
-		protocol    string
+		protocols   []string
 		payloadType int
 		serializer  serialize.Serializer
 	)
 
 	switch serialization {
+	case serialize.AUTO:
+		protocols = []string{jsonWebsocketProtocol, cborWebsocketProtocol, msgpackWebsocketProtocol}
 	case serialize.JSON:
-		protocol = jsonWebsocketProtocol
-		payloadType = websocket.TextMessage
-		serializer = &serialize.JSONSerializer{}
+		protocols = []string{jsonWebsocketProtocol}
 	case serialize.MSGPACK:
-		protocol = msgpackWebsocketProtocol
-		payloadType = websocket.BinaryMessage
-		serializer = &serialize.MessagePackSerializer{}
+		protocols = []string{msgpackWebsocketProtocol}
 	case serialize.CBOR:
-		protocol = cborWebsocketProtocol
-		payloadType = websocket.BinaryMessage
-		serializer = &serialize.CBORSerializer{}
+		protocols = []string{cborWebsocketProtocol}
 	default:
 		return nil, fmt.Errorf("unsupported serialization: %v", serialization)
 	}
 
 	dialer := websocket.Dialer{
-		Subprotocols:    []string{protocol},
+		Subprotocols:    protocols,
 		TLSClientConfig: tlsConfig,
 		Proxy:           http.ProxyFromEnvironment,
 	}
@@ -163,6 +159,19 @@ func ConnectWebsocketPeer(ctx context.Context, routerURL string, serialization s
 			Response: rsp,
 		}
 	}
+
+	switch conn.Subprotocol() {
+	case jsonWebsocketProtocol:
+		payloadType = websocket.TextMessage
+		serializer = &serialize.JSONSerializer{}
+	case cborWebsocketProtocol:
+		payloadType = websocket.BinaryMessage
+		serializer = &serialize.CBORSerializer{}
+	case msgpackWebsocketProtocol:
+		payloadType = websocket.BinaryMessage
+		serializer = &serialize.MessagePackSerializer{}
+	}
+
 	return NewWebsocketPeer(conn, serializer, payloadType, logger, keepAlive, 0), nil
 }
 
