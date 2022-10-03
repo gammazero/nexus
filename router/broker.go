@@ -529,6 +529,13 @@ func (b *broker) syncPubEvent(pub *wamp.Session, msg *wamp.Publish, pubID wamp.I
 		}
 
 		if subscriber.Peer.IsLocal() {
+			if len(event.Details) != 0 {
+				options := make(map[string]interface{}, len(event.Details))
+				for k, v := range msg.Options {
+					options[k] = v
+				}
+				event.Details = options
+			}
 			if len(msg.Arguments) != 0 {
 				event.Arguments = make([]interface{}, len(msg.Arguments))
 				copy(event.Arguments, msg.Arguments)
