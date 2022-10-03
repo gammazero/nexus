@@ -535,7 +535,7 @@ func (b *broker) syncPubEvent(pub *wamp.Session, msg *wamp.Publish, pubID wamp.I
 			// it's empty
 			if event.Details != nil {
 				options := make(map[string]interface{}, len(event.Details))
-				for k, v := range msg.Options {
+				for k, v := range event.Details {
 					options[k] = v
 				}
 				event.Details = options
