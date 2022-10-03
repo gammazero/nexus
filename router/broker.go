@@ -529,18 +529,22 @@ func (b *broker) syncPubEvent(pub *wamp.Session, msg *wamp.Publish, pubID wamp.I
 		}
 
 		if subscriber.Peer.IsLocal() {
-			if len(event.Details) != 0 {
+			// the local handler may be lousy and may try to modify
+			// either of those fields, make sure that each event
+			// carries a copy of the respective structure, even if
+			// it's empty
+			if event.Details != nil {
 				options := make(map[string]interface{}, len(event.Details))
 				for k, v := range msg.Options {
 					options[k] = v
 				}
 				event.Details = options
 			}
-			if len(msg.Arguments) != 0 {
+			if msg.Arguments != nil {
 				event.Arguments = make([]interface{}, len(msg.Arguments))
 				copy(event.Arguments, msg.Arguments)
 			}
-			if len(msg.ArgumentsKw) != 0 {
+			if msg.ArgumentsKw != nil {
 				argsKw := make(map[string]interface{}, len(msg.ArgumentsKw))
 				for k, v := range msg.ArgumentsKw {
 					argsKw[k] = v
