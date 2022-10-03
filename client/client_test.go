@@ -1443,15 +1443,12 @@ func TestEventContentSafety(t *testing.T) {
 	gate := make(chan struct{}, 1)
 	eventHandler := func(event *wamp.Event) {
 		gate <- struct{}{}
-		// Commented out as localpeer transport is used for this test
-		// and messages are delivered through the channel, so both peers
-		// receives the same message and modifications are propagated to other peer
-		//_, ok := event.Details["oops"]
-		//if ok {
-		//	errChan <- errors.New("should not have seen oops")
-		//	<-gate
-		//	return
-		//}
+		_, ok := event.Details["oops"]
+		if ok {
+			errChan <- errors.New("should not have seen oops")
+			<-gate
+			return
+		}
 		arg, ok := event.Arguments[0].(string)
 		if !ok {
 			errChan <- errors.New("arg was not strings")
