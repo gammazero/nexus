@@ -1,6 +1,5 @@
 /*
 Simple example nexus WAMP router that handles websockets.
-
 */
 package main
 

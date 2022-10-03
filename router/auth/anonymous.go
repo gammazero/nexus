@@ -11,13 +11,13 @@ import (
 // To use anonymous authentication, supply an anstance of AnonymousAuth with
 // the AuthRole of choice to the RealmConfig:
 //
-//     RealmConfigs: []*router.RealmConfig{
-//         {
-//             Authenticators:  []auth.Authenticator{
-//                 &auth.AnonymousAuth{ AuthRole: "guest" },
-//             },
-//             ...
-//         },
+//	RealmConfigs: []*router.RealmConfig{
+//	    {
+//	        Authenticators:  []auth.Authenticator{
+//	            &auth.AnonymousAuth{ AuthRole: "guest" },
+//	        },
+//	        ...
+//	    },
 //
 // Or, set AnonymousAuth=ture in the RealmConfig and let the router create an
 // instance with the AuthRole of "anonymous".

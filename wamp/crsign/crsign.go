@@ -57,21 +57,20 @@ const (
 //
 // Example Client Use:
 //
-//     func clientCRAuthFunc(c *wamp.Challenge) (string, wamp.Dict) {
-//         // Get user password and return signature.
-//         password := AskUserPassoword()
-//         return RespondChallenge(password, c, nil), wamp.Dict{}
-//     }
+//	func clientCRAuthFunc(c *wamp.Challenge) (string, wamp.Dict) {
+//	    // Get user password and return signature.
+//	    password := AskUserPassoword()
+//	    return RespondChallenge(password, c, nil), wamp.Dict{}
+//	}
 //
-//     // Configure and create new client.
-//     cfg := client.Config{
-//         ...
-//         AuthHandlers: map[string]client.AuthFunc{
-//             "wampcra": clientCRAuthFunc,
-//         },
-//     }
-//     cli, err = client.ConnectNet(routerAddr, cfg)
-//
+//	// Configure and create new client.
+//	cfg := client.Config{
+//	    ...
+//	    AuthHandlers: map[string]client.AuthFunc{
+//	        "wampcra": clientCRAuthFunc,
+//	    },
+//	}
+//	cli, err = client.ConnectNet(routerAddr, cfg)
 func RespondChallenge(secret string, c *wamp.Challenge, h func() hash.Hash) string {
 	ch, _ := wamp.AsString(c.Extra["challenge"])
 	// If the client needed to lookup a user's key, this would require decoding

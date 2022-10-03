@@ -2,7 +2,6 @@
 Package client provides a WAMP client implementation that is interoperable with
 any standard WAMP router and is capable of using all of the advanced profile
 features supported by the nexus WAMP router.
-
 */
 package client
 
@@ -152,10 +151,11 @@ type EventHandler func(event *wamp.Event)
 // match, or it can specify a URI pattern to match multiple events for the same
 // handler by specifying the pattern type in options.
 //
-// Subscribe Options
+// # Subscribe Options
 //
 // To request a pattern-based subscription set:
-//   options["match"] = "prefix" or "wildcard"
+//
+//	options["match"] = "prefix" or "wildcard"
 //
 // NOTE: Use consts defined in wamp/options.go instead of raw strings.
 func (c *Client) Subscribe(topic string, fn EventHandler, options wamp.Dict) error {
@@ -262,26 +262,33 @@ func (c *Client) Unsubscribe(topic string) error {
 
 // Publish publishes an EVENT to all subscribed clients.
 //
-// Publish Options
+// # Publish Options
 //
 // To receive a PUBLISHED response set:
-//   options["acknowledge"] = true
+//
+//	options["acknowledge"] = true
 //
 // To request subscriber blacklisting by subscriber, authid, or authrole, set:
-//   options["exclude"] = [subscriberID, ...]
-//   options["exclude_authid"] = ["authid", ..]
-//   options["exclude_authrole"] = ["authrole", ..]
+//
+//	options["exclude"] = [subscriberID, ...]
+//	options["exclude_authid"] = ["authid", ..]
+//	options["exclude_authrole"] = ["authrole", ..]
 //
 // To request subscriber whitelisting by subscriber, authid, or authrole, set:
-//   options["eligible"] = [subscriberID, ...]
-//   options["eligible_authid"] = ["authid", ..]
-//   options["eligible_authrole"] = ["authrole", ..]
+//
+//	options["eligible"] = [subscriberID, ...]
+//	options["eligible_authid"] = ["authid", ..]
+//	options["eligible_authrole"] = ["authrole", ..]
 //
 // When connecting to a nexus router, blacklisting and whitelisting can be used
 // with any attribute assigned to the subscriber session, by setting:
-//   options["exclude_xxx"] = [val1, val2, ..]
+//
+//	options["exclude_xxx"] = [val1, val2, ..]
+//
 // and
-//   options["eligible_xxx"] = [val1, val2, ..]
+//
+//	options["eligible_xxx"] = [val1, val2, ..]
+//
 // where xxx is the name of any session attribute, typically supplied with the
 // HELLO message.
 //
@@ -290,7 +297,8 @@ func (c *Client) Unsubscribe(topic string) error {
 // whitelist.
 //
 // To request that this publisher's identity is disclosed to subscribers, set:
-//   options["disclose_me"] = true
+//
+//	options["disclose_me"] = true
 //
 // NOTE: Use consts defined in wamp/options.go instead of raw strings.
 func (c *Client) Publish(topic string, options wamp.Dict, args wamp.List, kwargs wamp.Dict) error {
@@ -355,18 +363,21 @@ type InvocationHandler func(context.Context, *wamp.Invocation) InvokeResult
 // call received.
 //
 // If the registration handler wants to cancel the call without returning a
-// result, then is should return InvocationCanceled.
+// result, then it should return InvocationCanceled.
 //
-// Register Options
+// # Register Options
 //
 // To request a pattern-based registration set:
-//   options["match"] = "prefix" or "wildcard"
+//
+//	options["match"] = "prefix" or "wildcard"
 //
 // To request a shared registration pattern set:
-//   options["invoke"] = "single", "roundrobin", "random", "first", "last"
+//
+//	options["invoke"] = "single", "roundrobin", "random", "first", "last"
 //
 // To request that caller identification is disclosed to this callee, set:
-//   options["disclose_caller"] = true
+//
+//	options["disclose_caller"] = true
 //
 // NOTE: Use consts defined in wamp/options.go instead of raw strings.
 func (c *Client) Register(procedure string, fn InvocationHandler, options wamp.Dict) error {
@@ -474,7 +485,7 @@ type ProgressHandler func(*wamp.Result)
 // message.  This may be necessary for the client application to process error
 // data from the RPC invocation.
 //
-// Call Canceling
+// # Call Canceling
 //
 // The provided Context allows the caller to cancel a call, or to set a
 // deadline that cancels the call when the deadline expires.  There is no
@@ -488,7 +499,7 @@ type ProgressHandler func(*wamp.Result)
 // initiated by the client (by canceling context), and cancellation initialed
 // elsewhere.
 //
-// Call Timeout
+// # Call Timeout
 //
 // If a timeout is provided in the options, and the callee supports call
 // timeout, then the timeout value is passed to the callee so that the
@@ -503,17 +514,18 @@ type ProgressHandler func(*wamp.Result)
 // To request automatic call timeout, by the router and callee, specify a
 // timeout in milliseconds: options["timeout"] = 30000
 //
-// Caller Identification
+// # Caller Identification
 //
 // A caller may request the disclosure of its identity (its WAMP session ID) to
 // callees, if allowed by the dealer.
 //
 // To request that this caller's identity disclosed to callees, set:
-//   options["disclose_me"] = true
+//
+//	options["disclose_me"] = true
 //
 // NOTE: Use consts defined in wamp/options.go instead of raw strings.
 //
-// Progressive Call Results
+// # Progressive Call Results
 //
 // A caller indicates its willingness to receive progressive results by
 // supplying a ProgressHandler function to handle progressive results that are
@@ -592,7 +604,7 @@ func (c *Client) Call(ctx context.Context, procedure string, options wamp.Dict, 
 // default value: "killnowait".  The cancel mode is an option that is sent in a
 // CANCEL message when a CALL is canceled.
 //
-// Cancel Mode Behavior
+// # Cancel Mode Behavior
 //
 // "skip": The pending call is canceled and ERROR is sent immediately back to
 // the caller.  No INTERRUPT is sent to the callee and the result is discarded

@@ -254,7 +254,7 @@ func TestMain(m *testing.M) {
 	// Run tests.
 	rc := m.Run()
 
-	// Shutdown router and clienup environment.
+	// Shutdown router and client environment.
 	if closer != nil {
 		closer.Close()
 	}

@@ -1,7 +1,6 @@
 /*
 Package stdlog provides a minimal logging interface to allow nexus to use
 nearly any logging implementation.
-
 */
 package stdlog
 
