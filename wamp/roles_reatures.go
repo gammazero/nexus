@@ -26,4 +26,7 @@ const (
 	FeaturePubIdent             = "publisher_identification"
 	FeatureSubBlackWhiteListing = "subscriber_blackwhite_listing"
 	FeatureSubMetaAPI           = "subscription_meta_api"
+
+	// Other features
+	FeaturePayloadPassthruMode = "payload_passthru_mode"
 )

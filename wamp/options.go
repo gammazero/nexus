@@ -10,12 +10,17 @@ const (
 	OptInvoke          = "invoke"
 	OptMatch           = "match"
 	OptMessage         = "message"
+	OptError           = "error"
 	OptMode            = "mode"
 	OptProcedure       = "procedure"
 	OptProgress        = "progress"
 	OptReason          = "reason"
 	OptReceiveProgress = "receive_progress"
 	OptTimeout         = "timeout"
+	OptPPTScheme       = "ppt_scheme"
+	OptPPTSerializer   = "ppt_serializer"
+	OptPPTCipher       = "ppt_cipher"
+	OptPPTKeyId        = "ppt_keyid"
 
 	// Values for URI matching mode.
 	MatchExact    = "exact"

@@ -109,7 +109,18 @@ combinations of websockets and raw sockets, and JSON and MsgPack serialization.
 
 1. Run the server with `go run server/server.go`
 2. Run the subscriber with `go run pubsub/subscriber/subscriber.go`
-3. Run a publisher with `go run pubsub/publisher/publisher.go -scheme=tcp`
-4. Run a publisher with `go run pubsub/publisher/publisher.go -scheme=unix`
+3. Run the publisher with `go run pubsub/publisher/publisher.go -scheme=tcp`
+4. Run the publisher with `go run pubsub/publisher/publisher.go -scheme=unix`
 
 Try different combinations socket type, TLS, and serialization with multiple clients.  See `-help` for options.
+
+## Payload PassThru Mode Examples
+
+Nexus supports [Payload PassThru Mode](https://wamp-proto.org/wamp_latest_ietf.html#name-payload-passthru-mode) 
+(`ppt` for short) in all roles. Check and run examples in `ppt` folder.
+
+1. Run the server with `go run server/server.go`
+2. Run the subscriber with `go run ppt/subscriber/subscriber.go`
+3. Run the publisher with `go run ppt/publisher/publisher.go`
+4. Run the callee with `go run ppt/callee/callee.go`
+5. Run the caller with `go run ppt/caller/caller.go`

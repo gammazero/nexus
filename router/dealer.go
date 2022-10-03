@@ -23,15 +23,16 @@ const (
 // Role information for this broker.
 var dealerRole = wamp.Dict{
 	"features": wamp.Dict{
-		wamp.FeatureCallCanceling:    true,
-		wamp.FeatureCallTimeout:      true,
-		wamp.FeatureCallerIdent:      true,
-		wamp.FeaturePatternBasedReg:  true,
-		wamp.FeatureProgCallResults:  true,
-		wamp.FeatureSessionMetaAPI:   true,
-		wamp.FeatureSharedReg:        true,
-		wamp.FeatureRegMetaAPI:       true,
-		wamp.FeatureTestamentMetaAPI: true,
+		wamp.FeatureCallCanceling:       true,
+		wamp.FeatureCallTimeout:         true,
+		wamp.FeatureCallerIdent:         true,
+		wamp.FeaturePatternBasedReg:     true,
+		wamp.FeatureProgCallResults:     true,
+		wamp.FeatureSessionMetaAPI:      true,
+		wamp.FeatureSharedReg:           true,
+		wamp.FeatureRegMetaAPI:          true,
+		wamp.FeatureTestamentMetaAPI:    true,
+		wamp.FeaturePayloadPassthruMode: true,
 	},
 }
 
@@ -316,6 +317,7 @@ func (d *dealer) yield(callee *wamp.Session, msg *wamp.Yield) {
 	if callee == nil || msg == nil {
 		panic("dealer.Yield with nil session or message")
 	}
+
 	var again bool
 	progress, _ := msg.Options[wamp.OptProgress].(bool)
 
@@ -680,6 +682,38 @@ func (d *dealer) syncCall(caller *wamp.Session, msg *wamp.Call) {
 
 	// TODO: handle trust levels
 
+	// Check and handle Payload PassThru Mode
+	// @see https://wamp-proto.org/wamp_latest_ietf.html#name-payload-passthru-mode
+	if pptScheme, _ := msg.Options[wamp.OptPPTScheme].(string); pptScheme != "" {
+
+		// Let's check: was ppt feature announced by caller?
+		if !caller.HasFeature(wamp.RoleCaller, wamp.FeaturePayloadPassthruMode) {
+			// It's protocol violation, so we need to abort connection
+			abortMsg := wamp.Abort{Reason: wamp.ErrProtocolViolation}
+			abortMsg.Details = wamp.Dict{}
+			abortMsg.Details[wamp.OptMessage] = "Peer is trying to use Payload PassThru Mode while it was not announced during HELLO handshake"
+			caller.Peer.Send(&abortMsg)
+			caller.Peer.Close()
+
+			return
+		}
+
+		// Let's check if callee supports this feature
+		if !callee.HasFeature(wamp.RoleCallee, wamp.FeaturePayloadPassthruMode) {
+			d.trySend(caller, &wamp.Error{
+				Type:    msg.MessageType(),
+				Request: msg.Request,
+				Details: wamp.Dict{},
+				Error:   wamp.ErrFeatureNotSupported,
+			})
+			return
+		}
+
+		// Every side supports PPT feature
+		// Let's fill PPT options for callee
+		pptOptionsToDetails(msg.Options, details)
+	}
+
 	// If the callee has requested disclosure of caller identity when the
 	// registration was created, and this was allowed by the dealer.
 	if reg.disclose {
@@ -949,6 +983,58 @@ func (d *dealer) syncYield(callee *wamp.Session, msg *wamp.Yield, progress, canR
 		d.log.Println("!!! No matching caller for invocation from YIELD:",
 			msg.Request)
 		return false
+	}
+
+	// Check and handle Payload PassThru Mode
+	// @see https://wamp-proto.org/wamp_latest_ietf.html#name-payload-passthru-mode
+	if pptScheme, _ := msg.Options[wamp.OptPPTScheme].(string); pptScheme != "" {
+
+		// Let's check: was ppt feature announced by callee?
+		if !callee.HasFeature(wamp.RoleCallee, wamp.FeaturePayloadPassthruMode) {
+			// Let's notify caller that CALL was erred
+			d.trySend(caller, &wamp.Error{
+				Type:    msg.MessageType(),
+				Request: msg.Request,
+				Details: wamp.Dict{
+					"error": ErrPPTNotSupportedByPeer.Error(),
+				},
+				Error: wamp.ErrFeatureNotSupported,
+			})
+			// It's protocol violation, so we need to abort connection
+			abortMsg := wamp.Abort{Reason: wamp.ErrProtocolViolation}
+			abortMsg.Details = wamp.Dict{}
+			abortMsg.Details[wamp.OptMessage] = ErrPPTNotSupportedByPeer.Error()
+			callee.Peer.Send(&abortMsg)
+			callee.Peer.Close()
+
+			return false
+		}
+
+		// Let's check if caller supports this feature
+		if !caller.HasFeature(wamp.RoleCaller, wamp.FeaturePayloadPassthruMode) {
+			d.trySend(callee, &wamp.Error{
+				Type:    msg.MessageType(),
+				Request: msg.Request,
+				Details: wamp.Dict{
+					"error": ErrPPTNotSupportedByPeer.Error(),
+				},
+				Error: wamp.ErrFeatureNotSupported,
+			})
+			return false
+		}
+
+		// Every side supports PPT feature
+		// Let's fill PPT options for callee
+		details[wamp.OptPPTScheme] = pptScheme
+		if val, ok := msg.Options[wamp.OptPPTSerializer]; ok {
+			details[wamp.OptPPTSerializer] = val.(string)
+		}
+		if val, ok := msg.Options[wamp.OptPPTCipher]; ok {
+			details[wamp.OptPPTCipher] = val.(string)
+		}
+		if val, ok := msg.Options[wamp.OptPPTKeyId]; ok {
+			details[wamp.OptPPTKeyId] = val.(string)
+		}
 	}
 
 	// Send RESULT to the caller.  If the caller is blocked, then make the

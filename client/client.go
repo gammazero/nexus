@@ -26,6 +26,9 @@ const (
 	CBOR    = serialize.CBOR
 )
 
+var E2eeSerializers = map[string]serialize.Serialization{"cbor": CBOR}
+var PPTSerializers = map[string]serialize.Serialization{"json": JSON, "msgpack": MSGPACK, "cbor": CBOR}
+
 // A Client routes messages to/from a WAMP router.
 type Client struct {
 	sess *wamp.Session
@@ -59,14 +62,144 @@ type Client struct {
 
 // InvokeResult represents the result of invoking a procedure.
 type InvokeResult struct {
-	Args   wamp.List
-	Kwargs wamp.Dict
-	Err    wamp.URI
+	Args    wamp.List
+	Kwargs  wamp.Dict
+	Err     wamp.URI
+	Options wamp.Dict
 }
 
 // InvocationCanceled is returned from an InvocationHandler to indicate that
 // the invocation was canceled.
 var InvocationCanceled = InvokeResult{Err: wamp.ErrCanceled}
+
+// Helpers for PPT/E2EE
+
+func isPPTSchemeValid(pptScheme string) bool {
+	// passthru of wamp and mqtt is supported by default, optionally a custom ppt scheme
+	// is also allowed
+	return pptScheme == "wamp" || pptScheme == "mqtt" || strings.HasPrefix(pptScheme, "x_")
+}
+
+// In mqtt/custom scheme we need to encode payload with specified serializer (if provided)
+func packPPTPayload(options wamp.Dict, args wamp.List, kwargs wamp.Dict) (wamp.List, error) {
+	payload := &wamp.PassthruPayload{
+		Arguments:   args,
+		ArgumentsKw: kwargs,
+	}
+
+	pptSerializerStr, ok := options[wamp.OptPPTSerializer].(string)
+	if ok && pptSerializerStr != "native" {
+
+		var serializer serialize.Serializer
+		pptSerializer, ok := PPTSerializers[pptSerializerStr]
+		if !ok {
+			return nil, ErrPPTSerializerInvalid
+		}
+
+		// Serializer is valid, need to encode payload with it before proceeding
+		switch pptSerializer {
+		case JSON:
+			serializer = &serialize.JSONSerializer{}
+		case MSGPACK:
+			serializer = &serialize.MessagePackSerializer{}
+		case CBOR:
+			serializer = &serialize.CBORSerializer{}
+			// In future should be extended with FlatBuffers
+		}
+
+		bin, err := serializer.SerializeDataItem(payload)
+		if err != nil {
+			return nil, ErrSerialization
+		}
+
+		return wamp.List{bin}, nil
+	}
+
+	return wamp.List{payload}, nil
+}
+
+func unpackPPTPayload(details wamp.Dict, args wamp.List) (wamp.List, wamp.Dict, error) {
+	var payloadTyped *wamp.PassthruPayload
+	pptSerializerStr, ok := details[wamp.OptPPTSerializer]
+	if ok && pptSerializerStr != "native" {
+
+		var serializer serialize.Serializer
+		pptSerializer, ok := PPTSerializers[pptSerializerStr.(string)]
+		if !ok {
+			return nil, nil, ErrPPTSerializerInvalid
+		}
+
+		// Serializer is valid, need to encode payload with it before proceeding
+		switch pptSerializer {
+		case JSON:
+			serializer = &serialize.JSONSerializer{}
+		case MSGPACK:
+			serializer = &serialize.MessagePackSerializer{}
+		case CBOR:
+			serializer = &serialize.CBORSerializer{}
+			// In future should be extended with FlatBuffers
+		}
+
+		if err := serializer.DeserializeDataItem(args[0].([]byte), &payloadTyped); err != nil {
+			return nil, nil, ErrSerialization
+		}
+
+	} else {
+		payloadTyped = args[0].(*wamp.PassthruPayload)
+	}
+
+	return payloadTyped.Arguments, payloadTyped.ArgumentsKw, nil
+}
+
+// Preparing End-2-End Encrypted Payload
+func packE2EEPayload(options wamp.Dict, args wamp.List, kwargs wamp.Dict) (wamp.List, error) {
+	payload := &wamp.PassthruPayload{
+		Arguments:   args,
+		ArgumentsKw: kwargs,
+	}
+
+	var serializer serialize.Serializer
+	pptSerializer, ok := E2eeSerializers[options[wamp.OptPPTSerializer].(string)]
+	if !ok {
+		return nil, ErrPPTSerializerInvalid
+	}
+
+	// Serializer is valid, need to encode payload with it before proceeding
+	switch pptSerializer {
+	case CBOR:
+		serializer = &serialize.CBORSerializer{}
+		// In future should be extended with FlatBuffers
+	}
+
+	bin, err := serializer.SerializeDataItem(payload)
+	if err != nil {
+		return nil, ErrSerialization
+	}
+
+	return wamp.List{bin}, nil
+}
+
+func unpackE2EEPayload(details wamp.Dict, args wamp.List) (wamp.List, wamp.Dict, error) {
+	var serializer serialize.Serializer
+	pptSerializer, ok := E2eeSerializers[details[wamp.OptPPTSerializer].(string)]
+	if !ok {
+		return nil, nil, ErrPPTSerializerInvalid
+	}
+
+	// Serializer is valid, need to encode payload with it before proceeding
+	switch pptSerializer {
+	case CBOR:
+		serializer = &serialize.CBORSerializer{}
+		// In future should be extended with FlatBuffers
+	}
+
+	var payloadTyped wamp.PassthruPayload
+	if err := serializer.DeserializeDataItem(args[0].([]byte), &payloadTyped); err != nil {
+		return nil, nil, ErrSerialization
+	}
+
+	return payloadTyped.Arguments, payloadTyped.ArgumentsKw, nil
+}
 
 // NewClient takes a connected Peer, joins the realm specified in cfg, and if
 // successful, returns a new client.
@@ -319,13 +452,52 @@ func (c *Client) Publish(topic string, options wamp.Dict, args wamp.List, kwargs
 		}
 	}
 
-	c.sess.Send(&wamp.Publish{
+	message := &wamp.Publish{
 		Request:     id,
 		Options:     options,
 		Topic:       wamp.URI(topic),
 		Arguments:   args,
 		ArgumentsKw: kwargs,
-	})
+	}
+
+	// Check and handle Payload PassThru Mode
+	// @see https://wamp-proto.org/wamp_latest_ietf.html#name-payload-passthru-mode
+	if pptScheme, _ := options[wamp.OptPPTScheme].(string); pptScheme != "" {
+		// Let's check: was ppt feature announced by broker?
+		if !c.sess.HasFeature(wamp.RoleBroker, wamp.FeaturePayloadPassthruMode) {
+			// It's protocol violation, so we need to abort connection
+			// But as we did not send anything to the router
+			// let's just err client
+			return ErrPPTNotSupportedByRouter
+		}
+
+		if !isPPTSchemeValid(pptScheme) {
+			return ErrPPTSchemeInvalid
+		}
+
+		// Broker supports PPT feature
+		// Let's prepare payload based on ppt_* attributes provided
+		var payload wamp.List
+		var err error
+
+		if pptScheme == "wamp" {
+			payload, err = packE2EEPayload(options, args, kwargs)
+		} else {
+			payload, err = packPPTPayload(options, args, kwargs)
+		}
+
+		if err != nil {
+			return err
+		}
+
+		message.Arguments = payload
+
+	} else {
+		message.Arguments = args
+		message.ArgumentsKw = kwargs
+	}
+
+	c.sess.Send(message)
 
 	if !pubAck {
 		return nil
@@ -567,13 +739,49 @@ func (c *Client) Call(ctx context.Context, procedure string, options wamp.Dict, 
 
 	id := c.idGen.Next()
 	c.expectReply(id)
-	c.sess.Send(&wamp.Call{
-		Request:     id,
-		Procedure:   wamp.URI(procedure),
-		Options:     options,
-		Arguments:   args,
-		ArgumentsKw: kwargs,
-	})
+	message := &wamp.Call{
+		Request:   id,
+		Procedure: wamp.URI(procedure),
+		Options:   options,
+	}
+
+	// Check and handle Payload PassThru Mode
+	// @see https://wamp-proto.org/wamp_latest_ietf.html#name-payload-passthru-mode
+	if pptScheme, _ := options[wamp.OptPPTScheme].(string); pptScheme != "" {
+		// Let's check: was ppt feature announced by dealer?
+		if !c.sess.HasFeature(wamp.RoleDealer, wamp.FeaturePayloadPassthruMode) {
+			// It's protocol violation, so we need to abort connection
+			// But as we did not send anything to the router
+			// let's just err client
+			return nil, ErrPPTNotSupportedByRouter
+		}
+
+		if !isPPTSchemeValid(pptScheme) {
+			return nil, ErrPPTSchemeInvalid
+		}
+
+		// Dealer supports PPT feature
+		// Let's prepare payload based on ppt_* attributes provided
+		var payload wamp.List
+		var err error
+		if pptScheme == "wamp" {
+			payload, err = packE2EEPayload(options, args, kwargs)
+		} else {
+			payload, err = packPPTPayload(options, args, kwargs)
+		}
+
+		if err != nil {
+			return nil, err
+		}
+
+		message.Arguments = payload
+
+	} else {
+		message.Arguments = args
+		message.ArgumentsKw = kwargs
+	}
+
+	c.sess.Send(message)
 
 	// Wait to receive RESULT message.
 	msg, err := c.waitForReplyWithCancel(ctx, id, procedure, progChan)
@@ -591,6 +799,48 @@ func (c *Client) Call(ctx context.Context, procedure string, options wamp.Dict, 
 
 	switch msg := msg.(type) {
 	case *wamp.Result:
+
+		// Check and handle Payload PassThru Mode
+		// @see https://wamp-proto.org/wamp_latest_ietf.html#name-payload-passthru-mode
+		if pptScheme, _ := msg.Details[wamp.OptPPTScheme].(string); pptScheme != "" {
+			// Let's check: was ppt feature announced by dealer?
+			if !c.sess.HasFeature(wamp.RoleDealer, wamp.FeaturePayloadPassthruMode) {
+				// It's protocol violation, so we need to abort connection
+				abortMsg := wamp.Abort{
+					Reason: wamp.ErrProtocolViolation,
+					Details: wamp.Dict{
+						wamp.OptError:   ErrPPTNotSupportedByRouter.Error(),
+						wamp.OptMessage: ErrPPTNotSupportedByPeer.Error(),
+					},
+				}
+				c.sess.Peer.Send(&abortMsg)
+				c.sess.Peer.Close()
+				return nil, fmt.Errorf("cannot process unexpected passthrough result: %v", ErrPPTNotSupportedByRouter)
+			}
+
+			if !isPPTSchemeValid(pptScheme) {
+				return nil, fmt.Errorf("cannot process result with invalid ppt scheme %q: %v", pptScheme, ErrPPTSchemeInvalid)
+			}
+
+			var args wamp.List
+			var kwargs wamp.Dict
+			var err error
+
+			// Now need to check ppt_serializer (in pair with ppt_scheme)
+			// and deserialize payload with appreciate serializer
+			if pptScheme == "wamp" {
+				args, kwargs, err = unpackE2EEPayload(msg.Details, msg.Arguments)
+			} else {
+				args, kwargs, err = unpackPPTPayload(msg.Details, msg.Arguments)
+			}
+
+			if err != nil {
+				return nil, err
+			}
+
+			msg.Arguments = args
+			msg.ArgumentsKw = kwargs
+		}
 		return msg, nil
 	case *wamp.Error:
 		return nil, RPCError{msg, procedure}
@@ -1120,6 +1370,41 @@ func (c *Client) runHandleEvent(msg *wamp.Event) {
 			msg.Subscription)
 		return
 	}
+
+	// Check and handle Payload PassThru Mode
+	// @see https://wamp-proto.org/wamp_latest_ietf.html#name-payload-passthru-mode
+	// Since it is async publication, and no link to
+	// original publication - as it was already published
+	// we can not reply with error, only log it.
+	// Although the router should handle it
+	if pptScheme, _ := msg.Details[wamp.OptPPTScheme].(string); pptScheme != "" {
+
+		if !isPPTSchemeValid(pptScheme) {
+			c.log.Print(fmt.Sprintf("cannot process even with invalid ppt schema %q: %v", pptScheme, ErrPPTSchemeInvalid))
+			return
+		}
+
+		var args wamp.List
+		var kwargs wamp.Dict
+		var err error
+
+		// Now need to check ppt_serializer (in pair with ppt_scheme)
+		// and serialize payload with appreciate serializer
+		if pptScheme == "wamp" {
+			args, kwargs, err = unpackE2EEPayload(msg.Details, msg.Arguments)
+		} else {
+			args, kwargs, err = unpackPPTPayload(msg.Details, msg.Arguments)
+		}
+
+		if err != nil {
+			c.log.Print(fmt.Sprintf("cannot unpack event: %v", err))
+			return
+		}
+
+		msg.Arguments = args
+		msg.ArgumentsKw = kwargs
+	}
+
 	handler(msg)
 }
 
@@ -1150,6 +1435,50 @@ func (c *Client) runHandleInvocation(msg *wamp.Invocation) {
 		})
 		c.log.Print(errMsg)
 		return
+	}
+
+	// Check and handle Payload PassThru Mode
+	// @see https://wamp-proto.org/wamp_latest_ietf.html#name-payload-passthru-mode
+	if pptScheme, _ := msg.Details[wamp.OptPPTScheme].(string); pptScheme != "" {
+
+		if !isPPTSchemeValid(pptScheme) {
+			c.sess.Send(&wamp.Error{
+				Type:      wamp.INVOCATION,
+				Request:   reqID,
+				Details:   wamp.Dict{},
+				Error:     wamp.ErrInvalidArgument,
+				Arguments: wamp.List{ErrPPTSchemeInvalid.Error()},
+			})
+			c.log.Print(fmt.Sprintf("cannot process invocation with invalid ppt schema %q: %v", pptScheme, ErrPPTSchemeInvalid))
+			return
+		}
+
+		var args wamp.List
+		var kwargs wamp.Dict
+		var err error
+
+		// Now need to check ppt_serializer (in pair with ppt_scheme)
+		// and deserialize payload with appreciate serializer
+		if pptScheme == "wamp" {
+			args, kwargs, err = unpackE2EEPayload(msg.Details, msg.Arguments)
+		} else {
+			args, kwargs, err = unpackPPTPayload(msg.Details, msg.Arguments)
+		}
+
+		if err != nil {
+			c.sess.Send(&wamp.Error{
+				Type:      wamp.INVOCATION,
+				Request:   reqID,
+				Details:   wamp.Dict{},
+				Error:     wamp.ErrInvalidArgument,
+				Arguments: wamp.List{err.Error()},
+			})
+			c.log.Print(fmt.Sprintf("cannot unpack invocation message: %v", err))
+			return
+		}
+
+		msg.Arguments = args
+		msg.ArgumentsKw = kwargs
 	}
 
 	// Create a kill switch so that invocation can be canceled.
@@ -1234,12 +1563,83 @@ func (c *Client) runHandleInvocation(msg *wamp.Invocation) {
 			})
 			return
 		}
-		c.sess.SendCtx(c.ctx, &wamp.Yield{
-			Request:     reqID,
-			Options:     wamp.Dict{},
-			Arguments:   result.Args,
-			ArgumentsKw: result.Kwargs,
-		})
+
+		options := result.Options
+
+		if options == nil {
+			options = wamp.Dict{}
+		}
+
+		message := &wamp.Yield{
+			Request: reqID,
+			Options: options,
+		}
+
+		// Check and handle Payload PassThru Mode
+		// @see https://wamp-proto.org/wamp_latest_ietf.html#name-payload-passthru-mode
+		if pptScheme, _ := options[wamp.OptPPTScheme].(string); pptScheme != "" {
+			// Let's check: was ppt feature announced by dealer?
+			if !c.sess.HasFeature(wamp.RoleDealer, wamp.FeaturePayloadPassthruMode) {
+				// It's protocol violation, so we need to abort connection
+				abortMsg := wamp.Abort{
+					Reason: wamp.ErrProtocolViolation,
+					Details: wamp.Dict{
+						wamp.OptError:   ErrPPTNotSupportedByRouter.Error(),
+						wamp.OptMessage: ErrPPTNotSupportedByPeer.Error(),
+					},
+				}
+				c.sess.Peer.Send(&abortMsg)
+				c.sess.Peer.Close()
+				return
+			}
+
+			if !isPPTSchemeValid(pptScheme) {
+				c.sess.SendCtx(c.ctx, &wamp.Error{
+					Type:    wamp.INVOCATION,
+					Request: reqID,
+					Details: wamp.Dict{
+						"error": ErrPPTSchemeInvalid.Error(),
+					},
+					Arguments:   result.Args,
+					ArgumentsKw: result.Kwargs,
+					Error:       wamp.ErrInvalidArgument,
+				})
+				return
+			}
+
+			// Dealer supports PPT feature
+			// Let's prepare payload based on ppt_* attributes provided
+			var payload wamp.List
+			var err error
+
+			if pptScheme == "wamp" {
+				payload, err = packE2EEPayload(options, result.Args, result.Kwargs)
+			} else {
+				payload, err = packPPTPayload(options, result.Args, result.Kwargs)
+			}
+
+			if err != nil {
+				c.sess.SendCtx(c.ctx, &wamp.Error{
+					Type:    wamp.INVOCATION,
+					Request: reqID,
+					Details: wamp.Dict{
+						"error": err.Error(),
+					},
+					Arguments:   result.Args,
+					ArgumentsKw: result.Kwargs,
+					Error:       wamp.ErrInvalidArgument,
+				})
+				return
+			}
+
+			message.Arguments = payload
+
+		} else {
+			message.Arguments = result.Args
+			message.ArgumentsKw = result.Kwargs
+		}
+
+		c.sess.SendCtx(c.ctx, message)
 	}()
 }
 

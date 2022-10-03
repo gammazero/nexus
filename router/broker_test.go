@@ -226,11 +226,20 @@ func TestUnsubscribe(t *testing.T) {
 		t.Fatal("session 2 subscription ID set missing")
 	}
 
+	// Test unsubscribing session2 from invalid subscription ID.
+	broker.unsubscribe(sess2, &wamp.Unsubscribe{Request: 124, Subscription: 747})
+	// Check that session received ERROR message.
+	rsp = <-sess2.Recv()
+	_, ok = rsp.(*wamp.Error)
+	if !ok {
+		t.Fatal("expected", wamp.ERROR, "got:", rsp.MessageType())
+	}
+
 	// Test unsubscribing session2 from topic.
 	broker.unsubscribe(sess2, &wamp.Unsubscribe{Request: 124, Subscription: subID})
 	// Check that session received UNSUBSCRIBED message.
 	rsp = <-sess2.Recv()
-	unsub, ok = rsp.(*wamp.Unsubscribed)
+	_, ok = rsp.(*wamp.Unsubscribed)
 	if !ok {
 		t.Fatal("expected", wamp.UNSUBSCRIBED, "got:", rsp.MessageType())
 	}
@@ -330,6 +339,129 @@ func TestBasicPubSub(t *testing.T) {
 }
 
 // ----- WAMP v.2 Testing -----
+
+func TestAdvancedPubSub(t *testing.T) {
+	broker := newBroker(logger, false, true, debug, nil)
+	subscriber := newTestPeer()
+	sess := wamp.NewSession(subscriber, 0, nil, nil)
+	testTopic := wamp.URI("nexus.test.topic")
+
+	msg := &wamp.Subscribe{
+		Request: 123,
+		Topic:   "invalid!@#@#$topicuri",
+		Options: wamp.Dict{},
+	}
+	broker.subscribe(sess, msg)
+
+	// Test that subscriber received SUBSCRIBED message
+	rsp := <-sess.Recv()
+	_, ok := rsp.(*wamp.Error)
+	if !ok {
+		t.Fatal("expected", wamp.ERROR, "got:", rsp.MessageType())
+	}
+
+	msg = &wamp.Subscribe{
+		Request: 123,
+		Topic:   testTopic,
+		Options: wamp.Dict{},
+	}
+	broker.subscribe(sess, msg)
+
+	// Test that subscriber received SUBSCRIBED message
+	rsp = <-sess.Recv()
+	_, ok = rsp.(*wamp.Subscribed)
+	if !ok {
+		t.Fatal("expected", wamp.SUBSCRIBED, "got:", rsp.MessageType())
+	}
+
+	publisher := newTestPeer()
+	pubSess := wamp.NewSession(publisher, 0, nil, nil)
+
+	options := wamp.Dict{
+		wamp.OptAcknowledge: true,
+	}
+	broker.publish(pubSess, &wamp.Publish{Request: 125, Topic: "invalid!@#@#$topicuri", Options: options})
+	rsp = <-pubSess.Recv()
+	_, ok = rsp.(*wamp.Error)
+	if !ok {
+		t.Fatal("expected", wamp.ERROR, "got:", rsp.MessageType())
+	}
+
+}
+
+func TestPPTPubSub(t *testing.T) {
+	broker := newBroker(logger, false, true, debug, nil)
+	subscriber := newTestPeer()
+	sess := wamp.NewSession(subscriber, 0, nil, nil)
+	testTopic := wamp.URI("nexus.test.topic")
+
+	msg := &wamp.Subscribe{
+		Request: 123,
+		Topic:   testTopic,
+		Options: wamp.Dict{},
+	}
+	broker.subscribe(sess, msg)
+
+	// Test that subscriber received SUBSCRIBED message
+	rsp := <-sess.Recv()
+	subMsg, ok := rsp.(*wamp.Subscribed)
+	if !ok {
+		t.Fatal("expected", wamp.SUBSCRIBED, "got:", rsp.MessageType())
+	}
+	subID := subMsg.Subscription
+	if subID == 0 {
+		t.Fatal("invalid suvscription ID")
+	}
+
+	publisher := newTestPeer()
+	pubSess := wamp.NewSession(publisher, 0, nil, nil)
+
+	options := wamp.Dict{
+		wamp.OptAcknowledge: true,
+	}
+	broker.publish(pubSess, &wamp.Publish{Request: 125, Topic: "invalid!@#@#$topicuri", Options: options})
+	rsp = <-pubSess.Recv()
+	_, ok = rsp.(*wamp.Error)
+	if !ok {
+		t.Fatal("expected", wamp.ERROR, "got:", rsp.MessageType())
+	}
+
+	options = wamp.Dict{
+		wamp.OptPPTScheme:     "x_custom",
+		wamp.OptPPTSerializer: "native",
+	}
+	broker.publish(pubSess, &wamp.Publish{Request: 126, Topic: testTopic, Options: options})
+	rsp = <-pubSess.Recv()
+	_, ok = rsp.(*wamp.Abort)
+	if !ok {
+		t.Fatal("expected", wamp.ABORT, "got:", rsp.MessageType())
+	}
+
+	greetDetails := wamp.Dict{
+		"roles": wamp.Dict{
+			"publisher": wamp.Dict{
+				"features": wamp.Dict{
+					wamp.FeaturePayloadPassthruMode: true,
+				},
+			},
+		},
+	}
+	options = wamp.Dict{
+		wamp.OptPPTScheme:     "x_custom",
+		wamp.OptPPTSerializer: "native",
+		wamp.OptPPTCipher:     "ppt_cipher",
+		wamp.OptPPTKeyId:      "ppt_keyid",
+	}
+	publisher = newTestPeer()
+	pubSess = wamp.NewSession(publisher, 0, nil, greetDetails)
+	broker.publish(pubSess, &wamp.Publish{Request: 124, Topic: testTopic, Options: options})
+	rsp = <-sess.Recv()
+	_, ok = rsp.(*wamp.Event)
+	if !ok {
+		t.Fatal("expected", wamp.EVENT, "got:", rsp.MessageType())
+	}
+
+}
 
 func TestPrefxPatternBasedSubscription(t *testing.T) {
 	// Test match=prefix

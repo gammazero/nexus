@@ -1,6 +1,7 @@
 *~
 *.log
 nexusd/nexusd
+*coverage*
 
 # Binaries for programs and plugins
 *.exe

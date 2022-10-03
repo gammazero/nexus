@@ -1,7 +1,6 @@
 /*
 Package serialize provides a Serializer interface with implementations that
 encode and decode message data in various ways.
-
 */
 package serialize
 
@@ -32,6 +31,8 @@ type Serialization int
 type Serializer interface {
 	Serialize(wamp.Message) ([]byte, error)
 	Deserialize([]byte) (wamp.Message, error)
+	SerializeDataItem(item interface{}) ([]byte, error)
+	DeserializeDataItem([]byte, interface{}) error
 }
 
 // listToMessage takes a list of values from a WAMP message and populates the
