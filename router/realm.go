@@ -528,7 +528,7 @@ func (r *realm) authzMessage(sess *wamp.Session, msg wamp.Message) bool {
 		Details: sess.Details,
 	}
 
-	// Write-lock the session, becuase there is no telling what the Authorizer
+	// Write-lock the session, because there is no telling what the Authorizer
 	// will do to the session details.
 	sess.Lock()
 	isAuthz, err := r.authorizer.Authorize(safeSession, msg)

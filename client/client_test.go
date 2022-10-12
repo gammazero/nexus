@@ -314,7 +314,7 @@ func TestSubscribe(t *testing.T) {
 	// Make sure the event was not received.
 	select {
 	case <-time.After(time.Millisecond):
-	case _ = <-errChan:
+	case <-errChan:
 		t.Fatal("Should not have called event handler")
 	}
 
@@ -332,7 +332,7 @@ func TestSubscribe(t *testing.T) {
 	// Make sure the event was not received.
 	select {
 	case <-time.After(time.Millisecond):
-	case _ = <-errChan:
+	case <-errChan:
 		t.Fatal("Should not have called event handler")
 	}
 

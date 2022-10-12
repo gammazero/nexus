@@ -1,4 +1,4 @@
-package aat
+package aat_test
 
 import (
 	"testing"

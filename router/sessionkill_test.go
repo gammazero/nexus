@@ -117,7 +117,10 @@ func TestSessionKillAll(t *testing.T) {
 	reason := wamp.URI("foo.bar.baz")
 	message := "this is a test"
 
-	cli1.Send(&wamp.Call{Request: wamp.GlobalID(), Procedure: wamp.MetaProcSessionKillAll, ArgumentsKw: wamp.Dict{"reason": reason, "message": message}})
+	cli1.Send(&wamp.Call{
+		Request:     wamp.GlobalID(),
+		Procedure:   wamp.MetaProcSessionKillAll,
+		ArgumentsKw: wamp.Dict{"reason": reason, "message": message}})
 
 	msg, err := wamp.RecvTimeout(cli1, time.Second)
 	if err != nil {

@@ -696,7 +696,8 @@ func (d *dealer) syncCall(caller *wamp.Session, msg *wamp.Call) {
 			// It's protocol violation, so we need to abort connection
 			abortMsg := wamp.Abort{Reason: wamp.ErrProtocolViolation}
 			abortMsg.Details = wamp.Dict{}
-			abortMsg.Details[wamp.OptMessage] = "Peer is trying to use Payload PassThru Mode while it was not announced during HELLO handshake"
+			abortMsg.Details[wamp.OptMessage] = "Peer is trying to use Payload PassThru Mode while it was not " +
+				"announced during HELLO handshake"
 			caller.Peer.Send(&abortMsg)
 			caller.Peer.Close()
 
@@ -757,7 +758,8 @@ func (d *dealer) syncCall(caller *wamp.Session, msg *wamp.Call) {
 		// The Callee must support call canceling, as this is necessary to stop
 		// progressive results if the caller session is closed during
 		// progressive result delivery.
-		if callee.HasFeature(wamp.RoleCallee, wamp.FeatureProgCallResults) && callee.HasFeature(wamp.RoleCallee, wamp.FeatureCallCanceling) {
+		if callee.HasFeature(wamp.RoleCallee, wamp.FeatureProgCallResults) &&
+			callee.HasFeature(wamp.RoleCallee, wamp.FeatureCallCanceling) {
 			details[wamp.OptReceiveProgress] = true
 		}
 	}
