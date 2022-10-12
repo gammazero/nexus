@@ -1380,7 +1380,7 @@ func (c *Client) runHandleEvent(msg *wamp.Event) {
 	if pptScheme, _ := msg.Details[wamp.OptPPTScheme].(string); pptScheme != "" {
 
 		if !isPPTSchemeValid(pptScheme) {
-			c.log.Print(fmt.Sprintf("cannot process even with invalid ppt schema %q: %v", pptScheme, ErrPPTSchemeInvalid))
+			c.log.Printf("cannot process even with invalid ppt schema %q: %v", pptScheme, ErrPPTSchemeInvalid)
 			return
 		}
 
@@ -1397,7 +1397,7 @@ func (c *Client) runHandleEvent(msg *wamp.Event) {
 		}
 
 		if err != nil {
-			c.log.Print(fmt.Sprintf("cannot unpack event: %v", err))
+			c.log.Printf("cannot unpack event: %v", err)
 			return
 		}
 
@@ -1449,7 +1449,7 @@ func (c *Client) runHandleInvocation(msg *wamp.Invocation) {
 				Error:     wamp.ErrInvalidArgument,
 				Arguments: wamp.List{ErrPPTSchemeInvalid.Error()},
 			})
-			c.log.Print(fmt.Sprintf("cannot process invocation with invalid ppt schema %q: %v", pptScheme, ErrPPTSchemeInvalid))
+			c.log.Printf("cannot process invocation with invalid ppt schema %q: %v", pptScheme, ErrPPTSchemeInvalid)
 			return
 		}
 
@@ -1473,7 +1473,7 @@ func (c *Client) runHandleInvocation(msg *wamp.Invocation) {
 				Error:     wamp.ErrInvalidArgument,
 				Arguments: wamp.List{err.Error()},
 			})
-			c.log.Print(fmt.Sprintf("cannot unpack invocation message: %v", err))
+			c.log.Printf("cannot unpack invocation message: %v", err)
 			return
 		}
 
