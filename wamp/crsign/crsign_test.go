@@ -9,7 +9,9 @@ import (
 	"golang.org/x/crypto/pbkdf2"
 )
 
-var chStr = "{ \"nonce\":\"LHRTC9zeOIrt_9U3\", \"authprovider\":\"userdb\", \"authid\":\"peter\", \"timestamp\":\"2014-06-22T16:36:25.448Z\", \"authrole\":\"user\", \"authmethod\":\"wampcra\", \"session\":3251278072152162 }"
+var chStr = "{ \"nonce\":\"LHRTC9zeOIrt_9U3\", \"authprovider\":\"userdb\", \"authid\":\"peter\", " +
+	"\"timestamp\":\"2014-06-22T16:36:25.448Z\", \"authrole\":\"user\", \"authmethod\":\"wampcra\", " +
+	"\"session\":3251278072152162 }"
 
 func TestCRSign(t *testing.T) {
 	sig := SignChallenge(chStr, []byte("secret"))

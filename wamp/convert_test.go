@@ -153,7 +153,7 @@ func TestAsInt64(t *testing.T) {
 	if _, ok = AsInt64(uint64(numConv)); !ok {
 		t.Error(failMsg)
 	}
-	if _, ok = AsInt64(int(numConv)); !ok {
+	if _, ok = AsInt64(numConv); !ok {
 		t.Error(failMsg)
 	}
 	if _, ok = AsInt64(int32(numConv)); !ok {
@@ -210,7 +210,7 @@ func TestAsFloat64(t *testing.T) {
 	if _, ok = AsFloat64(uint64(numConv)); !ok {
 		t.Error(failMsg)
 	}
-	if _, ok = AsFloat64(int(numConv)); !ok {
+	if _, ok = AsFloat64(numConv); !ok {
 		t.Error(failMsg)
 	}
 	if _, ok = AsFloat64(int32(numConv)); !ok {

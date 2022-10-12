@@ -110,9 +110,7 @@ linters:
     - gci
     - gochecknoglobals
     - goconst
-    - godot
     - gofmt
-    #- gomnd
     - gosec
     - nakedret
     - nilerr
@@ -141,12 +139,14 @@ issues:
         - errcheck
         - dupl
         - gosec
+        - gochecknoglobals
+        - goconst
 
     - path: export.*_test\.go
       linters:
         - testpackage
 
-  # Independently from option `exclude` we use default exclude patterns,
+  # Independently of option `exclude` we use default exclude patterns,
   # it can be disabled by this option. To list all
   # excluded by default patterns execute `golangci-lint run --help`.
   # Default value for this option is true.

@@ -1092,8 +1092,7 @@ func (r *realm) testamentAdd(msg *wamp.Invocation) wamp.Message {
 }
 
 // testamentFlush removes all testaments for the invoking client.  It takes an
-// optional keyword argument "scope" that has the value "detached" or
-// "destroyed"
+// optional keyword argument "scope" that has the value "detached" or "destroyed".
 func (r *realm) testamentFlush(msg *wamp.Invocation) wamp.Message {
 	caller, ok := wamp.AsID(msg.Details["caller"])
 	if !ok {

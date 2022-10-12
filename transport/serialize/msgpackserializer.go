@@ -17,7 +17,10 @@ func init() {
 }
 
 // MsgpackRegisterExtension registers a custom type for special serialization.
-func MsgpackRegisterExtension(t reflect.Type, ext byte, encode func(reflect.Value) ([]byte, error), decode func(reflect.Value, []byte) error) {
+func MsgpackRegisterExtension(
+	t reflect.Type,
+	ext byte,
+	encode func(reflect.Value) ([]byte, error), decode func(reflect.Value, []byte) error) {
 	mh.AddExt(t, ext, encode, decode)
 }
 

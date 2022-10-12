@@ -2,6 +2,7 @@ package aat
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"testing"
 	"time"
@@ -167,7 +168,7 @@ func TestRPCProgressiveCallInterrupt(t *testing.T) {
 		// accepting progressive results".
 		e = callee.SendProgress(ctx, wamp.List{"Delta"}, nil)
 		if e != nil && e.Error() != "caller not accepting progressive results" {
-			sendProgErr = fmt.Errorf("error sending progress: %s", e)
+			sendProgErr = fmt.Errorf("error sending progress: %w", e)
 			// Normally the callee should cancel the call, but this test makes
 			// sure a callee that keeps trying to send is handled correctly.
 			//return client.InvokeResult{Err: wamp.ErrCanceled}
@@ -176,7 +177,7 @@ func TestRPCProgressiveCallInterrupt(t *testing.T) {
 		// This progressive result receives the same error as the previous.
 		e = callee.SendProgress(ctx, wamp.List{"Echo"}, nil)
 		if e != nil && e.Error() != "caller not accepting progressive results" {
-			sendProgErr = fmt.Errorf("error sending progress: %s", e)
+			sendProgErr = fmt.Errorf("error sending progress: %w", e)
 		}
 
 		// This goes nowhere (gets put in dead buffered channel), because the
@@ -221,7 +222,7 @@ func TestRPCProgressiveCallInterrupt(t *testing.T) {
 	}
 
 	err = <-recvProgErr
-	if err != client.ErrNotConn {
+	if !errors.Is(err, client.ErrNotConn) {
 		t.Errorf("unexpected error returned fom CallProgress: %s", err)
 	}
 	<-caller.Done()
@@ -337,7 +338,7 @@ func TestProgressStress(t *testing.T) {
 		}
 	}
 
-	// All results, for all calls, must be recieved by timeout.
+	// All results, for all calls, must be received by timeout.
 	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
 	defer cancel()
 

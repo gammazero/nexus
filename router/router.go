@@ -85,7 +85,7 @@ func NewRouter(config *Config, logger stdlog.StdLog) (Router, error) {
 		realmTemplate := *r.realmTemplate
 		realmTemplate.URI = "some.valid.realm"
 		if _, err := newRealm(&realmTemplate, nil, nil, r.log, r.debug); err != nil {
-			return nil, fmt.Errorf("Invalid realmTemplate: %s", err)
+			return nil, fmt.Errorf("invalid realmTemplate: %w", err)
 		}
 	}
 
@@ -300,7 +300,7 @@ func (r *router) Close() {
 	r.log.Println("Router stopped")
 }
 
-// AddRealm allows the addition of a realm after construction
+// AddRealm allows the addition of a realm after construction.
 func (r *router) AddRealm(config *RealmConfig) error {
 	var err error
 	sync := make(chan struct{})
@@ -340,7 +340,7 @@ func (r *router) RemoveRealm(name wamp.URI) {
 
 // addRealm attempts to create and add a realm to this router.
 //
-// this method should ONLY be called from within an atomic func
+// this method should ONLY be called from within an atomic func.
 func (r *router) addRealm(config *RealmConfig) (*realm, error) {
 	if _, ok := r.realms[config.URI]; ok {
 		return nil, errors.New("realm already exists: " + string(config.URI))

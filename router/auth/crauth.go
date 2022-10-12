@@ -133,11 +133,12 @@ func (cr *CRAuthenticator) Authenticate(sid wamp.ID, details wamp.Dict, client w
 func (cr *CRAuthenticator) makeChallengeStr(session wamp.ID, authid, authrole string) (string, error) {
 	nonce, err := nonce()
 	if err != nil {
-		return "", fmt.Errorf("failed to get nonce: %s", err)
+		return "", fmt.Errorf("failed to get nonce: %w", err)
 	}
 
 	return fmt.Sprintf(
-		"{ \"nonce\":\"%s\", \"authprovider\":\"%s\", \"authid\":\"%s\", \"timestamp\":\"%s\", \"authrole\":\"%s\", \"authmethod\":\"%s\", \"session\":%d }",
+		"{ \"nonce\":\"%s\", \"authprovider\":\"%s\", \"authid\":\"%s\", \"timestamp\":\"%s\","+
+			" \"authrole\":\"%s\", \"authmethod\":\"%s\", \"session\":%d }",
 		nonce, cr.keyStore.Provider(), authid, wamp.NowISO8601(), authrole,
 		cr.AuthMethod(), int(session)), nil
 }

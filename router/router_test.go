@@ -88,7 +88,7 @@ func testClientInRealm(r Router, realm wamp.URI) (*wamp.Session, error) {
 
 	msg, err := wamp.RecvTimeout(client, time.Second)
 	if err != nil {
-		return nil, fmt.Errorf("error waiting for welcome: %s", err)
+		return nil, fmt.Errorf("error waiting for welcome: %w", err)
 	}
 	welcome, ok := msg.(*wamp.Welcome)
 	if !ok {
@@ -153,7 +153,7 @@ func TestHandshakeBadRealm(t *testing.T) {
 	}
 }
 
-// Test sending a
+// Test for protocol violation.
 func TestProtocolViolation(t *testing.T) {
 	defer leaktest.Check(t)()
 	r, err := newTestRouter()
@@ -663,7 +663,6 @@ func TestRegistrationMetaProcedures(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	sessID := caller.ID
 
 	// ----- Test wamp.registration.list meta procedure -----
 	callID := wamp.GlobalID()
@@ -703,7 +702,7 @@ func TestRegistrationMetaProcedures(t *testing.T) {
 	if err != nil {
 		t.Fatal("Error connecting client:", err)
 	}
-	sessID = callee.ID
+	sessID := callee.ID
 	// Register remote procedure
 	registerID := wamp.GlobalID()
 	callee.Send(&wamp.Register{Request: registerID, Procedure: testProcedure})
@@ -944,7 +943,6 @@ func TestSubscriptionMetaProcedures(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	sessID := caller.ID
 
 	// ----- Test wamp.subscription.list meta procedure -----
 	callID := wamp.GlobalID()
@@ -984,7 +982,7 @@ func TestSubscriptionMetaProcedures(t *testing.T) {
 	if err != nil {
 		t.Fatal("Error connecting client:", err)
 	}
-	sessID = subscriber.ID
+	sessID := subscriber.ID
 	// Subscribe to topic
 	reqID := wamp.GlobalID()
 	subscriber.Send(&wamp.Subscribe{Request: reqID, Topic: testTopic})

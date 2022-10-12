@@ -69,7 +69,11 @@ func TestSessionKill(t *testing.T) {
 	}
 
 	// Test that killing self gets error.
-	cli1.Send(&wamp.Call{Request: wamp.GlobalID(), Procedure: wamp.MetaProcSessionKill, Arguments: wamp.List{cli1.ID}, ArgumentsKw: nil})
+	cli1.Send(&wamp.Call{
+		Request:     wamp.GlobalID(),
+		Procedure:   wamp.MetaProcSessionKill,
+		Arguments:   wamp.List{cli1.ID},
+		ArgumentsKw: nil})
 
 	msg, err = wamp.RecvTimeout(cli1, time.Second)
 	if err != nil {

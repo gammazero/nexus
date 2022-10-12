@@ -20,10 +20,13 @@ import (
 
 const (
 	// Define serialization consts in client package so that client code does
-	// not need to import the serialize package to get the consts.
-	JSON    = serialize.JSON
-	MSGPACK = serialize.MSGPACK
-	CBOR    = serialize.CBOR
+	// not need to import serialize package to get the consts.
+
+	JSON          = serialize.JSON
+	MSGPACK       = serialize.MSGPACK
+	CBOR          = serialize.CBOR
+	WampPPTScheme = "wamp"
+	MqttPPTScheme = "mqtt"
 )
 
 var E2eeSerializers = map[string]serialize.Serialization{"cbor": CBOR}
@@ -77,7 +80,7 @@ var InvocationCanceled = InvokeResult{Err: wamp.ErrCanceled}
 func isPPTSchemeValid(pptScheme string) bool {
 	// passthru of wamp and mqtt is supported by default, optionally a custom ppt scheme
 	// is also allowed
-	return pptScheme == "wamp" || pptScheme == "mqtt" || strings.HasPrefix(pptScheme, "x_")
+	return pptScheme == WampPPTScheme || pptScheme == MqttPPTScheme || strings.HasPrefix(pptScheme, "x_")
 }
 
 // In mqtt/custom scheme we need to encode payload with specified serializer (if provided)
@@ -480,7 +483,7 @@ func (c *Client) Publish(topic string, options wamp.Dict, args wamp.List, kwargs
 		var payload wamp.List
 		var err error
 
-		if pptScheme == "wamp" {
+		if pptScheme == WampPPTScheme {
 			payload, err = packE2EEPayload(options, args, kwargs)
 		} else {
 			payload, err = packPPTPayload(options, args, kwargs)
@@ -711,7 +714,13 @@ type ProgressHandler func(*wamp.Result)
 // IMPORTANT: If the context has a timeout, then the amount of time needs to be
 // sufficient for the caller to receive all progressive results as well as the
 // final result.
-func (c *Client) Call(ctx context.Context, procedure string, options wamp.Dict, args wamp.List, kwargs wamp.Dict, progcb ProgressHandler) (*wamp.Result, error) {
+func (c *Client) Call(
+	ctx context.Context,
+	procedure string,
+	options wamp.Dict,
+	args wamp.List,
+	kwargs wamp.Dict,
+	progcb ProgressHandler) (*wamp.Result, error) {
 	if !c.Connected() {
 		return nil, ErrNotConn
 	}
@@ -764,7 +773,7 @@ func (c *Client) Call(ctx context.Context, procedure string, options wamp.Dict, 
 		// Let's prepare payload based on ppt_* attributes provided
 		var payload wamp.List
 		var err error
-		if pptScheme == "wamp" {
+		if pptScheme == WampPPTScheme {
 			payload, err = packE2EEPayload(options, args, kwargs)
 		} else {
 			payload, err = packPPTPayload(options, args, kwargs)
@@ -819,7 +828,7 @@ func (c *Client) Call(ctx context.Context, procedure string, options wamp.Dict, 
 			}
 
 			if !isPPTSchemeValid(pptScheme) {
-				return nil, fmt.Errorf("cannot process result with invalid ppt scheme %q: %v", pptScheme, ErrPPTSchemeInvalid)
+				return nil, fmt.Errorf("cannot process result with invalid ppt scheme %q: %w", pptScheme, ErrPPTSchemeInvalid)
 			}
 
 			var args wamp.List
@@ -828,7 +837,7 @@ func (c *Client) Call(ctx context.Context, procedure string, options wamp.Dict, 
 
 			// Now need to check ppt_serializer (in pair with ppt_scheme)
 			// and deserialize payload with appreciate serializer
-			if pptScheme == "wamp" {
+			if pptScheme == WampPPTScheme {
 				args, kwargs, err = unpackE2EEPayload(msg.Details, msg.Arguments)
 			} else {
 				args, kwargs, err = unpackPPTPayload(msg.Details, msg.Arguments)
@@ -1058,7 +1067,11 @@ func joinRealm(peer wamp.Peer, cfg Config) (*wamp.Welcome, error) {
 	return welcome, nil
 }
 
-func handleCRAuth(peer wamp.Peer, challenge *wamp.Challenge, authHandlers map[string]AuthFunc, rspTimeout time.Duration) (wamp.Message, error) {
+func handleCRAuth(
+	peer wamp.Peer,
+	challenge *wamp.Challenge,
+	authHandlers map[string]AuthFunc,
+	rspTimeout time.Duration) (wamp.Message, error) {
 	// Look up the authentication function for the specified authmethod.
 	authFunc, ok := authHandlers[challenge.AuthMethod]
 	if !ok {
@@ -1215,7 +1228,11 @@ func (c *Client) waitForReply(id wamp.ID) (wamp.Message, error) {
 // IMPORTANT: Must not block on anything requiring run() goroutine, since the
 // run() goroutine may be blocked waiting for a reply to be read from the
 // awaiting reply channel.
-func (c *Client) waitForReplyWithCancel(ctx context.Context, id wamp.ID, procedure string, progChan chan<- *wamp.Result) (wamp.Message, error) {
+func (c *Client) waitForReplyWithCancel(
+	ctx context.Context,
+	id wamp.ID,
+	procedure string,
+	progChan chan<- *wamp.Result) (wamp.Message, error) {
 	var wait chan wamp.Message
 	var ok bool
 	c.sess.Lock()
@@ -1390,7 +1407,7 @@ func (c *Client) runHandleEvent(msg *wamp.Event) {
 
 		// Now need to check ppt_serializer (in pair with ppt_scheme)
 		// and serialize payload with appreciate serializer
-		if pptScheme == "wamp" {
+		if pptScheme == WampPPTScheme {
 			args, kwargs, err = unpackE2EEPayload(msg.Details, msg.Arguments)
 		} else {
 			args, kwargs, err = unpackPPTPayload(msg.Details, msg.Arguments)
@@ -1459,7 +1476,7 @@ func (c *Client) runHandleInvocation(msg *wamp.Invocation) {
 
 		// Now need to check ppt_serializer (in pair with ppt_scheme)
 		// and deserialize payload with appreciate serializer
-		if pptScheme == "wamp" {
+		if pptScheme == WampPPTScheme {
 			args, kwargs, err = unpackE2EEPayload(msg.Details, msg.Arguments)
 		} else {
 			args, kwargs, err = unpackPPTPayload(msg.Details, msg.Arguments)
@@ -1544,7 +1561,7 @@ func (c *Client) runHandleInvocation(msg *wamp.Invocation) {
 			// Note: handler is also just as likely to return on INTERRUPT.
 			result = InvokeResult{Err: wamp.ErrCanceled}
 			var reason string
-			if ctx.Err() == context.DeadlineExceeded {
+			if errors.Is(ctx.Err(), context.DeadlineExceeded) {
 				reason = "callee due to timeout"
 			} else {
 				reason = "router"
@@ -1612,7 +1629,7 @@ func (c *Client) runHandleInvocation(msg *wamp.Invocation) {
 			var payload wamp.List
 			var err error
 
-			if pptScheme == "wamp" {
+			if pptScheme == WampPPTScheme {
 				payload, err = packE2EEPayload(options, result.Args, result.Kwargs)
 			} else {
 				payload, err = packPPTPayload(options, result.Args, result.Kwargs)

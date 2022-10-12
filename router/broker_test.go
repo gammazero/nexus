@@ -32,7 +32,7 @@ func (p *testPeer) SendCtx(ctx context.Context, msg wamp.Message) error {
 }
 
 func (p *testPeer) Recv() <-chan wamp.Message { return p.in }
-func (p *testPeer) Close()                    { return }
+func (p *testPeer) Close()                    {}
 
 func (p *testPeer) IsLocal() bool { return true }
 

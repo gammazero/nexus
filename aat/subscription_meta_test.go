@@ -61,7 +61,7 @@ func TestMetaEventOnCreateOnSubscribe(t *testing.T) {
 	}
 
 	// Subscribe to something to generate meta on_subcribe event
-	nullHandler := func(_ *wamp.Event) { return }
+	nullHandler := func(_ *wamp.Event) {}
 	err = sess.Subscribe("some.topic", nullHandler, nil)
 	if err != nil {
 		t.Fatal("subscribe error:", err)
@@ -205,7 +205,7 @@ func TestMetaEventOnUnsubscribeOnDelete(t *testing.T) {
 
 	// Subscribe to something and then unsubscribe to generate meta on_subcribe
 	// event.
-	nullHandler := func(_ *wamp.Event) { return }
+	nullHandler := func(_ *wamp.Event) {}
 	if err = sess.Subscribe("some.topic", nullHandler, nil); err != nil {
 		t.Fatal("subscribe error:", err)
 	}
@@ -311,7 +311,7 @@ func TestMetaProcSubGet(t *testing.T) {
 	defer subscriber.Close()
 
 	// Subscribe to something
-	nullHandler := func(_ *wamp.Event) { return }
+	nullHandler := func(_ *wamp.Event) {}
 	err = subscriber.Subscribe(testTopicWC, nullHandler, wamp.Dict{"match": "wildcard"})
 	if err != nil {
 		t.Fatal("subscribe error:", err)

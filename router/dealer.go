@@ -16,7 +16,7 @@ const (
 	// trying to send a RESULT to a blocked caller.  This is different that the
 	// CALL timeout which spedifies how long the callee may take to answer.
 	sendResultDeadline = time.Minute
-	// yieldRetryDelay is the initial delay before reprocessin a blocked yield
+	// yieldRetryDelay is the initial delay before reprocessing a blocked yield.
 	yieldRetryDelay = time.Millisecond
 )
 
@@ -51,7 +51,7 @@ type registration struct {
 	callees []*wamp.Session
 }
 
-// invocation tracks in-progress invocation
+// invocation tracks in-progress invocation.
 type invocation struct {
 	callID      requestID
 	callee      *wamp.Session
@@ -406,7 +406,12 @@ func (d *dealer) run() {
 	}
 }
 
-func (d *dealer) syncRegister(callee *wamp.Session, msg *wamp.Register, match, invokePolicy string, disclose, wampURI bool) []*wamp.Publish {
+func (d *dealer) syncRegister(
+	callee *wamp.Session,
+	msg *wamp.Register,
+	match,
+	invokePolicy string,
+	disclose, wampURI bool) []*wamp.Publish {
 	var metaPubs []*wamp.Publish
 	var reg *registration
 	switch match {

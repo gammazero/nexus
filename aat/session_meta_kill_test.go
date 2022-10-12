@@ -84,7 +84,7 @@ func TestSessionKill(t *testing.T) {
 
 	// Test that trying to kill self receives error.
 	args = wamp.List{cli1.ID}
-	result, err = cli1.Call(ctx, metaKill, nil, args, kwArgs, nil)
+	_, err = cli1.Call(ctx, metaKill, nil, args, kwArgs, nil)
 	if err == nil {
 		t.Fatal("Expected error")
 	}
@@ -101,7 +101,7 @@ func TestSessionKill(t *testing.T) {
 	defer c2()
 	args = wamp.List{wamp.ID(12345)}
 	kwArgs = wamp.Dict{"reason": reason, "message": message}
-	result, err = cli1.Call(ctx, metaKill, nil, args, kwArgs, nil)
+	_, err = cli1.Call(ctx, metaKill, nil, args, kwArgs, nil)
 	if err == nil {
 		t.Error("Expected error")
 	} else if _, ok := err.(client.RPCError); !ok {

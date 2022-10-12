@@ -63,7 +63,7 @@ func (s *RawSocketServer) ListenAndServeTLS(network, address string, tlscfg *tls
 	if !hasCert || certFile != "" || keyFile != "" {
 		cert, err := tls.LoadX509KeyPair(certFile, keyFile)
 		if err != nil {
-			return nil, fmt.Errorf("error loading X509 key pair: %s", err)
+			return nil, fmt.Errorf("error loading X509 key pair: %w", err)
 		}
 		tlscfg.Certificates = append(tlscfg.Certificates, cert)
 	}
