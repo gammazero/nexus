@@ -1,0 +1,50 @@
+name: Lint Commits messages and Pull Request Description
+
+on:
+  pull_request:
+
+concurrency:
+  group: '${{ github.workflow }} @ ${{ github.event.pull_request.head.label || github.head_ref || github.ref }}'
+  cancel-in-progress: true
+
+permissions: read-all
+
+jobs:
+  lint:
+    name: Lint PR & Commits
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check Pull Request Title/Description
+        uses: gsactions/commit-message-checker@v1
+        with:
+          pattern: '^\s*(\w|[^\ ])+( +(\w|.)+)+$'  # Do not allow one-word strings
+          flags: 'gmi'
+          error: |
+            Pull Request Title or Description is too short. Please respect reviewer and provide more context!
+          excludeDescription: 'false' # optional: this excludes the description body of a pull request
+          excludeTitle: 'false' # optional: this excludes the title of a pull request
+          checkAllCommitMessages: 'false' # optional: this checks all commits associated with a pull request
+      - name: Check Pull Request Checkbox marks
+        uses: gsactions/commit-message-checker@v1
+        with:
+          # Checks that at least one of the change type is checked
+          pattern: '(.|\n|\r)*((\[x\] Bug fix)|(\[x\] New feature)|(\[x\] Breaking change))(.|\n|\r)*'
+          flags: 'gmi'
+          error: |
+            You have not checked any kind of change this PR introduce. Please select at least one.
+            This will help the reviewer to better understand and review changes.
+          excludeDescription: 'false' # optional: this excludes the description body of a pull request
+          excludeTitle: 'false' # optional: this excludes the title of a pull request
+          checkAllCommitMessages: 'false' # optional: this checks all commits associated with a pull request
+      - name: Check commits messages
+        uses: gsactions/commit-message-checker@v1
+        with:
+          pattern: '^\s*(\w|[^\ ])+( +(\w|.)+)+$'  # Do not allow one-word strings
+          flags: 'gmi'
+          error: |
+            Commit messages are too short and not informative. Please respect future yourself and your teammates
+            and provide more descriptive messages!
+          excludeDescription: 'true' # optional: this excludes the description body of a pull request
+          excludeTitle: 'true' # optional: this excludes the title of a pull request
+          checkAllCommitMessages: 'true' # optional: this checks all commits associated with a pull request
+          accessToken: ${{ secrets.GITHUB_TOKEN }} # GitHub access token is only required if checkAllCommitMessages is true
