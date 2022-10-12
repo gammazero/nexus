@@ -6,7 +6,6 @@ import (
 	"errors"
 	"fmt"
 	"io"
-	"io/ioutil"
 	"net"
 	"strings"
 	"time"
@@ -313,7 +312,7 @@ MsgLoop:
 			}
 			continue MsgLoop
 		case 2: // PONG
-			_, err = io.CopyN(ioutil.Discard, rs.conn, int64(length))
+			_, err = io.CopyN(io.Discard, rs.conn, int64(length))
 			if err != nil {
 				rs.log.Println("Error reading PONG:", err)
 				rs.conn.Close()

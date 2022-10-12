@@ -20,6 +20,9 @@ type CRAuthenticator struct {
 // NewCRAuthenticator creates a new CRAuthenticator with the given key store
 // and the maximum time to wait for a client to respond to a CHALLENGE message.
 func NewCRAuthenticator(keyStore KeyStore, timeout time.Duration) *CRAuthenticator {
+	if timeout == 0 {
+		timeout = defaultCRAuthTimeout
+	}
 	return &CRAuthenticator{
 		keyStore: keyStore,
 		timeout:  timeout,

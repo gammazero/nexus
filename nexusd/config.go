@@ -2,8 +2,8 @@ package main
 
 import (
 	"encoding/json"
-	"io/ioutil"
 	"log"
+	"os"
 	"time"
 
 	"github.com/gammazero/nexus/v3/router"
@@ -52,12 +52,12 @@ type Config struct {
 	// File to write log data to.  If not specified, log to stdout.
 	LogPath string `json:"log_path"`
 	// Router configuration parameters.
-	// See https://godoc.org/github.com/gammazero/nexus#RouterConfig
+	// See https://godoc.org/github.com/gammazero/nexus/v3#RouterConfig
 	Router router.Config
 }
 
 func LoadConfig(path string) *Config {
-	file, err := ioutil.ReadFile(path)
+	file, err := os.ReadFile(path)
 	if err != nil {
 		log.Fatal("Config File Missing. ", err)
 	}

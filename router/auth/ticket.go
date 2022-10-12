@@ -21,6 +21,9 @@ type TicketAuthenticator struct {
 // man-in-the-middle can sniff and possibly hijack the ticket. If the ticket
 // value is reused, that might enable replay attacks.
 func NewTicketAuthenticator(keyStore KeyStore, timeout time.Duration) *TicketAuthenticator {
+	if timeout == 0 {
+		timeout = defaultCRAuthTimeout
+	}
 	return &TicketAuthenticator{
 		CRAuthenticator{
 			keyStore: keyStore,

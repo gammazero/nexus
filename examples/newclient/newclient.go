@@ -13,8 +13,8 @@ import (
 	"errors"
 	"flag"
 	"fmt"
-	"io/ioutil"
 	"log"
+	"os"
 
 	"github.com/gammazero/nexus/v3/client"
 )
@@ -100,7 +100,7 @@ func NewClient(logger *log.Logger) (*client.Client, error) {
 		// If not skipping verification and told to trust a certificate.
 		if !skipVerify && caFile != "" {
 			// Load PEM-encoded certificate to trust.
-			certPEM, err := ioutil.ReadFile(caFile)
+			certPEM, err := os.ReadFile(caFile)
 			if err != nil {
 				return nil, err
 			}

@@ -57,7 +57,6 @@ type invocation struct {
 	callID      requestID
 	callee      *wamp.Session
 	canceled    bool
-	retryCount  int
 	timerCancel context.CancelFunc
 }
 
@@ -102,9 +101,6 @@ type dealer struct {
 	allowDisclose bool
 
 	metaPeer wamp.Peer
-
-	// Meta-procedure registration ID -> handler func.
-	metaProcMap map[wamp.ID]func(*wamp.Invocation) wamp.Message
 
 	log   stdlog.StdLog
 	debug bool
