@@ -860,7 +860,7 @@ func (r *realm) sessionGet(msg *wamp.Invocation) wamp.Message {
 
 	retChan := make(chan *wamp.Session)
 	r.actionChan <- func() {
-		sess, _ := r.clients[sid]
+		sess := r.clients[sid]
 		retChan <- sess
 	}
 	sess := <-retChan

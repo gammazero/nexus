@@ -1337,7 +1337,7 @@ func TestProgressDisconnect(t *testing.T) {
 
 	// Check for expected error from callee.
 	err = <-sendProgErr
-	if !errors.Is(err, context.Canceled) && err != ErrNotConn {
+	if !errors.Is(err, context.Canceled) && !errors.Is(err, ErrNotConn) {
 		t.Fatalf("wrong error from SendProgress: %s", err)
 	}
 }
