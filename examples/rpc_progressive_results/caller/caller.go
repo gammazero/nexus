@@ -9,7 +9,6 @@ immediately.
 In this example, the progressive results are portions of a larger body of text.
 The final result is a sha256 sum of all the data, allowing the caller to verify
 that it received everything correcly.
-
 */
 package main
 

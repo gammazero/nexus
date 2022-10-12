@@ -73,7 +73,8 @@ func DictChild(dict Dict, key string) Dict {
 // DictValue returns the value specified by the slice of path elements.
 //
 // To specify the path using a dot-separated string, call like this:
-//     DictValue(dict, strings.Split(path, "."))
+//
+//	DictValue(dict, strings.Split(path, "."))
 //
 // For example, the path []string{"roles","callee","features","call_timeout"}
 // returns  the value of the call_timeout feature as interface{}.  An error
@@ -96,7 +97,8 @@ func DictValue(dict Dict, path []string) (interface{}, error) {
 // DictFlag returns the bool specified by the dot-separated path.
 //
 // To specify the path using a dot-separated string, call like this:
-//     DictFlag(dict, strings.Split(path, "."))
+//
+//	DictFlag(dict, strings.Split(path, "."))
 //
 // For example: "roles.subscriber.features.publisher_identification" returns
 // the value of the publisher_identification feature.  An error is returned if

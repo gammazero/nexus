@@ -29,7 +29,7 @@
                 "enable_meta_modify": false
             }
         ],
-        "debug": false,
+        "debug": true,
         "mem_stats_log_sec": 0
     }
 }

@@ -104,6 +104,9 @@ const (
 	// A Peer received invalid WAMP protocol message.
 	ErrProtocolViolation = URI("wamp.error.protocol_violation")
 
+	// A Peer tries to use a feature that is not supported
+	ErrFeatureNotSupported = URI("wamp.error.feature_not_supported")
+
 	// -- Session Meta Events --
 
 	// Fired when a session joins a realm on the router.

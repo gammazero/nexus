@@ -1,7 +1,6 @@
 /*
 Package wamp defines all message types, data types, and reserved URI values
 defined by the WAMP specification.
-
 */
 package wamp
 
@@ -190,9 +189,12 @@ func (msg *Goodbye) MessageType() MessageType { return GOODBYE }
 //
 // [ERROR, REQUEST.Type|int, REQUEST.Request|id, Details|dict, Error|uri]
 // [ERROR, REQUEST.Type|int, REQUEST.Request|id, Details|dict, Error|uri,
-//     Arguments|list]
+//
+//	Arguments|list]
+//
 // [ERROR, REQUEST.Type|int, REQUEST.Request|id, Details|dict, Error|uri,
-//     Arguments|list, ArgumentsKw|dict]
+//
+//	Arguments|list, ArgumentsKw|dict]
 type Error struct {
 	Type        MessageType
 	Request     ID
@@ -211,7 +213,8 @@ func (msg *Error) MessageType() MessageType { return ERROR }
 // [PUBLISH, Request|id, Options|dict, Topic|uri]
 // [PUBLISH, Request|id, Options|dict, Topic|uri, Arguments|list]
 // [PUBLISH, Request|id, Options|dict, Topic|uri, Arguments|list,
-//     ArgumentsKw|dict]
+//
+//	ArgumentsKw|dict]
 type Publish struct {
 	Request     ID
 	Options     Dict
@@ -278,9 +281,12 @@ func (msg *Unsubscribed) MessageType() MessageType { return UNSUBSCRIBED }
 //
 // [EVENT, SUBSCRIBED.Subscription|id, PUBLISHED.Publication|id, Details|dict]
 // [EVENT, SUBSCRIBED.Subscription|id, PUBLISHED.Publication|id, Details|dict,
-//     PUBLISH.Arguments|list]
+//
+//	PUBLISH.Arguments|list]
+//
 // [EVENT, SUBSCRIBED.Subscription|id, PUBLISHED.Publication|id, Details|dict,
-//     PUBLISH.Arguments|list, PUBLISH.ArgumentsKw|dict]
+//
+//	PUBLISH.Arguments|list, PUBLISH.ArgumentsKw|dict]
 type Event struct {
 	Subscription ID
 	Publication  ID
@@ -343,7 +349,8 @@ func (msg *Unregistered) MessageType() MessageType { return UNREGISTERED }
 // [CALL, Request|id, Options|dict, Procedure|uri]
 // [CALL, Request|id, Options|dict, Procedure|uri, Arguments|list]
 // [CALL, Request|id, Options|dict, Procedure|uri, Arguments|list,
-//     ArgumentsKw|dict]
+//
+//	ArgumentsKw|dict]
 type Call struct {
 	Request     ID
 	Options     Dict
@@ -360,9 +367,12 @@ func (msg *Call) MessageType() MessageType { return CALL }
 //
 // [INVOCATION, Request|id, REGISTERED.Registration|id, Details|dict]
 // [INVOCATION, Request|id, REGISTERED.Registration|id, Details|dict,
-//     CALL.Arguments|list]
+//
+//	CALL.Arguments|list]
+//
 // [INVOCATION, Request|id, REGISTERED.Registration|id, Details|dict,
-//     CALL.Arguments|list, CALL.ArgumentsKw|dict]
+//
+//	CALL.Arguments|list, CALL.ArgumentsKw|dict]
 type Invocation struct {
 	Request      ID
 	Registration ID
@@ -379,7 +389,8 @@ func (msg *Invocation) MessageType() MessageType { return INVOCATION }
 // [YIELD, INVOCATION.Request|id, Options|dict]
 // [YIELD, INVOCATION.Request|id, Options|dict, Arguments|list]
 // [YIELD, INVOCATION.Request|id, Options|dict, Arguments|list,
-//     ArgumentsKw|dict]
+//
+//	ArgumentsKw|dict]
 type Yield struct {
 	Request     ID
 	Options     Dict
@@ -394,12 +405,19 @@ func (msg *Yield) MessageType() MessageType { return YIELD }
 // [RESULT, CALL.Request|id, Details|dict]
 // [RESULT, CALL.Request|id, Details|dict, YIELD.Arguments|list]
 // [RESULT, CALL.Request|id, Details|dict, YIELD.Arguments|list,
-//     YIELD.ArgumentsKw|dict]
+//
+//	YIELD.ArgumentsKw|dict]
 type Result struct {
 	Request     ID
 	Details     Dict
 	Arguments   List `wamp:"omitempty"`
 	ArgumentsKw Dict `wamp:"omitempty"`
+}
+
+// Payload format for using in Payload Passthru Mode
+type PassthruPayload struct {
+	Arguments   List `wamp:"omitempty" codec:"args"`
+	ArgumentsKw Dict `wamp:"omitempty" codec:"kwargs"`
 }
 
 func (msg *Result) MessageType() MessageType { return RESULT }

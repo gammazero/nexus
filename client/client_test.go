@@ -7,6 +7,7 @@ import (
 	"io"
 	"log"
 	"os"
+	"regexp"
 	"strings"
 	"testing"
 	"time"
@@ -15,7 +16,6 @@ import (
 	"github.com/gammazero/nexus/v3/router"
 	"github.com/gammazero/nexus/v3/router/auth"
 	"github.com/gammazero/nexus/v3/stdlog"
-	"github.com/gammazero/nexus/v3/transport"
 	"github.com/gammazero/nexus/v3/wamp"
 	"github.com/gammazero/nexus/v3/wamp/crsign"
 )
@@ -34,12 +34,6 @@ var logger stdlog.StdLog
 
 func init() {
 	logger = log.New(os.Stdout, "", log.LstdFlags)
-}
-
-func getTestPeer(r router.Router) wamp.Peer {
-	cli, rtr := transport.LinkedPeers()
-	go r.Attach(rtr)
-	return cli
 }
 
 func getTestRouter(realmConfig *router.RealmConfig) (router.Router, error) {
@@ -299,6 +293,24 @@ func TestSubscribe(t *testing.T) {
 		t.Fatal("Expected error publishing to bad URI with ack")
 	}
 
+	err = sub.Unsubscribe(wcTopic)
+	if err != nil {
+		t.Fatal("unsubscribe error:", err)
+	}
+
+	// ***Testing PPT Mode****
+
+	// Publish with invalid PPT Scheme and check for error.
+	options := wamp.Dict{
+		wamp.OptPPTScheme:     "invalid_scheme",
+		wamp.OptPPTSerializer: "native",
+	}
+	args = wamp.List{"hello world"}
+	err = pub.Publish(testTopic, options, args, nil)
+	if err == nil {
+		t.Fatal("Expected error publishing with invalid PPT Scheme")
+	}
+
 	// Make sure the event was not received.
 	select {
 	case <-time.After(time.Millisecond):
@@ -306,10 +318,133 @@ func TestSubscribe(t *testing.T) {
 		t.Fatal("Should not have called event handler")
 	}
 
-	err = sub.Unsubscribe(wcTopic)
-	if err != nil {
-		t.Fatal("unsubscribe error:", err)
+	// Publish with invalid PPT serializer and check for error.
+	options = wamp.Dict{
+		wamp.OptPPTScheme:     "x_custom",
+		wamp.OptPPTSerializer: "invalid_serializer",
 	}
+	args = wamp.List{"hello world"}
+	err = pub.Publish(testTopic, options, args, nil)
+	if err == nil {
+		t.Fatal("Expected error publishing with invalid PPT serializer")
+	}
+
+	// Make sure the event was not received.
+	select {
+	case <-time.After(time.Millisecond):
+	case err = <-errChan:
+		t.Fatal("Should not have called event handler")
+	}
+
+	eventHandler = func(event *wamp.Event) {
+		arg, _ := wamp.AsString(event.Arguments[0])
+		if arg != "hello world" {
+			errChan <- errors.New("event missing or bad args")
+			return
+		}
+		kwarg, _ := wamp.AsString(event.ArgumentsKw["prop"])
+		if kwarg != "hello world" {
+			errChan <- errors.New("event missing or bad kwargs")
+			return
+		}
+		errChan <- nil
+	}
+
+	// Subscribe to test topic
+	testTopic = "test.ppt"
+	err = sub.Subscribe(testTopic, eventHandler, nil)
+	if err != nil {
+		t.Fatal("subscribe error:", err)
+	}
+
+	// Publish an event within custom ppt scheme and native serializer
+	options = wamp.Dict{
+		wamp.OptPPTScheme:     "x_custom",
+		wamp.OptPPTSerializer: "native",
+	}
+	args = wamp.List{"hello world"}
+	kwargs := wamp.Dict{"prop": "hello world"}
+	err = pub.Publish(testTopic, options, args, kwargs)
+	if err != nil {
+		t.Fatal("Failed to publish without ack:", err)
+	}
+
+	// Make sure the event was received.
+	select {
+	case err = <-errChan:
+	case <-time.After(time.Second):
+		t.Fatal("did not get published event")
+	}
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	// Publish an event within custom ppt scheme and cbor serializer
+	options = wamp.Dict{
+		wamp.OptPPTScheme:     "x_custom",
+		wamp.OptPPTSerializer: "cbor",
+	}
+	args = wamp.List{"hello world"}
+	kwargs = wamp.Dict{"prop": "hello world"}
+	err = pub.Publish(testTopic, options, args, kwargs)
+	if err != nil {
+		t.Fatal("Failed to publish without ack:", err)
+	}
+
+	// Make sure the event was received.
+	select {
+	case err = <-errChan:
+	case <-time.After(time.Second):
+		t.Fatal("did not get published event")
+	}
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	// Publish an event within custom ppt scheme and msgpack serializer
+	options = wamp.Dict{
+		wamp.OptPPTScheme:     "x_custom",
+		wamp.OptPPTSerializer: "msgpack",
+	}
+	args = wamp.List{"hello world"}
+	kwargs = wamp.Dict{"prop": "hello world"}
+	err = pub.Publish(testTopic, options, args, kwargs)
+	if err != nil {
+		t.Fatal("Failed to publish without ack:", err)
+	}
+
+	// Make sure the event was received.
+	select {
+	case err = <-errChan:
+	case <-time.After(time.Second):
+		t.Fatal("did not get published event")
+	}
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	// Publish an event within custom ppt scheme and json serializer
+	options = wamp.Dict{
+		wamp.OptPPTScheme:     "x_custom",
+		wamp.OptPPTSerializer: "json",
+	}
+	args = wamp.List{"hello world"}
+	kwargs = wamp.Dict{"prop": "hello world"}
+	err = pub.Publish(testTopic, options, args, kwargs)
+	if err != nil {
+		t.Fatal("Failed to publish without ack:", err)
+	}
+
+	// Make sure the event was received.
+	select {
+	case err = <-errChan:
+	case <-time.After(time.Second):
+		t.Fatal("did not get published event")
+	}
+	if err != nil {
+		t.Fatal(err)
+	}
+
 	pub.Close()
 	sub.Close()
 	r.Close()
@@ -380,6 +515,182 @@ func TestRemoteProcedureCall(t *testing.T) {
 	}
 	if rpcErr.Err.Error != wamp.ErrNoSuchProcedure {
 		t.Fatal("Wrong error URI in RPC error")
+	}
+
+	// ***Testing PPT Mode****
+
+	// Test registering a valid procedure.
+	handler = func(ctx context.Context, inv *wamp.Invocation) InvokeResult {
+		arg, _ := wamp.AsString(inv.Arguments[0])
+		if arg != "hello world" {
+			t.Fatal("event missing or bad args")
+		}
+		kwarg, _ := wamp.AsString(inv.ArgumentsKw["prop"])
+		if kwarg != "hello world" {
+			t.Fatal("event missing or bad kwargs")
+		}
+
+		resArgs := wamp.List{"goodbye world"}
+		resKwargs := wamp.Dict{"prop": "goodbye world"}
+		options := wamp.Dict{
+			wamp.OptPPTScheme:     inv.Details[wamp.OptPPTScheme],
+			wamp.OptPPTSerializer: inv.Details[wamp.OptPPTSerializer],
+		}
+
+		return InvokeResult{Args: resArgs, Kwargs: resKwargs, Options: options}
+	}
+	procName = "test.ppt"
+	if err = callee.Register(procName, handler, nil); err != nil {
+		t.Fatal("failed to register procedure:", err)
+	}
+
+	// Test calling the procedure with invalid PPT Scheme
+	options := wamp.Dict{
+		wamp.OptPPTScheme:     "invalid_scheme",
+		wamp.OptPPTSerializer: "native",
+	}
+	args := wamp.List{"hello world"}
+	kwargs := wamp.Dict{"prop": "hello world"}
+	ctx = context.Background()
+	result, err = caller.Call(ctx, procName, options, args, kwargs, nil)
+	if err == nil {
+		t.Fatal("Expected error calling procedure")
+	}
+
+	// Test calling the procedure with invalid PPT serializer
+	options = wamp.Dict{
+		wamp.OptPPTScheme:     "x_custom",
+		wamp.OptPPTSerializer: "invalid_serializer",
+	}
+	args = wamp.List{"hello world"}
+	kwargs = wamp.Dict{"prop": "hello world"}
+	ctx = context.Background()
+	result, err = caller.Call(ctx, procName, options, args, kwargs, nil)
+	if err == nil {
+		t.Fatal("Expected error calling procedure")
+	}
+
+	// Test calling the procedure within custom ppt scheme and native serializer
+	options = wamp.Dict{
+		wamp.OptPPTScheme:     "x_custom",
+		wamp.OptPPTSerializer: "native",
+	}
+	args = wamp.List{"hello world"}
+	kwargs = wamp.Dict{"prop": "hello world"}
+	ctx = context.Background()
+	result, err = caller.Call(ctx, procName, options, args, kwargs, nil)
+	if err != nil {
+		t.Fatal("failed to call procedure:", err)
+	}
+	if result.Arguments[0] != "goodbye world" {
+		t.Fatal("wrong result:", result.Arguments)
+	}
+	if result.ArgumentsKw["prop"] != "goodbye world" {
+		t.Fatal("wrong result:", result.ArgumentsKw)
+	}
+
+	// Test calling the procedure within custom ppt scheme and json serializer
+	options = wamp.Dict{
+		wamp.OptPPTScheme:     "x_custom",
+		wamp.OptPPTSerializer: "json",
+	}
+	args = wamp.List{"hello world"}
+	kwargs = wamp.Dict{"prop": "hello world"}
+	ctx = context.Background()
+	result, err = caller.Call(ctx, procName, options, args, kwargs, nil)
+	if err != nil {
+		t.Fatal("failed to call procedure:", err)
+	}
+	if result.Arguments[0] != "goodbye world" {
+		t.Fatal("wrong result:", result.Arguments)
+	}
+	if result.ArgumentsKw["prop"] != "goodbye world" {
+		t.Fatal("wrong result:", result.ArgumentsKw)
+	}
+
+	// Test calling the procedure within custom ppt scheme and cbor serializer
+	options = wamp.Dict{
+		wamp.OptPPTScheme:     "x_custom",
+		wamp.OptPPTSerializer: "cbor",
+	}
+	args = wamp.List{"hello world"}
+	kwargs = wamp.Dict{"prop": "hello world"}
+	ctx = context.Background()
+	result, err = caller.Call(ctx, procName, options, args, kwargs, nil)
+	if err != nil {
+		t.Fatal("failed to call procedure:", err)
+	}
+	if result.Arguments[0] != "goodbye world" {
+		t.Fatal("wrong result:", result.Arguments)
+	}
+	if result.ArgumentsKw["prop"] != "goodbye world" {
+		t.Fatal("wrong result:", result.ArgumentsKw)
+	}
+
+	// Test calling the procedure within custom ppt scheme and msgpack serializer
+	options = wamp.Dict{
+		wamp.OptPPTScheme:     "x_custom",
+		wamp.OptPPTSerializer: "msgpack",
+	}
+	args = wamp.List{"hello world"}
+	kwargs = wamp.Dict{"prop": "hello world"}
+	ctx = context.Background()
+	result, err = caller.Call(ctx, procName, options, args, kwargs, nil)
+	if err != nil {
+		t.Fatal("failed to call procedure:", err)
+	}
+	if result.Arguments[0] != "goodbye world" {
+		t.Fatal("wrong result:", result.Arguments)
+	}
+	if result.ArgumentsKw["prop"] != "goodbye world" {
+		t.Fatal("wrong result:", result.ArgumentsKw)
+	}
+
+	// Bad handler
+	handler = func(ctx context.Context, inv *wamp.Invocation) InvokeResult {
+		resArgs := wamp.List{"goodbye world"}
+		resKwargs := wamp.Dict{"prop": "goodbye world"}
+		options := wamp.Dict{
+			wamp.OptPPTScheme: "invalid_scheme",
+		}
+
+		return InvokeResult{Args: resArgs, Kwargs: resKwargs, Options: options}
+	}
+	procName = "test.ppt.invoke.bad.scheme"
+	if err = callee.Register(procName, handler, nil); err != nil {
+		t.Fatal("failed to register procedure:", err)
+	}
+
+	// Test calling the procedure with invalid PPT Scheme in YIELD
+	args = wamp.List{"hello world"}
+	ctx = context.Background()
+	result, err = caller.Call(ctx, procName, nil, args, nil, nil)
+	if err == nil {
+		t.Fatal("Expected error calling procedure")
+	}
+
+	// Bad handler
+	handler = func(ctx context.Context, inv *wamp.Invocation) InvokeResult {
+		resArgs := wamp.List{"goodbye world"}
+		resKwargs := wamp.Dict{"prop": "goodbye world"}
+		options := wamp.Dict{
+			wamp.OptPPTScheme:     "x_custom",
+			wamp.OptPPTSerializer: "invalid_serializer",
+		}
+
+		return InvokeResult{Args: resArgs, Kwargs: resKwargs, Options: options}
+	}
+	procName = "test.ppt.invoke.bad.serializer"
+	if err = callee.Register(procName, handler, nil); err != nil {
+		t.Fatal("failed to register procedure:", err)
+	}
+
+	// Test calling the procedure with invalid PPT Scheme in YIELD
+	args = wamp.List{"hello world"}
+	ctx = context.Background()
+	result, err = caller.Call(ctx, procName, nil, args, nil, nil)
+	if err == nil {
+		t.Fatal("Expected error calling procedure")
 	}
 
 	caller.Close()
@@ -691,7 +1002,7 @@ func (ks *serverKeyStore) AuthRole(authid string) (string, error) {
 
 func TestConnectContext(t *testing.T) {
 	const (
-		expect     = "dial tcp: operation was canceled"
+		expect     = "dial tcp: (.*)operation was canceled"
 		unixExpect = "dial unix /tmp/wamp.sock: operation was canceled"
 	)
 
@@ -704,23 +1015,27 @@ func TestConnectContext(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
 	cancel()
 	_, err := ConnectNet(ctx, "http://localhost:9999/ws", cfg)
-	if err == nil || err.Error() != expect {
-		t.Fatalf("expected error %s, got %s", expect, err)
+	resStrMatch, _ := regexp.MatchString(expect, err.Error())
+	if err == nil || !resStrMatch {
+		t.Fatalf("expected error %q, got %q", expect, err)
 	}
 
 	_, err = ConnectNet(ctx, "https://localhost:9999/ws", cfg)
-	if err == nil || err.Error() != expect {
-		t.Fatalf("expected error %s, got %s", expect, err)
+	resStrMatch, _ = regexp.MatchString(expect, err.Error())
+	if err == nil || !resStrMatch {
+		t.Fatalf("expected error %q, got %q", expect, err)
 	}
 
 	_, err = ConnectNet(ctx, "tcp://localhost:9999", cfg)
-	if err == nil || err.Error() != expect {
-		t.Fatalf("expected error %s, got %s", expect, err)
+	resStrMatch, _ = regexp.MatchString(expect, err.Error())
+	if err == nil || !resStrMatch {
+		t.Fatalf("expected error %q, got %q", expect, err)
 	}
 
 	_, err = ConnectNet(ctx, "tcps://localhost:9999", cfg)
-	if err == nil || err.Error() != expect {
-		t.Fatalf("expected error %s, got %s", expect, err)
+	resStrMatch, _ = regexp.MatchString(expect, err.Error())
+	if err == nil || !resStrMatch {
+		t.Fatalf("expected error %q, got %q", expect, err)
 	}
 
 	_, err = ConnectNet(ctx, "unix:///tmp/wamp.sock", cfg)
@@ -1146,8 +1461,16 @@ func TestEventContentSafety(t *testing.T) {
 			return
 		}
 
+		prop, ok := event.ArgumentsKw["prop"]
+		if !ok || prop != "value" {
+			errChan <- fmt.Errorf("expected kwArgs 'prop':'value', got %q", prop)
+			<-gate
+			return
+		}
+
 		event.Details["oops"] = true
 		event.Arguments[0] = "oops"
+		event.ArgumentsKw["prop"] = "oops"
 		errChan <- nil
 		<-gate
 	}
@@ -1160,7 +1483,7 @@ func TestEventContentSafety(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	if err = pub.Publish(testTopic, nil, wamp.List{"Hello"}, nil); err != nil {
+	if err = pub.Publish(testTopic, nil, wamp.List{"Hello"}, wamp.Dict{"prop": "value"}); err != nil {
 		t.Fatal("Failed to publish:", err)
 	}
 

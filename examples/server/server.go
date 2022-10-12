@@ -1,7 +1,6 @@
 /*
 Example nexus WAMP router that handles websockets (with/out TLS), TCP
 rawsockets (with/out TLS), and unix rawsockets.
-
 */
 package main
 

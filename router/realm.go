@@ -995,7 +995,7 @@ func (r *realm) sessionKillAll(msg *wamp.Invocation) wamp.Message {
 // sessionModifyDetails is a non-standard session meta procedure that modifies
 // the details of a session.
 //
-// Positional arguments
+// # Positional arguments
 //
 // 1. `session|id` - The ID of the session to modify.
 // 2. `details|dict` - Details delta.

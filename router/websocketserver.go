@@ -35,7 +35,7 @@ type protocol struct {
 
 // WebsocketServer handles websocket connections.
 //
-// Origin Considerations
+// # Origin Considerations
 //
 // Web browsers allow Javascript applications to open a WebSocket connection to
 // any host.  It is up to the server to enforce an origin policy using the
@@ -111,18 +111,18 @@ type WebsocketServer struct {
 // To run the websocket server, call one of the server's
 // ListenAndServe methods:
 //
-//     s := NewWebsocketServer(r)
-//     closer, err := s.ListenAndServe(address)
+//	s := NewWebsocketServer(r)
+//	closer, err := s.ListenAndServe(address)
 //
 // Or, use the various ListenAndServe functions provided by net/http.  This
 // works because WebsocketServer implements the http.Handler interface:
 //
-//     s := NewWebsocketServer(r)
-//     server := &http.Server{
-//         Handler: s,
-//         Addr:    address,
-//     }
-//     server.ListenAndServe()
+//	s := NewWebsocketServer(r)
+//	server := &http.Server{
+//	    Handler: s,
+//	    Addr:    address,
+//	}
+//	server.ListenAndServe()
 func NewWebsocketServer(r Router) *WebsocketServer {
 	s := &WebsocketServer{
 		router:    r,
@@ -150,33 +150,38 @@ func NewWebsocketServer(r Router) *WebsocketServer {
 // case-insensitive.
 //
 // For example:
-//   s := NewWebsocketServer(r)
-//   s.AllowOrigins([]string{"*.domain.com", "*.domain.net"})
+//
+//	s := NewWebsocketServer(r)
+//	s.AllowOrigins([]string{"*.domain.com", "*.domain.net"})
 //
 // To allow all origins, specify a wildcard only:
-//   s.AllowOrigins([]string{"*"})
 //
-// Origins with Ports
+//	s.AllowOrigins([]string{"*"})
+//
+// # Origins with Ports
 //
 // To allow origins that have a port number, specify the port as part of the
 // origin pattern, or use a wildcard to match the ports.
 //
 // Allow a specific port, by specifying the expected port number:
-//   s.AllowOrigins([]string{"*.somewhere.com:8080"})
+//
+//	s.AllowOrigins([]string{"*.somewhere.com:8080"})
 //
 // Allow individual ports, by specifying each port:
-//  err := s.AllowOrigins([]string{
-//      "*.somewhere.com:8080",
-//      "*.somewhere.com:8905",
-//      "*.somewhere.com:8908",
-//  })
+//
+//	err := s.AllowOrigins([]string{
+//	    "*.somewhere.com:8080",
+//	    "*.somewhere.com:8905",
+//	    "*.somewhere.com:8908",
+//	})
 //
 // Allow any port, by specifying a wildcard. Be sure to include the colon ":"
 // so that the pattern does not match a longer origin.  Without the ":" this
 // example would also match "x.somewhere.comics.net"
-//   err := s.AllowOrigins([]string{"*.somewhere.com:*"})
 //
-// Custom Origin Checks
+//	err := s.AllowOrigins([]string{"*.somewhere.com:*"})
+//
+// # Custom Origin Checks
 //
 // Alternatively, a custom function my be configured to supplied any origin
 // checking logic your application needs.  The WebsocketServer calls the
@@ -185,10 +190,10 @@ func NewWebsocketServer(r Router) *WebsocketServer {
 // WebSocket handshake fails with HTTP status 403.  To supply a CheckOrigin
 // function:
 //
-//     s := NewWebsocketServer(r)
-//     s.Upgrader.CheckOrigin = func(r *http.Request) bool { ... }
+//	s := NewWebsocketServer(r)
+//	s.Upgrader.CheckOrigin = func(r *http.Request) bool { ... }
 //
-// Default Behavior
+// # Default Behavior
 //
 // If AllowOrigins() is not called, and Upgrader.CheckOrigin is nil, then a
 // safe default is used: fail the handshake if the Origin request header is

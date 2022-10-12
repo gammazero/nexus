@@ -3,7 +3,6 @@ Go WAMP client: publisher and caller
 
 Publishes events and makes RPC calls to the python-autobahn client in this
 directory to demonstrate interoperability.
-
 */
 package main
 

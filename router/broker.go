@@ -2,7 +2,6 @@ package router
 
 import (
 	"fmt"
-
 	"github.com/gammazero/nexus/v3/stdlog"
 	"github.com/gammazero/nexus/v3/wamp"
 )
@@ -20,6 +19,7 @@ var brokerRole = wamp.Dict{
 		wamp.FeatureSessionMetaAPI:       true,
 		wamp.FeatureSubBlackWhiteListing: true,
 		wamp.FeatureSubMetaAPI:           true,
+		wamp.FeaturePayloadPassthruMode:  true,
 	},
 }
 
@@ -134,6 +134,29 @@ func (b *broker) publish(pub *wamp.Session, msg *wamp.Publish) {
 		return
 	}
 
+	details := wamp.Dict{}
+
+	// Check and handle Payload PassThru Mode
+	// @see https://wamp-proto.org/wamp_latest_ietf.html#name-payload-passthru-mode
+	if pptScheme, _ := msg.Options[wamp.OptPPTScheme].(string); pptScheme != "" {
+
+		// Let's check: was ppt feature announced by publisher?
+		if !pub.HasFeature(wamp.RolePublisher, wamp.FeaturePayloadPassthruMode) {
+			// It's protocol violation, so we need to abort connection
+			abortMsg := wamp.Abort{Reason: wamp.ErrProtocolViolation}
+			abortMsg.Details = wamp.Dict{}
+			abortMsg.Details[wamp.OptMessage] = ErrPPTNotSupportedByPeer.Error()
+			pub.Peer.Send(&abortMsg)
+			pub.Peer.Close()
+
+			return
+		}
+
+		// Every side supports PPT feature
+		// Let's fill PPT options for callee
+		pptOptionsToDetails(msg.Options, details)
+	}
+
 	excludePub := true
 	if exclude, ok := msg.Options[wamp.OptExcludeMe].(bool); ok {
 		if !pub.HasFeature(wamp.RolePublisher, wamp.FeaturePubExclusion) {
@@ -175,7 +198,7 @@ func (b *broker) publish(pub *wamp.Session, msg *wamp.Publish) {
 	filter := b.filterFactory(msg)
 
 	b.actionChan <- func() {
-		b.syncPublish(pub, msg, pubID, excludePub, disclose, filter)
+		b.syncPublish(pub, msg, pubID, excludePub, disclose, filter, details)
 	}
 
 	// Send PUBLISHED message if acknowledge is present and true.
@@ -259,23 +282,23 @@ func (b *broker) run() {
 	}
 }
 
-func (b *broker) syncPublish(pub *wamp.Session, msg *wamp.Publish, pubID wamp.ID, excludePub, disclose bool, filter PublishFilter) {
+func (b *broker) syncPublish(pub *wamp.Session, msg *wamp.Publish, pubID wamp.ID, excludePub, disclose bool, filter PublishFilter, eventDetails wamp.Dict) {
 	// Publish to subscribers with exact match.
 	if sub, ok := b.topicSubscription[msg.Topic]; ok {
-		b.syncPubEvent(pub, msg, pubID, sub, excludePub, false, disclose, filter)
+		b.syncPubEvent(pub, msg, pubID, sub, excludePub, false, disclose, filter, eventDetails)
 	}
 
 	// Publish to subscribers with prefix match.
 	for pfxTopic, sub := range b.pfxTopicSubscription {
 		if msg.Topic.PrefixMatch(pfxTopic) {
-			b.syncPubEvent(pub, msg, pubID, sub, excludePub, true, disclose, filter)
+			b.syncPubEvent(pub, msg, pubID, sub, excludePub, true, disclose, filter, eventDetails)
 		}
 	}
 
 	// Publish to subscribers with wildcard match.
 	for wcTopic, sub := range b.wcTopicSubscription {
 		if msg.Topic.WildcardMatch(wcTopic) {
-			b.syncPubEvent(pub, msg, pubID, sub, excludePub, true, disclose, filter)
+			b.syncPubEvent(pub, msg, pubID, sub, excludePub, true, disclose, filter, eventDetails)
 		}
 	}
 }
@@ -459,7 +482,7 @@ func (b *broker) syncRemoveSession(subscriber *wamp.Session) {
 
 // syncPubEvent sends an event to all subscribers that are not excluded from
 // receiving the event.
-func (b *broker) syncPubEvent(pub *wamp.Session, msg *wamp.Publish, pubID wamp.ID, sub *subscription, excludePublisher, sendTopic, disclose bool, filter PublishFilter) {
+func (b *broker) syncPubEvent(pub *wamp.Session, msg *wamp.Publish, pubID wamp.ID, sub *subscription, excludePublisher, sendTopic, disclose bool, filter PublishFilter, eventDetails wamp.Dict) {
 	for subscriber, _ := range sub.subscribers {
 		// Do not send event to publisher.
 		if subscriber == pub && excludePublisher {
@@ -483,12 +506,17 @@ func (b *broker) syncPubEvent(pub *wamp.Session, msg *wamp.Publish, pubID wamp.I
 
 		// TODO: Handle publication trust levels
 
+		details := wamp.Dict{}
+		if eventDetails != nil {
+			details = eventDetails
+		}
+
 		event := &wamp.Event{
 			Publication:  pubID,
 			Subscription: sub.id,
 			Arguments:    msg.Arguments,
 			ArgumentsKw:  msg.ArgumentsKw,
-			Details:      wamp.Dict{},
+			Details:      details,
 		}
 		// If a subscription was established with a pattern-based matching
 		// policy, a Broker MUST supply the original PUBLISH.Topic as provided
@@ -501,11 +529,22 @@ func (b *broker) syncPubEvent(pub *wamp.Session, msg *wamp.Publish, pubID wamp.I
 		}
 
 		if subscriber.Peer.IsLocal() {
-			if len(msg.Arguments) != 0 {
+			// the local handler may be lousy and may try to modify
+			// either of those fields, make sure that each event
+			// carries a copy of the respective structure, even if
+			// it's empty
+			if event.Details != nil {
+				options := make(map[string]interface{}, len(event.Details))
+				for k, v := range event.Details {
+					options[k] = v
+				}
+				event.Details = options
+			}
+			if msg.Arguments != nil {
 				event.Arguments = make([]interface{}, len(msg.Arguments))
 				copy(event.Arguments, msg.Arguments)
 			}
-			if len(msg.ArgumentsKw) != 0 {
+			if msg.ArgumentsKw != nil {
 				argsKw := make(map[string]interface{}, len(msg.ArgumentsKw))
 				for k, v := range msg.ArgumentsKw {
 					argsKw[k] = v
