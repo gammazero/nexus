@@ -406,12 +406,7 @@ func (d *dealer) run() {
 	}
 }
 
-func (d *dealer) syncRegister(
-	callee *wamp.Session,
-	msg *wamp.Register,
-	match,
-	invokePolicy string,
-	disclose, wampURI bool) []*wamp.Publish {
+func (d *dealer) syncRegister(callee *wamp.Session, msg *wamp.Register, match, invokePolicy string, disclose, wampURI bool) []*wamp.Publish {
 	var metaPubs []*wamp.Publish
 	var reg *registration
 	switch match {

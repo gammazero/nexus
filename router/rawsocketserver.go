@@ -52,12 +52,7 @@ func (s *RawSocketServer) ListenAndServe(network, address string) (io.Closer, er
 // io.closer is closed.  If tls.Config does not already contain a certificate,
 // then certFile and keyFile, if specified, are used to load an X509
 // certificate.
-func (s *RawSocketServer) ListenAndServeTLS(
-	network,
-	address string,
-	tlscfg *tls.Config,
-	certFile,
-	keyFile string) (io.Closer, error) {
+func (s *RawSocketServer) ListenAndServeTLS(network, address string, tlscfg *tls.Config, certFile, keyFile string) (io.Closer, error) {
 	var hasCert bool
 	if tlscfg == nil {
 		tlscfg = &tls.Config{}

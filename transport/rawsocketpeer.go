@@ -63,14 +63,7 @@ const (
 // If recvLimit is > 0, then the client will not receive messages with size
 // larger than the nearest power of 2 greater than or equal to recvLimit.  If
 // recvLimit is <= 0, then the default of 16M is used.
-func ConnectRawSocketPeer(
-	ctx context.Context,
-	network,
-	addr string,
-	serialization serialize.Serialization,
-	tlsConfig *tls.Config,
-	logger stdlog.StdLog,
-	recvLimit int) (wamp.Peer, error) {
+func ConnectRawSocketPeer(ctx context.Context, network, addr string, serialization serialize.Serialization, tlsConfig *tls.Config, logger stdlog.StdLog, recvLimit int) (wamp.Peer, error) {
 	err := checkNetworkType(network)
 	if err != nil {
 		return nil, err
@@ -147,13 +140,7 @@ func AcceptRawSocket(conn net.Conn, logger stdlog.StdLog, recvLimit, outQueueSiz
 // newRawSocketPeer creates a rawsocket peer from an existing socket
 // connection.  This is used by clients connecting to the WAMP router, and by
 // servers to handle connections from clients.
-func newRawSocketPeer(
-	conn net.Conn,
-	serializer serialize.Serializer,
-	logger stdlog.StdLog,
-	sendLimit,
-	recvLimit,
-	outQueueSize int) *rawSocketPeer {
+func newRawSocketPeer(conn net.Conn, serializer serialize.Serializer, logger stdlog.StdLog, sendLimit, recvLimit, outQueueSize int) *rawSocketPeer {
 	rs := &rawSocketPeer{
 		conn:       conn,
 		serializer: serializer,

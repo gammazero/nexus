@@ -110,13 +110,7 @@ const (
 // The provided Context must be non-nil.  If the context expires before the
 // connection is complete, an error is returned.  Once successfully connected,
 // any expiration of the context will not affect the connection.
-func ConnectWebsocketPeer(
-	ctx context.Context,
-	routerURL string,
-	serialization serialize.Serialization,
-	tlsConfig *tls.Config,
-	logger stdlog.StdLog,
-	wsCfg *WebsocketConfig) (wamp.Peer, error) {
+func ConnectWebsocketPeer(ctx context.Context, routerURL string, serialization serialize.Serialization, tlsConfig *tls.Config, logger stdlog.StdLog, wsCfg *WebsocketConfig) (wamp.Peer, error) {
 	var (
 		protocols   []string
 		payloadType int
@@ -188,13 +182,7 @@ func ConnectWebsocketPeer(
 // A non-zero keepAlive value configures a websocket "ping/pong" heartbeat,
 // sending websocket "pings" every keepAlive interval.  If a "pong" response
 // is not received after 2 intervals have elapsed then the websocket is closed.
-func NewWebsocketPeer(
-	conn WebsocketConnection,
-	serializer serialize.Serializer,
-	payloadType int,
-	logger stdlog.StdLog,
-	keepAlive time.Duration,
-	outQueueSize int) wamp.Peer {
+func NewWebsocketPeer(conn WebsocketConnection, serializer serialize.Serializer, payloadType int, logger stdlog.StdLog, keepAlive time.Duration, outQueueSize int) wamp.Peer {
 	w := &websocketPeer{
 		conn:        conn,
 		serializer:  serializer,

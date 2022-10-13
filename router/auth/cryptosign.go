@@ -25,10 +25,7 @@ func NewCryptoSignAuthenticator(keyStore KeyStore, timeout time.Duration) *Crypt
 
 func (cr *CryptoSignAuthenticator) AuthMethod() string { return "cryptosign" }
 
-func (cr *CryptoSignAuthenticator) Authenticate(
-	sid wamp.ID,
-	details wamp.Dict,
-	client wamp.Peer) (*wamp.Welcome, error) {
+func (cr *CryptoSignAuthenticator) Authenticate(sid wamp.ID, details wamp.Dict, client wamp.Peer) (*wamp.Welcome, error) {
 	authid, _ := wamp.AsString(details["authid"])
 	if authid == "" {
 		return nil, errors.New("missing authid")

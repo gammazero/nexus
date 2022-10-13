@@ -283,14 +283,7 @@ func (b *broker) run() {
 	}
 }
 
-func (b *broker) syncPublish(
-	pub *wamp.Session,
-	msg *wamp.Publish,
-	pubID wamp.ID,
-	excludePub,
-	disclose bool,
-	filter PublishFilter,
-	eventDetails wamp.Dict) {
+func (b *broker) syncPublish(pub *wamp.Session, msg *wamp.Publish, pubID wamp.ID, excludePub, disclose bool, filter PublishFilter, eventDetails wamp.Dict) {
 	// Publish to subscribers with exact match.
 	if sub, ok := b.topicSubscription[msg.Topic]; ok {
 		b.syncPubEvent(pub, msg, pubID, sub, excludePub, false, disclose, filter, eventDetails)
@@ -490,16 +483,7 @@ func (b *broker) syncRemoveSession(subscriber *wamp.Session) {
 
 // syncPubEvent sends an event to all subscribers that are not excluded from
 // receiving the event.
-func (b *broker) syncPubEvent(
-	pub *wamp.Session,
-	msg *wamp.Publish,
-	pubID wamp.ID,
-	sub *subscription,
-	excludePublisher,
-	sendTopic,
-	disclose bool,
-	filter PublishFilter,
-	eventDetails wamp.Dict) {
+func (b *broker) syncPubEvent(pub *wamp.Session, msg *wamp.Publish, pubID wamp.ID, sub *subscription, excludePublisher, sendTopic, disclose bool, filter PublishFilter, eventDetails wamp.Dict) {
 	for subscriber := range sub.subscribers {
 		// Do not send event to publisher.
 		if subscriber == pub && excludePublisher {
