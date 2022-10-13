@@ -281,7 +281,7 @@ func TestRemove(t *testing.T) {
 	sess2 := wamp.NewSession(subscriber, 0, nil, nil)
 	broker.subscribe(sess2,
 		&wamp.Subscribe{Request: 789, Topic: wamp.URI("nexus.test.sync")})
-	_ = <-sess2.Recv()
+	<-sess2.Recv()
 
 	// Check the broker removed subscription.
 	_, ok := broker.subscriptions[subID]
