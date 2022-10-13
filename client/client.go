@@ -714,7 +714,7 @@ type ProgressHandler func(*wamp.Result)
 // IMPORTANT: If the context has a timeout, then the amount of time needs to be
 // sufficient for the caller to receive all progressive results as well as the
 // final result.
-func (c *Client) Call(ctx context.Context, procedure string, options wamp.Dict, args wamp.List, kwargs wamp.Dict, progcb ProgressHandler) (*wamp.Result, error) {
+func (c *Client) Call(ctx context.Context, procedure string, options wamp.Dict, args wamp.List, kwargs wamp.Dict, progcb ProgressHandler) (*wamp.Result, error) { //nolint:lll
 	if !c.Connected() {
 		return nil, ErrNotConn
 	}
@@ -818,7 +818,7 @@ func (c *Client) Call(ctx context.Context, procedure string, options wamp.Dict, 
 				}
 				c.sess.Peer.Send(&abortMsg)
 				c.sess.Peer.Close()
-				return nil, fmt.Errorf("cannot process unexpected passthrough result: %v", ErrPPTNotSupportedByRouter)
+				return nil, fmt.Errorf("cannot process unexpected passthrough result: %w", ErrPPTNotSupportedByRouter)
 			}
 
 			if !isPPTSchemeValid(pptScheme) {
@@ -1061,7 +1061,7 @@ func joinRealm(peer wamp.Peer, cfg Config) (*wamp.Welcome, error) {
 	return welcome, nil
 }
 
-func handleCRAuth(peer wamp.Peer, challenge *wamp.Challenge, authHandlers map[string]AuthFunc, rspTimeout time.Duration) (wamp.Message, error) {
+func handleCRAuth(peer wamp.Peer, challenge *wamp.Challenge, authHandlers map[string]AuthFunc, rspTimeout time.Duration) (wamp.Message, error) { //nolint:lll
 	// Look up the authentication function for the specified authmethod.
 	authFunc, ok := authHandlers[challenge.AuthMethod]
 	if !ok {
@@ -1218,7 +1218,7 @@ func (c *Client) waitForReply(id wamp.ID) (wamp.Message, error) {
 // IMPORTANT: Must not block on anything requiring run() goroutine, since the
 // run() goroutine may be blocked waiting for a reply to be read from the
 // awaiting reply channel.
-func (c *Client) waitForReplyWithCancel(ctx context.Context, id wamp.ID, procedure string, progChan chan<- *wamp.Result) (wamp.Message, error) {
+func (c *Client) waitForReplyWithCancel(ctx context.Context, id wamp.ID, procedure string, progChan chan<- *wamp.Result) (wamp.Message, error) { //nolint:lll
 	var wait chan wamp.Message
 	var ok bool
 	c.sess.Lock()

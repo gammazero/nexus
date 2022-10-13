@@ -249,7 +249,7 @@ func (s *WebsocketServer) ListenAndServe(address string) (io.Closer, error) {
 // io.closer is closed.  If tls.Config does not already contain a certificate,
 // then certFile and keyFile, if specified, are used to load an X509
 // certificate.
-func (s *WebsocketServer) ListenAndServeTLS(address string, tlscfg *tls.Config, certFile, keyFile string) (io.Closer, error) {
+func (s *WebsocketServer) ListenAndServeTLS(address string, tlscfg *tls.Config, certFile, keyFile string) (io.Closer, error) { //nolint:lll
 	// Load certificate here, instead of in ServeTLS, to check for error before
 	// serving.
 	var hasCert bool
