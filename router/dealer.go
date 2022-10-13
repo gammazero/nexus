@@ -2,6 +2,7 @@ package router
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"math/rand"
 	"strings"
@@ -808,7 +809,7 @@ func (d *dealer) syncCall(caller *wamp.Session, msg *wamp.Call) {
 		// "call timeout"
 		go func() {
 			<-timerCtx.Done()
-			if timerCtx.Err() == context.Canceled {
+			if errors.Is(timerCtx.Err(), context.Canceled) {
 				// Timer canceled.  Got response from callee, or caller
 				// canceled or ended session.
 				return
