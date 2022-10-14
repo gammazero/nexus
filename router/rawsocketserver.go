@@ -89,10 +89,16 @@ func (s *RawSocketServer) requestHandler(l net.Listener) {
 		}
 		if tcpConn, ok := conn.(*net.TCPConn); ok {
 			if s.KeepAlive != 0 {
-				tcpConn.SetKeepAlive(true)
-				tcpConn.SetKeepAlivePeriod(s.KeepAlive)
+				if err = tcpConn.SetKeepAlive(true); err != nil {
+					s.router.Logger().Println("Error enabling keepalive:", err)
+				}
+				if err = tcpConn.SetKeepAlivePeriod(s.KeepAlive); err != nil {
+					s.router.Logger().Println("Error setting keepalive period:", err)
+				}
 			} else {
-				tcpConn.SetKeepAlive(false)
+				if err = tcpConn.SetKeepAlive(false); err != nil {
+					s.router.Logger().Println("Error disabling keepalive:", err)
+				}
 			}
 		}
 		go s.handleRawSocket(conn)

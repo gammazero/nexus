@@ -62,7 +62,7 @@ func TestSessionKill(t *testing.T) {
 	// Check for expected GOODBYE message.
 	goodbye := cli3.RouterGoodbye()
 	if goodbye == nil {
-		t.Error("Did not receive goodbye from router")
+		t.Fatal("Did not receive goodbye from router")
 	}
 	if goodbye.Reason != reason {
 		t.Error("Did not get expected GOODBYE.Reason, got:", goodbye.Reason)

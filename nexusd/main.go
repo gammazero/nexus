@@ -1,6 +1,4 @@
-/*
-Stand-alone nexus router service.
-*/
+// Package main implements a stand-alone nexus router service.
 package main
 
 import (

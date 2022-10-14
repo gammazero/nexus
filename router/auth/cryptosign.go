@@ -17,6 +17,9 @@ type CryptoSignAuthenticator struct {
 }
 
 func NewCryptoSignAuthenticator(keyStore KeyStore, timeout time.Duration) *CryptoSignAuthenticator {
+	if timeout == 0 {
+		timeout = defaultCRAuthTimeout
+	}
 	return &CryptoSignAuthenticator{
 		keyStore: keyStore,
 		timeout:  timeout,
