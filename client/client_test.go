@@ -314,7 +314,7 @@ func TestSubscribe(t *testing.T) {
 	// Make sure the event was not received.
 	select {
 	case <-time.After(time.Millisecond):
-	case err = <-errChan:
+	case <-errChan:
 		t.Fatal("Should not have called event handler")
 	}
 
@@ -332,7 +332,7 @@ func TestSubscribe(t *testing.T) {
 	// Make sure the event was not received.
 	select {
 	case <-time.After(time.Millisecond):
-	case err = <-errChan:
+	case <-errChan:
 		t.Fatal("Should not have called event handler")
 	}
 
@@ -827,7 +827,7 @@ func TestTimeoutCancelRemoteProcedureCall(t *testing.T) {
 		t.Fatal("call should have been canceled")
 	}
 
-	if err != context.DeadlineExceeded {
+	if !errors.Is(err, context.DeadlineExceeded) {
 		t.Fatal("expected context.DeadlineExceeded error")
 	}
 	if err = callee.Unregister(procName); err != nil {
@@ -881,7 +881,7 @@ func TestCancelRemoteProcedureCall(t *testing.T) {
 		t.Fatal("call should have been canceled")
 	}
 
-	if err != context.Canceled {
+	if !errors.Is(err, context.Canceled) {
 		t.Fatal("expected context.Canceled error")
 	}
 	if err = callee.Unregister(procName); err != nil {
@@ -1081,7 +1081,7 @@ func newNetTestClientConfig(realmName string, logger *log.Logger) *Config {
 func newNetTestCalleeWithConfig(routerURL string, clientConfig *Config) (*Client, error) {
 	cl, err := ConnectNet(context.Background(), routerURL, *clientConfig)
 	if err != nil {
-		return nil, fmt.Errorf("connect error: %s", err)
+		return nil, fmt.Errorf("connect error: %w", err)
 	}
 
 	sleep := func(ctx context.Context, inv *wamp.Invocation) InvokeResult {
@@ -1314,7 +1314,7 @@ func TestProgressDisconnect(t *testing.T) {
 		close(disconnect)
 	}
 
-	// All results, for all calls, must be recieved by timeout.
+	// All results, for all calls, must be received by timeout.
 	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
 	defer cancel()
 
@@ -1331,13 +1331,13 @@ func TestProgressDisconnect(t *testing.T) {
 
 	// Check for expected error from caller.
 	err = <-progErr
-	if err != ErrNotConn {
+	if !errors.Is(err, ErrNotConn) {
 		t.Fatalf("expected error from caller: %q got %q", ErrNotConn, err)
 	}
 
 	// Check for expected error from callee.
 	err = <-sendProgErr
-	if err != context.Canceled && err != ErrNotConn {
+	if !errors.Is(err, context.Canceled) && !errors.Is(err, ErrNotConn) {
 		t.Fatalf("wrong error from SendProgress: %s", err)
 	}
 }

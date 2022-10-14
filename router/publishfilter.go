@@ -7,12 +7,12 @@ import (
 )
 
 // PublishFilter is an interface to check whether a publication should be sent
-// to a specific session
+// to a specific session.
 type PublishFilter interface {
 	Allowed(sess *wamp.Session) bool
 }
 
-// FilterFactory is a function which creates a PublishFilter from a publication
+// FilterFactory is a function which creates a PublishFilter from a publication.
 type FilterFactory func(msg *wamp.Publish) PublishFilter
 
 type simplePublishFilter struct {

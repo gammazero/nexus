@@ -17,10 +17,11 @@ var dataItem = []map[string]interface{}{{
 	"ArgumentsKw": wamp.Dict{"prop1": 1, "prop2": "2", "prop3": true},
 }}
 
-func hasRole(details wamp.Dict, role string) bool {
-	_, err := wamp.DictValue(details, []string{"roles", role})
-	return err == nil
-}
+// Not used for now
+//func hasRole(details wamp.Dict, role string) bool {
+//	_, err := wamp.DictValue(details, []string{"roles", role})
+//	return err == nil
+//}
 
 func hasFeature(details wamp.Dict, role, feature string) bool {
 	b, _ := wamp.DictFlag(details, []string{"roles", role, "features", feature})
@@ -723,7 +724,7 @@ func TestMsgPackToJSON(t *testing.T) {
 		t.Fatal("JSON deserialization error: wrong number of arguments")
 	}
 	a, _ := wamp.AsString(e2.Arguments[0])
-	if string(a) != arg {
+	if a != arg {
 		t.Fatal("JSON deserialize error: did not get argument, got:", e2.Arguments[0])
 	}
 	arr, ok := e2.Arguments[1].(map[string]interface{})

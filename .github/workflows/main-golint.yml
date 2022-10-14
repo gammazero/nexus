@@ -1,0 +1,84 @@
+name: Main CI workflows
+
+on: [push, pull_request]
+
+concurrency:
+  group: '${{ github.workflow }} @ ${{ github.event.pull_request.head.label || github.head_ref || github.ref }}'
+  cancel-in-progress: true
+
+jobs:
+  build:
+    name: Check, Lint and Build
+
+    runs-on: ${{ matrix.os }}
+    strategy:
+      matrix:
+        os: [ubuntu-latest, macos-latest]
+
+    env:
+      GO111MODULE: on
+
+    steps:
+      - uses: actions/checkout@v3
+        with:
+          fetch-depth: 0
+
+      - name: Setup go
+        uses: actions/setup-go@v3
+        with:
+          go-version-file: 'go.mod'
+          cache: true
+      - run: go version
+
+      - name: Set git base ref for lint checks (on PR)
+        run: |
+          echo "GIT_BASE_REF='${{ github.base_ref }}'" >> $GITHUB_ENV
+        if: github.base_ref != ''
+
+      - name: Set git base ref to previous commit for lint checks (on push to same branch)
+        run: |
+          echo "GIT_BASE_REF='HEAD~1'" >> $GITHUB_ENV
+        if: github.base_ref == ''
+
+      # Fetch base ref, needed for golangci-lint
+      - name: Fetching base ref ${{ github.base_ref }}
+        run: |
+          git fetch origin ${{ env.GIT_BASE_REF }}:${{ env.GIT_BASE_REF }}
+        if: github.base_ref != ''
+
+      - name: Pull in all Go dependencies
+        run: |
+          go mod vendor
+
+      - name: golangci-lint
+        uses: golangci/golangci-lint-action@v3
+        with:
+          # version of golangci-lint to use in form of v1.2 or v1.2.3 or `latest`
+          version: latest
+          # show only new issues
+          args: --new-from-rev=${{ env.GIT_BASE_REF }}
+          # skip all additional steps
+          skip-pkg-cache: true
+          skip-build-cache: true
+          # XXX: does no work with working-directory
+          # only-new-issues: true
+
+      - name: Check that code is formatted via go fmt tool
+        run: |
+          if [ "$(gofmt -s -l . | grep -v vendor | wc -l)" -gt 0 ]; then
+            exit 1;
+          fi
+
+      - name: Check that go modules are in synced state
+        run: |
+          go mod tidy -v
+          if [ -n "$(git status --porcelain go.mod go.sum)" ]; then
+            echo "Go modules are dirty or not in a good state. Please run go mod tidy"
+            exit 1;
+          fi
+
+      - name: Run unit tests
+        run: make test
+
+      - name: Check build of nexusd
+        run: make service

@@ -528,7 +528,7 @@ func (r *realm) authzMessage(sess *wamp.Session, msg wamp.Message) bool {
 		Details: sess.Details,
 	}
 
-	// Write-lock the session, becuase there is no telling what the Authorizer
+	// Write-lock the session, because there is no telling what the Authorizer
 	// will do to the session details.
 	sess.Lock()
 	isAuthz, err := r.authorizer.Authorize(safeSession, msg)
@@ -860,7 +860,7 @@ func (r *realm) sessionGet(msg *wamp.Invocation) wamp.Message {
 
 	retChan := make(chan *wamp.Session)
 	r.actionChan <- func() {
-		sess, _ := r.clients[sid]
+		sess := r.clients[sid]
 		retChan <- sess
 	}
 	sess := <-retChan
@@ -1092,8 +1092,7 @@ func (r *realm) testamentAdd(msg *wamp.Invocation) wamp.Message {
 }
 
 // testamentFlush removes all testaments for the invoking client.  It takes an
-// optional keyword argument "scope" that has the value "detached" or
-// "destroyed"
+// optional keyword argument "scope" that has the value "detached" or "destroyed".
 func (r *realm) testamentFlush(msg *wamp.Invocation) wamp.Message {
 	caller, ok := wamp.AsID(msg.Details["caller"])
 	if !ok {

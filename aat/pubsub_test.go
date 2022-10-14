@@ -1,4 +1,4 @@
-package aat
+package aat_test
 
 import (
 	"errors"
@@ -163,7 +163,7 @@ func TestUnsubscribeWrongTopic(t *testing.T) {
 		t.Fatal("Failed to connect client:", err)
 	}
 
-	eventHandler := func(_ *wamp.Event) { return }
+	eventHandler := func(_ *wamp.Event) {}
 
 	// Subscribe to event.
 	err = subscriber.Subscribe(testTopic, eventHandler, nil)
@@ -224,7 +224,7 @@ func TestSubscribeBurst(t *testing.T) {
 		t.Fatal("Failed to connect client:", err)
 	}
 
-	eventHandler := func(_ *wamp.Event) { return }
+	eventHandler := func(_ *wamp.Event) {}
 
 	for i := 0; i < 10; i++ {
 		// Subscribe to event.

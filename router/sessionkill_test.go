@@ -35,7 +35,11 @@ func TestSessionKill(t *testing.T) {
 	message := "this is a test"
 
 	// Request that client-3 be killed.
-	cli1.Send(&wamp.Call{Request: wamp.GlobalID(), Procedure: wamp.MetaProcSessionKill, Arguments: wamp.List{cli3.ID}, ArgumentsKw: wamp.Dict{"reason": reason, "message": message}})
+	cli1.Send(&wamp.Call{
+		Request:     wamp.GlobalID(),
+		Procedure:   wamp.MetaProcSessionKill,
+		Arguments:   wamp.List{cli3.ID},
+		ArgumentsKw: wamp.Dict{"reason": reason, "message": message}})
 
 	msg, err := wamp.RecvTimeout(cli1, time.Second)
 	if err != nil {
@@ -69,7 +73,11 @@ func TestSessionKill(t *testing.T) {
 	}
 
 	// Test that killing self gets error.
-	cli1.Send(&wamp.Call{Request: wamp.GlobalID(), Procedure: wamp.MetaProcSessionKill, Arguments: wamp.List{cli1.ID}, ArgumentsKw: nil})
+	cli1.Send(&wamp.Call{
+		Request:     wamp.GlobalID(),
+		Procedure:   wamp.MetaProcSessionKill,
+		Arguments:   wamp.List{cli1.ID},
+		ArgumentsKw: nil})
 
 	msg, err = wamp.RecvTimeout(cli1, time.Second)
 	if err != nil {
@@ -113,7 +121,10 @@ func TestSessionKillAll(t *testing.T) {
 	reason := wamp.URI("foo.bar.baz")
 	message := "this is a test"
 
-	cli1.Send(&wamp.Call{Request: wamp.GlobalID(), Procedure: wamp.MetaProcSessionKillAll, ArgumentsKw: wamp.Dict{"reason": reason, "message": message}})
+	cli1.Send(&wamp.Call{
+		Request:     wamp.GlobalID(),
+		Procedure:   wamp.MetaProcSessionKillAll,
+		ArgumentsKw: wamp.Dict{"reason": reason, "message": message}})
 
 	msg, err := wamp.RecvTimeout(cli1, time.Second)
 	if err != nil {
@@ -193,7 +204,11 @@ func TestSessionKillByAuthid(t *testing.T) {
 
 	// All clients have the same authid, so killing by authid should kill all
 	// except the requesting client.
-	cli1.Send(&wamp.Call{Request: wamp.GlobalID(), Procedure: wamp.MetaProcSessionKillByAuthid, Arguments: wamp.List{cli1.Details["authid"]}, ArgumentsKw: wamp.Dict{"reason": reason, "message": message}})
+	cli1.Send(&wamp.Call{
+		Request:     wamp.GlobalID(),
+		Procedure:   wamp.MetaProcSessionKillByAuthid,
+		Arguments:   wamp.List{cli1.Details["authid"]},
+		ArgumentsKw: wamp.Dict{"reason": reason, "message": message}})
 
 	msg, err := wamp.RecvTimeout(cli1, time.Second)
 	if err != nil {

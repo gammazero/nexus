@@ -52,7 +52,7 @@ func (s *RawSocketServer) ListenAndServe(network, address string) (io.Closer, er
 // io.closer is closed.  If tls.Config does not already contain a certificate,
 // then certFile and keyFile, if specified, are used to load an X509
 // certificate.
-func (s *RawSocketServer) ListenAndServeTLS(network, address string, tlscfg *tls.Config, certFile, keyFile string) (io.Closer, error) {
+func (s *RawSocketServer) ListenAndServeTLS(network, address string, tlscfg *tls.Config, certFile, keyFile string) (io.Closer, error) { //nolint:lll
 	var hasCert bool
 	if tlscfg == nil {
 		tlscfg = &tls.Config{}
@@ -63,7 +63,7 @@ func (s *RawSocketServer) ListenAndServeTLS(network, address string, tlscfg *tls
 	if !hasCert || certFile != "" || keyFile != "" {
 		cert, err := tls.LoadX509KeyPair(certFile, keyFile)
 		if err != nil {
-			return nil, fmt.Errorf("error loading X509 key pair: %s", err)
+			return nil, fmt.Errorf("error loading X509 key pair: %w", err)
 		}
 		tlscfg.Certificates = append(tlscfg.Certificates, cert)
 	}
@@ -99,7 +99,7 @@ func (s *RawSocketServer) requestHandler(l net.Listener) {
 	}
 }
 
-// handleRawSocket accpets a connection from the listening socket, handles the
+// handleRawSocket accepts a connection from the listening socket, handles the
 // client handshake, creates a rawSocketPeer, and then attaches that peer to
 // the router.
 func (s *RawSocketServer) handleRawSocket(conn net.Conn) {

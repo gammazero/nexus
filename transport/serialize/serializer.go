@@ -125,13 +125,13 @@ func assignMap(dst reflect.Value, src reflect.Value) error {
 		}
 		var err error
 		if k, err = convertType(k, dstKeyType); err != nil {
-			return fmt.Errorf("cannot convert src key '%v', invalid type: %s",
+			return fmt.Errorf("cannot convert src key '%v', invalid type: %w",
 				k.Interface(), err)
 		}
 		v := src.MapIndex(k)
 		if v, err = convertType(v, dstValType); err != nil {
 			return fmt.Errorf(
-				"cannot convert src value for key '%v', invalid type: %s",
+				"cannot convert src value for key '%v', invalid type: %w",
 				k.Interface(), err)
 		}
 		dst.SetMapIndex(k, v)
@@ -147,7 +147,7 @@ func assignSlice(dst reflect.Value, src reflect.Value) error {
 	for i := 0; i < src.Len(); i++ {
 		v, err := convertType(src.Index(i), dstElemType)
 		if err != nil {
-			return fmt.Errorf("cannot convert value at index %d: %s", i, err)
+			return fmt.Errorf("cannot convert value at index %d: %w", i, err)
 		}
 		dst.Index(i).Set(v)
 	}

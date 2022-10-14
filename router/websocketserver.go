@@ -213,7 +213,7 @@ func (s *WebsocketServer) AllowOrigins(origins []string) error {
 		// Do exact matching whenever possible, since it is more efficient.
 		if strings.ContainsAny(o, "*?[]^") {
 			if _, err := filepath.Match(o, o); err != nil {
-				return fmt.Errorf("error allowing origin, %s: %s", err, o)
+				return fmt.Errorf("error allowing origin, %w: %s", err, o)
 			}
 			globs = append(globs, strings.ToLower(o))
 		} else {
@@ -249,7 +249,7 @@ func (s *WebsocketServer) ListenAndServe(address string) (io.Closer, error) {
 // io.closer is closed.  If tls.Config does not already contain a certificate,
 // then certFile and keyFile, if specified, are used to load an X509
 // certificate.
-func (s *WebsocketServer) ListenAndServeTLS(address string, tlscfg *tls.Config, certFile, keyFile string) (io.Closer, error) {
+func (s *WebsocketServer) ListenAndServeTLS(address string, tlscfg *tls.Config, certFile, keyFile string) (io.Closer, error) { //nolint:lll
 	// Load certificate here, instead of in ServeTLS, to check for error before
 	// serving.
 	var hasCert bool
@@ -262,7 +262,7 @@ func (s *WebsocketServer) ListenAndServeTLS(address string, tlscfg *tls.Config, 
 	if !hasCert || certFile != "" || keyFile != "" {
 		cert, err := tls.LoadX509KeyPair(certFile, keyFile)
 		if err != nil {
-			return nil, fmt.Errorf("error loading X509 key pair: %s", err)
+			return nil, fmt.Errorf("error loading X509 key pair: %w", err)
 		}
 		tlscfg.Certificates = append(tlscfg.Certificates, cert)
 	}

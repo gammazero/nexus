@@ -1,4 +1,4 @@
-package aat
+package aat_test
 
 import (
 	"context"
@@ -258,13 +258,13 @@ func (ks *serverKeyStore) AuthRole(authid string) (string, error) {
 
 func (ks *serverKeyStore) AlreadyAuth(authid string, details wamp.Dict) bool {
 	// Verify that the request has been captured.
-	v, err := wamp.DictValue(details, []string{"transport", "auth", "request"})
+	_, err := wamp.DictValue(details, []string{"transport", "auth", "request"})
 	if err != nil {
 		// Not authorized - pretend request is needed for some reason.
 		return false
 	}
 
-	v, err = wamp.DictValue(details, []string{"transport", "auth", "cookie"})
+	v, err := wamp.DictValue(details, []string{"transport", "auth", "cookie"})
 	if err != nil {
 		// No tracking cookie - client not recognized, so not auth.
 		return false

@@ -1,4 +1,4 @@
-package aat
+package aat_test
 
 import (
 	"context"
@@ -208,7 +208,7 @@ func TestRPCCancelCall(t *testing.T) {
 
 	// Make sure the call is blocked.
 	select {
-	case err = <-errChan:
+	case <-errChan:
 		t.Fatal("call should have been blocked")
 	case <-time.After(200 * time.Millisecond):
 	}

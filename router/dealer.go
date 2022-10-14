@@ -2,6 +2,7 @@ package router
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"math/rand"
 	"strings"
@@ -16,7 +17,7 @@ const (
 	// trying to send a RESULT to a blocked caller.  This is different that the
 	// CALL timeout which spedifies how long the callee may take to answer.
 	sendResultDeadline = time.Minute
-	// yieldRetryDelay is the initial delay before reprocessin a blocked yield
+	// yieldRetryDelay is the initial delay before reprocessing a blocked yield.
 	yieldRetryDelay = time.Millisecond
 )
 
@@ -51,7 +52,7 @@ type registration struct {
 	callees []*wamp.Session
 }
 
-// invocation tracks in-progress invocation
+// invocation tracks in-progress invocation.
 type invocation struct {
 	callID      requestID
 	callee      *wamp.Session
@@ -406,7 +407,7 @@ func (d *dealer) run() {
 	}
 }
 
-func (d *dealer) syncRegister(callee *wamp.Session, msg *wamp.Register, match, invokePolicy string, disclose, wampURI bool) []*wamp.Publish {
+func (d *dealer) syncRegister(callee *wamp.Session, msg *wamp.Register, match, invokePolicy string, disclose, wampURI bool) []*wamp.Publish { //nolint:lll
 	var metaPubs []*wamp.Publish
 	var reg *registration
 	switch match {
@@ -691,7 +692,8 @@ func (d *dealer) syncCall(caller *wamp.Session, msg *wamp.Call) {
 			// It's protocol violation, so we need to abort connection
 			abortMsg := wamp.Abort{Reason: wamp.ErrProtocolViolation}
 			abortMsg.Details = wamp.Dict{}
-			abortMsg.Details[wamp.OptMessage] = "Peer is trying to use Payload PassThru Mode while it was not announced during HELLO handshake"
+			abortMsg.Details[wamp.OptMessage] = "Peer is trying to use Payload PassThru Mode while it was not " +
+				"announced during HELLO handshake"
 			caller.Peer.Send(&abortMsg)
 			caller.Peer.Close()
 
@@ -752,7 +754,8 @@ func (d *dealer) syncCall(caller *wamp.Session, msg *wamp.Call) {
 		// The Callee must support call canceling, as this is necessary to stop
 		// progressive results if the caller session is closed during
 		// progressive result delivery.
-		if callee.HasFeature(wamp.RoleCallee, wamp.FeatureProgCallResults) && callee.HasFeature(wamp.RoleCallee, wamp.FeatureCallCanceling) {
+		if callee.HasFeature(wamp.RoleCallee, wamp.FeatureProgCallResults) &&
+			callee.HasFeature(wamp.RoleCallee, wamp.FeatureCallCanceling) {
 			details[wamp.OptReceiveProgress] = true
 		}
 	}
@@ -806,7 +809,7 @@ func (d *dealer) syncCall(caller *wamp.Session, msg *wamp.Call) {
 		// "call timeout"
 		go func() {
 			<-timerCtx.Done()
-			if timerCtx.Err() == context.Canceled {
+			if errors.Is(timerCtx.Err(), context.Canceled) {
 				// Timer canceled.  Got response from callee, or caller
 				// canceled or ended session.
 				return

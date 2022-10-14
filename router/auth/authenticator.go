@@ -2,7 +2,7 @@
 Package auth provides interfaces for implementing authentication logic that the
 WAMP router can use.
 
-In addition in authentication and challenge-response authentication interface,
+In addition, in authentication and challenge-response authentication interface,
 this package provides default implementations for the following authentication
 methods: "wampcra", ticket", "anonymous".
 */

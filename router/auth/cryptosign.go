@@ -5,9 +5,10 @@ import (
 	"encoding/hex"
 	"errors"
 	"fmt"
+	"time"
+
 	"github.com/gammazero/nexus/v3/wamp"
 	"golang.org/x/crypto/nacl/sign"
-	"time"
 )
 
 type CryptoSignAuthenticator struct {
@@ -24,7 +25,7 @@ func NewCryptoSignAuthenticator(keyStore KeyStore, timeout time.Duration) *Crypt
 
 func (cr *CryptoSignAuthenticator) AuthMethod() string { return "cryptosign" }
 
-func (cr *CryptoSignAuthenticator) Authenticate(sid wamp.ID, details wamp.Dict, client wamp.Peer) (*wamp.Welcome, error) {
+func (cr *CryptoSignAuthenticator) Authenticate(sid wamp.ID, details wamp.Dict, client wamp.Peer) (*wamp.Welcome, error) { //nolint:lll
 	authid, _ := wamp.AsString(details["authid"])
 	if authid == "" {
 		return nil, errors.New("missing authid")
@@ -162,9 +163,7 @@ func (cr *CryptoSignAuthenticator) computeChallenge(channelBinding []byte) ([]by
 			signedMessage[index] = v ^ channelBinding[index]
 		}
 	} else {
-		for index, v := range challenge {
-			signedMessage[index] = v
-		}
+		copy(signedMessage, challenge)
 	}
 
 	return signedMessage, nil

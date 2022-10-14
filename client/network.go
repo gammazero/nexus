@@ -45,11 +45,11 @@ func ConnectNet(ctx context.Context, routerURL string, cfg Config) (*Client, err
 
 	var p wamp.Peer
 	switch u.Scheme {
-	case "http", "https":
+	case "http", "https": //nolint:goconst
 		if u.Scheme == "http" {
 			u.Scheme = "ws"
 		} else {
-			u.Scheme = "wss"
+			u.Scheme = "wss" //nolint:goconst
 		}
 		routerURL = u.String()
 		fallthrough

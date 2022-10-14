@@ -21,7 +21,7 @@ func main() {
 	// Create router instance.
 	routerConfig := &router.Config{
 		RealmConfigs: []*router.RealmConfig{
-			&router.RealmConfig{
+			{
 				URI:           wamp.URI(realm),
 				AnonymousAuth: true,
 			},

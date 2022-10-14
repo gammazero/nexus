@@ -14,10 +14,10 @@ func init() {
 
 // NewID generates a random WAMP ID.
 func GlobalID() ID {
-	return ID(rand.Int63n(maxID))
+	return ID(rand.Int63n(maxID)) //nolint:gosec
 }
 
-// ID generator for WAMP request IDs.  Create with new(IDGen).
+// IDGen is generator for WAMP request IDs.  Create with new(IDGen).
 //
 // WAMP request IDs are sequential per WAMP session, starting at 1 and wrapping
 // around at 2**53 (both value are inclusive [1, 2**53]).

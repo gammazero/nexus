@@ -11,7 +11,7 @@ var (
 	ErrReplyTimeout            = errors.New("timeout waiting for reply")
 	ErrRouterNoRoles           = errors.New("router did not announce any supported roles")
 	ErrPPTNotSupportedByRouter = errors.New("payload passthru mode is not supported by the router")
-	ErrPPTNotSupportedByPeer   = errors.New("peer is trying to use Payload PassThru Mode while it was not announced during HELLO handshake")
+	ErrPPTNotSupportedByPeer   = errors.New("peer is trying to use Payload PassThru Mode while it was not announced during HELLO handshake") //nolint:lll
 	ErrPPTSchemeInvalid        = errors.New("ppt scheme provided is invalid")
 	ErrPPTSerializerInvalid    = errors.New("ppt serializer provided is invalid or not supported")
 	ErrSerialization           = errors.New("can not serialize/deserialize payload")

@@ -99,7 +99,7 @@ func RespondChallenge(secret string, c *wamp.Challenge, h func() hash.Hash) stri
 	}
 
 	// Compute derived key.
-	dk := pbkdf2.Key([]byte(secret), salt, int(iters), int(keylen), sha256.New)
+	dk := pbkdf2.Key([]byte(secret), salt, int(iters), int(keylen), h)
 	// Get base64 bytes of derived key.
 	derivedKey := []byte(base64.StdEncoding.EncodeToString(dk))
 
