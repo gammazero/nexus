@@ -42,6 +42,9 @@ type Router interface {
 
 	// RemoveRealm will attempt to remove a realm from this router
 	RemoveRealm(wamp.URI)
+
+	// HasRealm will tell if a specific realm is already running
+	HasRealm(wamp.URI) bool
 }
 
 // router is the default WAMP router implementation.
@@ -365,6 +368,19 @@ func (r *router) addRealm(config *RealmConfig) (*realm, error) {
 	realm.waitReady()
 	r.log.Println("Added realm:", config.URI)
 	return realm, nil
+}
+
+func (r *router) HasRealm(name wamp.URI) bool {
+	var ok bool
+	sync := make(chan struct{})
+	r.actionChan <- func() {
+		_, ok = r.realms[name]
+		close(sync)
+	}
+	// wait until the atomic func has completed
+	<-sync
+
+	return ok
 }
 
 // Single goroutine used to safely access router data.
