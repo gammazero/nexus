@@ -1499,7 +1499,7 @@ func TestEventContentSafety(t *testing.T) {
 	}
 }
 
-func TestRouterGetFeatures(t *testing.T) {
+func TestRouterFeatures(t *testing.T) {
 	realmConfig := &router.RealmConfig{
 		URI:           wamp.URI("nexus.test.auth"),
 		StrictURI:     true,
@@ -1510,7 +1510,7 @@ func TestRouterGetFeatures(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	routerFeatures := r.GetRouterFeatures()
+	routerFeatures := r.RouterFeatures()
 
 	dealerFeatures := (*routerFeatures)["roles"].(wamp.Dict)[wamp.RoleDealer].(wamp.Dict)
 	if len(dealerFeatures) < 1 {
