@@ -42,6 +42,11 @@ type Router interface {
 
 	// RemoveRealm will attempt to remove a realm from this router
 	RemoveRealm(wamp.URI)
+
+	// GetRouterFeatures exposes WAMP features current version provides
+	// When Nexus is used as a pluggable library sometimes it is
+	// usefully to expose WAMP features current version provides.
+	GetRouterFeatures() *wamp.Dict
 }
 
 // router is the default WAMP router implementation.
@@ -310,6 +315,16 @@ func (r *router) AddRealm(config *RealmConfig) error {
 	}
 	<-sync
 	return err
+}
+
+// GetRouterFeatures exposes WAMP features current version provides.
+func (r *router) GetRouterFeatures() *wamp.Dict {
+	return &wamp.Dict{
+		"roles": wamp.Dict{
+			wamp.RoleBroker: brokerRole,
+			wamp.RoleDealer: dealerRole,
+		},
+	}
 }
 
 // RemoveRealm will close and then remove a realm from this router, if the realm exists.

@@ -1498,3 +1498,27 @@ func TestEventContentSafety(t *testing.T) {
 		}
 	}
 }
+
+func TestRouterGetFeatures(t *testing.T) {
+	realmConfig := &router.RealmConfig{
+		URI:           wamp.URI("nexus.test.auth"),
+		StrictURI:     true,
+		AnonymousAuth: true,
+	}
+	r, err := getTestRouter(realmConfig)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	routerFeatures := r.GetRouterFeatures()
+
+	dealerFeatures := (*routerFeatures)["roles"].(wamp.Dict)[wamp.RoleDealer].(wamp.Dict)
+	if len(dealerFeatures) < 1 {
+		t.Fatal("dealer features are missed")
+	}
+
+	brokerFeatures := (*routerFeatures)["roles"].(wamp.Dict)[wamp.RoleBroker].(wamp.Dict)
+	if len(brokerFeatures) < 1 {
+		t.Fatal("broker features are missed")
+	}
+}
