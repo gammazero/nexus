@@ -15,6 +15,7 @@ const (
 	FeatureCallerIdent      = "caller_identification"
 	FeaturePatternBasedReg  = "pattern_based_registration"
 	FeatureProgCallResults  = "progressive_call_results"
+	FeatureProgressiveCalls = "progressive_calls"
 	FeatureSessionMetaAPI   = "session_meta_api"
 	FeatureSharedReg        = "shared_registration"
 	FeatureRegMetaAPI       = "registration_meta_api"

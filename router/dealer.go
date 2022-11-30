@@ -29,6 +29,7 @@ var dealerRole = wamp.Dict{
 		wamp.FeatureCallerIdent:         true,
 		wamp.FeaturePatternBasedReg:     true,
 		wamp.FeatureProgCallResults:     true,
+		wamp.FeatureProgressiveCalls:    true,
 		wamp.FeatureSessionMetaAPI:      true,
 		wamp.FeatureSharedReg:           true,
 		wamp.FeatureRegMetaAPI:          true,
@@ -57,6 +58,7 @@ type invocation struct {
 	callID      requestID
 	callee      *wamp.Session
 	canceled    bool
+	inProgress  bool
 	timerCancel context.CancelFunc
 }
 
@@ -633,34 +635,70 @@ func (d *dealer) syncCall(caller *wamp.Session, msg *wamp.Call) {
 	}
 
 	var callee *wamp.Session
+	var invocationID wamp.ID
+	var invk *invocation
 
-	// If there are multiple callees, then select a callee based invocation
-	// policy.
-	if len(reg.callees) > 1 {
-		switch reg.policy {
-		case wamp.InvokeFirst:
-			callee = reg.callees[0]
-		case wamp.InvokeRoundRobin:
-			if reg.nextCallee >= len(reg.callees) {
-				reg.nextCallee = 0
-			}
-			callee = reg.callees[reg.nextCallee]
-			reg.nextCallee++
-		case wamp.InvokeRandom:
-			callee = reg.callees[d.prng.Int63n(int64(len(reg.callees)))]
-		case wamp.InvokeLast:
-			callee = reg.callees[len(reg.callees)-1]
-		default:
-			errMsg := fmt.Sprint("multiple callees registered for ",
-				msg.Procedure, " with '", wamp.InvokeSingle, "' policy")
-			// This is disallowed by the dealer, and is a programming error if
-			// it ever happened, so panic.
-			panic(errMsg)
-		}
-	} else {
-		callee = reg.callees[0]
+	callReqID := requestID{
+		session: caller.ID,
+		request: msg.Request,
 	}
+
+	storedInvocationID, ok := d.invocationByCall[callReqID]
+	isInProgress, _ := msg.Options[wamp.OptProgress].(bool)
+
+	// If it is a simple one-time call or first call of progressive call
+	// then we need to init call-invocation-runtime
+	// otherwise we must reuse runtime-data. E.g. not to generate new ID
+	if !ok {
+		// If there are multiple callees, then select a callee based invocation
+		// policy.
+		if len(reg.callees) > 1 {
+			switch reg.policy {
+			case wamp.InvokeFirst:
+				callee = reg.callees[0]
+			case wamp.InvokeRoundRobin:
+				if reg.nextCallee >= len(reg.callees) {
+					reg.nextCallee = 0
+				}
+				callee = reg.callees[reg.nextCallee]
+				reg.nextCallee++
+			case wamp.InvokeRandom:
+				callee = reg.callees[d.prng.Int63n(int64(len(reg.callees)))]
+			case wamp.InvokeLast:
+				callee = reg.callees[len(reg.callees)-1]
+			default:
+				errMsg := fmt.Sprintf("multiple callees registered for %s with '%s' policy", msg.Procedure, wamp.InvokeSingle)
+				// This is disallowed by the dealer, and is a programming error if
+				// it ever happened, so panic.
+				panic(errMsg)
+			}
+		} else {
+			callee = reg.callees[0]
+		}
+
+		reqID := requestID{
+			session: caller.ID,
+			request: msg.Request,
+		}
+		d.calls[reqID] = caller
+		invocationID = d.idGen.Next()
+		invk = &invocation{
+			callID:     reqID,
+			callee:     callee,
+			inProgress: isInProgress,
+		}
+		d.invocations[invocationID] = invk
+		d.invocationByCall[reqID] = invocationID
+
+	} else {
+		storedInvk := d.invocations[storedInvocationID]
+		storedInvk.inProgress = isInProgress
+		callee = storedInvk.callee
+		invocationID = storedInvocationID
+	}
+
 	details := wamp.Dict{}
+	details[wamp.OptProgress] = isInProgress
 
 	// A Caller might want to issue a call providing a timeout for the call to
 	// finish.
@@ -761,19 +799,6 @@ func (d *dealer) syncCall(caller *wamp.Session, msg *wamp.Call) {
 		// the client.
 		details[wamp.OptProcedure] = msg.Procedure
 	}
-
-	reqID := requestID{
-		session: caller.ID,
-		request: msg.Request,
-	}
-	d.calls[reqID] = caller
-	invocationID := d.idGen.Next()
-	invk := &invocation{
-		callID: reqID,
-		callee: callee,
-	}
-	d.invocations[invocationID] = invk
-	d.invocationByCall[reqID] = invocationID
 
 	// Send INVOCATION to the endpoint that has registered the requested
 	// procedure.
@@ -965,7 +990,7 @@ func (d *dealer) syncYield(callee *wamp.Session, msg *wamp.Yield, progress, canR
 
 		// Clean up the invocation, unless need to retry.
 		defer func() {
-			if keepInvocation {
+			if keepInvocation || invk.inProgress {
 				return
 			}
 			delete(d.invocations, msg.Request)

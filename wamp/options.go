@@ -21,6 +21,7 @@ const (
 	OptPPTSerializer   = "ppt_serializer"
 	OptPPTCipher       = "ppt_cipher"
 	OptPPTKeyId        = "ppt_keyid"
+	OptSticky          = "sticky"
 
 	// Values for URI matching mode.
 	MatchExact    = "exact"

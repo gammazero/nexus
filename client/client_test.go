@@ -7,8 +7,10 @@ import (
 	"io"
 	"log"
 	"os"
+	"reflect"
 	"regexp"
 	"strings"
+	"sync"
 	"testing"
 	"time"
 
@@ -698,7 +700,7 @@ func TestRemoteProcedureCall(t *testing.T) {
 	r.Close()
 }
 
-func TestProgressiveCall(t *testing.T) {
+func TestProgressiveCallResults(t *testing.T) {
 	// Connect two clients to the same server
 	callee, caller, r, err := connectedTestClients()
 	if err != nil {
@@ -769,6 +771,182 @@ func TestProgressiveCall(t *testing.T) {
 	}
 	if progCount != 3 {
 		t.Fatal("Expected progCount == 3")
+	}
+
+	// Test unregister.
+	if err = callee.Unregister(procName); err != nil {
+		t.Fatal("Failed to unregister procedure:", err)
+	}
+
+	caller.Close()
+	callee.Close()
+	r.Close()
+}
+
+func TestProgressiveCalls(t *testing.T) {
+	// Connect two clients to the same server
+	callee, caller, r, err := connectedTestClients()
+	if err != nil {
+		t.Fatal("failed to connect test clients:", err)
+	}
+
+	var progressiveIncPayload []int
+	var mu sync.Mutex
+
+	invocationHandler := func(ctx context.Context, inv *wamp.Invocation) InvokeResult {
+
+		mu.Lock()
+		progressiveIncPayload = append(progressiveIncPayload, inv.Arguments[0].(int))
+		mu.Unlock()
+
+		if isInProgress, _ := inv.Details[wamp.OptProgress].(bool); !isInProgress {
+			var sum int64
+			for _, arg := range progressiveIncPayload {
+				n, ok := wamp.AsInt64(arg)
+				if ok {
+					sum += n
+				}
+			}
+			return InvokeResult{Args: wamp.List{sum}}
+		}
+
+		return InvokeResult{Err: wamp.InternalProgressiveOmitResult}
+	}
+
+	procName := "nexus.test.progproc"
+
+	// Register procedure
+	if err = callee.Register(procName, invocationHandler, nil); err != nil {
+		t.Fatal("Failed to register procedure:", err)
+	}
+
+	// Test calling the procedure.
+	callArgs := []int{1, 2, 3, 4, 5, 6, 7, 8, 9, 10}
+	ctx := context.Background()
+
+	callSends := 0
+	sendProgDataCb := func(ctx context.Context) (options wamp.Dict, args wamp.List, kwargs wamp.Dict, err error) {
+		options = wamp.Dict{}
+
+		if callSends == (len(callArgs) - 1) {
+			options[wamp.OptProgress] = false
+		} else {
+			options[wamp.OptProgress] = true
+		}
+
+		args = wamp.List{callArgs[callSends]}
+		callSends++
+
+		return options, args, nil, nil
+	}
+
+	result, err := caller.CallProgressive(ctx, procName, sendProgDataCb, nil)
+	if err != nil {
+		t.Fatal("Failed to call procedure:", err)
+	}
+	sum, ok := wamp.AsInt64(result.Arguments[0])
+	if !ok {
+		t.Fatal("Could not convert result to int64:", result.Arguments[0])
+	}
+	if sum != 55 {
+		t.Fatal("Wrong result:", sum)
+	}
+	if callSends != 10 {
+		t.Fatal("Expected callSends == 10")
+	}
+	if !reflect.DeepEqual(callArgs, progressiveIncPayload) {
+		t.Fatal("Progressive data should be processed sequentially")
+	}
+
+	// Test unregister.
+	if err = callee.Unregister(procName); err != nil {
+		t.Fatal("Failed to unregister procedure:", err)
+	}
+
+	caller.Close()
+	callee.Close()
+	r.Close()
+}
+
+func TestProgressiveCallsAndResults(t *testing.T) {
+	// Connect two clients to the same server
+	callee, caller, r, err := connectedTestClients()
+	if err != nil {
+		t.Fatal("failed to connect test clients:", err)
+	}
+
+	// Handler sends progressive results.
+	invocationHandler := func(ctx context.Context, inv *wamp.Invocation) InvokeResult {
+
+		if isInProgress, _ := inv.Details[wamp.OptProgress].(bool); !isInProgress {
+			return InvokeResult{Args: inv.Arguments}
+		} else {
+			senderr := callee.SendProgress(ctx, inv.Arguments, nil)
+			if senderr != nil {
+				callee.log.Println("Error sending progress:", senderr)
+				return InvokeResult{Err: "test.failed"}
+			}
+		}
+
+		return InvokeResult{Err: wamp.InternalProgressiveOmitResult}
+	}
+
+	procName := "nexus.test.progproc"
+
+	// Register procedure
+	if err = callee.Register(procName, invocationHandler, nil); err != nil {
+		t.Fatal("Failed to register procedure:", err)
+	}
+
+	// Test calling the procedure.
+	callArgs := []int{1, 2, 3, 4, 5, 6, 7, 8, 9, 10}
+	ctx := context.Background()
+
+	var progressiveResults []int
+	var mu sync.Mutex
+
+	progRescb := func(result *wamp.Result) {
+		mu.Lock()
+		defer mu.Unlock()
+		progressiveResults = append(progressiveResults, result.Arguments[0].(int))
+	}
+
+	callSends := 0
+	sendProgDataCb := func(ctx context.Context) (options wamp.Dict, args wamp.List, kwargs wamp.Dict, err error) {
+		options = wamp.Dict{}
+
+		if callSends == (len(callArgs) - 1) {
+			options[wamp.OptProgress] = false
+		} else {
+			options[wamp.OptProgress] = true
+		}
+
+		args = wamp.List{callArgs[callSends]}
+		callSends++
+
+		return options, args, nil, nil
+	}
+
+	result, err := caller.CallProgressive(ctx, procName, sendProgDataCb, progRescb)
+	if err != nil {
+		t.Fatal("Failed to call procedure:", err)
+	}
+	progressiveResults = append(progressiveResults, result.Arguments[0].(int))
+	var sum int64
+	for _, arg := range progressiveResults {
+		n, ok := wamp.AsInt64(arg)
+		if ok {
+			sum += n
+		}
+	}
+	if sum != 55 {
+		t.Fatal("Wrong result:", sum)
+	}
+	if callSends != 10 {
+		t.Fatal("Expected callSends == 10")
+	}
+	if !reflect.DeepEqual(callArgs, progressiveResults) {
+		t.Fatal("Progressive data should be processed sequentially")
 	}
 
 	// Test unregister.
