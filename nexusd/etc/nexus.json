@@ -26,7 +26,24 @@
                 "meta_strict": false,
                 "meta_include_session_details": [],
                 "enable_meta_kill": false,
-                "enable_meta_modify": false
+                "enable_meta_modify": false,
+                "event_history": [
+                    {
+                        "topic": "exact.topic.uri",
+                        "match": "exact",
+                        "limit": 100
+                    },
+                    {
+                        "topic": "prefix.topic.uri",
+                        "match": "prefix",
+                        "limit": 500
+                    },
+                    {
+                        "topic": "wildcard.topic.uri",
+                        "match": "wildcard",
+                        "limit": 250
+                    }
+                ]
             }
         ],
         "debug": true,

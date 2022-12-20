@@ -72,6 +72,8 @@ type RealmConfig struct {
 	// logic when it may not be needed otherwise.
 	EnableMetaModify bool `json:"enable_meta_modify"`
 
+	TopicEventHistoryConfigs []*TopicEventHistoryConfig `json:"event_history"`
+
 	// PublishFilterFactory is a function used to create a
 	// PublishFilter to check which sessions a publication should be
 	// sent to.
@@ -79,4 +81,14 @@ type RealmConfig struct {
 	// This value is not set via json config, but is configured when
 	// embedding nexus.  A value of nil enables the default filtering.
 	PublishFilterFactory FilterFactory
+}
+
+// TopicEventHistoryConfig stores settings for event history for a topic
+type TopicEventHistoryConfig struct {
+	// Topic URI
+	Topic wamp.URI `json:"topic"`
+	// Matching policy (exact|prefix|wildcard)
+	MatchPolicy string `json:"match"`
+	// Number of most recent events to store
+	Limit uint `json:"limit"`
 }
