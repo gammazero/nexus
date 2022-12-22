@@ -90,5 +90,5 @@ type TopicEventHistoryConfig struct {
 	// Matching policy (exact|prefix|wildcard)
 	MatchPolicy string `json:"match"`
 	// Number of most recent events to store
-	Limit uint `json:"limit"`
+	Limit int `json:"limit"`
 }

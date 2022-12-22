@@ -34,11 +34,37 @@ type subscription struct {
 	subscribers map[*wamp.Session]struct{}
 }
 
+// storedEvent is a wrapper around wamp event message with timestamp
+// to be used in event history
+type storedEvent struct {
+	timestamp    string
+	Subscription wamp.ID
+	Publication  wamp.ID
+	Details      wamp.Dict
+	Arguments    wamp.List `wamp:"omitempty"`
+	ArgumentsKw  wamp.Dict `wamp:"omitempty"`
+}
+
+type eventHistoryItem struct {
+	publication *wamp.Publish
+	event       *storedEvent
+}
+
+type eventHistoryStoreItem struct {
+	events         []*eventHistoryItem
+	matchPolicy    string
+	limit          int
+	isLimitReached bool
+}
+
 type broker struct {
 	// topic -> subscription
 	topicSubscription    map[wamp.URI]*subscription
 	pfxTopicSubscription map[wamp.URI]*subscription
 	wcTopicSubscription  map[wamp.URI]*subscription
+
+	// event history in-memory store
+	eventHistoryStore map[*subscription]*eventHistoryStoreItem
 
 	// subscription ID -> subscription
 	subscriptions map[wamp.ID]*subscription
@@ -60,7 +86,7 @@ type broker struct {
 }
 
 // newBroker returns a new default broker implementation instance.
-func newBroker(logger stdlog.StdLog, strictURI, allowDisclose, debug bool, publishFilter FilterFactory) *broker {
+func newBroker(logger stdlog.StdLog, strictURI, allowDisclose, debug bool, publishFilter FilterFactory, evntCfgs []*TopicEventHistoryConfig) *broker { //nolint:lll
 	if logger == nil {
 		panic("logger is nil")
 	}
@@ -89,6 +115,11 @@ func newBroker(logger stdlog.StdLog, strictURI, allowDisclose, debug bool, publi
 		debug:         debug,
 		filterFactory: publishFilter,
 	}
+	err := b.PreInitEventHistoryTopics(evntCfgs)
+	if err != nil {
+		logger.Printf("error parsing/initializing event history config %v", err)
+		panic(err)
+	}
 	go b.run()
 	return b
 }
@@ -97,6 +128,30 @@ func newBroker(logger stdlog.StdLog, strictURI, allowDisclose, debug bool, publi
 // is suitable for use as broker role info in a WELCOME message.
 func (b *broker) role() wamp.Dict {
 	return brokerRole
+}
+
+// PreInitEventHistoryTopics initializes storage for event history enabled topics.
+func (b *broker) PreInitEventHistoryTopics(evntCfgs []*TopicEventHistoryConfig) error {
+	for _, topicCfg := range evntCfgs {
+		if !topicCfg.Topic.ValidURI(b.strictURI, topicCfg.MatchPolicy) {
+			return fmt.Errorf("invalid topic/match configuration found: %s %s", topicCfg.Topic, topicCfg.MatchPolicy)
+		}
+
+		if topicCfg.Limit <= 0 {
+			return fmt.Errorf("invalid limit for topic configuration found: %d %s", topicCfg.Limit, topicCfg.Topic)
+		}
+
+		sub, _ := b.syncInitSubscription(topicCfg.Topic, topicCfg.MatchPolicy, nil)
+
+		b.eventHistoryStore[sub] = &eventHistoryStoreItem{
+			events:         []*eventHistoryItem{},
+			matchPolicy:    topicCfg.MatchPolicy,
+			limit:          topicCfg.Limit,
+			isLimitReached: false,
+		}
+
+	}
+	return nil
 }
 
 // publish finds all subscriptions for the topic being published to, including
@@ -306,46 +361,79 @@ func (b *broker) syncPublish(pub *wamp.Session, msg *wamp.Publish, pubID wamp.ID
 }
 
 func newSubscription(id wamp.ID, subscriber *wamp.Session, topic wamp.URI, match string) *subscription {
+	subscribers := map[*wamp.Session]struct{}{}
+	if subscriber != nil {
+		subscribers = map[*wamp.Session]struct{}{subscriber: {}}
+	}
+
 	return &subscription{
 		id:          id,
 		topic:       topic,
 		match:       match,
 		created:     wamp.NowISO8601(),
-		subscribers: map[*wamp.Session]struct{}{subscriber: {}},
+		subscribers: subscribers,
 	}
 }
 
-func (b *broker) syncSubscribe(subscriber *wamp.Session, msg *wamp.Subscribe, match string) {
+func (b *broker) syncSaveEvent(eventStore *eventHistoryStoreItem, pub *wamp.Publish, event *wamp.Event) {
+	item := &eventHistoryItem{
+		publication: pub,
+		event: &storedEvent{
+			timestamp:    wamp.NowISO8601(),
+			Subscription: event.Subscription,
+			Publication:  event.Publication,
+			Details:      event.Details,
+			Arguments:    event.Arguments,
+			ArgumentsKw:  event.ArgumentsKw,
+		},
+	}
+	eventStore.events = append(eventStore.events, item)
+
+	if eventStore.isLimitReached {
+		eventStore.events = eventStore.events[1:]
+	} else if len(eventStore.events) > eventStore.limit {
+		eventStore.isLimitReached = true
+		eventStore.events = eventStore.events[1:]
+	}
+}
+
+func (b *broker) syncInitSubscription(topic wamp.URI, match string, subscriber *wamp.Session) (*subscription, bool) {
 	var sub *subscription
 	var existingSub bool
 
 	switch match {
 	case wamp.MatchPrefix:
 		// Subscribe to any topic that matches by the given prefix URI
-		sub, existingSub = b.pfxTopicSubscription[msg.Topic]
+		sub, existingSub = b.pfxTopicSubscription[topic]
 		if !existingSub {
 			// Create a new prefix subscription.
-			sub = newSubscription(b.idGen.Next(), subscriber, msg.Topic, match)
-			b.pfxTopicSubscription[msg.Topic] = sub
+			sub = newSubscription(b.idGen.Next(), subscriber, topic, match)
+			b.pfxTopicSubscription[topic] = sub
 		}
 	case wamp.MatchWildcard:
 		// Subscribe to any topic that matches by the given wildcard URI.
-		sub, existingSub = b.wcTopicSubscription[msg.Topic]
+		sub, existingSub = b.wcTopicSubscription[topic]
 		if !existingSub {
 			// Create a new wildcard subscription.
-			sub = newSubscription(b.idGen.Next(), subscriber, msg.Topic, match)
-			b.wcTopicSubscription[msg.Topic] = sub
+			sub = newSubscription(b.idGen.Next(), subscriber, topic, match)
+			b.wcTopicSubscription[topic] = sub
 		}
 	default:
 		// Subscribe to the topic that exactly matches the given URI.
-		sub, existingSub = b.topicSubscription[msg.Topic]
+		sub, existingSub = b.topicSubscription[topic]
 		if !existingSub {
 			// Create a new subscription.
-			sub = newSubscription(b.idGen.Next(), subscriber, msg.Topic, match)
-			b.topicSubscription[msg.Topic] = sub
+			sub = newSubscription(b.idGen.Next(), subscriber, topic, match)
+			b.topicSubscription[topic] = sub
 		}
 	}
 	b.subscriptions[sub.id] = sub
+
+	return sub, existingSub
+}
+
+func (b *broker) syncSubscribe(subscriber *wamp.Session, msg *wamp.Subscribe, match string) {
+	sub, existingSub := b.syncInitSubscription(msg.Topic, match, subscriber)
 
 	// If the topic already has subscribers, then see if the session requesting
 	// a subscription is already subscribed to the topic.
@@ -506,56 +594,13 @@ func (b *broker) syncPubEvent(pub *wamp.Session, msg *wamp.Publish, pubID wamp.I
 			}
 		}
 
-		// TODO: Handle publication trust levels
-
-		details := wamp.Dict{}
-		if eventDetails != nil {
-			details = eventDetails
-		}
-
-		event := &wamp.Event{
-			Publication:  pubID,
-			Subscription: sub.id,
-			Arguments:    msg.Arguments,
-			ArgumentsKw:  msg.ArgumentsKw,
-			Details:      details,
-		}
-		// If a subscription was established with a pattern-based matching
-		// policy, a Broker MUST supply the original PUBLISH.Topic as provided
-		// by the Publisher in EVENT.Details.topic|uri.
-		if sendTopic {
-			event.Details[detailTopic] = msg.Topic
-		}
-		if disclose && subscriber.HasFeature(wamp.RoleSubscriber, wamp.FeaturePubIdent) {
-			disclosePublisher(pub, event.Details)
-		}
-
-		if subscriber.Peer.IsLocal() {
-			// the local handler may be lousy and may try to modify
-			// either of those fields, make sure that each event
-			// carries a copy of the respective structure, even if
-			// it's empty
-			if event.Details != nil {
-				options := make(map[string]interface{}, len(event.Details))
-				for k, v := range event.Details {
-					options[k] = v
-				}
-				event.Details = options
-			}
-			if msg.Arguments != nil {
-				event.Arguments = make([]interface{}, len(msg.Arguments))
-				copy(event.Arguments, msg.Arguments)
-			}
-			if msg.ArgumentsKw != nil {
-				argsKw := make(map[string]interface{}, len(msg.ArgumentsKw))
-				for k, v := range msg.ArgumentsKw {
-					argsKw[k] = v
-				}
-				event.ArgumentsKw = argsKw
-			}
-		}
-
+		event := prepareEvent(pub, msg, pubID, sub, sendTopic, disclose, eventDetails, subscriber)
 		b.trySend(subscriber, event)
+	}
+
+	if eventStore, ok := b.eventHistoryStore[sub]; ok {
+		event := prepareEvent(pub, msg, pubID, sub, sendTopic, disclose, eventDetails, nil)
+		b.syncSaveEvent(eventStore, msg, event)
 	}
 }
 
@@ -680,6 +725,58 @@ func (b *broker) trySend(sess *wamp.Session, msg wamp.Message) bool {
 		return false
 	}
 	return true
+}
+
+func prepareEvent(pub *wamp.Session, msg *wamp.Publish, pubID wamp.ID, sub *subscription, sendTopic, disclose bool, eventDetails wamp.Dict, subscriber *wamp.Session) *wamp.Event { //nolint:lll
+	details := wamp.Dict{}
+	if eventDetails != nil {
+		details = eventDetails
+	}
+
+	event := &wamp.Event{
+		Publication:  pubID,
+		Subscription: sub.id,
+		Arguments:    msg.Arguments,
+		ArgumentsKw:  msg.ArgumentsKw,
+		Details:      details,
+	}
+	// If a subscription was established with a pattern-based matching
+	// policy, a Broker MUST supply the original PUBLISH.Topic as provided
+	// by the Publisher in EVENT.Details.topic|uri.
+	if sendTopic {
+		event.Details[detailTopic] = msg.Topic
+	}
+	if disclose && subscriber != nil && subscriber.HasFeature(wamp.RoleSubscriber, wamp.FeaturePubIdent) {
+		disclosePublisher(pub, event.Details)
+	}
+
+	// TODO: Handle publication trust levels
+
+	if subscriber != nil && subscriber.Peer.IsLocal() {
+		// the local handler may be lousy and may try to modify
+		// either of those fields, make sure that each event
+		// carries a copy of the respective structure, even if
+		// it's empty
+		if event.Details != nil {
+			options := make(map[string]interface{}, len(event.Details))
+			for k, v := range event.Details {
+				options[k] = v
+			}
+			event.Details = options
+		}
+		if msg.Arguments != nil {
+			event.Arguments = make([]interface{}, len(msg.Arguments))
+			copy(event.Arguments, msg.Arguments)
+		}
+		if msg.ArgumentsKw != nil {
+			argsKw := make(map[string]interface{}, len(msg.ArgumentsKw))
+			for k, v := range msg.ArgumentsKw {
+				argsKw[k] = v
+			}
+			event.ArgumentsKw = argsKw
+		}
+	}
+	return event
 }
 
 // disclosePublisher adds publisher identity information to EVENT.Details.
@@ -897,5 +994,53 @@ func (b *broker) subCountSubscribers(msg *wamp.Invocation) wamp.Message {
 	return &wamp.Yield{
 		Request:   msg.Request,
 		Arguments: wamp.List{count},
+	}
+}
+
+// eventHistoryLast retrieves N last events for subscription.
+func (b *broker) eventHistoryLast(msg *wamp.Invocation) wamp.Message {
+	var events wamp.List // []*storedEvent
+	sync := make(chan struct{})
+	b.actionChan <- func() {
+		//TODO: implement
+		close(sync)
+	}
+	<-sync
+
+	return &wamp.Yield{
+		Request:   msg.Request,
+		Arguments: events,
+	}
+}
+
+// eventHistorySince retrieves events for subscription after specified date.
+func (b *broker) eventHistorySince(msg *wamp.Invocation) wamp.Message {
+	var events wamp.List // []*storedEvent
+	sync := make(chan struct{})
+	b.actionChan <- func() {
+		//TODO: implement
+		close(sync)
+	}
+	<-sync
+
+	return &wamp.Yield{
+		Request:   msg.Request,
+		Arguments: events,
+	}
+}
+
+// eventHistoryAfter retrieves events for subscription happened after specified publication
+func (b *broker) eventHistoryAfter(msg *wamp.Invocation) wamp.Message {
+	var events wamp.List // []*storedEvent
+	sync := make(chan struct{})
+	b.actionChan <- func() {
+		//TODO: implement
+		close(sync)
+	}
+	<-sync
+
+	return &wamp.Yield{
+		Request:   msg.Request,
+		Arguments: events,
 	}
 }
