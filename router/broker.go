@@ -2,6 +2,7 @@ package router
 
 import (
 	"fmt"
+	"time"
 
 	"github.com/gammazero/nexus/v3/stdlog"
 	"github.com/gammazero/nexus/v3/wamp"
@@ -37,7 +38,7 @@ type subscription struct {
 // storedEvent is a wrapper around wamp event message with timestamp
 // to be used in event history
 type storedEvent struct {
-	timestamp    string
+	timestamp    time.Time
 	Subscription wamp.ID
 	Publication  wamp.ID
 	Details      wamp.Dict
@@ -379,7 +380,7 @@ func (b *broker) syncSaveEvent(eventStore *eventHistoryStoreItem, pub *wamp.Publ
 	item := &eventHistoryItem{
 		publication: pub,
 		event: &storedEvent{
-			timestamp:    wamp.NowISO8601(),
+			timestamp:    time.Now(),
 			Subscription: event.Subscription,
 			Publication:  event.Publication,
 			Details:      event.Details,
@@ -598,7 +599,18 @@ func (b *broker) syncPubEvent(pub *wamp.Session, msg *wamp.Publish, pubID wamp.I
 		b.trySend(subscriber, event)
 	}
 
+	// If event history store is enabled for subscription let's save event
 	if eventStore, ok := b.eventHistoryStore[sub]; ok {
+		// We should ignore publications that has exclude or eligible lists of session IDs
+		// As session ID is runtime thing, it is impossible to check later: is history asker allowed to get
+		// this publication or not
+		// @see Security Aspects paragraph of Event History section in WAMP Spec
+		if _, ok := msg.Options["exclude"]; ok {
+			return
+		}
+		if _, ok := msg.Options["eligible"]; ok {
+			return
+		}
 		event := prepareEvent(pub, msg, pubID, sub, sendTopic, disclose, eventDetails, nil)
 		b.syncSaveEvent(eventStore, msg, event)
 	}
@@ -997,12 +1009,43 @@ func (b *broker) subCountSubscribers(msg *wamp.Invocation) wamp.Message {
 	}
 }
 
+// syncGetSubHistoryEvents returns all stored events for subscription
+// TODO: Need to filter by authid and/or authrole of caller if stored events have any of them
+// But that's not possible in current arch as meta peer doesn't know anything about caller, just invocation message
+func (b *broker) syncGetSubHistoryEvents(subId wamp.ID) []*storedEvent {
+	if subscription, ok := b.subscriptions[subId]; ok {
+		if storeItem, ok := b.eventHistoryStore[subscription]; ok {
+			var events []*storedEvent
+			for _, event := range storeItem.events {
+				events = append(events, event.event)
+			}
+			return events
+		}
+	}
+
+	return []*storedEvent{}
+}
+
 // eventHistoryLast retrieves N last events for subscription.
 func (b *broker) eventHistoryLast(msg *wamp.Invocation) wamp.Message {
 	var events wamp.List // []*storedEvent
+	subId, ok1 := wamp.AsID(msg.Arguments[0])
+	limit, ok2 := msg.Arguments[1].(int)
+
+	if !ok1 || !ok2 || limit <= 0 {
+		return &wamp.Error{
+			Type:    msg.MessageType(),
+			Request: msg.Request,
+			Details: wamp.Dict{},
+			Error:   wamp.ErrInvalidArgument,
+		}
+	}
+
 	sync := make(chan struct{})
 	b.actionChan <- func() {
-		//TODO: implement
+		storedEvents := b.syncGetSubHistoryEvents(subId)
+		filteredEvents := storedEvents[-limit:]
+		events = append(events, filteredEvents)
 		close(sync)
 	}
 	<-sync
@@ -1016,9 +1059,28 @@ func (b *broker) eventHistoryLast(msg *wamp.Invocation) wamp.Message {
 // eventHistorySince retrieves events for subscription after specified date.
 func (b *broker) eventHistorySince(msg *wamp.Invocation) wamp.Message {
 	var events wamp.List // []*storedEvent
+	subId, ok1 := wamp.AsID(msg.Arguments[0])
+	sinceStr, _ := msg.Arguments[1].(string)
+	sinceDate, ok2 := time.Parse(time.RFC3339, sinceStr)
+
+	if !ok1 || ok2 != nil {
+		return &wamp.Error{
+			Type:    msg.MessageType(),
+			Request: msg.Request,
+			Details: wamp.Dict{},
+			Error:   wamp.ErrInvalidArgument,
+		}
+	}
+
 	sync := make(chan struct{})
 	b.actionChan <- func() {
-		//TODO: implement
+		storedEvents := b.syncGetSubHistoryEvents(subId)
+
+		for _, event := range storedEvents {
+			if event.timestamp.After(sinceDate) {
+				events = append(events, event)
+			}
+		}
 		close(sync)
 	}
 	<-sync
@@ -1032,9 +1094,27 @@ func (b *broker) eventHistorySince(msg *wamp.Invocation) wamp.Message {
 // eventHistoryAfter retrieves events for subscription happened after specified publication
 func (b *broker) eventHistoryAfter(msg *wamp.Invocation) wamp.Message {
 	var events wamp.List // []*storedEvent
+	subId, ok1 := wamp.AsID(msg.Arguments[0])
+	pubId, ok2 := wamp.AsID(msg.Arguments[1])
+
+	if !ok1 || !ok2 {
+		return &wamp.Error{
+			Type:    msg.MessageType(),
+			Request: msg.Request,
+			Details: wamp.Dict{},
+			Error:   wamp.ErrInvalidArgument,
+		}
+	}
+
 	sync := make(chan struct{})
 	b.actionChan <- func() {
-		//TODO: implement
+		storedEvents := b.syncGetSubHistoryEvents(subId)
+
+		for _, event := range storedEvents {
+			if event.Publication > pubId {
+				events = append(events, event)
+			}
+		}
 		close(sync)
 	}
 	<-sync
