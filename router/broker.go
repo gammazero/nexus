@@ -46,13 +46,13 @@ type storedEvent struct {
 	ArgumentsKw  wamp.Dict `wamp:"omitempty"`
 }
 
-type eventHistoryItem struct {
+type historyEntry struct {
 	publication *wamp.Publish
-	event       *storedEvent
+	event       storedEvent
 }
 
-type eventHistoryStoreItem struct {
-	events         []*eventHistoryItem
+type historyStore struct {
+	events         []historyEntry
 	matchPolicy    string
 	limit          int
 	isLimitReached bool
@@ -65,7 +65,7 @@ type broker struct {
 	wcTopicSubscription  map[wamp.URI]*subscription
 
 	// event history in-memory store
-	eventHistoryStore map[*subscription]*eventHistoryStoreItem
+	eventHistoryStore map[*subscription]historyStore
 
 	// subscription ID -> subscription
 	subscriptions map[wamp.ID]*subscription
@@ -117,9 +117,11 @@ func newBroker(logger stdlog.StdLog, strictURI, allowDisclose, debug bool, publi
 		filterFactory: publishFilter,
 	}
 	err := b.PreInitEventHistoryTopics(evntCfgs)
+	// if broker fails initialize event history store we just log it,
+	// the broker itself will continue to operate but without event history store
 	if err != nil {
 		logger.Printf("error parsing/initializing event history config %v", err)
-		panic(err)
+		logger.Printf("Event history store won't be working")
 	}
 	go b.run()
 	return b
@@ -144,8 +146,8 @@ func (b *broker) PreInitEventHistoryTopics(evntCfgs []*TopicEventHistoryConfig) 
 
 		sub, _ := b.syncInitSubscription(topicCfg.Topic, topicCfg.MatchPolicy, nil)
 
-		b.eventHistoryStore[sub] = &eventHistoryStoreItem{
-			events:         []*eventHistoryItem{},
+		b.eventHistoryStore[sub] = historyStore{
+			events:         []historyEntry{},
 			matchPolicy:    topicCfg.MatchPolicy,
 			limit:          topicCfg.Limit,
 			isLimitReached: false,
@@ -364,7 +366,7 @@ func (b *broker) syncPublish(pub *wamp.Session, msg *wamp.Publish, pubID wamp.ID
 func newSubscription(id wamp.ID, subscriber *wamp.Session, topic wamp.URI, match string) *subscription {
 	subscribers := map[*wamp.Session]struct{}{}
 	if subscriber != nil {
-		subscribers = map[*wamp.Session]struct{}{subscriber: {}}
+		subscribers[subscriber] = struct{}{}
 	}
 
 	return &subscription{
@@ -376,10 +378,10 @@ func newSubscription(id wamp.ID, subscriber *wamp.Session, topic wamp.URI, match
 	}
 }
 
-func (b *broker) syncSaveEvent(eventStore *eventHistoryStoreItem, pub *wamp.Publish, event *wamp.Event) {
-	item := &eventHistoryItem{
+func (b *broker) syncSaveEvent(eventStore *historyStore, pub *wamp.Publish, event *wamp.Event) {
+	item := historyEntry{
 		publication: pub,
-		event: &storedEvent{
+		event: storedEvent{
 			timestamp:    time.Now(),
 			Subscription: event.Subscription,
 			Publication:  event.Publication,
@@ -612,7 +614,7 @@ func (b *broker) syncPubEvent(pub *wamp.Session, msg *wamp.Publish, pubID wamp.I
 			return
 		}
 		event := prepareEvent(pub, msg, pubID, sub, sendTopic, disclose, eventDetails, nil)
-		b.syncSaveEvent(eventStore, msg, event)
+		b.syncSaveEvent(&eventStore, msg, event)
 	}
 }
 
@@ -1012,10 +1014,10 @@ func (b *broker) subCountSubscribers(msg *wamp.Invocation) wamp.Message {
 // syncGetSubHistoryEvents returns all stored events for subscription
 // TODO: Need to filter by authid and/or authrole of caller if stored events have any of them
 // But that's not possible in current arch as meta peer doesn't know anything about caller, just invocation message
-func (b *broker) syncGetSubHistoryEvents(subId wamp.ID) []*storedEvent {
+func (b *broker) syncGetSubHistoryEvents(subId wamp.ID) []storedEvent {
 	if subscription, ok := b.subscriptions[subId]; ok {
 		if storeItem, ok := b.eventHistoryStore[subscription]; ok {
-			var events []*storedEvent
+			var events []storedEvent
 			for _, event := range storeItem.events {
 				events = append(events, event.event)
 			}
@@ -1023,7 +1025,7 @@ func (b *broker) syncGetSubHistoryEvents(subId wamp.ID) []*storedEvent {
 		}
 	}
 
-	return []*storedEvent{}
+	return []storedEvent{}
 }
 
 // eventHistoryLast retrieves N last events for subscription.
