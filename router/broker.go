@@ -379,6 +379,14 @@ func newSubscription(id wamp.ID, subscriber *wamp.Session, topic wamp.URI, match
 }
 
 func (b *broker) syncSaveEvent(eventStore *historyStore, pub *wamp.Publish, event *wamp.Event) {
+
+	if eventStore.isLimitReached {
+		eventStore.events = eventStore.events[1:]
+	} else if len(eventStore.events) >= eventStore.limit {
+		eventStore.isLimitReached = true
+		eventStore.events = eventStore.events[1:]
+	}
+
 	item := historyEntry{
 		publication: pub,
 		event: storedEvent{
@@ -390,19 +398,11 @@ func (b *broker) syncSaveEvent(eventStore *historyStore, pub *wamp.Publish, even
 			ArgumentsKw:  event.ArgumentsKw,
 		},
 	}
-	eventStore.events = append(eventStore.events, item)
 
-	if eventStore.isLimitReached {
-		eventStore.events = eventStore.events[1:]
-	} else if len(eventStore.events) > eventStore.limit {
-		eventStore.isLimitReached = true
-		eventStore.events = eventStore.events[1:]
-	}
+	eventStore.events = append(eventStore.events, item)
 }
 
-func (b *broker) syncInitSubscription(topic wamp.URI, match string, subscriber *wamp.Session) (*subscription, bool) {
-	var sub *subscription
-	var existingSub bool
+func (b *broker) syncInitSubscription(topic wamp.URI, match string, subscriber *wamp.Session) (sub *subscription, existingSub bool) {
 
 	switch match {
 	case wamp.MatchPrefix:
@@ -603,8 +603,8 @@ func (b *broker) syncPubEvent(pub *wamp.Session, msg *wamp.Publish, pubID wamp.I
 
 	// If event history store is enabled for subscription let's save event
 	if eventStore, ok := b.eventHistoryStore[sub]; ok {
-		// We should ignore publications that has exclude or eligible lists of session IDs
-		// As session ID is runtime thing, it is impossible to check later: is history asker allowed to get
+		// We should ignore publications that have exclude or eligible lists of session IDs
+		// As session ID is a runtime thing, it is impossible to check later: is history asker allowed to get
 		// this publication or not
 		// @see Security Aspects paragraph of Event History section in WAMP Spec
 		if _, ok := msg.Options["exclude"]; ok {
@@ -742,9 +742,9 @@ func (b *broker) trySend(sess *wamp.Session, msg wamp.Message) bool {
 }
 
 func prepareEvent(pub *wamp.Session, msg *wamp.Publish, pubID wamp.ID, sub *subscription, sendTopic, disclose bool, eventDetails wamp.Dict, subscriber *wamp.Session) *wamp.Event { //nolint:lll
-	details := wamp.Dict{}
-	if eventDetails != nil {
-		details = eventDetails
+	details := eventDetails
+	if details == nil {
+		details = wamp.Dict{}
 	}
 
 	event := &wamp.Event{
@@ -1043,14 +1043,18 @@ func (b *broker) eventHistoryLast(msg *wamp.Invocation) wamp.Message {
 		}
 	}
 
-	sync := make(chan struct{})
+	ch := make(chan struct{})
 	b.actionChan <- func() {
 		storedEvents := b.syncGetSubHistoryEvents(subId)
-		filteredEvents := storedEvents[-limit:]
+		start := len(storedEvents) - limit
+		if start < 0 {
+			start = 0
+		}
+		filteredEvents := storedEvents[start:]
 		events = append(events, filteredEvents)
-		close(sync)
+		close(ch)
 	}
-	<-sync
+	<-ch
 
 	return &wamp.Yield{
 		Request:   msg.Request,
@@ -1063,9 +1067,9 @@ func (b *broker) eventHistorySince(msg *wamp.Invocation) wamp.Message {
 	var events wamp.List // []*storedEvent
 	subId, ok1 := wamp.AsID(msg.Arguments[0])
 	sinceStr, _ := msg.Arguments[1].(string)
-	sinceDate, ok2 := time.Parse(time.RFC3339, sinceStr)
+	sinceDate, err := time.Parse(time.RFC3339, sinceStr)
 
-	if !ok1 || ok2 != nil {
+	if !ok1 || err != nil {
 		return &wamp.Error{
 			Type:    msg.MessageType(),
 			Request: msg.Request,
@@ -1074,7 +1078,7 @@ func (b *broker) eventHistorySince(msg *wamp.Invocation) wamp.Message {
 		}
 	}
 
-	sync := make(chan struct{})
+	ch := make(chan struct{})
 	b.actionChan <- func() {
 		storedEvents := b.syncGetSubHistoryEvents(subId)
 
@@ -1083,9 +1087,9 @@ func (b *broker) eventHistorySince(msg *wamp.Invocation) wamp.Message {
 				events = append(events, event)
 			}
 		}
-		close(sync)
+		close(ch)
 	}
-	<-sync
+	<-ch
 
 	return &wamp.Yield{
 		Request:   msg.Request,
@@ -1108,7 +1112,7 @@ func (b *broker) eventHistoryAfter(msg *wamp.Invocation) wamp.Message {
 		}
 	}
 
-	sync := make(chan struct{})
+	ch := make(chan struct{})
 	b.actionChan <- func() {
 		storedEvents := b.syncGetSubHistoryEvents(subId)
 
@@ -1117,9 +1121,9 @@ func (b *broker) eventHistoryAfter(msg *wamp.Invocation) wamp.Message {
 				events = append(events, event)
 			}
 		}
-		close(sync)
+		close(ch)
 	}
-	<-sync
+	<-ch
 
 	return &wamp.Yield{
 		Request:   msg.Request,

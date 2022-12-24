@@ -139,11 +139,11 @@ func newRealm(config *RealmConfig, broker *broker, dealer *dealer, logger stdlog
 
 // waitReady waits for the realm to be fully initialized and running.
 func (r *realm) waitReady() {
-	sync := make(chan struct{})
+	ch := make(chan struct{})
 	r.actionChan <- func() {
-		close(sync)
+		close(ch)
 	}
-	<-sync
+	<-ch
 }
 
 // close performs an orderly shutdown of the realm.
@@ -183,14 +183,15 @@ func (r *realm) close() {
 
 	// Kick all clients off.  Sending shutdownGoodbye causes client message
 	// handlers to exit without sending meta events.
-	syncChan := make(chan struct{})
+	// TODO: What if clients are
+	ch := make(chan struct{})
 	r.actionChan <- func() {
 		for _, c := range r.clients {
 			c.EndRecv(shutdownGoodbye)
 		}
-		close(syncChan)
+		close(ch)
 	}
-	<-syncChan
+	<-ch
 
 	// Wait until each client's handleInboundMessages() has exited.  No new
 	// messages can be generated once sessions are closed.

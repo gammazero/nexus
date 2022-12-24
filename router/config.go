@@ -83,12 +83,8 @@ type RealmConfig struct {
 	PublishFilterFactory FilterFactory
 }
 
-// TopicEventHistoryConfig stores settings for event history for a topic
 type TopicEventHistoryConfig struct {
-	// Topic URI
-	Topic wamp.URI `json:"topic"`
-	// Matching policy (exact|prefix|wildcard)
-	MatchPolicy string `json:"match"`
-	// Number of most recent events to store
-	Limit int `json:"limit"`
+	Topic       wamp.URI `json:"topic"` // Topic URI
+	MatchPolicy string   `json:"match"` // Matching policy (exact|prefix|wildcard)
+	Limit       int      `json:"limit"` // Number of most recent events to store
 }
