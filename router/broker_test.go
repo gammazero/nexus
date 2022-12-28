@@ -38,7 +38,10 @@ func (p *testPeer) IsLocal() bool { return true }
 
 func TestBasicSubscribe(t *testing.T) {
 	// Test subscribing to a topic.
-	broker := newBroker(logger, false, true, debug, nil, nil)
+	broker, err := newBroker(logger, false, true, debug, nil, nil)
+	if err != nil {
+		t.Fatal("Can not initialize broker")
+	}
 	subscriber := newTestPeer()
 	sess := wamp.NewSession(subscriber, 0, nil, nil)
 	testTopic := wamp.URI("nexus.test.topic")
@@ -144,7 +147,10 @@ func TestBasicSubscribe(t *testing.T) {
 }
 
 func TestUnsubscribe(t *testing.T) {
-	broker := newBroker(logger, false, true, debug, nil, nil)
+	broker, err := newBroker(logger, false, true, debug, nil, nil)
+	if err != nil {
+		t.Fatal("Can not initialize broker")
+	}
 	testTopic := wamp.URI("nexus.test.topic")
 
 	// Subscribe session1 to topic
@@ -261,7 +267,10 @@ func TestUnsubscribe(t *testing.T) {
 
 func TestRemove(t *testing.T) {
 	// Subscribe to topic
-	broker := newBroker(logger, false, true, debug, nil, nil)
+	broker, err := newBroker(logger, false, true, debug, nil, nil)
+	if err != nil {
+		t.Fatal("Can not initialize broker")
+	}
 	subscriber := newTestPeer()
 	sess := wamp.NewSession(subscriber, 0, nil, nil)
 	testTopic := wamp.URI("nexus.test.topic")
@@ -303,7 +312,10 @@ func TestRemove(t *testing.T) {
 }
 
 func TestBasicPubSub(t *testing.T) {
-	broker := newBroker(logger, false, true, debug, nil, nil)
+	broker, err := newBroker(logger, false, true, debug, nil, nil)
+	if err != nil {
+		t.Fatal("Can not initialize broker")
+	}
 	subscriber := newTestPeer()
 	sess := wamp.NewSession(subscriber, 0, nil, nil)
 	testTopic := wamp.URI("nexus.test.topic")
@@ -341,7 +353,10 @@ func TestBasicPubSub(t *testing.T) {
 // ----- WAMP v.2 Testing -----
 
 func TestAdvancedPubSub(t *testing.T) {
-	broker := newBroker(logger, false, true, debug, nil, nil)
+	broker, err := newBroker(logger, false, true, debug, nil, nil)
+	if err != nil {
+		t.Fatal("Can not initialize broker")
+	}
 	subscriber := newTestPeer()
 	sess := wamp.NewSession(subscriber, 0, nil, nil)
 	testTopic := wamp.URI("nexus.test.topic")
@@ -390,7 +405,10 @@ func TestAdvancedPubSub(t *testing.T) {
 }
 
 func TestPPTPubSub(t *testing.T) {
-	broker := newBroker(logger, false, true, debug, nil, nil)
+	broker, err := newBroker(logger, false, true, debug, nil, nil)
+	if err != nil {
+		t.Fatal("Can not initialize broker")
+	}
 	subscriber := newTestPeer()
 	sess := wamp.NewSession(subscriber, 0, nil, nil)
 	testTopic := wamp.URI("nexus.test.topic")
@@ -465,7 +483,10 @@ func TestPPTPubSub(t *testing.T) {
 
 func TestPrefxPatternBasedSubscription(t *testing.T) {
 	// Test match=prefix
-	broker := newBroker(logger, false, true, debug, nil, nil)
+	broker, err := newBroker(logger, false, true, debug, nil, nil)
+	if err != nil {
+		t.Fatal("Can not initialize broker")
+	}
 	subscriber := newTestPeer()
 	sess := wamp.NewSession(subscriber, 0, nil, nil)
 	testTopic := wamp.URI("nexus.test.topic")
@@ -528,7 +549,10 @@ func TestPrefxPatternBasedSubscription(t *testing.T) {
 
 func TestWildcardPatternBasedSubscription(t *testing.T) {
 	// Test match=prefix
-	broker := newBroker(logger, false, true, debug, nil, nil)
+	broker, err := newBroker(logger, false, true, debug, nil, nil)
+	if err != nil {
+		t.Fatal("Can not initialize broker")
+	}
 	subscriber := newTestPeer()
 	sess := wamp.NewSession(subscriber, 0, nil, nil)
 	testTopic := wamp.URI("nexus.test.topic")
@@ -599,7 +623,10 @@ func TestWildcardPatternBasedSubscription(t *testing.T) {
 }
 
 func TestSubscriberBlackwhiteListing(t *testing.T) {
-	broker := newBroker(logger, false, true, debug, nil, nil)
+	broker, err := newBroker(logger, false, true, debug, nil, nil)
+	if err != nil {
+		t.Fatal("Can not initialize broker")
+	}
 	subscriber := newTestPeer()
 	details := wamp.Dict{
 		"authid":   "jdoe",
@@ -636,7 +663,7 @@ func TestSubscriberBlackwhiteListing(t *testing.T) {
 		Topic:   testTopic,
 		Options: wamp.Dict{"eligible": wamp.List{sess.ID}},
 	})
-	rsp, err := wamp.RecvTimeout(sess, time.Second)
+	rsp, err = wamp.RecvTimeout(sess, time.Second)
 	if err != nil {
 		t.Fatal("not allowed by whitelist")
 	}
@@ -706,7 +733,10 @@ func TestSubscriberBlackwhiteListing(t *testing.T) {
 }
 
 func TestPublisherExclusion(t *testing.T) {
-	broker := newBroker(logger, false, true, debug, nil, nil)
+	broker, err := newBroker(logger, false, true, debug, nil, nil)
+	if err != nil {
+		t.Fatal("Can not initialize broker")
+	}
 	subscriber := newTestPeer()
 	sess := wamp.NewSession(subscriber, 0, nil, nil)
 	testTopic := wamp.URI("nexus.test.topic")
@@ -780,7 +810,10 @@ func TestPublisherExclusion(t *testing.T) {
 }
 
 func TestPublisherIdentification(t *testing.T) {
-	broker := newBroker(logger, false, true, debug, nil, nil)
+	broker, err := newBroker(logger, false, true, debug, nil, nil)
+	if err != nil {
+		t.Fatal("Can not initialize broker")
+	}
 	subscriber := newTestPeer()
 
 	details := wamp.Dict{

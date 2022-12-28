@@ -183,7 +183,6 @@ func (r *realm) close() {
 
 	// Kick all clients off.  Sending shutdownGoodbye causes client message
 	// handlers to exit without sending meta events.
-	// TODO: What if clients are
 	ch := make(chan struct{})
 	r.actionChan <- func() {
 		for _, c := range r.clients {

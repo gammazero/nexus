@@ -1,6 +1,7 @@
 package router
 
 import (
+	"errors"
 	"fmt"
 	"time"
 
@@ -87,7 +88,7 @@ type broker struct {
 }
 
 // newBroker returns a new default broker implementation instance.
-func newBroker(logger stdlog.StdLog, strictURI, allowDisclose, debug bool, publishFilter FilterFactory, evntCfgs []*TopicEventHistoryConfig) *broker { //nolint:lll
+func newBroker(logger stdlog.StdLog, strictURI, allowDisclose, debug bool, publishFilter FilterFactory, evntCfgs []*TopicEventHistoryConfig) (*broker, error) { //nolint:lll
 	if logger == nil {
 		panic("logger is nil")
 	}
@@ -120,11 +121,10 @@ func newBroker(logger stdlog.StdLog, strictURI, allowDisclose, debug bool, publi
 	// if broker fails initialize event history store we just log it,
 	// the broker itself will continue to operate but without event history store
 	if err != nil {
-		logger.Printf("error parsing/initializing event history config %v", err)
-		logger.Printf("Event history store won't be working")
+		return nil, errors.New("error parsing/initializing event history config")
 	}
 	go b.run()
-	return b
+	return b, nil
 }
 
 // role returns the role information for the "broker" role.  The data returned
@@ -1017,7 +1017,7 @@ func (b *broker) subCountSubscribers(msg *wamp.Invocation) wamp.Message {
 func (b *broker) syncGetSubHistoryEvents(subId wamp.ID) []storedEvent {
 	if subscription, ok := b.subscriptions[subId]; ok {
 		if storeItem, ok := b.eventHistoryStore[subscription]; ok {
-			var events []storedEvent
+			events := make([]storedEvent, 0, len(storeItem.events))
 			for _, event := range storeItem.events {
 				events = append(events, event.event)
 			}
