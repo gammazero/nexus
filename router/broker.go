@@ -1056,7 +1056,7 @@ func (b *broker) eventHistoryLast(msg *wamp.Invocation) wamp.Message {
 			start = 0
 		}
 		filteredEvents := storedEvents[start:]
-		events = append(events, filteredEvents)
+		events, _ = wamp.AsList(filteredEvents)
 		close(ch)
 	}
 	<-ch
@@ -1074,7 +1074,7 @@ func (b *broker) eventHistorySince(msg *wamp.Invocation) wamp.Message {
 	var isLimitReached bool
 	subId, ok1 := wamp.AsID(msg.Arguments[0])
 	sinceStr, _ := msg.Arguments[1].(string)
-	sinceDate, err := time.Parse(time.RFC3339, sinceStr)
+	sinceDate, err := time.Parse("2006-01-02T15:04:05Z0700", sinceStr)
 
 	if !ok1 || err != nil {
 		return &wamp.Error{
