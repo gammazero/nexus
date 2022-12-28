@@ -1014,23 +1014,26 @@ func (b *broker) subCountSubscribers(msg *wamp.Invocation) wamp.Message {
 // syncGetSubHistoryEvents returns all stored events for subscription
 // TODO: Need to filter by authid and/or authrole of caller if stored events have any of them
 // But that's not possible in current arch as meta peer doesn't know anything about caller, just invocation message
-func (b *broker) syncGetSubHistoryEvents(subId wamp.ID) []storedEvent {
+func (b *broker) syncGetSubHistoryEvents(subId wamp.ID) (events []storedEvent, isLimitReached bool) {
 	if subscription, ok := b.subscriptions[subId]; ok {
 		if storeItem, ok := b.eventHistoryStore[subscription]; ok {
 			events := make([]storedEvent, 0, len(storeItem.events))
 			for _, event := range storeItem.events {
 				events = append(events, event.event)
 			}
-			return events
+			return events, storeItem.isLimitReached
 		}
+
+		return []storedEvent{}, false
 	}
 
-	return []storedEvent{}
+	return []storedEvent{}, false
 }
 
 // eventHistoryLast retrieves N last events for subscription.
 func (b *broker) eventHistoryLast(msg *wamp.Invocation) wamp.Message {
 	var events wamp.List // []*storedEvent
+	var isLimitReached bool
 	subId, ok1 := wamp.AsID(msg.Arguments[0])
 	limit, ok2 := msg.Arguments[1].(int)
 
@@ -1045,7 +1048,8 @@ func (b *broker) eventHistoryLast(msg *wamp.Invocation) wamp.Message {
 
 	ch := make(chan struct{})
 	b.actionChan <- func() {
-		storedEvents := b.syncGetSubHistoryEvents(subId)
+		var storedEvents []storedEvent
+		storedEvents, isLimitReached = b.syncGetSubHistoryEvents(subId)
 		start := len(storedEvents) - limit
 		if start < 0 {
 			start = 0
@@ -1057,14 +1061,16 @@ func (b *broker) eventHistoryLast(msg *wamp.Invocation) wamp.Message {
 	<-ch
 
 	return &wamp.Yield{
-		Request:   msg.Request,
-		Arguments: events,
+		Request:     msg.Request,
+		Arguments:   events,
+		ArgumentsKw: wamp.Dict{"is_limit_reached": isLimitReached},
 	}
 }
 
 // eventHistorySince retrieves events for subscription after specified date.
 func (b *broker) eventHistorySince(msg *wamp.Invocation) wamp.Message {
 	var events wamp.List // []*storedEvent
+	var isLimitReached bool
 	subId, ok1 := wamp.AsID(msg.Arguments[0])
 	sinceStr, _ := msg.Arguments[1].(string)
 	sinceDate, err := time.Parse(time.RFC3339, sinceStr)
@@ -1080,7 +1086,8 @@ func (b *broker) eventHistorySince(msg *wamp.Invocation) wamp.Message {
 
 	ch := make(chan struct{})
 	b.actionChan <- func() {
-		storedEvents := b.syncGetSubHistoryEvents(subId)
+		var storedEvents []storedEvent
+		storedEvents, isLimitReached = b.syncGetSubHistoryEvents(subId)
 
 		for _, event := range storedEvents {
 			if event.timestamp.After(sinceDate) {
@@ -1092,14 +1099,16 @@ func (b *broker) eventHistorySince(msg *wamp.Invocation) wamp.Message {
 	<-ch
 
 	return &wamp.Yield{
-		Request:   msg.Request,
-		Arguments: events,
+		Request:     msg.Request,
+		Arguments:   events,
+		ArgumentsKw: wamp.Dict{"is_limit_reached": isLimitReached},
 	}
 }
 
 // eventHistoryAfter retrieves events for subscription happened after specified publication
 func (b *broker) eventHistoryAfter(msg *wamp.Invocation) wamp.Message {
 	var events wamp.List // []*storedEvent
+	var isLimitReached bool
 	subId, ok1 := wamp.AsID(msg.Arguments[0])
 	pubId, ok2 := wamp.AsID(msg.Arguments[1])
 
@@ -1114,7 +1123,8 @@ func (b *broker) eventHistoryAfter(msg *wamp.Invocation) wamp.Message {
 
 	ch := make(chan struct{})
 	b.actionChan <- func() {
-		storedEvents := b.syncGetSubHistoryEvents(subId)
+		var storedEvents []storedEvent
+		storedEvents, isLimitReached = b.syncGetSubHistoryEvents(subId)
 
 		for _, event := range storedEvents {
 			if event.Publication > pubId {
@@ -1126,7 +1136,8 @@ func (b *broker) eventHistoryAfter(msg *wamp.Invocation) wamp.Message {
 	<-ch
 
 	return &wamp.Yield{
-		Request:   msg.Request,
-		Arguments: events,
+		Request:     msg.Request,
+		Arguments:   events,
+		ArgumentsKw: wamp.Dict{"is_limit_reached": isLimitReached},
 	}
 }
