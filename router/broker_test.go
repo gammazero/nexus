@@ -481,7 +481,7 @@ func TestPPTPubSub(t *testing.T) {
 
 }
 
-func TestPrefxPatternBasedSubscription(t *testing.T) {
+func TestPrefixPatternBasedSubscription(t *testing.T) {
 	// Test match=prefix
 	broker, err := newBroker(logger, false, true, debug, nil, nil)
 	if err != nil {
@@ -622,7 +622,7 @@ func TestWildcardPatternBasedSubscription(t *testing.T) {
 	}
 }
 
-func TestSubscriberBlackwhiteListing(t *testing.T) {
+func TestSubscriberBlackWhiteListing(t *testing.T) {
 	broker, err := newBroker(logger, false, true, debug, nil, nil)
 	if err != nil {
 		t.Fatal("Can not initialize broker")
