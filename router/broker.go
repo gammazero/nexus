@@ -66,7 +66,7 @@ type broker struct {
 	wcTopicSubscription  map[wamp.URI]*subscription
 
 	// event history in-memory store
-	eventHistoryStore map[*subscription]historyStore
+	eventHistoryStore map[*subscription]*historyStore
 
 	// subscription ID -> subscription
 	subscriptions map[wamp.ID]*subscription
@@ -99,6 +99,7 @@ func newBroker(logger stdlog.StdLog, strictURI, allowDisclose, debug bool, publi
 		topicSubscription:    map[wamp.URI]*subscription{},
 		pfxTopicSubscription: map[wamp.URI]*subscription{},
 		wcTopicSubscription:  map[wamp.URI]*subscription{},
+		eventHistoryStore:    map[*subscription]*historyStore{},
 
 		subscriptions:   map[wamp.ID]*subscription{},
 		sessionSubIDSet: map[*wamp.Session]map[wamp.ID]struct{}{},
@@ -146,7 +147,7 @@ func (b *broker) PreInitEventHistoryTopics(evntCfgs []*TopicEventHistoryConfig) 
 
 		sub, _ := b.syncInitSubscription(topicCfg.Topic, topicCfg.MatchPolicy, nil)
 
-		b.eventHistoryStore[sub] = historyStore{
+		b.eventHistoryStore[sub] = &historyStore{
 			events:         []historyEntry{},
 			matchPolicy:    topicCfg.MatchPolicy,
 			limit:          topicCfg.Limit,
@@ -614,7 +615,7 @@ func (b *broker) syncPubEvent(pub *wamp.Session, msg *wamp.Publish, pubID wamp.I
 			return
 		}
 		event := prepareEvent(pub, msg, pubID, sub, sendTopic, disclose, eventDetails, nil)
-		b.syncSaveEvent(&eventStore, msg, event)
+		b.syncSaveEvent(eventStore, msg, event)
 	}
 }
 

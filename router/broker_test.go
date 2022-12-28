@@ -858,3 +858,175 @@ func TestPublisherIdentification(t *testing.T) {
 		t.Fatal("incorrect publisher ID disclosed")
 	}
 }
+
+func TestEventHistory(t *testing.T) {
+	eventHistoryConfig := []*TopicEventHistoryConfig{
+		{
+			Topic:       wamp.URI("nexus.test.exact.topic"),
+			MatchPolicy: "exact",
+			Limit:       3,
+		},
+		{
+			Topic:       wamp.URI("nexus.test"),
+			MatchPolicy: "prefix",
+			Limit:       4,
+		},
+		{
+			Topic:       wamp.URI("nexus.test..topic"),
+			MatchPolicy: "wildcard",
+			Limit:       4,
+		},
+		{
+			Topic:       wamp.URI("nexus"),
+			MatchPolicy: "prefix",
+			Limit:       1000,
+		},
+	}
+
+	broker, err := newBroker(logger, false, true, debug, nil, eventHistoryConfig)
+	if err != nil {
+		t.Fatal("Can not initialize broker")
+	}
+
+	publisher := newTestPeer()
+	pubSess := wamp.NewSession(publisher, 0, nil, nil)
+
+	topics := []wamp.URI{"nexus.test.exact.topic", "nexus.test.prefix.catch", "nexus.test.wildcard.topic", "nexus.test.wildcard.miss"}
+	reqId := 25501
+
+	// Let's publish all payloads to all topics to have a data to check
+	for i := 1; i <= 5; i++ {
+		for _, topic := range topics {
+
+			publication := wamp.Publish{
+				Request:     wamp.ID(reqId),
+				Topic:       topic,
+				Arguments:   wamp.List{reqId},
+				ArgumentsKw: wamp.Dict{"topic": string(topic)},
+			}
+			broker.publish(pubSess, &publication)
+			reqId++
+		}
+	}
+
+	// and let's publish some events that should not be saved in event store
+	for _, topic := range topics {
+
+		publication := wamp.Publish{
+			Request:     wamp.ID(reqId),
+			Topic:       topic,
+			Options:     wamp.Dict{"exclude": 12345},
+			Arguments:   wamp.List{reqId},
+			ArgumentsKw: wamp.Dict{"topic": string(topic)},
+		}
+		broker.publish(pubSess, &publication)
+		reqId++
+	}
+
+	// Now let's examine what is stored in the Event Store
+	topic := wamp.URI("nexus.test.exact.topic")
+	subscription := broker.topicSubscription[topic]
+	subEvents := broker.eventHistoryStore[subscription].events
+	if len(subEvents) != 3 {
+		t.Fatalf("Store for topic %s should hold 3 records", topic)
+	}
+	if broker.eventHistoryStore[subscription].isLimitReached != true {
+		t.Fatalf("Limit for the store for topic %s should be reached", topic)
+	}
+	if subEvents[0].event.ArgumentsKw["topic"] != "nexus.test.exact.topic" {
+		t.Fatalf("Event store for topic %s holds invalid event", topic)
+	}
+	if subEvents[0].event.Arguments[0] != 25509 {
+		t.Fatalf("Event store for topic %s holds invalid event", topic)
+	}
+	if subEvents[1].event.ArgumentsKw["topic"] != "nexus.test.exact.topic" {
+		t.Fatalf("Event store for topic %s holds invalid event", topic)
+	}
+	if subEvents[1].event.Arguments[0] != 25513 {
+		t.Fatalf("Event store for topic %s holds invalid event", topic)
+	}
+	if subEvents[2].event.ArgumentsKw["topic"] != "nexus.test.exact.topic" {
+		t.Fatalf("Event store for topic %s holds invalid event", topic)
+	}
+	if subEvents[2].event.Arguments[0] != 25517 {
+		t.Fatalf("Event store for topic %s holds invalid event", topic)
+	}
+
+	topic = wamp.URI("nexus.test")
+	subscription = broker.pfxTopicSubscription[topic]
+	subEvents = broker.eventHistoryStore[subscription].events
+	if len(subEvents) != 4 {
+		t.Fatalf("Store for topic %s should hold 3 records", topic)
+	}
+	if broker.eventHistoryStore[subscription].isLimitReached != true {
+		t.Fatalf("Limit for the store for topic %s should be reached", topic)
+	}
+	if subEvents[0].event.ArgumentsKw["topic"] != "nexus.test.exact.topic" {
+		t.Fatalf("Event store for topic %s holds invalid event", topic)
+	}
+	if subEvents[0].event.Arguments[0] != 25517 {
+		t.Fatalf("Event store for topic %s holds invalid event", topic)
+	}
+	if subEvents[1].event.ArgumentsKw["topic"] != "nexus.test.prefix.catch" {
+		t.Fatalf("Event store for topic %s holds invalid event", topic)
+	}
+	if subEvents[1].event.Arguments[0] != 25518 {
+		t.Fatalf("Event store for topic %s holds invalid event", topic)
+	}
+	if subEvents[2].event.ArgumentsKw["topic"] != "nexus.test.wildcard.topic" {
+		t.Fatalf("Event store for topic %s holds invalid event", topic)
+	}
+	if subEvents[2].event.Arguments[0] != 25519 {
+		t.Fatalf("Event store for topic %s holds invalid event", topic)
+	}
+	if subEvents[3].event.ArgumentsKw["topic"] != "nexus.test.wildcard.miss" {
+		t.Fatalf("Event store for topic %s holds invalid event", topic)
+	}
+	if subEvents[3].event.Arguments[0] != 25520 {
+		t.Fatalf("Event store for topic %s holds invalid event", topic)
+	}
+
+	topic = wamp.URI("nexus.test..topic")
+	subscription = broker.wcTopicSubscription[topic]
+	subEvents = broker.eventHistoryStore[subscription].events
+	if len(subEvents) != 4 {
+		t.Fatalf("Store for topic %s should hold 3 records", topic)
+	}
+	if broker.eventHistoryStore[subscription].isLimitReached != true {
+		t.Fatalf("Limit for the store for topic %s should be reached", topic)
+	}
+	if subEvents[0].event.ArgumentsKw["topic"] != "nexus.test.exact.topic" {
+		t.Fatalf("Event store for topic %s holds invalid event", topic)
+	}
+	if subEvents[0].event.Arguments[0] != 25513 {
+		t.Fatalf("Event store for topic %s holds invalid event", topic)
+	}
+	if subEvents[1].event.ArgumentsKw["topic"] != "nexus.test.wildcard.topic" {
+		t.Fatalf("Event store for topic %s holds invalid event", topic)
+	}
+	if subEvents[1].event.Arguments[0] != 25515 {
+		t.Fatalf("Event store for topic %s holds invalid event", topic)
+	}
+	if subEvents[2].event.ArgumentsKw["topic"] != "nexus.test.exact.topic" {
+		t.Fatalf("Event store for topic %s holds invalid event", topic)
+	}
+	if subEvents[2].event.Arguments[0] != 25517 {
+		t.Fatalf("Event store for topic %s holds invalid event", topic)
+	}
+	if subEvents[3].event.ArgumentsKw["topic"] != "nexus.test.wildcard.topic" {
+		t.Fatalf("Event store for topic %s holds invalid event", topic)
+	}
+	if subEvents[3].event.Arguments[0] != 25519 {
+		t.Fatalf("Event store for topic %s holds invalid event", topic)
+	}
+
+	topic = wamp.URI("nexus")
+	subscription = broker.pfxTopicSubscription[topic]
+	subEvents = broker.eventHistoryStore[subscription].events
+	if len(subEvents) != 20 {
+		t.Fatalf("Store for topic %s should hold 20 records", topic)
+	}
+	if broker.eventHistoryStore[subscription].isLimitReached == true {
+		t.Fatalf("Limit for the store for topic %s should not be reached", topic)
+	}
+}
