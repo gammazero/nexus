@@ -1023,6 +1023,8 @@ func (b *broker) subEventHistory(msg *wamp.Invocation) wamp.Message {
 	var beforeDate time.Time
 	var uptoDate time.Time
 	var dateStr string
+	var topicStr string
+	var topicUri wamp.URI
 	var err error
 
 	subId, ok := wamp.AsID(msg.Arguments[0])
@@ -1098,6 +1100,11 @@ func (b *broker) subEventHistory(msg *wamp.Invocation) wamp.Message {
 		}
 	}
 
+	topicStr, ok = msg.ArgumentsKw["topic"].(string)
+	if ok {
+		topicUri = wamp.URI(topicStr)
+	}
+
 	ch := make(chan struct{})
 	b.actionChan <- func() {
 		var filteredEvents []storedEvent
@@ -1107,10 +1114,13 @@ func (b *broker) subEventHistory(msg *wamp.Invocation) wamp.Message {
 				isLimitReached = storeItem.isLimitReached
 
 				for _, event := range storeItem.events {
+					eventTopic, ok := event.event.Details["topic"]
+
 					if (fromDate.IsZero() || !event.event.timestamp.Before(fromDate)) &&
 						(afterDate.IsZero() || event.event.timestamp.After(afterDate)) &&
 						(beforeDate.IsZero() || event.event.timestamp.Before(beforeDate)) &&
-						(uptoDate.IsZero() || !event.event.timestamp.After(uptoDate)) {
+						(uptoDate.IsZero() || !event.event.timestamp.After(uptoDate)) &&
+						(len(topicUri) == 0 || (ok && eventTopic == topicUri)) {
 						filteredEvents = append(filteredEvents, event.event)
 					}
 				}

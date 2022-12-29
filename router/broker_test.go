@@ -1177,6 +1177,7 @@ func TestEventHistory(t *testing.T) {
 			"before": (time.Now().Add(1 * time.Hour)).Format(time.RFC3339),
 		},
 	}
+	reqId++
 
 	msg = broker.subEventHistory(&inv)
 	yield, ok = msg.(*wamp.Yield)
@@ -1187,4 +1188,20 @@ func TestEventHistory(t *testing.T) {
 		t.Fatalf("MetaRPC subEventHistory for topic %s should return 20 records", topic)
 	}
 
+	inv = wamp.Invocation{
+		Request:      wamp.ID(reqId),
+		Registration: 0,
+		Details:      wamp.Dict{},
+		Arguments:    wamp.List{subId},
+		ArgumentsKw:  wamp.Dict{"topic": "nexus.test.exact.topic"},
+	}
+
+	msg = broker.subEventHistory(&inv)
+	yield, ok = msg.(*wamp.Yield)
+	if !ok {
+		t.Fatalf("MetaRPC subEventHistory for topic %s should return Yield message", topic)
+	}
+	if len(yield.Arguments) != 5 {
+		t.Fatalf("MetaRPC subEventHistory for topic %s should return 5 records", topic)
+	}
 }
