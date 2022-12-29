@@ -1,4 +1,4 @@
-<img src="doc/n-logo2.png" align="left" hspace="10" vspace="6">
+<img src="doc/n-logo2.png">
 
 # WAMP v2 router library, client library and router service
 
@@ -165,7 +165,7 @@ The currently maintained version of this module is 3.x.  Earlier major versions 
 | subscription_meta_procedures  | Yes       |
 | pattern_based_subscription    | Yes       |
 | sharded_subscription          | No        |
-| event_history                 | No        |
+| event_history                 | Yes       |
 | topic_reflection              | No        |
 | testament_meta_api            | Yes       |
 | payload_passthru_mode         | Yes       |
