@@ -1029,4 +1029,162 @@ func TestEventHistory(t *testing.T) {
 	if broker.eventHistoryStore[subscription].isLimitReached == true {
 		t.Fatalf("Limit for the store for topic %s should not be reached", topic)
 	}
+
+	//Now let's test Event History MetaRPCs
+	topic = wamp.URI("nexus.test.exact.topic")
+	subId := broker.topicSubscription[topic].id
+	inv := wamp.Invocation{
+		Request:      wamp.ID(reqId),
+		Registration: 0,
+		Details:      wamp.Dict{},
+		Arguments:    wamp.List{subId},
+		ArgumentsKw:  wamp.Dict{"limit": 10},
+	}
+	reqId++
+
+	msg := broker.subEventHistory(&inv)
+	yield, ok := msg.(*wamp.Yield)
+	if !ok {
+		t.Fatalf("MetaRPC eventHistoryLast for topic %s should return Yield message", topic)
+	}
+	if len(yield.Arguments) != 3 {
+		t.Fatalf("MetaRPC eventHistoryLast for topic %s should return 3 records", topic)
+	}
+	if yield.ArgumentsKw["is_limit_reached"] != true {
+		t.Fatalf("is_limit_reached for topic %s should be true", topic)
+	}
+
+	topic = wamp.URI("nexus")
+	subId = broker.pfxTopicSubscription[topic].id
+	inv = wamp.Invocation{
+		Request:      wamp.ID(reqId),
+		Registration: 0,
+		Details:      wamp.Dict{},
+		Arguments:    wamp.List{subId},
+		ArgumentsKw:  wamp.Dict{"limit": 10},
+	}
+	reqId++
+
+	msg = broker.subEventHistory(&inv)
+	yield, ok = msg.(*wamp.Yield)
+	if !ok {
+		t.Fatalf("MetaRPC eventHistoryLast for topic %s should return Yield message", topic)
+	}
+	if len(yield.Arguments) != 10 {
+		t.Fatalf("MetaRPC eventHistoryLast for topic %s should return 10 records", topic)
+	}
+	if yield.ArgumentsKw["is_limit_reached"] == true {
+		t.Fatalf("is_limit_reached for topic %s should be false", topic)
+	}
+
+	inv = wamp.Invocation{
+		Request:      wamp.ID(reqId),
+		Registration: 0,
+		Details:      wamp.Dict{},
+		Arguments:    wamp.List{subId},
+		ArgumentsKw:  wamp.Dict{"limit": 1000},
+	}
+	reqId++
+
+	msg = broker.subEventHistory(&inv)
+	yield, ok = msg.(*wamp.Yield)
+	if !ok {
+		t.Fatalf("MetaRPC eventHistoryLast for topic %s should return Yield message", topic)
+	}
+	if len(yield.Arguments) != 20 {
+		t.Fatalf("MetaRPC eventHistoryLast for topic %s should return 20 records", topic)
+	}
+
+	inv = wamp.Invocation{
+		Request:      wamp.ID(reqId),
+		Registration: 0,
+		Details:      wamp.Dict{},
+		Arguments:    wamp.List{subId},
+		ArgumentsKw:  wamp.Dict{"after": (time.Now().Add(-1 * time.Hour)).Format(time.RFC3339)},
+	}
+	reqId++
+
+	msg = broker.subEventHistory(&inv)
+	yield, ok = msg.(*wamp.Yield)
+	if !ok {
+		t.Fatalf("MetaRPC subEventHistory for topic %s should return Yield message", topic)
+	}
+	if len(yield.Arguments) != 20 {
+		t.Fatalf("MetaRPC subEventHistory for topic %s should return 20 records", topic)
+	}
+
+	inv = wamp.Invocation{
+		Request:      wamp.ID(reqId),
+		Registration: 0,
+		Details:      wamp.Dict{},
+		Arguments:    wamp.List{subId},
+		ArgumentsKw:  wamp.Dict{"from": (time.Now().Add(-1 * time.Hour)).Format(time.RFC3339)},
+	}
+	reqId++
+
+	msg = broker.subEventHistory(&inv)
+	yield, ok = msg.(*wamp.Yield)
+	if !ok {
+		t.Fatalf("MetaRPC subEventHistory for topic %s should return Yield message", topic)
+	}
+	if len(yield.Arguments) != 20 {
+		t.Fatalf("MetaRPC subEventHistory for topic %s should return 20 records", topic)
+	}
+
+	inv = wamp.Invocation{
+		Request:      wamp.ID(reqId),
+		Registration: 0,
+		Details:      wamp.Dict{},
+		Arguments:    wamp.List{subId},
+		ArgumentsKw:  wamp.Dict{"before": (time.Now().Add(1 * time.Hour)).Format(time.RFC3339)},
+	}
+	reqId++
+
+	msg = broker.subEventHistory(&inv)
+	yield, ok = msg.(*wamp.Yield)
+	if !ok {
+		t.Fatalf("MetaRPC subEventHistory for topic %s should return Yield message", topic)
+	}
+	if len(yield.Arguments) != 20 {
+		t.Fatalf("MetaRPC subEventHistory for topic %s should return 20 records", topic)
+	}
+
+	inv = wamp.Invocation{
+		Request:      wamp.ID(reqId),
+		Registration: 0,
+		Details:      wamp.Dict{},
+		Arguments:    wamp.List{subId},
+		ArgumentsKw:  wamp.Dict{"up_to": (time.Now().Add(1 * time.Hour)).Format(time.RFC3339)},
+	}
+	reqId++
+
+	msg = broker.subEventHistory(&inv)
+	yield, ok = msg.(*wamp.Yield)
+	if !ok {
+		t.Fatalf("MetaRPC subEventHistory for topic %s should return Yield message", topic)
+	}
+	if len(yield.Arguments) != 20 {
+		t.Fatalf("MetaRPC subEventHistory for topic %s should return 20 records", topic)
+	}
+
+	inv = wamp.Invocation{
+		Request:      wamp.ID(reqId),
+		Registration: 0,
+		Details:      wamp.Dict{},
+		Arguments:    wamp.List{subId},
+		ArgumentsKw: wamp.Dict{
+			"after":  (time.Now().Add(-1 * time.Hour)).Format(time.RFC3339),
+			"before": (time.Now().Add(1 * time.Hour)).Format(time.RFC3339),
+		},
+	}
+
+	msg = broker.subEventHistory(&inv)
+	yield, ok = msg.(*wamp.Yield)
+	if !ok {
+		t.Fatalf("MetaRPC subEventHistory for topic %s should return Yield message", topic)
+	}
+	if len(yield.Arguments) != 20 {
+		t.Fatalf("MetaRPC subEventHistory for topic %s should return 20 records", topic)
+	}
+
 }

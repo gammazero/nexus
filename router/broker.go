@@ -1012,33 +1012,22 @@ func (b *broker) subCountSubscribers(msg *wamp.Invocation) wamp.Message {
 	}
 }
 
-// syncGetSubHistoryEvents returns all stored events for subscription
+// eventHistoryLast retrieves events history for subscription applying provided filters
 // TODO: Need to filter by authid and/or authrole of caller if stored events have any of them
 // But that's not possible in current arch as meta peer doesn't know anything about caller, just invocation message
-func (b *broker) syncGetSubHistoryEvents(subId wamp.ID) (events []storedEvent, isLimitReached bool) {
-	if subscription, ok := b.subscriptions[subId]; ok {
-		if storeItem, ok := b.eventHistoryStore[subscription]; ok {
-			events := make([]storedEvent, 0, len(storeItem.events))
-			for _, event := range storeItem.events {
-				events = append(events, event.event)
-			}
-			return events, storeItem.isLimitReached
-		}
-
-		return []storedEvent{}, false
-	}
-
-	return []storedEvent{}, false
-}
-
-// eventHistoryLast retrieves N last events for subscription.
-func (b *broker) eventHistoryLast(msg *wamp.Invocation) wamp.Message {
+func (b *broker) subEventHistory(msg *wamp.Invocation) wamp.Message {
 	var events wamp.List // []*storedEvent
 	var isLimitReached bool
-	subId, ok1 := wamp.AsID(msg.Arguments[0])
-	limit, ok2 := msg.Arguments[1].(int)
+	var fromDate time.Time
+	var afterDate time.Time
+	var beforeDate time.Time
+	var uptoDate time.Time
+	var dateStr string
+	var err error
 
-	if !ok1 || !ok2 || limit <= 0 {
+	subId, ok := wamp.AsID(msg.Arguments[0])
+
+	if !ok {
 		return &wamp.Error{
 			Type:    msg.MessageType(),
 			Request: msg.Request,
@@ -1047,91 +1036,96 @@ func (b *broker) eventHistoryLast(msg *wamp.Invocation) wamp.Message {
 		}
 	}
 
+	limit, ok := msg.ArgumentsKw["limit"].(int)
+	if ok && limit < 1 {
+		return &wamp.Error{
+			Type:    msg.MessageType(),
+			Request: msg.Request,
+			Details: wamp.Dict{},
+			Error:   wamp.ErrInvalidArgument,
+		}
+	}
+
+	dateStr, ok = msg.ArgumentsKw["from"].(string)
+	if ok {
+		fromDate, err = time.Parse(time.RFC3339, dateStr)
+		if err != nil {
+			return &wamp.Error{
+				Type:    msg.MessageType(),
+				Request: msg.Request,
+				Details: wamp.Dict{},
+				Error:   wamp.ErrInvalidArgument,
+			}
+		}
+	}
+
+	dateStr, ok = msg.ArgumentsKw["after"].(string)
+	if ok {
+		afterDate, err = time.Parse(time.RFC3339, dateStr)
+		if err != nil {
+			return &wamp.Error{
+				Type:    msg.MessageType(),
+				Request: msg.Request,
+				Details: wamp.Dict{},
+				Error:   wamp.ErrInvalidArgument,
+			}
+		}
+	}
+
+	dateStr, ok = msg.ArgumentsKw["before"].(string)
+	if ok {
+		beforeDate, err = time.Parse(time.RFC3339, dateStr)
+		if err != nil {
+			return &wamp.Error{
+				Type:    msg.MessageType(),
+				Request: msg.Request,
+				Details: wamp.Dict{},
+				Error:   wamp.ErrInvalidArgument,
+			}
+		}
+	}
+
+	dateStr, ok = msg.ArgumentsKw["up_to"].(string)
+	if ok {
+		uptoDate, err = time.Parse(time.RFC3339, dateStr)
+		if err != nil {
+			return &wamp.Error{
+				Type:    msg.MessageType(),
+				Request: msg.Request,
+				Details: wamp.Dict{},
+				Error:   wamp.ErrInvalidArgument,
+			}
+		}
+	}
+
 	ch := make(chan struct{})
 	b.actionChan <- func() {
-		var storedEvents []storedEvent
-		storedEvents, isLimitReached = b.syncGetSubHistoryEvents(subId)
-		start := len(storedEvents) - limit
-		if start < 0 {
-			start = 0
+		var filteredEvents []storedEvent
+
+		if subscription, ok := b.subscriptions[subId]; ok {
+			if storeItem, ok := b.eventHistoryStore[subscription]; ok {
+				isLimitReached = storeItem.isLimitReached
+
+				for _, event := range storeItem.events {
+					if (fromDate.IsZero() || !event.event.timestamp.Before(fromDate)) &&
+						(afterDate.IsZero() || event.event.timestamp.After(afterDate)) &&
+						(beforeDate.IsZero() || event.event.timestamp.Before(beforeDate)) &&
+						(uptoDate.IsZero() || !event.event.timestamp.After(uptoDate)) {
+						filteredEvents = append(filteredEvents, event.event)
+					}
+				}
+			}
 		}
-		filteredEvents := storedEvents[start:]
+
+		if limit > 0 {
+			start := len(filteredEvents) - limit
+			if start < 0 {
+				start = 0
+			}
+			filteredEvents = filteredEvents[start:]
+		}
+
 		events, _ = wamp.AsList(filteredEvents)
-		close(ch)
-	}
-	<-ch
-
-	return &wamp.Yield{
-		Request:     msg.Request,
-		Arguments:   events,
-		ArgumentsKw: wamp.Dict{"is_limit_reached": isLimitReached},
-	}
-}
-
-// eventHistorySince retrieves events for subscription after specified date.
-func (b *broker) eventHistorySince(msg *wamp.Invocation) wamp.Message {
-	var events wamp.List // []*storedEvent
-	var isLimitReached bool
-	subId, ok1 := wamp.AsID(msg.Arguments[0])
-	sinceStr, _ := msg.Arguments[1].(string)
-	sinceDate, err := time.Parse("2006-01-02T15:04:05Z0700", sinceStr)
-
-	if !ok1 || err != nil {
-		return &wamp.Error{
-			Type:    msg.MessageType(),
-			Request: msg.Request,
-			Details: wamp.Dict{},
-			Error:   wamp.ErrInvalidArgument,
-		}
-	}
-
-	ch := make(chan struct{})
-	b.actionChan <- func() {
-		var storedEvents []storedEvent
-		storedEvents, isLimitReached = b.syncGetSubHistoryEvents(subId)
-
-		for _, event := range storedEvents {
-			if event.timestamp.After(sinceDate) {
-				events = append(events, event)
-			}
-		}
-		close(ch)
-	}
-	<-ch
-
-	return &wamp.Yield{
-		Request:     msg.Request,
-		Arguments:   events,
-		ArgumentsKw: wamp.Dict{"is_limit_reached": isLimitReached},
-	}
-}
-
-// eventHistoryAfter retrieves events for subscription happened after specified publication
-func (b *broker) eventHistoryAfter(msg *wamp.Invocation) wamp.Message {
-	var events wamp.List // []*storedEvent
-	var isLimitReached bool
-	subId, ok1 := wamp.AsID(msg.Arguments[0])
-	pubId, ok2 := wamp.AsID(msg.Arguments[1])
-
-	if !ok1 || !ok2 {
-		return &wamp.Error{
-			Type:    msg.MessageType(),
-			Request: msg.Request,
-			Details: wamp.Dict{},
-			Error:   wamp.ErrInvalidArgument,
-		}
-	}
-
-	ch := make(chan struct{})
-	b.actionChan <- func() {
-		var storedEvents []storedEvent
-		storedEvents, isLimitReached = b.syncGetSubHistoryEvents(subId)
-
-		for _, event := range storedEvents {
-			if event.Publication > pubId {
-				events = append(events, event)
-			}
-		}
 		close(ch)
 	}
 	<-ch

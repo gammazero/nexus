@@ -222,14 +222,8 @@ const (
 	// Obtains the number of sessions currently attached to the subscription.
 	MetaProcSubCountSubscribers = URI("wamp.subscription.count_suscribers")
 
-	// Retrieves N last events for subscription
-	MetaProcEventHistoryLast = URI("wamp.event.history.last")
-
-	// Retrieves events for subscription after specified date
-	MetaProcEventHistorySince = URI("wamp.event.history.since")
-
-	// Retrieves events for subscription after specified publication
-	MetaProcEventHistoryAfter = URI("wamp.event.history.after")
+	// Retrieves events history for subscription
+	MetaProcEventHistory = URI("wamp.subscription.get_events")
 
 	// -- Testament Meta Procedures --
 

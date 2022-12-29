@@ -250,9 +250,7 @@ func (r *realm) run() {
 	r.registerMetaProcedure(wamp.MetaProcSubGet, r.broker.subGet)
 	r.registerMetaProcedure(wamp.MetaProcSubListSubscribers, r.broker.subListSubscribers)
 	r.registerMetaProcedure(wamp.MetaProcSubCountSubscribers, r.broker.subCountSubscribers)
-	r.registerMetaProcedure(wamp.MetaProcEventHistoryLast, r.broker.eventHistoryLast)
-	r.registerMetaProcedure(wamp.MetaProcEventHistorySince, r.broker.eventHistorySince)
-	r.registerMetaProcedure(wamp.MetaProcEventHistoryAfter, r.broker.eventHistoryAfter)
+	r.registerMetaProcedure(wamp.MetaProcEventHistory, r.broker.subEventHistory)
 
 	// Register to handle testament meta procedures.
 	r.registerMetaProcedure(wamp.MetaProcSessionAddTestament, r.testamentAdd)
