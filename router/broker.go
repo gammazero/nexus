@@ -1,7 +1,6 @@
 package router
 
 import (
-	"errors"
 	"fmt"
 	"time"
 
@@ -53,7 +52,7 @@ type historyEntry struct {
 }
 
 type historyStore struct {
-	events         []historyEntry
+	entries        []historyEntry
 	matchPolicy    string
 	limit          int
 	isLimitReached bool
@@ -122,7 +121,7 @@ func newBroker(logger stdlog.StdLog, strictURI, allowDisclose, debug bool, publi
 	// if broker fails initialize event history store we just log it,
 	// the broker itself will continue to operate but without event history store
 	if err != nil {
-		return nil, errors.New("error parsing/initializing event history config")
+		return nil, configError{Err: err}
 	}
 	go b.run()
 	return b, nil
@@ -148,7 +147,7 @@ func (b *broker) PreInitEventHistoryTopics(evntCfgs []*TopicEventHistoryConfig) 
 		sub, _ := b.syncInitSubscription(topicCfg.Topic, topicCfg.MatchPolicy, nil)
 
 		b.eventHistoryStore[sub] = &historyStore{
-			events:         []historyEntry{},
+			entries:        []historyEntry{},
 			matchPolicy:    topicCfg.MatchPolicy,
 			limit:          topicCfg.Limit,
 			isLimitReached: false,
@@ -382,10 +381,10 @@ func newSubscription(id wamp.ID, subscriber *wamp.Session, topic wamp.URI, match
 func (b *broker) syncSaveEvent(eventStore *historyStore, pub *wamp.Publish, event *wamp.Event) {
 
 	if eventStore.isLimitReached {
-		eventStore.events = eventStore.events[1:]
-	} else if len(eventStore.events) >= eventStore.limit {
+		eventStore.entries = eventStore.entries[1:]
+	} else if len(eventStore.entries) >= eventStore.limit {
 		eventStore.isLimitReached = true
-		eventStore.events = eventStore.events[1:]
+		eventStore.entries = eventStore.entries[1:]
 	}
 
 	item := historyEntry{
@@ -400,7 +399,7 @@ func (b *broker) syncSaveEvent(eventStore *historyStore, pub *wamp.Publish, even
 		},
 	}
 
-	eventStore.events = append(eventStore.events, item)
+	eventStore.entries = append(eventStore.entries, item)
 }
 
 func (b *broker) syncInitSubscription(topic wamp.URI, match string, subscriber *wamp.Session) (sub *subscription, existingSub bool) {
@@ -1018,13 +1017,19 @@ func (b *broker) subCountSubscribers(msg *wamp.Invocation) wamp.Message {
 func (b *broker) subEventHistory(msg *wamp.Invocation) wamp.Message {
 	var events wamp.List // []*storedEvent
 	var isLimitReached bool
+	var reverse bool
+	var limit int
 	var fromDate time.Time
 	var afterDate time.Time
 	var beforeDate time.Time
-	var uptoDate time.Time
+	var untilDate time.Time
 	var dateStr string
 	var topicStr string
 	var topicUri wamp.URI
+	var fromPub wamp.ID
+	var afterPub wamp.ID
+	var beforePub wamp.ID
+	var untilPub wamp.ID
 	var err error
 
 	subId, ok := wamp.AsID(msg.Arguments[0])
@@ -1038,7 +1043,7 @@ func (b *broker) subEventHistory(msg *wamp.Invocation) wamp.Message {
 		}
 	}
 
-	limit, ok := msg.ArgumentsKw["limit"].(int)
+	limit, ok = msg.ArgumentsKw["limit"].(int)
 	if ok && limit < 1 {
 		return &wamp.Error{
 			Type:    msg.MessageType(),
@@ -1048,7 +1053,20 @@ func (b *broker) subEventHistory(msg *wamp.Invocation) wamp.Message {
 		}
 	}
 
-	dateStr, ok = msg.ArgumentsKw["from"].(string)
+	reverseOp, ok := msg.ArgumentsKw["reverse"]
+	if ok {
+		reverse, ok = reverseOp.(bool)
+		if !ok {
+			return &wamp.Error{
+				Type:    msg.MessageType(),
+				Request: msg.Request,
+				Details: wamp.Dict{},
+				Error:   wamp.ErrInvalidArgument,
+			}
+		}
+	}
+
+	dateStr, ok = msg.ArgumentsKw["from_time"].(string)
 	if ok {
 		fromDate, err = time.Parse(time.RFC3339, dateStr)
 		if err != nil {
@@ -1061,7 +1079,7 @@ func (b *broker) subEventHistory(msg *wamp.Invocation) wamp.Message {
 		}
 	}
 
-	dateStr, ok = msg.ArgumentsKw["after"].(string)
+	dateStr, ok = msg.ArgumentsKw["after_time"].(string)
 	if ok {
 		afterDate, err = time.Parse(time.RFC3339, dateStr)
 		if err != nil {
@@ -1074,7 +1092,7 @@ func (b *broker) subEventHistory(msg *wamp.Invocation) wamp.Message {
 		}
 	}
 
-	dateStr, ok = msg.ArgumentsKw["before"].(string)
+	dateStr, ok = msg.ArgumentsKw["before_time"].(string)
 	if ok {
 		beforeDate, err = time.Parse(time.RFC3339, dateStr)
 		if err != nil {
@@ -1087,9 +1105,9 @@ func (b *broker) subEventHistory(msg *wamp.Invocation) wamp.Message {
 		}
 	}
 
-	dateStr, ok = msg.ArgumentsKw["up_to"].(string)
+	dateStr, ok = msg.ArgumentsKw["until_time"].(string)
 	if ok {
-		uptoDate, err = time.Parse(time.RFC3339, dateStr)
+		untilDate, err = time.Parse(time.RFC3339, dateStr)
 		if err != nil {
 			return &wamp.Error{
 				Type:    msg.MessageType(),
@@ -1105,6 +1123,59 @@ func (b *broker) subEventHistory(msg *wamp.Invocation) wamp.Message {
 		topicUri = wamp.URI(topicStr)
 	}
 
+	fromPubOp, ok := msg.ArgumentsKw["from_publication"]
+	if ok {
+		fromPub = fromPubOp.(wamp.ID)
+		if !ok || fromPub < 1 {
+			return &wamp.Error{
+				Type:    msg.MessageType(),
+				Request: msg.Request,
+				Details: wamp.Dict{},
+				Error:   wamp.ErrInvalidArgument,
+			}
+
+		}
+	}
+
+	afterPubOp, ok := msg.ArgumentsKw["after_publication"]
+	if ok {
+		afterPub = afterPubOp.(wamp.ID)
+		if !ok || afterPub < 1 {
+			return &wamp.Error{
+				Type:    msg.MessageType(),
+				Request: msg.Request,
+				Details: wamp.Dict{},
+				Error:   wamp.ErrInvalidArgument,
+			}
+		}
+	}
+
+	beforePubOp, ok := msg.ArgumentsKw["before_publication"]
+	if ok {
+		beforePub = beforePubOp.(wamp.ID)
+		if !ok || beforePub < 1 {
+			return &wamp.Error{
+				Type:    msg.MessageType(),
+				Request: msg.Request,
+				Details: wamp.Dict{},
+				Error:   wamp.ErrInvalidArgument,
+			}
+		}
+	}
+
+	untilPubOp, ok := msg.ArgumentsKw["until_publication"]
+	if ok {
+		untilPub = untilPubOp.(wamp.ID)
+		if !ok || untilPub < 1 {
+			return &wamp.Error{
+				Type:    msg.MessageType(),
+				Request: msg.Request,
+				Details: wamp.Dict{},
+				Error:   wamp.ErrInvalidArgument,
+			}
+		}
+	}
+
 	ch := make(chan struct{})
 	b.actionChan <- func() {
 		var filteredEvents []storedEvent
@@ -1113,17 +1184,67 @@ func (b *broker) subEventHistory(msg *wamp.Invocation) wamp.Message {
 			if storeItem, ok := b.eventHistoryStore[subscription]; ok {
 				isLimitReached = storeItem.isLimitReached
 
-				for _, event := range storeItem.events {
-					eventTopic, ok := event.event.Details["topic"]
+				fromPubReached := false
+				afterPubReached := false
+				untilPubReached := false
 
-					if (fromDate.IsZero() || !event.event.timestamp.Before(fromDate)) &&
-						(afterDate.IsZero() || event.event.timestamp.After(afterDate)) &&
-						(beforeDate.IsZero() || event.event.timestamp.Before(beforeDate)) &&
-						(uptoDate.IsZero() || !event.event.timestamp.After(uptoDate)) &&
-						(len(topicUri) == 0 || (ok && eventTopic == topicUri)) {
-						filteredEvents = append(filteredEvents, event.event)
+				for _, entry := range storeItem.entries {
+					if !fromDate.IsZero() && entry.event.timestamp.Before(fromDate) {
+						continue
 					}
+					if !afterDate.IsZero() && !entry.event.timestamp.After(afterDate) {
+						continue
+					}
+					if !beforeDate.IsZero() && !entry.event.timestamp.Before(beforeDate) {
+						continue
+					}
+					if !untilDate.IsZero() && entry.event.timestamp.After(untilDate) {
+						continue
+					}
+					if fromPub > 0 && !fromPubReached {
+						if entry.event.Publication != fromPub {
+							continue
+						} else {
+							fromPubReached = true
+						}
+					}
+					if afterPub > 0 && !afterPubReached {
+						if entry.event.Publication != afterPub {
+							continue
+						} else {
+							afterPubReached = true
+							continue
+						}
+					}
+					if beforePub > 0 && entry.event.Publication == beforePub {
+						break
+					}
+					if untilPub > 0 {
+						// We need to include specified event, but also
+						// we need to check it against remaining filters,
+						// so we rise up untilPubReached flag and break the
+						// cycle on next turn
+						if untilPubReached {
+							break
+						}
+						if entry.event.Publication == untilPub {
+							untilPubReached = true
+						}
+					}
+
+					eventTopic, ok := entry.event.Details["topic"]
+					if len(topicUri) > 0 && (!ok || eventTopic != topicUri) {
+						continue
+					}
+
+					filteredEvents = append(filteredEvents, entry.event)
 				}
+			}
+		}
+
+		if reverse {
+			for i, j := 0, len(filteredEvents)-1; i < j; i, j = i+1, j-1 {
+				filteredEvents[i], filteredEvents[j] = filteredEvents[j], filteredEvents[i]
 			}
 		}
 
