@@ -345,7 +345,7 @@ func (r *router) RemoveRealm(name wamp.URI) {
 	}
 	// wait until the atomic func has completed
 	<-sync
-	// if the realm was found within the router, close it outside of the atomic
+	// if the realm was found within the router, close it outside the atomic
 	// func while still blocking the caller
 	if ok {
 		realm.close()
@@ -361,9 +361,13 @@ func (r *router) addRealm(config *RealmConfig) (*realm, error) {
 		return nil, errors.New("realm already exists: " + string(config.URI))
 	}
 
+	broker, err := newBroker(r.log, config.StrictURI, config.AllowDisclose, r.debug, config.PublishFilterFactory, config.TopicEventHistoryConfigs)
+	if err != nil {
+		return nil, err
+	}
 	realm, err := newRealm(
 		config,
-		newBroker(r.log, config.StrictURI, config.AllowDisclose, r.debug, config.PublishFilterFactory),
+		broker,
 		newDealer(r.log, config.StrictURI, config.AllowDisclose, r.debug),
 		r.log, r.debug)
 	if err != nil {

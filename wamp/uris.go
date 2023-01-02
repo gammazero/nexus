@@ -222,6 +222,9 @@ const (
 	// Obtains the number of sessions currently attached to the subscription.
 	MetaProcSubCountSubscribers = URI("wamp.subscription.count_suscribers")
 
+	// Retrieves events history for subscription
+	MetaProcEventHistory = URI("wamp.subscription.get_events")
+
 	// -- Testament Meta Procedures --
 
 	// Add a Testament which will be published on a particular topic when the
