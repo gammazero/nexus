@@ -29,7 +29,7 @@ func LinkedPeersQSize(queueSize int) (wamp.Peer, wamp.Peer) {
 	rToC := make(chan wamp.Message, queueSize)
 
 	// The router will read from this channel and immediately dispatch the
-	// message to the broker or dealer.  Therefore, this channel can be
+	// message to the broker or dealer. Therefore, this channel can be
 	// unbuffered.
 	cToR := make(chan wamp.Message)
 

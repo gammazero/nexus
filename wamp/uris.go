@@ -231,4 +231,7 @@ const (
 	// Remove the Testaments for that Session, either for when it is detached
 	// or destroyed.
 	MetaProcSessionFlushTestaments = URI("wamp.session.flush_testaments")
+
+	// -- Nexus Specific URIs for internal use
+	InternalProgressiveOmitResult = URI("progressive.call.omit_result")
 )

@@ -32,6 +32,11 @@ const (
 var E2eeSerializers = map[string]serialize.Serialization{"cbor": CBOR}
 var PPTSerializers = map[string]serialize.Serialization{"json": JSON, "msgpack": MSGPACK, "cbor": CBOR}
 
+type clientInvocation struct {
+	registration wamp.ID
+	request      wamp.ID
+}
+
 // A Client routes messages to/from a WAMP router.
 type Client struct {
 	sess *wamp.Session
@@ -43,10 +48,12 @@ type Client struct {
 	eventHandlers map[wamp.ID]EventHandler
 	topicSubID    map[string]wamp.ID
 
-	invHandlers    map[wamp.ID]InvocationHandler
-	nameProcID     map[string]wamp.ID
-	invHandlerKill map[wamp.ID]context.CancelFunc
-	progGate       map[context.Context]wamp.ID
+	invHandlers       map[wamp.ID]InvocationHandler
+	invHandlersQueues map[clientInvocation]chan *wamp.Invocation
+	invHandlersCtxs   map[clientInvocation]context.Context
+	nameProcID        map[string]wamp.ID
+	invHandlerKill    map[wamp.ID]context.CancelFunc
+	progGate          map[context.Context]wamp.ID
 
 	activeInvHandlers sync.WaitGroup
 
@@ -237,10 +244,12 @@ func NewClient(p wamp.Peer, cfg Config) (*Client, error) {
 		eventHandlers: map[wamp.ID]EventHandler{},
 		topicSubID:    map[string]wamp.ID{},
 
-		invHandlers:    map[wamp.ID]InvocationHandler{},
-		nameProcID:     map[string]wamp.ID{},
-		invHandlerKill: map[wamp.ID]context.CancelFunc{},
-		progGate:       map[context.Context]wamp.ID{},
+		invHandlers:       map[wamp.ID]InvocationHandler{},
+		invHandlersQueues: map[clientInvocation]chan *wamp.Invocation{},
+		invHandlersCtxs:   map[clientInvocation]context.Context{},
+		nameProcID:        map[string]wamp.ID{},
+		invHandlerKill:    map[wamp.ID]context.CancelFunc{},
+		progGate:          map[context.Context]wamp.ID{},
 
 		log:        cfg.Logger,
 		debug:      cfg.Debug,
@@ -653,6 +662,13 @@ func (c *Client) Unregister(procedure string) error {
 // handle progressive results while Call is waiting for a final response.
 type ProgressHandler func(*wamp.Result)
 
+// SendProgressiveData is a callback function for feeding a progressive call data.
+// This function is called by the client to retrieve payload from business side.
+// The returned options indicate whether the data chunk returned by the callback is final,
+// in which case the wamp.OptProgress option is false or unset, or intermediate with more
+// data to come, in which case wamp.OptProgress option must be set to true.
+type SendProgressiveData func(ctx context.Context) (options wamp.Dict, args wamp.List, kwargs wamp.Dict, err error)
+
 // Call calls the procedure corresponding to the given URI.
 //
 // If an ERROR message is received from the router, the error value returned
@@ -748,40 +764,9 @@ func (c *Client) Call(ctx context.Context, procedure string, options wamp.Dict, 
 		Options:   options,
 	}
 
-	// Check and handle Payload PassThru Mode
-	// @see https://wamp-proto.org/wamp_latest_ietf.html#name-payload-passthru-mode
-	if pptScheme, _ := options[wamp.OptPPTScheme].(string); pptScheme != "" {
-		// Let's check: was ppt feature announced by dealer?
-		if !c.sess.HasFeature(wamp.RoleDealer, wamp.FeaturePayloadPassthruMode) {
-			// It's protocol violation, so we need to abort connection
-			// But as we did not send anything to the router
-			// let's just err client
-			return nil, ErrPPTNotSupportedByRouter
-		}
-
-		if !isPPTSchemeValid(pptScheme) {
-			return nil, ErrPPTSchemeInvalid
-		}
-
-		// Dealer supports PPT feature
-		// Let's prepare payload based on ppt_* attributes provided
-		var payload wamp.List
-		var err error
-		if pptScheme == WampPPTScheme {
-			payload, err = packE2EEPayload(options, args, kwargs)
-		} else {
-			payload, err = packPPTPayload(options, args, kwargs)
-		}
-
-		if err != nil {
-			return nil, err
-		}
-
-		message.Arguments = payload
-
-	} else {
-		message.Arguments = args
-		message.ArgumentsKw = kwargs
+	err := c.prepareCallPayloadMessage(message, options, args, kwargs)
+	if err != nil {
+		return nil, err
 	}
 
 	c.sess.Send(message)
@@ -802,48 +787,161 @@ func (c *Client) Call(ctx context.Context, procedure string, options wamp.Dict, 
 
 	switch msg := msg.(type) {
 	case *wamp.Result:
+		err, abortMsg := c.prepareCallResultMessage(msg)
 
-		// Check and handle Payload PassThru Mode
-		// @see https://wamp-proto.org/wamp_latest_ietf.html#name-payload-passthru-mode
-		if pptScheme, _ := msg.Details[wamp.OptPPTScheme].(string); pptScheme != "" {
-			// Let's check: was ppt feature announced by dealer?
-			if !c.sess.HasFeature(wamp.RoleDealer, wamp.FeaturePayloadPassthruMode) {
-				// It's protocol violation, so we need to abort connection
-				abortMsg := wamp.Abort{
-					Reason: wamp.ErrProtocolViolation,
-					Details: wamp.Dict{
-						wamp.OptError:   ErrPPTNotSupportedByRouter.Error(),
-						wamp.OptMessage: ErrPPTNotSupportedByPeer.Error(),
-					},
-				}
-				c.sess.Peer.Send(&abortMsg)
+		if err != nil {
+			if abortMsg != nil {
+				c.sess.Peer.Send(abortMsg)
 				c.sess.Peer.Close()
-				return nil, fmt.Errorf("cannot process unexpected passthrough result: %w", ErrPPTNotSupportedByRouter)
 			}
 
-			if !isPPTSchemeValid(pptScheme) {
-				return nil, fmt.Errorf("cannot process result with invalid ppt scheme %q: %w", pptScheme, ErrPPTSchemeInvalid)
-			}
-
-			var args wamp.List
-			var kwargs wamp.Dict
-			var err error
-
-			// Now need to check ppt_serializer (in pair with ppt_scheme)
-			// and deserialize payload with appreciate serializer
-			if pptScheme == WampPPTScheme {
-				args, kwargs, err = unpackE2EEPayload(msg.Details, msg.Arguments)
-			} else {
-				args, kwargs, err = unpackPPTPayload(msg.Details, msg.Arguments)
-			}
-
-			if err != nil {
-				return nil, err
-			}
-
-			msg.Arguments = args
-			msg.ArgumentsKw = kwargs
+			return nil, err
 		}
+
+		return msg, nil
+	case *wamp.Error:
+		return nil, RPCError{msg, procedure}
+	default:
+		return nil, unexpectedMsgError(msg, wamp.RESULT)
+	}
+}
+
+// CallProgressive makes a progressive call to the procedure corresponding to
+// the given URI.
+//
+// This method prepares for making a call, the payload itself (even first one) is received
+// through calling the sendProg SendProgressiveData callback.
+// See the documentation of SenProgressiveData for more details about feeding the data
+// to a progressive call.
+//
+// progcb ProgressHandler is the same as in Call method.
+// @see more info in Call method
+func (c *Client) CallProgressive(ctx context.Context, procedure string, sendProg SendProgressiveData, progcb ProgressHandler) (*wamp.Result, error) { //nolint:lll
+	if !c.Connected() {
+		return nil, ErrNotConn
+	}
+
+	if !c.sess.HasFeature(wamp.RoleDealer, wamp.FeatureProgressiveCalls) {
+		return nil, ErrProgCallNotSupportedByRouter
+	}
+
+	// Let's receive first payload to start actual call
+	options, args, kwargs, err := sendProg(ctx)
+	if err != nil {
+		return nil, err
+	}
+
+	if options == nil {
+		options = wamp.Dict{}
+	}
+
+	receiveProgress := false
+
+	// If caller is willing to receive progressive results, create a channel to
+	// receive these on.  Then, start a goroutine to receive progressive
+	// results and call the callback for each.
+	var progChan chan *wamp.Result
+	var progDone chan struct{}
+	if progcb != nil {
+		receiveProgress = true
+		options[wamp.OptReceiveProgress] = true
+		progChan = make(chan *wamp.Result)
+		progDone = make(chan struct{})
+		go func() {
+			for result := range progChan {
+				progcb(result)
+			}
+			close(progDone)
+		}()
+	}
+
+	id := c.idGen.Next()
+	c.expectReply(id)
+	message := &wamp.Call{
+		Request:   id,
+		Procedure: wamp.URI(procedure),
+		Options:   options,
+	}
+
+	err = c.prepareCallPayloadMessage(message, options, args, kwargs)
+	if err != nil {
+		return nil, err
+	}
+
+	c.sess.Send(message)
+
+	callInProgress, _ := options[wamp.OptProgress].(bool)
+
+	if callInProgress {
+		// So client marked first payload as progressive, so we
+		// start pulling next chunks of input data from the client
+		go func() {
+			for callInProgress {
+				options, args, kwargs, err = sendProg(ctx)
+
+				if err != nil {
+					c.sess.Send(&wamp.Cancel{
+						Request: id,
+						Options: wamp.SetOption(nil, wamp.OptMode, wamp.CancelModeKillNoWait),
+					})
+					return
+				}
+
+				if options == nil {
+					options = wamp.Dict{}
+				}
+
+				callInProgress, _ = options[wamp.OptProgress].(bool)
+
+				options[wamp.OptReceiveProgress] = receiveProgress
+
+				message := &wamp.Call{
+					Request:   id,
+					Procedure: wamp.URI(procedure),
+					Options:   options,
+				}
+
+				if err := c.prepareCallPayloadMessage(message, options, args, kwargs); err != nil {
+					c.sess.Send(&wamp.Cancel{
+						Request: id,
+						Options: wamp.SetOption(nil, wamp.OptMode, wamp.CancelModeKillNoWait),
+					})
+					return
+				}
+
+				c.sess.Send(message)
+			}
+		}()
+	}
+
+	// Wait to receive RESULT message.
+	msg, err := c.waitForReplyWithCancel(ctx, id, procedure, progChan)
+
+	// Finish handling any remaining progressive results before returning the
+	// final result.
+	if progcb != nil {
+		close(progChan)
+		<-progDone
+	}
+
+	if err != nil {
+		return nil, err
+	}
+
+	switch msg := msg.(type) {
+	case *wamp.Result:
+
+		err, abortMsg := c.prepareCallResultMessage(msg)
+
+		if err != nil {
+			if abortMsg != nil {
+				c.sess.Peer.Send(abortMsg)
+				c.sess.Peer.Close()
+			}
+
+			return nil, err
+		}
+
 		return msg, nil
 	case *wamp.Error:
 		return nil, RPCError{msg, procedure}
@@ -1414,6 +1512,7 @@ func (c *Client) runHandleEvent(msg *wamp.Event) {
 // runHandleInvocation processes an INVOCATION message from the router
 // requesting a call to a registered RPC procedure.
 func (c *Client) runHandleInvocation(msg *wamp.Invocation) {
+	var cancel context.CancelFunc
 	timeout, _ := wamp.AsInt64(msg.Details[wamp.OptTimeout])
 	progResOK, _ := msg.Details[wamp.OptReceiveProgress].(bool)
 	reqID := msg.Request
@@ -1484,166 +1583,216 @@ func (c *Client) runHandleInvocation(msg *wamp.Invocation) {
 		msg.ArgumentsKw = kwargs
 	}
 
-	// Create a kill switch so that invocation can be canceled.
-	var cancel context.CancelFunc
-	var ctx context.Context
-	if timeout > 0 {
+	cliInvocation := clientInvocation{
+		registration: msg.Registration,
+		request:      msg.Request,
+	}
+	handlerQueue, queueExists := c.invHandlersQueues[cliInvocation]
+	ctx := c.invHandlersCtxs[cliInvocation]
+	if !queueExists {
+		handlerQueue = make(chan *wamp.Invocation, 1)
+		c.invHandlersQueues[cliInvocation] = handlerQueue
+
+		// Create a kill switch so that invocation can be canceled.
+		if timeout > 0 {
+			// The caller specified a timeout, in milliseconds.
+			ctx, cancel = context.WithTimeout(context.Background(),
+				time.Millisecond*time.Duration(timeout))
+		} else {
+			ctx, cancel = context.WithCancel(context.Background())
+		}
+		c.invHandlersCtxs[cliInvocation] = ctx
+		c.invHandlerKill[reqID] = cancel
+		c.activeInvHandlers.Add(1)
+
+		// If caller is accepting progressive results, create map entry to allow
+		// progress to be sent.
+		if progResOK {
+			c.progGate[ctx] = reqID
+		}
+	} else if timeout > 0 {
+		// If client provides a timeout option with every progressive call
+		// then context with time out is updated with every invocation
+		// what means that timeout deadline is pushed forward.
 		// The caller specified a timeout, in milliseconds.
 		ctx, cancel = context.WithTimeout(context.Background(),
 			time.Millisecond*time.Duration(timeout))
-	} else {
-		ctx, cancel = context.WithCancel(context.Background())
+		// Let's update ctx and cancel for ongoing invocation
+		c.invHandlersCtxs[cliInvocation] = ctx
+		c.invHandlerKill[reqID] = cancel
 	}
-	c.invHandlerKill[reqID] = cancel
-	c.activeInvHandlers.Add(1)
 
-	// If caller is accepting progressive results, create map entry to allow
-	// progress to be sent.
-	if progResOK {
-		c.progGate[ctx] = reqID
-	}
 	c.sess.Unlock()
 
-	// Start a goroutine to run the user-defined invocation handler.
-	go func() {
-		defer cancel()
+	handlerQueue <- msg
 
-		// Create channel to hold result.  Channel must be buffered.
-		// Otherwise, canceling the call will leak the goroutine that is
-		// blocked forever waiting to send the result to the channel.
-		resChan := make(chan InvokeResult, 1)
+	if !queueExists {
+		// Start a goroutine to run the user-defined invocation handler.
 		go func() {
-			// The Context is passed into the handler to tell the client
-			// application to stop whatever it is doing if it cares to pay
-			// attention.
-			resChan <- handler(ctx, msg)
-		}()
+			defer cancel()
 
-		// Remove the kill switch when done processing invocation.
-		defer func() {
-			c.sess.Lock()
-			delete(c.progGate, ctx)
-			delete(c.invHandlerKill, reqID)
-			c.sess.Unlock()
-			c.activeInvHandlers.Done()
-		}()
+			// Create channel to hold result.  Channel must be buffered.
+			// Otherwise, canceling the call will leak the goroutine that is
+			// blocked forever waiting to send the result to the channel.
+			resChan := make(chan InvokeResult, 1)
+			go func() {
+				for msg := range handlerQueue {
 
-		// Wait for the handler to finish or for the call be to canceled.
-		var result InvokeResult
-		select {
-		case result = <-resChan:
-			// If the handler returns InvocationCanceled, this means the
-			// handler canceled the call.
-			if result.Err == wamp.ErrCanceled {
-				c.log.Println("INVOCATION", reqID, "canceled by callee")
-			}
-		case <-c.Done():
-			c.log.Print("Client stopping, invocation handler canceled")
-			// Return without sending response to server.  This will also
-			// cancel the context.
-			return
-		case <-ctx.Done():
-			// Received an INTERRUPT message from the router.
-			// Note: handler is also just as likely to return on INTERRUPT.
-			result = InvokeResult{Err: wamp.ErrCanceled}
-			var reason string
-			if errors.Is(ctx.Err(), context.DeadlineExceeded) {
-				reason = "callee due to timeout"
-			} else {
-				reason = "router"
-			}
-			c.log.Println("INVOCATION", reqID, "canceled by", reason)
-		}
+					if isInProgress, _ := msg.Details[wamp.OptProgress].(bool); !isInProgress {
+						c.sess.Lock()
+						close(c.invHandlersQueues[cliInvocation])
+						delete(c.invHandlersQueues, cliInvocation)
+						delete(c.invHandlersCtxs, cliInvocation)
+						c.sess.Unlock()
+					}
 
-		if result.Err != "" {
-			c.sess.SendCtx(c.ctx, &wamp.Error{
-				Type:        wamp.INVOCATION,
-				Request:     reqID,
-				Details:     wamp.Dict{},
-				Arguments:   result.Args,
-				ArgumentsKw: result.Kwargs,
-				Error:       result.Err,
-			})
-			return
-		}
-
-		options := result.Options
-
-		if options == nil {
-			options = wamp.Dict{}
-		}
-
-		message := &wamp.Yield{
-			Request: reqID,
-			Options: options,
-		}
-
-		// Check and handle Payload PassThru Mode
-		// @see https://wamp-proto.org/wamp_latest_ietf.html#name-payload-passthru-mode
-		if pptScheme, _ := options[wamp.OptPPTScheme].(string); pptScheme != "" {
-			// Let's check: was ppt feature announced by dealer?
-			if !c.sess.HasFeature(wamp.RoleDealer, wamp.FeaturePayloadPassthruMode) {
-				// It's protocol violation, so we need to abort connection
-				abortMsg := wamp.Abort{
-					Reason: wamp.ErrProtocolViolation,
-					Details: wamp.Dict{
-						wamp.OptError:   ErrPPTNotSupportedByRouter.Error(),
-						wamp.OptMessage: ErrPPTNotSupportedByPeer.Error(),
-					},
+					// The Context is passed into the handler to tell the client
+					// application to stop whatever it is doing if it cares to pay
+					// attention.
+					resChan <- handler(ctx, msg)
 				}
-				c.sess.Peer.Send(&abortMsg)
-				c.sess.Peer.Close()
-				return
+			}()
+
+			// Remove the kill switch when done processing invocation.
+			defer func() {
+				c.sess.Lock()
+				delete(c.progGate, ctx)
+				delete(c.invHandlerKill, reqID)
+				c.sess.Unlock()
+				c.activeInvHandlers.Done()
+			}()
+
+			// Wait for the handler to finish or for the call to be canceled.
+			var result InvokeResult
+			isProcessing := true
+			for isProcessing {
+				select {
+				case result = <-resChan:
+					// If the handler returns InvocationCanceled, this means the
+					// handler canceled the call.
+					if result.Err == wamp.ErrCanceled {
+						c.log.Println("INVOCATION", reqID, "canceled by callee")
+						isProcessing = false
+						break
+					} else if result.Err == wamp.InternalProgressiveOmitResult {
+						c.log.Println("Call in progress, nothing to YIELD, skipping")
+						break
+					} else {
+						c.log.Println("Received final result")
+						isProcessing = false
+						break
+					}
+				case <-c.Done():
+					c.log.Print("Client stopping, invocation handler canceled")
+					// Return without sending response to server.  This will also
+					// cancel the context.
+					return
+				case <-ctx.Done():
+					// Received an INTERRUPT message from the router.
+					// Note: handler is also just as likely to return on INTERRUPT.
+					result = InvokeResult{Err: wamp.ErrCanceled}
+					var reason string
+					if errors.Is(ctx.Err(), context.DeadlineExceeded) {
+						reason = "callee due to timeout"
+					} else {
+						reason = "router"
+					}
+					c.log.Println("INVOCATION", reqID, "canceled by", reason)
+					isProcessing = false
+					break
+				}
 			}
 
-			if !isPPTSchemeValid(pptScheme) {
+			if result.Err != "" {
 				c.sess.SendCtx(c.ctx, &wamp.Error{
-					Type:    wamp.INVOCATION,
-					Request: reqID,
-					Details: wamp.Dict{
-						"error": ErrPPTSchemeInvalid.Error(),
-					},
+					Type:        wamp.INVOCATION,
+					Request:     reqID,
+					Details:     wamp.Dict{},
 					Arguments:   result.Args,
 					ArgumentsKw: result.Kwargs,
-					Error:       wamp.ErrInvalidArgument,
+					Error:       result.Err,
 				})
 				return
 			}
 
-			// Dealer supports PPT feature
-			// Let's prepare payload based on ppt_* attributes provided
-			var payload wamp.List
-			var err error
+			options := result.Options
 
-			if pptScheme == WampPPTScheme {
-				payload, err = packE2EEPayload(options, result.Args, result.Kwargs)
+			if options == nil {
+				options = wamp.Dict{}
+			}
+
+			message := &wamp.Yield{
+				Request: reqID,
+				Options: options,
+			}
+
+			// Check and handle Payload PassThru Mode
+			// @see https://wamp-proto.org/wamp_latest_ietf.html#name-payload-passthru-mode
+			if pptScheme, _ := options[wamp.OptPPTScheme].(string); pptScheme != "" {
+				// Let's check: was ppt feature announced by dealer?
+				if !c.sess.HasFeature(wamp.RoleDealer, wamp.FeaturePayloadPassthruMode) {
+					// It's protocol violation, so we need to abort connection
+					abortMsg := wamp.Abort{
+						Reason: wamp.ErrProtocolViolation,
+						Details: wamp.Dict{
+							wamp.OptError:   ErrPPTNotSupportedByRouter.Error(),
+							wamp.OptMessage: ErrPPTNotSupportedByPeer.Error(),
+						},
+					}
+					c.sess.Peer.Send(&abortMsg)
+					c.sess.Peer.Close()
+					return
+				}
+
+				if !isPPTSchemeValid(pptScheme) {
+					c.sess.SendCtx(c.ctx, &wamp.Error{
+						Type:    wamp.INVOCATION,
+						Request: reqID,
+						Details: wamp.Dict{
+							"error": ErrPPTSchemeInvalid.Error(),
+						},
+						Arguments:   result.Args,
+						ArgumentsKw: result.Kwargs,
+						Error:       wamp.ErrInvalidArgument,
+					})
+					return
+				}
+
+				// Dealer supports PPT feature
+				// Let's prepare payload based on ppt_* attributes provided
+				var payload wamp.List
+				var err error
+
+				if pptScheme == WampPPTScheme {
+					payload, err = packE2EEPayload(options, result.Args, result.Kwargs)
+				} else {
+					payload, err = packPPTPayload(options, result.Args, result.Kwargs)
+				}
+
+				if err != nil {
+					c.sess.SendCtx(c.ctx, &wamp.Error{
+						Type:    wamp.INVOCATION,
+						Request: reqID,
+						Details: wamp.Dict{
+							"error": err.Error(),
+						},
+						Arguments:   result.Args,
+						ArgumentsKw: result.Kwargs,
+						Error:       wamp.ErrInvalidArgument,
+					})
+					return
+				}
+
+				message.Arguments = payload
+
 			} else {
-				payload, err = packPPTPayload(options, result.Args, result.Kwargs)
+				message.Arguments = result.Args
+				message.ArgumentsKw = result.Kwargs
 			}
 
-			if err != nil {
-				c.sess.SendCtx(c.ctx, &wamp.Error{
-					Type:    wamp.INVOCATION,
-					Request: reqID,
-					Details: wamp.Dict{
-						"error": err.Error(),
-					},
-					Arguments:   result.Args,
-					ArgumentsKw: result.Kwargs,
-					Error:       wamp.ErrInvalidArgument,
-				})
-				return
-			}
-
-			message.Arguments = payload
-
-		} else {
-			message.Arguments = result.Args
-			message.ArgumentsKw = result.Kwargs
-		}
-
-		c.sess.SendCtx(c.ctx, message)
-	}()
+			c.sess.SendCtx(c.ctx, message)
+		}()
+	}
 }
 
 // runHandleInterrupt processes an INTERRUPT message from the router,
@@ -1680,4 +1829,88 @@ func (c *Client) runSignalReply(msg wamp.Message, requestID wamp.ID) {
 	case w <- msg:
 	case <-c.Done():
 	}
+}
+
+func (c *Client) prepareCallPayloadMessage(msg *wamp.Call, options wamp.Dict, args wamp.List, kwargs wamp.Dict) error {
+	// Check and handle Payload PassThru Mode
+	// @see https://wamp-proto.org/wamp_latest_ietf.html#name-payload-passthru-mode
+	if pptScheme, _ := options[wamp.OptPPTScheme].(string); pptScheme != "" {
+		// Let's check: was ppt feature announced by dealer?
+		if !c.sess.HasFeature(wamp.RoleDealer, wamp.FeaturePayloadPassthruMode) {
+			// It's protocol violation, so we need to abort connection
+			// But as we did not send anything to the router
+			// let's just err client
+			return ErrPPTNotSupportedByRouter
+		}
+
+		if !isPPTSchemeValid(pptScheme) {
+			return ErrPPTSchemeInvalid
+		}
+
+		// Dealer supports PPT feature
+		// Let's prepare payload based on ppt_* attributes provided
+		var payload wamp.List
+		var err error
+		if pptScheme == WampPPTScheme {
+			payload, err = packE2EEPayload(options, args, kwargs)
+		} else {
+			payload, err = packPPTPayload(options, args, kwargs)
+		}
+
+		if err != nil {
+			return err
+		}
+
+		msg.Arguments = payload
+
+	} else {
+		msg.Arguments = args
+		msg.ArgumentsKw = kwargs
+	}
+
+	return nil
+}
+
+func (c *Client) prepareCallResultMessage(msg *wamp.Result) (error, *wamp.Abort) {
+	// Check and handle Payload PassThru Mode
+	// @see https://wamp-proto.org/wamp_latest_ietf.html#name-payload-passthru-mode
+	if pptScheme, _ := msg.Details[wamp.OptPPTScheme].(string); pptScheme != "" {
+		// Let's check: was ppt feature announced by dealer?
+		if !c.sess.HasFeature(wamp.RoleDealer, wamp.FeaturePayloadPassthruMode) {
+			// It's protocol violation, so we need to abort connection
+			abortMsg := wamp.Abort{
+				Reason: wamp.ErrProtocolViolation,
+				Details: wamp.Dict{
+					wamp.OptError:   ErrPPTNotSupportedByRouter.Error(),
+					wamp.OptMessage: ErrPPTNotSupportedByPeer.Error(),
+				},
+			}
+			return fmt.Errorf("cannot process unexpected passthrough result: %w", ErrPPTNotSupportedByRouter), &abortMsg
+		}
+
+		if !isPPTSchemeValid(pptScheme) {
+			return fmt.Errorf("cannot process result with invalid ppt scheme %q: %w", pptScheme, ErrPPTSchemeInvalid), nil
+		}
+
+		var args wamp.List
+		var kwargs wamp.Dict
+		var err error
+
+		// Now need to check ppt_serializer (in pair with ppt_scheme)
+		// and deserialize payload with appreciate serializer
+		if pptScheme == WampPPTScheme {
+			args, kwargs, err = unpackE2EEPayload(msg.Details, msg.Arguments)
+		} else {
+			args, kwargs, err = unpackPPTPayload(msg.Details, msg.Arguments)
+		}
+
+		if err != nil {
+			return err, nil
+		}
+
+		msg.Arguments = args
+		msg.ArgumentsKw = kwargs
+	}
+
+	return nil, nil
 }
