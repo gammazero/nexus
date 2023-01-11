@@ -139,11 +139,11 @@ func newRealm(config *RealmConfig, broker *broker, dealer *dealer, logger stdlog
 
 // waitReady waits for the realm to be fully initialized and running.
 func (r *realm) waitReady() {
-	sync := make(chan struct{})
+	ch := make(chan struct{})
 	r.actionChan <- func() {
-		close(sync)
+		close(ch)
 	}
-	<-sync
+	<-ch
 }
 
 // close performs an orderly shutdown of the realm.
@@ -183,14 +183,14 @@ func (r *realm) close() {
 
 	// Kick all clients off.  Sending shutdownGoodbye causes client message
 	// handlers to exit without sending meta events.
-	sync := make(chan struct{})
+	ch := make(chan struct{})
 	r.actionChan <- func() {
 		for _, c := range r.clients {
 			c.EndRecv(shutdownGoodbye)
 		}
-		close(sync)
+		close(ch)
 	}
-	<-sync
+	<-ch
 
 	// Wait until each client's handleInboundMessages() has exited.  No new
 	// messages can be generated once sessions are closed.
@@ -208,7 +208,7 @@ func (r *realm) close() {
 	// finished there can be no more messages to broker and dealer.
 
 	// No new messages, so safe to close dealer and broker.  Stop broker and
-	// dealer so they can be GC'd, and then so can this realm.
+	// dealer, so they can be GC'd, and then so can this realm.
 	r.dealer.close()
 	r.broker.close()
 
@@ -250,6 +250,7 @@ func (r *realm) run() {
 	r.registerMetaProcedure(wamp.MetaProcSubGet, r.broker.subGet)
 	r.registerMetaProcedure(wamp.MetaProcSubListSubscribers, r.broker.subListSubscribers)
 	r.registerMetaProcedure(wamp.MetaProcSubCountSubscribers, r.broker.subCountSubscribers)
+	r.registerMetaProcedure(wamp.MetaProcEventHistory, r.broker.subEventHistory)
 
 	// Register to handle testament meta procedures.
 	r.registerMetaProcedure(wamp.MetaProcSessionAddTestament, r.testamentAdd)

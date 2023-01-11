@@ -38,7 +38,10 @@ func (p *testPeer) IsLocal() bool { return true }
 
 func TestBasicSubscribe(t *testing.T) {
 	// Test subscribing to a topic.
-	broker := newBroker(logger, false, true, debug, nil)
+	broker, err := newBroker(logger, false, true, debug, nil, nil)
+	if err != nil {
+		t.Fatal("Can not initialize broker")
+	}
 	subscriber := newTestPeer()
 	sess := wamp.NewSession(subscriber, 0, nil, nil)
 	testTopic := wamp.URI("nexus.test.topic")
@@ -144,7 +147,10 @@ func TestBasicSubscribe(t *testing.T) {
 }
 
 func TestUnsubscribe(t *testing.T) {
-	broker := newBroker(logger, false, true, debug, nil)
+	broker, err := newBroker(logger, false, true, debug, nil, nil)
+	if err != nil {
+		t.Fatal("Can not initialize broker")
+	}
 	testTopic := wamp.URI("nexus.test.topic")
 
 	// Subscribe session1 to topic
@@ -261,7 +267,10 @@ func TestUnsubscribe(t *testing.T) {
 
 func TestRemove(t *testing.T) {
 	// Subscribe to topic
-	broker := newBroker(logger, false, true, debug, nil)
+	broker, err := newBroker(logger, false, true, debug, nil, nil)
+	if err != nil {
+		t.Fatal("Can not initialize broker")
+	}
 	subscriber := newTestPeer()
 	sess := wamp.NewSession(subscriber, 0, nil, nil)
 	testTopic := wamp.URI("nexus.test.topic")
@@ -303,7 +312,10 @@ func TestRemove(t *testing.T) {
 }
 
 func TestBasicPubSub(t *testing.T) {
-	broker := newBroker(logger, false, true, debug, nil)
+	broker, err := newBroker(logger, false, true, debug, nil, nil)
+	if err != nil {
+		t.Fatal("Can not initialize broker")
+	}
 	subscriber := newTestPeer()
 	sess := wamp.NewSession(subscriber, 0, nil, nil)
 	testTopic := wamp.URI("nexus.test.topic")
@@ -341,7 +353,10 @@ func TestBasicPubSub(t *testing.T) {
 // ----- WAMP v.2 Testing -----
 
 func TestAdvancedPubSub(t *testing.T) {
-	broker := newBroker(logger, false, true, debug, nil)
+	broker, err := newBroker(logger, false, true, debug, nil, nil)
+	if err != nil {
+		t.Fatal("Can not initialize broker")
+	}
 	subscriber := newTestPeer()
 	sess := wamp.NewSession(subscriber, 0, nil, nil)
 	testTopic := wamp.URI("nexus.test.topic")
@@ -390,7 +405,10 @@ func TestAdvancedPubSub(t *testing.T) {
 }
 
 func TestPPTPubSub(t *testing.T) {
-	broker := newBroker(logger, false, true, debug, nil)
+	broker, err := newBroker(logger, false, true, debug, nil, nil)
+	if err != nil {
+		t.Fatal("Can not initialize broker")
+	}
 	subscriber := newTestPeer()
 	sess := wamp.NewSession(subscriber, 0, nil, nil)
 	testTopic := wamp.URI("nexus.test.topic")
@@ -463,9 +481,12 @@ func TestPPTPubSub(t *testing.T) {
 
 }
 
-func TestPrefxPatternBasedSubscription(t *testing.T) {
+func TestPrefixPatternBasedSubscription(t *testing.T) {
 	// Test match=prefix
-	broker := newBroker(logger, false, true, debug, nil)
+	broker, err := newBroker(logger, false, true, debug, nil, nil)
+	if err != nil {
+		t.Fatal("Can not initialize broker")
+	}
 	subscriber := newTestPeer()
 	sess := wamp.NewSession(subscriber, 0, nil, nil)
 	testTopic := wamp.URI("nexus.test.topic")
@@ -528,7 +549,10 @@ func TestPrefxPatternBasedSubscription(t *testing.T) {
 
 func TestWildcardPatternBasedSubscription(t *testing.T) {
 	// Test match=prefix
-	broker := newBroker(logger, false, true, debug, nil)
+	broker, err := newBroker(logger, false, true, debug, nil, nil)
+	if err != nil {
+		t.Fatal("Can not initialize broker")
+	}
 	subscriber := newTestPeer()
 	sess := wamp.NewSession(subscriber, 0, nil, nil)
 	testTopic := wamp.URI("nexus.test.topic")
@@ -598,8 +622,11 @@ func TestWildcardPatternBasedSubscription(t *testing.T) {
 	}
 }
 
-func TestSubscriberBlackwhiteListing(t *testing.T) {
-	broker := newBroker(logger, false, true, debug, nil)
+func TestSubscriberBlackWhiteListing(t *testing.T) {
+	broker, err := newBroker(logger, false, true, debug, nil, nil)
+	if err != nil {
+		t.Fatal("Can not initialize broker")
+	}
 	subscriber := newTestPeer()
 	details := wamp.Dict{
 		"authid":   "jdoe",
@@ -636,7 +663,7 @@ func TestSubscriberBlackwhiteListing(t *testing.T) {
 		Topic:   testTopic,
 		Options: wamp.Dict{"eligible": wamp.List{sess.ID}},
 	})
-	rsp, err := wamp.RecvTimeout(sess, time.Second)
+	rsp, err = wamp.RecvTimeout(sess, time.Second)
 	if err != nil {
 		t.Fatal("not allowed by whitelist")
 	}
@@ -706,7 +733,10 @@ func TestSubscriberBlackwhiteListing(t *testing.T) {
 }
 
 func TestPublisherExclusion(t *testing.T) {
-	broker := newBroker(logger, false, true, debug, nil)
+	broker, err := newBroker(logger, false, true, debug, nil, nil)
+	if err != nil {
+		t.Fatal("Can not initialize broker")
+	}
 	subscriber := newTestPeer()
 	sess := wamp.NewSession(subscriber, 0, nil, nil)
 	testTopic := wamp.URI("nexus.test.topic")
@@ -780,7 +810,10 @@ func TestPublisherExclusion(t *testing.T) {
 }
 
 func TestPublisherIdentification(t *testing.T) {
-	broker := newBroker(logger, false, true, debug, nil)
+	broker, err := newBroker(logger, false, true, debug, nil, nil)
+	if err != nil {
+		t.Fatal("Can not initialize broker")
+	}
 	subscriber := newTestPeer()
 
 	details := wamp.Dict{
@@ -823,5 +856,459 @@ func TestPublisherIdentification(t *testing.T) {
 	}
 	if pub.(wamp.ID) != pubSess.ID {
 		t.Fatal("incorrect publisher ID disclosed")
+	}
+}
+
+func TestEventHistory(t *testing.T) {
+	eventHistoryConfig := []*TopicEventHistoryConfig{
+		{
+			Topic:       wamp.URI("nexus.test.exact.topic"),
+			MatchPolicy: "exact",
+			Limit:       3,
+		},
+		{
+			Topic:       wamp.URI("nexus.test"),
+			MatchPolicy: "prefix",
+			Limit:       4,
+		},
+		{
+			Topic:       wamp.URI("nexus.test..topic"),
+			MatchPolicy: "wildcard",
+			Limit:       4,
+		},
+		{
+			Topic:       wamp.URI("nexus"),
+			MatchPolicy: "prefix",
+			Limit:       1000,
+		},
+	}
+
+	broker, err := newBroker(logger, false, true, debug, nil, eventHistoryConfig)
+	if err != nil {
+		t.Fatal("Can not initialize broker")
+	}
+
+	publisher := newTestPeer()
+	pubSess := wamp.NewSession(publisher, 0, nil, nil)
+
+	topics := []wamp.URI{"nexus.test.exact.topic", "nexus.test.prefix.catch", "nexus.test.wildcard.topic", "nexus.test.wildcard.miss"}
+	reqId := 25501
+
+	// Let's publish all payloads to all topics to have a data to check
+	for i := 1; i <= 5; i++ {
+		for _, topic := range topics {
+
+			publication := wamp.Publish{
+				Request:     wamp.ID(reqId),
+				Topic:       topic,
+				Arguments:   wamp.List{reqId},
+				ArgumentsKw: wamp.Dict{"topic": string(topic)},
+			}
+			broker.publish(pubSess, &publication)
+			reqId++
+		}
+	}
+
+	// and let's publish some events that should not be saved in event store
+	for _, topic := range topics {
+
+		publication := wamp.Publish{
+			Request:     wamp.ID(reqId),
+			Topic:       topic,
+			Options:     wamp.Dict{"exclude": 12345},
+			Arguments:   wamp.List{reqId},
+			ArgumentsKw: wamp.Dict{"topic": string(topic)},
+		}
+		broker.publish(pubSess, &publication)
+		reqId++
+	}
+
+	// Now let's examine what is stored in the Event Store
+	topic := wamp.URI("nexus.test.exact.topic")
+	subscription := broker.topicSubscription[topic]
+	subEvents := broker.eventHistoryStore[subscription].entries
+	if len(subEvents) != 3 {
+		t.Fatalf("Store for topic %s should hold 3 records", topic)
+	}
+	if broker.eventHistoryStore[subscription].isLimitReached != true {
+		t.Fatalf("Limit for the store for topic %s should be reached", topic)
+	}
+	if subEvents[0].event.ArgumentsKw["topic"] != "nexus.test.exact.topic" {
+		t.Fatalf("Event store for topic %s holds invalid event", topic)
+	}
+	if subEvents[0].event.Arguments[0] != 25509 {
+		t.Fatalf("Event store for topic %s holds invalid event", topic)
+	}
+	if subEvents[1].event.ArgumentsKw["topic"] != "nexus.test.exact.topic" {
+		t.Fatalf("Event store for topic %s holds invalid event", topic)
+	}
+	if subEvents[1].event.Arguments[0] != 25513 {
+		t.Fatalf("Event store for topic %s holds invalid event", topic)
+	}
+	if subEvents[2].event.ArgumentsKw["topic"] != "nexus.test.exact.topic" {
+		t.Fatalf("Event store for topic %s holds invalid event", topic)
+	}
+	if subEvents[2].event.Arguments[0] != 25517 {
+		t.Fatalf("Event store for topic %s holds invalid event", topic)
+	}
+
+	topic = wamp.URI("nexus.test")
+	subscription = broker.pfxTopicSubscription[topic]
+	subEvents = broker.eventHistoryStore[subscription].entries
+	if len(subEvents) != 4 {
+		t.Fatalf("Store for topic %s should hold 3 records", topic)
+	}
+	if broker.eventHistoryStore[subscription].isLimitReached != true {
+		t.Fatalf("Limit for the store for topic %s should be reached", topic)
+	}
+	if subEvents[0].event.ArgumentsKw["topic"] != "nexus.test.exact.topic" {
+		t.Fatalf("Event store for topic %s holds invalid event", topic)
+	}
+	if subEvents[0].event.Arguments[0] != 25517 {
+		t.Fatalf("Event store for topic %s holds invalid event", topic)
+	}
+	if subEvents[1].event.ArgumentsKw["topic"] != "nexus.test.prefix.catch" {
+		t.Fatalf("Event store for topic %s holds invalid event", topic)
+	}
+	if subEvents[1].event.Arguments[0] != 25518 {
+		t.Fatalf("Event store for topic %s holds invalid event", topic)
+	}
+	if subEvents[2].event.ArgumentsKw["topic"] != "nexus.test.wildcard.topic" {
+		t.Fatalf("Event store for topic %s holds invalid event", topic)
+	}
+	if subEvents[2].event.Arguments[0] != 25519 {
+		t.Fatalf("Event store for topic %s holds invalid event", topic)
+	}
+	if subEvents[3].event.ArgumentsKw["topic"] != "nexus.test.wildcard.miss" {
+		t.Fatalf("Event store for topic %s holds invalid event", topic)
+	}
+	if subEvents[3].event.Arguments[0] != 25520 {
+		t.Fatalf("Event store for topic %s holds invalid event", topic)
+	}
+
+	topic = wamp.URI("nexus.test..topic")
+	subscription = broker.wcTopicSubscription[topic]
+	subEvents = broker.eventHistoryStore[subscription].entries
+	if len(subEvents) != 4 {
+		t.Fatalf("Store for topic %s should hold 3 records", topic)
+	}
+	if broker.eventHistoryStore[subscription].isLimitReached != true {
+		t.Fatalf("Limit for the store for topic %s should be reached", topic)
+	}
+	if subEvents[0].event.ArgumentsKw["topic"] != "nexus.test.exact.topic" {
+		t.Fatalf("Event store for topic %s holds invalid event", topic)
+	}
+	if subEvents[0].event.Arguments[0] != 25513 {
+		t.Fatalf("Event store for topic %s holds invalid event", topic)
+	}
+	if subEvents[1].event.ArgumentsKw["topic"] != "nexus.test.wildcard.topic" {
+		t.Fatalf("Event store for topic %s holds invalid event", topic)
+	}
+	if subEvents[1].event.Arguments[0] != 25515 {
+		t.Fatalf("Event store for topic %s holds invalid event", topic)
+	}
+	if subEvents[2].event.ArgumentsKw["topic"] != "nexus.test.exact.topic" {
+		t.Fatalf("Event store for topic %s holds invalid event", topic)
+	}
+	if subEvents[2].event.Arguments[0] != 25517 {
+		t.Fatalf("Event store for topic %s holds invalid event", topic)
+	}
+	if subEvents[3].event.ArgumentsKw["topic"] != "nexus.test.wildcard.topic" {
+		t.Fatalf("Event store for topic %s holds invalid event", topic)
+	}
+	if subEvents[3].event.Arguments[0] != 25519 {
+		t.Fatalf("Event store for topic %s holds invalid event", topic)
+	}
+
+	topic = wamp.URI("nexus")
+	subscription = broker.pfxTopicSubscription[topic]
+	subEvents = broker.eventHistoryStore[subscription].entries
+	if len(subEvents) != 20 {
+		t.Fatalf("Store for topic %s should hold 20 records", topic)
+	}
+	if broker.eventHistoryStore[subscription].isLimitReached == true {
+		t.Fatalf("Limit for the store for topic %s should not be reached", topic)
+	}
+
+	//Now let's test Event History MetaRPCs
+	topic = wamp.URI("nexus.test.exact.topic")
+	subId := broker.topicSubscription[topic].id
+	inv := wamp.Invocation{
+		Request:      wamp.ID(reqId),
+		Registration: 0,
+		Details:      wamp.Dict{},
+		Arguments:    wamp.List{subId},
+		ArgumentsKw:  wamp.Dict{"limit": 10},
+	}
+	reqId++
+
+	msg := broker.subEventHistory(&inv)
+	yield, ok := msg.(*wamp.Yield)
+	if !ok {
+		t.Fatalf("MetaRPC eventHistoryLast for topic %s should return Yield message", topic)
+	}
+	if len(yield.Arguments) != 3 {
+		t.Fatalf("MetaRPC eventHistoryLast for topic %s should return 3 records", topic)
+	}
+	if yield.ArgumentsKw["is_limit_reached"] != true {
+		t.Fatalf("is_limit_reached for topic %s should be true", topic)
+	}
+
+	topic = wamp.URI("nexus")
+	subId = broker.pfxTopicSubscription[topic].id
+	inv = wamp.Invocation{
+		Request:      wamp.ID(reqId),
+		Registration: 0,
+		Details:      wamp.Dict{},
+		Arguments:    wamp.List{subId},
+		ArgumentsKw:  wamp.Dict{"limit": 10},
+	}
+	reqId++
+
+	msg = broker.subEventHistory(&inv)
+	yield, ok = msg.(*wamp.Yield)
+	if !ok {
+		t.Fatalf("MetaRPC eventHistoryLast for topic %s should return Yield message", topic)
+	}
+	if len(yield.Arguments) != 10 {
+		t.Fatalf("MetaRPC eventHistoryLast for topic %s should return 10 records", topic)
+	}
+	if yield.ArgumentsKw["is_limit_reached"] == true {
+		t.Fatalf("is_limit_reached for topic %s should be false", topic)
+	}
+
+	inv = wamp.Invocation{
+		Request:      wamp.ID(reqId),
+		Registration: 0,
+		Details:      wamp.Dict{},
+		Arguments:    wamp.List{subId},
+		ArgumentsKw:  wamp.Dict{"limit": 1000},
+	}
+	reqId++
+
+	msg = broker.subEventHistory(&inv)
+	yield, ok = msg.(*wamp.Yield)
+	if !ok {
+		t.Fatalf("MetaRPC eventHistoryLast for topic %s should return Yield message", topic)
+	}
+	if len(yield.Arguments) != 20 {
+		t.Fatalf("MetaRPC eventHistoryLast for topic %s should return 20 records", topic)
+	}
+
+	inv = wamp.Invocation{
+		Request:      wamp.ID(reqId),
+		Registration: 0,
+		Details:      wamp.Dict{},
+		Arguments:    wamp.List{subId},
+		ArgumentsKw:  wamp.Dict{"after_time": (time.Now().Add(-1 * time.Hour)).Format(time.RFC3339)},
+	}
+	reqId++
+
+	msg = broker.subEventHistory(&inv)
+	yield, ok = msg.(*wamp.Yield)
+	if !ok {
+		t.Fatalf("MetaRPC subEventHistory for topic %s should return Yield message", topic)
+	}
+	if len(yield.Arguments) != 20 {
+		t.Fatalf("MetaRPC subEventHistory for topic %s should return 20 records", topic)
+	}
+
+	inv = wamp.Invocation{
+		Request:      wamp.ID(reqId),
+		Registration: 0,
+		Details:      wamp.Dict{},
+		Arguments:    wamp.List{subId},
+		ArgumentsKw:  wamp.Dict{"from_time": (time.Now().Add(-1 * time.Hour)).Format(time.RFC3339)},
+	}
+	reqId++
+
+	msg = broker.subEventHistory(&inv)
+	yield, ok = msg.(*wamp.Yield)
+	if !ok {
+		t.Fatalf("MetaRPC subEventHistory for topic %s should return Yield message", topic)
+	}
+	if len(yield.Arguments) != 20 {
+		t.Fatalf("MetaRPC subEventHistory for topic %s should return 20 records", topic)
+	}
+
+	inv = wamp.Invocation{
+		Request:      wamp.ID(reqId),
+		Registration: 0,
+		Details:      wamp.Dict{},
+		Arguments:    wamp.List{subId},
+		ArgumentsKw:  wamp.Dict{"before_time": (time.Now().Add(1 * time.Hour)).Format(time.RFC3339)},
+	}
+	reqId++
+
+	msg = broker.subEventHistory(&inv)
+	yield, ok = msg.(*wamp.Yield)
+	if !ok {
+		t.Fatalf("MetaRPC subEventHistory for topic %s should return Yield message", topic)
+	}
+	if len(yield.Arguments) != 20 {
+		t.Fatalf("MetaRPC subEventHistory for topic %s should return 20 records", topic)
+	}
+
+	inv = wamp.Invocation{
+		Request:      wamp.ID(reqId),
+		Registration: 0,
+		Details:      wamp.Dict{},
+		Arguments:    wamp.List{subId},
+		ArgumentsKw:  wamp.Dict{"until_time": (time.Now().Add(1 * time.Hour)).Format(time.RFC3339)},
+	}
+	reqId++
+
+	msg = broker.subEventHistory(&inv)
+	yield, ok = msg.(*wamp.Yield)
+	if !ok {
+		t.Fatalf("MetaRPC subEventHistory for topic %s should return Yield message", topic)
+	}
+	if len(yield.Arguments) != 20 {
+		t.Fatalf("MetaRPC subEventHistory for topic %s should return 20 records", topic)
+	}
+
+	inv = wamp.Invocation{
+		Request:      wamp.ID(reqId),
+		Registration: 0,
+		Details:      wamp.Dict{},
+		Arguments:    wamp.List{subId},
+		ArgumentsKw: wamp.Dict{
+			"after_time":  (time.Now().Add(-1 * time.Hour)).Format(time.RFC3339),
+			"before_time": (time.Now().Add(1 * time.Hour)).Format(time.RFC3339),
+		},
+	}
+	reqId++
+
+	msg = broker.subEventHistory(&inv)
+	yield, ok = msg.(*wamp.Yield)
+	if !ok {
+		t.Fatalf("MetaRPC subEventHistory for topic %s should return Yield message", topic)
+	}
+	if len(yield.Arguments) != 20 {
+		t.Fatalf("MetaRPC subEventHistory for topic %s should return 20 records", topic)
+	}
+
+	inv = wamp.Invocation{
+		Request:      wamp.ID(reqId),
+		Registration: 0,
+		Details:      wamp.Dict{},
+		Arguments:    wamp.List{subId},
+		ArgumentsKw:  wamp.Dict{"topic": "nexus.test.exact.topic"},
+	}
+	reqId++
+
+	msg = broker.subEventHistory(&inv)
+	yield, ok = msg.(*wamp.Yield)
+	if !ok {
+		t.Fatalf("MetaRPC subEventHistory for topic %s should return Yield message", topic)
+	}
+	if len(yield.Arguments) != 5 {
+		t.Fatalf("MetaRPC subEventHistory for topic %s should return 5 records", topic)
+	}
+
+	// Let's test filtering based on publication ID
+	topic = wamp.URI("nexus")
+	subscription = broker.pfxTopicSubscription[topic]
+	pubId := broker.eventHistoryStore[subscription].entries[4].event.Publication
+	inv = wamp.Invocation{
+		Request:      wamp.ID(reqId),
+		Registration: 0,
+		Details:      wamp.Dict{},
+		Arguments:    wamp.List{subId},
+		ArgumentsKw:  wamp.Dict{"from_publication": pubId},
+	}
+	reqId++
+
+	msg = broker.subEventHistory(&inv)
+	yield, ok = msg.(*wamp.Yield)
+	if !ok {
+		t.Fatalf("MetaRPC subEventHistory for topic %s should return Yield message", topic)
+	}
+	if len(yield.Arguments) != 16 {
+		t.Fatalf("MetaRPC subEventHistory for topic %s should return 16 records", topic)
+	}
+
+	inv = wamp.Invocation{
+		Request:      wamp.ID(reqId),
+		Registration: 0,
+		Details:      wamp.Dict{},
+		Arguments:    wamp.List{subId},
+		ArgumentsKw:  wamp.Dict{"after_publication": pubId},
+	}
+	reqId++
+
+	msg = broker.subEventHistory(&inv)
+	yield, ok = msg.(*wamp.Yield)
+	if !ok {
+		t.Fatalf("MetaRPC subEventHistory for topic %s should return Yield message", topic)
+	}
+	if len(yield.Arguments) != 15 {
+		t.Fatalf("MetaRPC subEventHistory for topic %s should return 15 records", topic)
+	}
+
+	inv = wamp.Invocation{
+		Request:      wamp.ID(reqId),
+		Registration: 0,
+		Details:      wamp.Dict{},
+		Arguments:    wamp.List{subId},
+		ArgumentsKw:  wamp.Dict{"before_publication": pubId},
+	}
+	reqId++
+
+	msg = broker.subEventHistory(&inv)
+	yield, ok = msg.(*wamp.Yield)
+	if !ok {
+		t.Fatalf("MetaRPC subEventHistory for topic %s should return Yield message", topic)
+	}
+	if len(yield.Arguments) != 4 {
+		t.Fatalf("MetaRPC subEventHistory for topic %s should return 4 records", topic)
+	}
+
+	inv = wamp.Invocation{
+		Request:      wamp.ID(reqId),
+		Registration: 0,
+		Details:      wamp.Dict{},
+		Arguments:    wamp.List{subId},
+		ArgumentsKw:  wamp.Dict{"until_publication": pubId},
+	}
+	reqId++
+
+	msg = broker.subEventHistory(&inv)
+	yield, ok = msg.(*wamp.Yield)
+	if !ok {
+		t.Fatalf("MetaRPC subEventHistory for topic %s should return Yield message", topic)
+	}
+	if len(yield.Arguments) != 5 {
+		t.Fatalf("MetaRPC subEventHistory for topic %s should return 5 records", topic)
+	}
+
+	// Let's test reverse order
+	inv = wamp.Invocation{
+		Request:      wamp.ID(reqId),
+		Registration: 0,
+		Details:      wamp.Dict{},
+		Arguments:    wamp.List{subId},
+		ArgumentsKw:  wamp.Dict{"until_publication": pubId, "reverse": true, "limit": 3},
+	}
+
+	msg = broker.subEventHistory(&inv)
+	yield, ok = msg.(*wamp.Yield)
+	if !ok {
+		t.Fatalf("MetaRPC subEventHistory for topic %s should return Yield message", topic)
+	}
+	if len(yield.Arguments) != 3 {
+		t.Fatalf("MetaRPC subEventHistory for topic %s should return 5 records", topic)
+	}
+	ev1, ok := yield.Arguments[0].(storedEvent)
+	if !ok {
+		t.Fatalf("0 item in Arguments should be of type storedEvent")
+	}
+	ev2, ok := yield.Arguments[2].(storedEvent)
+	if !ok {
+		t.Fatalf("2 item in Arguments should be of type storedEvent")
+	}
+
+	if ev1.Arguments[0].(int) < ev2.Arguments[0].(int) {
+		t.Fatalf("MetaRPC subEventHistory for topic %s should return records in reverse order", topic)
 	}
 }
