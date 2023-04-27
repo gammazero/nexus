@@ -1032,6 +1032,15 @@ func (b *broker) subEventHistory(msg *wamp.Invocation) wamp.Message {
 	var untilPub wamp.ID
 	var err error
 
+	if len(msg.Arguments) == 0 {
+		return &wamp.Error{
+			Type:    msg.MessageType(),
+			Request: msg.Request,
+			Details: wamp.Dict{},
+			Error:   wamp.ErrInvalidArgument,
+		}
+	}
+
 	subId, ok := wamp.AsID(msg.Arguments[0])
 
 	if !ok {
