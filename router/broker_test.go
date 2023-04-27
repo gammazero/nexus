@@ -1311,4 +1311,23 @@ func TestEventHistory(t *testing.T) {
 	if ev1.Arguments[0].(int) < ev2.Arguments[0].(int) {
 		t.Fatalf("MetaRPC subEventHistory for topic %s should return records in reverse order", topic)
 	}
+
+	// Let's test reverse order
+	inv = wamp.Invocation{
+		Request:      wamp.ID(reqId),
+		Registration: 0,
+		Details:      wamp.Dict{},
+		Arguments:    wamp.List{},
+		ArgumentsKw:  wamp.Dict{},
+	}
+
+	msg = broker.subEventHistory(&inv)
+	wErr, ok := msg.(*wamp.Error)
+	if !ok {
+		t.Fatalf("MetaRPC subEventHistory for topic %s should return Error message", topic)
+	}
+
+	if wErr.Error != wamp.ErrInvalidArgument {
+		t.Fatalf("Error URI must be %s when MetaRPC subEventHistory called without arguments", wamp.ErrInvalidArgument)
+	}
 }
