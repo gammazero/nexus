@@ -1312,7 +1312,7 @@ func TestEventHistory(t *testing.T) {
 		t.Fatalf("MetaRPC subEventHistory for topic %s should return records in reverse order", topic)
 	}
 
-	// Let's test reverse order
+	// Let's test with zero args
 	inv = wamp.Invocation{
 		Request:      wamp.ID(reqId),
 		Registration: 0,
