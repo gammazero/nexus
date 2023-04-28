@@ -1311,6 +1311,7 @@ func TestEventHistory(t *testing.T) {
 	if ev1.Arguments[0].(int) < ev2.Arguments[0].(int) {
 		t.Fatalf("MetaRPC subEventHistory for topic %s should return records in reverse order", topic)
 	}
+	reqId++
 
 	// Let's test with zero args
 	inv = wamp.Invocation{
