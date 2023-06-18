@@ -10,16 +10,16 @@ const (
 	RoleSubscriber = "subscriber"
 
 	// RPC features
-	FeatureCallCanceling    = "call_canceling"
-	FeatureCallTimeout      = "call_timeout"
-	FeatureCallerIdent      = "caller_identification"
-	FeaturePatternBasedReg  = "pattern_based_registration"
-	FeatureProgCallResults  = "progressive_call_results"
-	FeatureProgressiveCalls = "progressive_calls"
-	FeatureSessionMetaAPI   = "session_meta_api"
-	FeatureSharedReg        = "shared_registration"
-	FeatureRegMetaAPI       = "registration_meta_api"
-	FeatureTestamentMetaAPI = "testament_meta_api"
+	FeatureCallCanceling       = "call_canceling"
+	FeatureCallTimeout         = "call_timeout"
+	FeatureCallerIdent         = "caller_identification"
+	FeaturePatternBasedReg     = "pattern_based_registration"
+	FeatureProgCallResults     = "progressive_call_results"
+	FeatureProgCallInvocations = "progressive_call_invocations"
+	FeatureSessionMetaAPI      = "session_meta_api"
+	FeatureSharedReg           = "shared_registration"
+	FeatureRegMetaAPI          = "registration_meta_api"
+	FeatureTestamentMetaAPI    = "testament_meta_api"
 
 	// PubSub features
 	FeaturePatternSub           = "pattern_based_subscription"

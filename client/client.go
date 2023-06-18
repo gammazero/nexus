@@ -821,7 +821,7 @@ func (c *Client) CallProgressive(ctx context.Context, procedure string, sendProg
 		return nil, ErrNotConn
 	}
 
-	if !c.sess.HasFeature(wamp.RoleDealer, wamp.FeatureProgressiveCalls) {
+	if !c.sess.HasFeature(wamp.RoleDealer, wamp.FeatureProgCallInvocations) {
 		return nil, ErrProgCallNotSupportedByRouter
 	}
 
