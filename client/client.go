@@ -811,7 +811,7 @@ func (c *Client) Call(ctx context.Context, procedure string, options wamp.Dict, 
 //
 // This method prepares for making a call, the payload itself (even first one) is received
 // through calling the sendProg SendProgressiveData callback.
-// See the documentation of SenProgressiveData for more details about feeding the data
+// See the documentation of SendProgressiveData for more details about feeding the data
 // to a progressive call.
 //
 // progcb ProgressHandler is the same as in Call method.
