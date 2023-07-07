@@ -1450,6 +1450,9 @@ func (c *Client) runReceiveFromRouter(msg wamp.Message) bool {
 		c.routerGoodbye = msg
 		return true
 
+	case *wamp.Abort:
+		return true
+
 	default:
 		c.log.Println("Unhandled message from router:", msg.MessageType(), msg)
 	}

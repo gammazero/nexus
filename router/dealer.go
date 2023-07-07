@@ -646,6 +646,18 @@ func (d *dealer) syncCall(caller *wamp.Session, msg *wamp.Call) {
 	storedInvocationID, ok := d.invocationByCall[callReqID]
 	isInProgress, _ := msg.Options[wamp.OptProgress].(bool)
 
+	if isInProgress && !caller.HasFeature(wamp.RoleCaller, wamp.FeatureProgCallInvocations) {
+		// The Caller did not announce the progressive call invocations feature during the HELLO handshake.
+		abortMsg := wamp.Abort{Reason: wamp.ErrProtocolViolation}
+		abortMsg.Details = wamp.Dict{}
+		abortMsg.Details[wamp.OptMessage] = "Peer is trying to use Progressive Call Invocations while it was not " +
+			"announced during HELLO handshake"
+		caller.Peer.Send(&abortMsg)
+		//caller.Peer.Close()
+
+		return
+	}
+
 	// If it is a simple one-time call or first call of progressive call
 	// then we need to init call-invocation-runtime
 	// otherwise we must reuse runtime-data. E.g. not to generate new ID
@@ -695,6 +707,17 @@ func (d *dealer) syncCall(caller *wamp.Session, msg *wamp.Call) {
 		storedInvk.inProgress = isInProgress
 		callee = storedInvk.callee
 		invocationID = storedInvocationID
+	}
+
+	// Let's check if callee supports this feature
+	if isInProgress && !callee.HasFeature(wamp.RoleCallee, wamp.FeatureProgCallInvocations) {
+		d.trySend(caller, &wamp.Error{
+			Type:    msg.MessageType(),
+			Request: msg.Request,
+			Details: wamp.Dict{},
+			Error:   wamp.ErrFeatureNotSupported,
+		})
+		return
 	}
 
 	details := wamp.Dict{}
