@@ -653,7 +653,7 @@ func (d *dealer) syncCall(caller *wamp.Session, msg *wamp.Call) {
 		abortMsg.Details[wamp.OptMessage] = "Peer is trying to use Progressive Call Invocations while it was not " +
 			"announced during HELLO handshake"
 		caller.Peer.Send(&abortMsg)
-		//caller.Peer.Close()
+		caller.Peer.Close()
 
 		return
 	}
