@@ -1417,7 +1417,7 @@ func (c *Client) run() {
 //
 
 // runReceiveFromRouter handles messages from the router.  Returns true if
-// client needs to close due to receiving GOODBYE from router.
+// client needs to close due to receiving GOODBYE or ABORT from router.
 func (c *Client) runReceiveFromRouter(msg wamp.Message) bool {
 	if c.debug {
 		c.log.Println("Client", c.sess, "received", msg.MessageType())
