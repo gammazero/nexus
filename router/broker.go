@@ -206,7 +206,7 @@ func (b *broker) publish(pub *wamp.Session, msg *wamp.Publish) {
 			abortMsg := wamp.Abort{Reason: wamp.ErrProtocolViolation}
 			abortMsg.Details = wamp.Dict{}
 			abortMsg.Details[wamp.OptMessage] = ErrPPTNotSupportedByPeer.Error()
-			pub.TrySend(&abortMsg)
+			_ = pub.TrySend(&abortMsg)
 			pub.Close()
 
 			return

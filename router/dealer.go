@@ -653,7 +653,7 @@ func (d *dealer) syncCall(caller *wamp.Session, msg *wamp.Call) {
 		abortMsg.Details = wamp.Dict{}
 		abortMsg.Details[wamp.OptMessage] = "Peer is trying to use Progressive Call Invocations while it was not " +
 			"announced during HELLO handshake"
-		caller.TrySend(&abortMsg)
+		_ = caller.TrySend(&abortMsg)
 		caller.Close()
 
 		return
@@ -757,7 +757,7 @@ func (d *dealer) syncCall(caller *wamp.Session, msg *wamp.Call) {
 			abortMsg.Details = wamp.Dict{}
 			abortMsg.Details[wamp.OptMessage] = "Peer is trying to use Payload PassThru Mode while it was not " +
 				"announced during HELLO handshake"
-			caller.TrySend(&abortMsg)
+			_ = caller.TrySend(&abortMsg)
 			caller.Close()
 
 			return
@@ -1057,7 +1057,7 @@ func (d *dealer) syncYield(callee *wamp.Session, msg *wamp.Yield, progress, canR
 			abortMsg := wamp.Abort{Reason: wamp.ErrProtocolViolation}
 			abortMsg.Details = wamp.Dict{}
 			abortMsg.Details[wamp.OptMessage] = ErrPPTNotSupportedByPeer.Error()
-			callee.TrySend(&abortMsg)
+			_ = callee.TrySend(&abortMsg)
 			callee.Close()
 
 			return false
