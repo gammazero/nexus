@@ -139,7 +139,7 @@ The currently maintained version of this module is 3.x.  Earlier major versions 
 | Feature                      | Supported |
 |------------------------------|-----------|
 | progressive_call_results     | Yes       |
-| progressive_calls            | Yes       |
+| progressive_call_invocations | Yes       |
 | call_timeout                 | Yes       |
 | call_canceling               | Yes       |
 | caller_identification        | Yes       |

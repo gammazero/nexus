@@ -15,5 +15,5 @@ var (
 	ErrPPTSchemeInvalid             = errors.New("ppt scheme provided is invalid")
 	ErrPPTSerializerInvalid         = errors.New("ppt serializer provided is invalid or not supported")
 	ErrSerialization                = errors.New("can not serialize/deserialize payload")
-	ErrProgCallNotSupportedByRouter = errors.New("progressive calls are not supported by the router")
+	ErrProgCallNotSupportedByRouter = errors.New("progressive call invocations are not supported by the router")
 )

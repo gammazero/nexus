@@ -783,7 +783,7 @@ func TestProgressiveCallResults(t *testing.T) {
 	r.Close()
 }
 
-func TestProgressiveCalls(t *testing.T) {
+func TestProgressiveCallInvocations(t *testing.T) {
 	// Connect two clients to the same server
 	callee, caller, r, err := connectedTestClients()
 	if err != nil {

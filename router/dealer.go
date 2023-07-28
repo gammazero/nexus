@@ -29,7 +29,7 @@ var dealerRole = wamp.Dict{
 		wamp.FeatureCallerIdent:         true,
 		wamp.FeaturePatternBasedReg:     true,
 		wamp.FeatureProgCallResults:     true,
-		wamp.FeatureProgressiveCalls:    true,
+		wamp.FeatureProgCallInvocations: true,
 		wamp.FeatureSessionMetaAPI:      true,
 		wamp.FeatureSharedReg:           true,
 		wamp.FeatureRegMetaAPI:          true,
@@ -60,6 +60,7 @@ type invocation struct {
 	canceled    bool
 	inProgress  bool
 	timerCancel context.CancelFunc
+	options     wamp.Dict
 }
 
 type requestID struct {
@@ -646,6 +647,18 @@ func (d *dealer) syncCall(caller *wamp.Session, msg *wamp.Call) {
 	storedInvocationID, ok := d.invocationByCall[callReqID]
 	isInProgress, _ := msg.Options[wamp.OptProgress].(bool)
 
+	if isInProgress && !caller.HasFeature(wamp.RoleCaller, wamp.FeatureProgCallInvocations) {
+		// The Caller did not announce the progressive call invocations feature during the HELLO handshake.
+		abortMsg := wamp.Abort{Reason: wamp.ErrProtocolViolation}
+		abortMsg.Details = wamp.Dict{}
+		abortMsg.Details[wamp.OptMessage] = "Peer is trying to use Progressive Call Invocations while it was not " +
+			"announced during HELLO handshake"
+		_ = caller.TrySend(&abortMsg)
+		caller.Close()
+
+		return
+	}
+
 	// If it is a simple one-time call or first call of progressive call
 	// then we need to init call-invocation-runtime
 	// otherwise we must reuse runtime-data. E.g. not to generate new ID
@@ -686,15 +699,31 @@ func (d *dealer) syncCall(caller *wamp.Session, msg *wamp.Call) {
 			callID:     reqID,
 			callee:     callee,
 			inProgress: isInProgress,
+			options:    msg.Options,
 		}
 		d.invocations[invocationID] = invk
 		d.invocationByCall[reqID] = invocationID
 
 	} else {
-		storedInvk := d.invocations[storedInvocationID]
-		storedInvk.inProgress = isInProgress
-		callee = storedInvk.callee
+		invk = d.invocations[storedInvocationID]
+		invk.inProgress = isInProgress
+		callee = invk.callee
 		invocationID = storedInvocationID
+	}
+
+	// Let's check if callee supports this feature
+	// A Callee that supports progressive call invocations, but does not support call canceling,
+	// shall be considered by the Dealer as not supporting progressive call invocations.
+	if isInProgress &&
+		(!callee.HasFeature(wamp.RoleCallee, wamp.FeatureProgCallInvocations) ||
+			!callee.HasFeature(wamp.RoleCallee, wamp.FeatureCallCanceling)) {
+		d.trySend(caller, &wamp.Error{
+			Type:    msg.MessageType(),
+			Request: msg.Request,
+			Details: wamp.Dict{},
+			Error:   wamp.ErrFeatureNotSupported,
+		})
+		return
 	}
 
 	details := wamp.Dict{}
@@ -705,7 +734,7 @@ func (d *dealer) syncCall(caller *wamp.Session, msg *wamp.Call) {
 	//
 	// A timeout allows to automatically cancel a call after a specified time
 	// either at the Callee or at the Dealer.
-	timeout, _ := wamp.AsInt64(msg.Options[wamp.OptTimeout])
+	timeout, _ := wamp.AsInt64(invk.options[wamp.OptTimeout])
 	if timeout > 0 {
 		// Check that callee supports call_timeout.
 		if callee.HasFeature(wamp.RoleCallee, wamp.FeatureCallTimeout) {
@@ -719,7 +748,7 @@ func (d *dealer) syncCall(caller *wamp.Session, msg *wamp.Call) {
 
 	// Check and handle Payload PassThru Mode
 	// @see https://wamp-proto.org/wamp_latest_ietf.html#name-payload-passthru-mode
-	if pptScheme, _ := msg.Options[wamp.OptPPTScheme].(string); pptScheme != "" {
+	if pptScheme, _ := invk.options[wamp.OptPPTScheme].(string); pptScheme != "" {
 
 		// Let's check: was ppt feature announced by caller?
 		if !caller.HasFeature(wamp.RoleCaller, wamp.FeaturePayloadPassthruMode) {
@@ -728,8 +757,8 @@ func (d *dealer) syncCall(caller *wamp.Session, msg *wamp.Call) {
 			abortMsg.Details = wamp.Dict{}
 			abortMsg.Details[wamp.OptMessage] = "Peer is trying to use Payload PassThru Mode while it was not " +
 				"announced during HELLO handshake"
-			caller.Peer.Send(&abortMsg)
-			caller.Peer.Close()
+			_ = caller.TrySend(&abortMsg)
+			caller.Close()
 
 			return
 		}
@@ -747,7 +776,7 @@ func (d *dealer) syncCall(caller *wamp.Session, msg *wamp.Call) {
 
 		// Every side supports PPT feature
 		// Let's fill PPT options for callee
-		pptOptionsToDetails(msg.Options, details)
+		pptOptionsToDetails(invk.options, details)
 	}
 
 	// If the callee has requested disclosure of caller identity when the
@@ -761,7 +790,7 @@ func (d *dealer) syncCall(caller *wamp.Session, msg *wamp.Call) {
 		// A Caller MAY request the disclosure of its identity (its WAMP
 		// session ID) to endpoints of a routed call.  This is indicated by the
 		// "disclose_me" flag in the message options.
-		if opt, _ := msg.Options[wamp.OptDiscloseMe].(bool); opt {
+		if opt, _ := invk.options[wamp.OptDiscloseMe].(bool); opt {
 			// Dealer MAY deny a Caller's request to disclose its identity.
 			if !d.allowDisclose {
 				// Do not continue a call when discloseMe was disallowed.
@@ -781,7 +810,7 @@ func (d *dealer) syncCall(caller *wamp.Session, msg *wamp.Call) {
 
 	// A Caller indicates its willingness to receive progressive results by
 	// setting CALL.Options.receive_progress|bool := true
-	if opt, _ := msg.Options[wamp.OptReceiveProgress].(bool); opt {
+	if opt, _ := invk.options[wamp.OptReceiveProgress].(bool); opt {
 		// If the Callee supports progressive calls, the Dealer will forward
 		// the Caller's willingness to receive progressive results by setting.
 		//
@@ -1028,8 +1057,8 @@ func (d *dealer) syncYield(callee *wamp.Session, msg *wamp.Yield, progress, canR
 			abortMsg := wamp.Abort{Reason: wamp.ErrProtocolViolation}
 			abortMsg.Details = wamp.Dict{}
 			abortMsg.Details[wamp.OptMessage] = ErrPPTNotSupportedByPeer.Error()
-			callee.Peer.Send(&abortMsg)
-			callee.Peer.Close()
+			_ = callee.TrySend(&abortMsg)
+			callee.Close()
 
 			return false
 		}

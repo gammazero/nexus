@@ -811,7 +811,7 @@ func (c *Client) Call(ctx context.Context, procedure string, options wamp.Dict, 
 //
 // This method prepares for making a call, the payload itself (even first one) is received
 // through calling the sendProg SendProgressiveData callback.
-// See the documentation of SenProgressiveData for more details about feeding the data
+// See the documentation of SendProgressiveData for more details about feeding the data
 // to a progressive call.
 //
 // progcb ProgressHandler is the same as in Call method.
@@ -821,7 +821,7 @@ func (c *Client) CallProgressive(ctx context.Context, procedure string, sendProg
 		return nil, ErrNotConn
 	}
 
-	if !c.sess.HasFeature(wamp.RoleDealer, wamp.FeatureProgressiveCalls) {
+	if !c.sess.HasFeature(wamp.RoleDealer, wamp.FeatureProgCallInvocations) {
 		return nil, ErrProgCallNotSupportedByRouter
 	}
 
@@ -1417,7 +1417,7 @@ func (c *Client) run() {
 //
 
 // runReceiveFromRouter handles messages from the router.  Returns true if
-// client needs to close due to receiving GOODBYE from router.
+// client needs to close due to receiving GOODBYE or ABORT from router.
 func (c *Client) runReceiveFromRouter(msg wamp.Message) bool {
 	if c.debug {
 		c.log.Println("Client", c.sess, "received", msg.MessageType())
@@ -1448,6 +1448,9 @@ func (c *Client) runReceiveFromRouter(msg wamp.Message) bool {
 
 	case *wamp.Goodbye:
 		c.routerGoodbye = msg
+		return true
+
+	case *wamp.Abort:
 		return true
 
 	default:

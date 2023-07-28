@@ -125,10 +125,10 @@ Nexus supports [Payload PassThru Mode](https://wamp-proto.org/wamp_latest_ietf.h
 4. Run the callee with `go run ppt/callee/callee.go`
 5. Run the caller with `go run ppt/caller/caller.go`
 
-## Progressive calls (and progressive results)
+## Progressive call invocations (and progressive call results)
 
-Nexus supports [Progressive Calls](https://wamp-proto.org/wamp_latest_ietf.html#name-progressive-calls)
-dealer feature. Check and run examples in [rpc_progressive_calls](./rpc_progressive_calls) and
+Nexus supports [Progressive Call Invocations](https://wamp-proto.org/wamp_latest_ietf.html#name-progressive-call-invocation)
+dealer feature. Check and run examples in [rpc_progressive_invocations](./rpc_progressive_invocations) and
 [rpc_progress_calls_results](./rpc_progress_calls_results) folders.
 
 Please note that invocation handler is invoked with payload chunks in the same order they are received through the wire
@@ -139,9 +139,9 @@ cancel deadline is pushed forward in timeline. This can help processing progress
 To use timeouted context for the whole call - do not specify `timeout` option within intermediate data chunks.
 
 1. Run the server with `go run server/server.go`
-2. Run the callee which accumulates progressive call data chunks with `go run rpc_progressive_calls/callee/callee.go`
-3. Run the caller which makes progressive call and sends data chunks with `go run rpc_progressive_calls/caller/caller.go`
-4. Run the callee which is aware of progressive call data chunks and at same time sends
+2. Run the callee which accumulates progressive call invocations data chunks with `go run rpc_progressive_invocations/callee/callee.go`
+3. Run the caller which makes progressive call invocations and sends data chunks with `go run rpc_progressive_invocations/caller/caller.go`
+4. Run the callee which is aware of progressive call invocations data chunks and at same time sends
    progressive results with `go run rpc_progress_calls_results/callee/callee.go`
-5. Run the caller which makes progressive call and sends data chunks and at the same time
+5. Run the caller which makes progressive call invocation and sends data chunks and at the same time
    receives progress results with `go run rpc_progress_calls_results/caller/caller.go`
