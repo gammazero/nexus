@@ -82,6 +82,28 @@ import (
 )
 ```
 
+## Run nexusd from a container
+
+Pull the nexusd container image built with the latest code version and run the container:
+
+```
+docker pull ghcr.io/gammazero/nexusd:latest
+docker run ghcr.io/gammazero/nexusd:latest
+```
+
+Now it just works. By default, the router accepts connections on port `8080` and allows anonymous communication with
+clients using `realm1`. You can change the values or get help by passing options to the container process:
+
+```
+docker run ghcr.io/gammazero/nexusd:latest --ws 0.0.0.0:8888 --realm autobahn
+docker run ghcr.io/gammazero/nexusd:latest --help
+```
+
+Alternatively, you can mount the nexusd configuration file to the container, and get a more customizable and secure
+environment. See the nexusd configuration reference for details. Finally, you can also run the container process as
+an unprivileged user.
+
+
 ## Examples
 
 Look at the examples to see how to create simple clients and servers.  Follow the
