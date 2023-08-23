@@ -1,0 +1,60 @@
+name: Docker
+
+on:
+  push:
+    paths:
+      - .github/workflows/docker-publish.yml
+      - 'aat/**'
+      - 'client/**'
+      - 'nexusd/**'
+      - 'router/**'
+      - 'stdlog/**'
+      - 'transport/**'
+      - 'wamp/**'
+      - 'Dockerfile'
+      - '.dockerignore'
+    branches: [ "v3" ]
+    tags: [ 'v*.*.*' ]
+  pull_request:
+    branches: [ "v3" ]
+
+env:
+  REGISTRY: ghcr.io
+  TAG: ${{ github.sha }}
+  VERSION: ${{ github.ref_type == 'tag' && github.ref_name || 'latest' }}
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    if: (github.repository == 'gammazero/nexus')
+    permissions:
+      contents: read
+      packages: write
+      id-token: write
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v3
+
+      - name: Setup Docker buildx
+        uses: docker/setup-buildx-action@v2
+
+      - name: Log into registry ${{ env.REGISTRY }}
+        if: github.event_name != 'pull_request'
+        uses: docker/login-action@v2
+        with:
+          registry: ${{ env.REGISTRY }}
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Build and push Docker image
+        id: build-and-push
+        uses: docker/build-push-action@v3
+        with:
+          context: .
+          platforms: linux/amd64, linux/arm64
+          build-args: BUILD_VERSION=${{ env.VERSION }}
+          push: ${{ github.event_name != 'pull_request' }}
+          tags: |
+            ${{ env.REGISTRY }}/${{ github.repository_owner }}/nexusd:${{ env.VERSION }}
+            ${{ env.REGISTRY }}/${{ github.repository_owner }}/nexusd:${{ env.TAG }}
