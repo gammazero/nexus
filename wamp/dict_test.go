@@ -3,6 +3,8 @@ package wamp
 import (
 	"errors"
 	"testing"
+
+	"github.com/stretchr/testify/require"
 )
 
 func hasRole(d Dict, role string) bool {
@@ -61,37 +63,28 @@ func TestHasRoleFeatureLookup(t *testing.T) {
 	clientRoles["caller"]["features"] = boolMap
 	dict["roles"] = clientRoles
 
-	if err := checkRoles(NewSession(nil, 0, nil, dict)); err != nil {
-		t.Fatal(err)
-	}
+	err := checkRoles(NewSession(nil, 0, nil, dict))
+	require.NoError(t, err)
 
 	sess := &Session{ID: ID(193847264)}
-	if sess.String() != "193847264" {
-		t.Fatal("Got unexpected session ID string")
-	}
+	require.Equal(t, "193847264", sess.String(), "Got unexpected session ID string")
 
 	dict = NormalizeDict(dict)
 
 	roleVals, err := DictValue(dict, []string{"roles"})
-	if err != nil {
-		t.Fatal(err)
-	}
+	require.NoError(t, err)
+
 	for k := range roleVals.(Dict) {
 		if k == "badrole" {
-			if recognizeRole(k) {
-				t.Fatal("badrole is recognized")
-			}
+			require.False(t, recognizeRole(k), "badrole is recognized")
 		} else {
-			if !recognizeRole(k) {
-				t.Fatal("role", k, "not recognized")
-			}
+			require.True(t, recognizeRole(k), "role not recognized")
 		}
 	}
 
 	// Check again after conversion.
-	if err := checkRoles(NewSession(nil, 0, nil, dict)); err != nil {
-		t.Fatal(err)
-	}
+	err = checkRoles(NewSession(nil, 0, nil, dict))
+	require.NoError(t, err)
 
 	dict = Dict{
 		"roles": Dict{
@@ -110,9 +103,8 @@ func TestHasRoleFeatureLookup(t *testing.T) {
 		},
 		"authmethods": []string{"anonymous", "ticket"},
 	}
-	if err := checkRoles(NewSession(nil, 0, nil, dict)); err != nil {
-		t.Fatal(err)
-	}
+	err = checkRoles(NewSession(nil, 0, nil, dict))
+	require.NoError(t, err)
 }
 
 func TestOptions(t *testing.T) {
@@ -129,80 +121,44 @@ func TestOptions(t *testing.T) {
 
 	options = NormalizeDict(options)
 
-	if !OptionFlag(options, "disclose_me") {
-		t.Fatal("missing or bad option flag")
-	}
-	if OptionFlag(options, "not_here") {
-		t.Fatal("expected false value")
-	}
-	if OptionFlag(options, "call_timeout") {
-		t.Fatal("expected false value")
-	}
-
-	if OptionString(options, "not_here") != "" {
-		t.Fatal("expected empty string")
-	}
-	if OptionString(options, "call_timeout") != "" {
-		t.Fatal("expected empty string")
-	}
-
-	timeout := OptionInt64(options, "call_timeout")
-	if timeout != 5000 {
-		t.Fatal("wrong timeout value")
-	}
-
-	if OptionString(options, "mode") != "killnowait" {
-		t.Fatal("did not get expected value")
-	}
+	require.True(t, OptionFlag(options, "disclose_me"))
+	require.False(t, OptionFlag(options, "not_here"))
+	require.False(t, OptionFlag(options, "call_timeout"))
+	require.Empty(t, OptionString(options, "not_here"))
+	require.Empty(t, OptionString(options, "call_timeout"))
+	require.Equal(t, int64(5000), OptionInt64(options, "call_timeout"))
+	require.Equal(t, "killnowait", OptionString(options, "mode"))
 
 	boolOpts := map[string]bool{"disclose_me": true}
 
-	if !OptionFlag(NormalizeDict(boolOpts), "disclose_me") {
-		t.Fatal("missing or bad option flag")
-	}
-	if OptionFlag(NormalizeDict(boolOpts), "not_here") {
-		t.Fatal("expected false value")
-	}
+	require.True(t, OptionFlag(NormalizeDict(boolOpts), "disclose_me"))
+	require.False(t, OptionFlag(NormalizeDict(boolOpts), "not_here"))
 
 	fval, err := DictFlag(options, []string{"flags", "flag_a"})
-	if err != nil || !fval {
-		t.Fatal("Failed to get flag")
-	}
+	require.NoError(t, err, "Failed to get flag")
+	require.True(t, fval, "Failed to get flag")
+
 	fval, err = DictFlag(options, []string{"flags", "flag_b"})
-	if err != nil || fval {
-		t.Fatal("Failed to get flag")
-	}
+	require.NoError(t, err, "Failed to get flag")
+	require.False(t, fval, "Failed to get flag")
+
 	_, err = DictFlag(options, []string{"flags", "flag_c"})
-	if err == nil {
-		t.Fatal("Expected error for invalid flag path")
-	}
+	require.Error(t, err, "Expected error for invalid flag path")
 	_, err = DictFlag(options, []string{"no_flags", "flag_a"})
-	if err == nil {
-		t.Fatal("Expected error for invalid flag path")
-	}
+	require.Error(t, err, "Expected error for invalid flag path")
 	_, err = DictFlag(options, []string{"flags", "not_flag"})
-	if err == nil {
-		t.Fatal("Expected error for non-bool flag value")
-	}
+	require.Error(t, err, "Expected error for non-bool flag value")
 
 	uri := URI("some.test.uri")
 	SetOption(options, "uri", uri)
-	if OptionURI(options, "uri") != uri {
-		t.Fatal("failed to get uri")
-	}
+	require.Equal(t, uri, OptionURI(options, "uri"), "failed to get uri")
 
 	id := ID(1234)
 	newDict := SetOption(nil, "id", id)
-	if OptionID(newDict, "id") != id {
-		t.Fatal("failed to get id")
-	}
+	require.Equal(t, id, OptionID(newDict, "id"), "failed to get id")
 
-	if OptionInt64(options, "call_timeout") != int64(5000) {
-		t.Fatal("Failed to get int64 option")
-	}
-	if OptionInt64(options, "mode") != 0 {
-		t.Fatal("Expected 0 for invalid int64 option")
-	}
+	require.Equal(t, int64(5000), OptionInt64(options, "call_timeout"), "Failed to get int64 option")
+	require.Zero(t, OptionInt64(options, "mode"), "Expected 0 for invalid int64 option")
 }
 
 func BenchmarkNormalized(b *testing.B) {

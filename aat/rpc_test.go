@@ -6,18 +6,15 @@ import (
 	"testing"
 	"time"
 
-	"github.com/fortytw2/leaktest"
 	"github.com/gammazero/nexus/v3/client"
 	"github.com/gammazero/nexus/v3/wamp"
+	"github.com/stretchr/testify/require"
 )
 
 func TestRPCRegisterAndCall(t *testing.T) {
-	defer leaktest.Check(t)()
+	checkGoLeaks(t)
 	// Connect callee session.
-	callee, err := connectClient()
-	if err != nil {
-		t.Fatal("Failed to connect client:", err)
-	}
+	callee := connectClient(t)
 
 	proceed := make(chan struct{})
 
@@ -41,21 +38,13 @@ func TestRPCRegisterAndCall(t *testing.T) {
 
 	// Register procedure "sum"
 	procName := "sum"
-	if err = callee.Register(procName, handler, nil); err != nil {
-		t.Fatal("Failed to register procedure:", err)
-	}
+	err := callee.Register(procName, handler, nil)
+	require.NoError(t, err)
 
 	// Connect caller session.
-	caller, err := connectClient()
-	if err != nil {
-		t.Fatal("Failed to connect client:", err)
-	}
-
+	caller := connectClient(t)
 	// Connect second caller session.
-	caller2, err := connectClient()
-	if err != nil {
-		t.Fatal("Failed to connect client:", err)
-	}
+	caller2 := connectClient(t)
 
 	// Test calling the procedure.
 	callArgs := wamp.List{1, 2, 3, 4, 5, 6, 7, 8, 9, 10}
@@ -84,96 +73,47 @@ func TestRPCRegisterAndCall(t *testing.T) {
 	errs := []error{err1, err2}
 	results := []*wamp.Result{result1, result2}
 	for i := 0; i < len(errs); i++ {
-		if errs[i] != nil {
-			t.Error("Caller", i, "failed to call procedure:", errs[i])
-		} else {
-			sum, ok := wamp.AsInt64(results[i].Arguments[0])
-			if !ok {
-				t.Error("Could not convert result", i, "to int64")
-			} else if sum != 55 {
-				t.Errorf("Wrong result %d: %d", i, sum)
-			}
-		}
+		require.NoErrorf(t, errs[i], "Caller %d failed to call procedure", i)
+		sum, ok := wamp.AsInt64(results[i].Arguments[0])
+		require.Truef(t, ok, "Could not convert result %d to int64", i)
+		require.Equal(t, int64(55), sum)
 	}
 
 	// Test unregister.
-	if err = callee.Unregister(procName); err != nil {
-		t.Error("Failed to unregister procedure:", err)
-	}
-
-	err = caller.Close()
-	if err != nil {
-		t.Error("Failed to disconnect client:", err)
-	}
-
-	err = caller2.Close()
-	if err != nil {
-		t.Error("Failed to disconnect client:", err)
-	}
-
-	err = callee.Close()
-	if err != nil {
-		t.Error("Failed to disconnect client:", err)
-	}
+	err = callee.Unregister(procName)
+	require.NoError(t, err)
 }
 
 func TestRPCCallUnregistered(t *testing.T) {
-	defer leaktest.Check(t)()
+	checkGoLeaks(t)
 	// Connect caller session.
-	caller, err := connectClient()
-	if err != nil {
-		t.Fatal("Failed to connect client:", err)
-	}
+	caller := connectClient(t)
 
 	// Test calling unregistered procedure.
 	callArgs := wamp.List{555}
 	ctx := context.Background()
 	result, err := caller.Call(ctx, "NotRegistered", nil, callArgs, nil, nil)
-	if err == nil {
-		t.Fatal("expected error calling unregistered procedure")
-	}
-	if result != nil {
-		t.Fatal("result should be nil on error")
-	}
-
-	err = caller.Close()
-	if err != nil {
-		t.Fatal("Failed to disconnect client:", err)
-	}
+	require.Error(t, err, "expected error calling unregistered procedure")
+	require.Nil(t, result)
 }
 
 func TestRPCUnregisterUnregistered(t *testing.T) {
-	defer leaktest.Check(t)()
+	checkGoLeaks(t)
 	// Connect caller session.
-	callee, err := connectClient()
-	if err != nil {
-		t.Fatal("Failed to connect client:", err)
-	}
-
+	callee := connectClient(t)
 	// Test unregister unregistered procedure.
-	if err = callee.Unregister("NotHere"); err == nil {
-		t.Fatal("expected error unregistering unregistered procedure")
-	}
-
-	err = callee.Close()
-	if err != nil {
-		t.Fatal("Failed to disconnect client:", err)
-	}
+	err := callee.Unregister("NotHere")
+	require.Error(t, err)
 }
 
 func TestRPCCancelCall(t *testing.T) {
-	defer leaktest.Check(t)()
+	checkGoLeaks(t)
 	// Connect callee session.
-	callee, err := connectClient()
-	if err != nil {
-		t.Fatal("Failed to connect client:", err)
-	}
-	defer callee.Close()
+	callee := connectClient(t)
 
 	// Check for feature support in router.
-	if !callee.HasFeature(wamp.RoleDealer, wamp.FeatureCallCanceling) {
-		t.Error("Dealer does not support", wamp.FeatureCallCanceling)
-	}
+	has := callee.HasFeature(wamp.RoleDealer, wamp.FeatureCallCanceling)
+	require.Truef(t, has, "Dealer does not support %s", wamp.FeatureCallCanceling)
 
 	invkCanceled := make(chan struct{}, 1)
 	// Register procedure that waits.
@@ -183,19 +123,14 @@ func TestRPCCancelCall(t *testing.T) {
 		return client.InvokeResult{Err: wamp.ErrCanceled}
 	}
 	procName := "myproc"
-	if err = callee.Register(procName, handler, nil); err != nil {
-		t.Fatal("failed to register procedure:", err)
-	}
+	err := callee.Register(procName, handler, nil)
+	require.NoError(t, err)
 
 	// Connect caller session.
-	caller, err := connectClient()
-	if err != nil {
-		t.Fatal("Failed to connect client:", err)
-	}
+	caller := connectClient(t)
 
-	if err = caller.SetCallCancelMode(wamp.CancelModeKillNoWait); err != nil {
-		t.Fatal(err)
-	}
+	err = caller.SetCallCancelMode(wamp.CancelModeKillNoWait)
+	require.NoError(t, err)
 
 	errChan := make(chan error)
 	ctx, cancel := context.WithCancel(context.Background())
@@ -209,7 +144,7 @@ func TestRPCCancelCall(t *testing.T) {
 	// Make sure the call is blocked.
 	select {
 	case <-errChan:
-		t.Fatal("call should have been blocked")
+		require.FailNow(t, "call should have been blocked")
 	case <-time.After(200 * time.Millisecond):
 	}
 
@@ -218,48 +153,30 @@ func TestRPCCancelCall(t *testing.T) {
 	// Make sure the call is canceled on caller side.
 	select {
 	case err = <-errChan:
-		if err == nil {
-			t.Fatal("expected error from canceling call")
-		}
-		if err != context.Canceled {
-			t.Fatal("expected context.Canceled error")
-		}
+		require.ErrorIs(t, err, context.Canceled)
 	case <-time.After(2 * time.Second):
-		t.Fatal("call should have been canceled")
+		require.FailNow(t, "call should have been canceled")
 	}
 
 	// Make sure the invocation is canceled on callee side.
 	select {
 	case <-invkCanceled:
 	case <-time.After(time.Second):
-		t.Fatal("invocation should have been canceled")
+		require.FailNow(t, "invocation should have been canceled")
 	}
 
-	if err = callee.Unregister(procName); err != nil {
-		t.Fatal("failed to unregister procedure:", err)
-	}
-	err = callee.Close()
-	if err != nil {
-		t.Fatal("Failed to disconnect client:", err)
-	}
-	err = caller.Close()
-	if err != nil {
-		t.Fatal("Failed to disconnect client:", err)
-	}
+	err = callee.Unregister(procName)
+	require.NoError(t, err)
 }
 
 func TestRPCTimeoutCall(t *testing.T) {
-	defer leaktest.Check(t)()
+	checkGoLeaks(t)
 	// Connect callee session.
-	callee, err := connectClient()
-	if err != nil {
-		t.Fatal("Failed to connect client:", err)
-	}
+	callee := connectClient(t)
 
 	// Check for feature support in router.
-	if !callee.HasFeature(wamp.RoleDealer, wamp.FeatureCallTimeout) {
-		t.Error("Dealer does not support", wamp.FeatureCallTimeout)
-	}
+	has := callee.HasFeature(wamp.RoleDealer, wamp.FeatureCallTimeout)
+	require.Truef(t, has, "Dealer does not support %s", wamp.FeatureCallTimeout)
 
 	invkCanceled := make(chan struct{}, 1)
 	// Register procedure that waits.
@@ -269,15 +186,11 @@ func TestRPCTimeoutCall(t *testing.T) {
 		return client.InvokeResult{Err: wamp.ErrCanceled}
 	}
 	procName := "myproc"
-	if err = callee.Register(procName, handler, nil); err != nil {
-		t.Fatal("failed to register procedure:", err)
-	}
+	err := callee.Register(procName, handler, nil)
+	require.NoError(t, err)
 
 	// Connect caller session.
-	caller, err := connectClient()
-	if err != nil {
-		t.Fatal("Failed to connect client:", err)
-	}
+	caller := connectClient(t)
 
 	errChan := make(chan error)
 	ctx := context.Background()
@@ -317,33 +230,18 @@ func TestRPCTimeoutCall(t *testing.T) {
 		t.Fatal("invocation should have been canceled")
 	}
 
-	rpcError, ok := err.(client.RPCError)
-	if !ok {
-		t.Fatal("expected RPCError type of error")
-	}
-	if rpcError.Err.Error != wamp.ErrCanceled {
-		t.Fatal("expected canceled error, got:", err)
-	}
-	if err = callee.Unregister(procName); err != nil {
-		t.Fatal("failed to unregister procedure:", err)
-	}
-	err = callee.Close()
-	if err != nil {
-		t.Fatal("Failed to disconnect client:", err)
-	}
-	err = caller.Close()
-	if err != nil {
-		t.Fatal("Failed to disconnect client:", err)
-	}
+	var rpcError client.RPCError
+	require.ErrorAs(t, err, &rpcError)
+	require.Equal(t, wamp.ErrCanceled, rpcError.Err.Error)
+
+	err = callee.Unregister(procName)
+	require.NoError(t, err)
 }
 
 func TestRPCResponseRouting(t *testing.T) {
-	defer leaktest.Check(t)()
+	checkGoLeaks(t)
 	// Connect callee session.
-	callee, err := connectClient()
-	if err != nil {
-		t.Fatal("Failed to connect client:", err)
-	}
+	callee := connectClient(t)
 
 	respond := make(chan struct{})
 	ready := sync.WaitGroup{}
@@ -355,9 +253,8 @@ func TestRPCResponseRouting(t *testing.T) {
 		<-respond
 		return client.InvokeResult{Args: wamp.List{"HELLO"}}
 	}
-	if err = callee.Register("hello", hello, nil); err != nil {
-		t.Fatal("Failed to register procedure:", err)
-	}
+	err := callee.Register("hello", hello, nil)
+	require.NoError(t, err)
 
 	// Register procedure "world"
 	world := func(ctx context.Context, inv *wamp.Invocation) client.InvokeResult {
@@ -366,21 +263,13 @@ func TestRPCResponseRouting(t *testing.T) {
 		return client.InvokeResult{Args: wamp.List{"WORLD"}}
 	}
 	// Register procedure "hello"
-	if err = callee.Register("world", world, nil); err != nil {
-		t.Fatal("Failed to register procedure:", err)
-	}
+	err = callee.Register("world", world, nil)
+	require.NoError(t, err)
 
 	// Connect hello caller session.
-	callerHello, err := connectClient()
-	if err != nil {
-		t.Fatal("Failed to connect client:", err)
-	}
-
+	callerHello := connectClient(t)
 	// Connect world caller session.
-	callerWorld, err := connectClient()
-	if err != nil {
-		t.Fatal("Failed to connect client:", err)
-	}
+	callerWorld := connectClient(t)
 
 	rc1 := make(chan *wamp.Result)
 	rc2 := make(chan *wamp.Result)
@@ -414,32 +303,13 @@ func TestRPCResponseRouting(t *testing.T) {
 	for i := 0; i < 2; i++ {
 		select {
 		case result = <-rc1:
-			if result.Arguments[0] != "HELLO" {
-				t.Error("Wrong result for call to 'hello':", result.Arguments[0])
-			}
+			require.Equal(t, "HELLO", result.Arguments[0])
 		case result = <-rc2:
-			if result.Arguments[0] != "WORLD" {
-				t.Error("Wrong result for call to 'world':", result.Arguments[0])
-			}
+			require.Equal(t, "WORLD", result.Arguments[0])
 		case err = <-ec1:
-			t.Error("Error calling 'hello':", err)
+			require.NoError(t, err, "Error calling 'hello'")
 		case err = <-ec2:
-			t.Error("Error calling 'world':", err)
+			require.NoError(t, err, "Error calling 'world'")
 		}
-	}
-
-	err = callerHello.Close()
-	if err != nil {
-		t.Error("Failed to disconnect client:", err)
-	}
-
-	err = callerWorld.Close()
-	if err != nil {
-		t.Error("Failed to disconnect client:", err)
-	}
-
-	err = callee.Close()
-	if err != nil {
-		t.Error("Failed to disconnect client:", err)
 	}
 }

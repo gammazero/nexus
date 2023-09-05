@@ -9,6 +9,7 @@ import (
 
 	"github.com/gammazero/nexus/v3/client"
 	"github.com/gammazero/nexus/v3/wamp"
+	"github.com/stretchr/testify/require"
 )
 
 const (
@@ -22,54 +23,39 @@ const (
 
 func TestMetaEventOnCreateOnSubscribe(t *testing.T) {
 	// Connect subscriber session.
-	subscriber, err := connectClient()
-	if err != nil {
-		t.Fatal("Failed to connect client:", err)
-	}
+	subscriber := connectClient(t)
 
 	// Check for feature support in router.
-	if !subscriber.HasFeature(wamp.RoleBroker, wamp.FeatureSubMetaAPI) {
-		t.Error("Broker does not support", wamp.FeatureSubMetaAPI)
-	}
+	has := subscriber.HasFeature(wamp.RoleBroker, wamp.FeatureSubMetaAPI)
+	require.Truef(t, has, "Broker does not support %s", wamp.FeatureSubMetaAPI)
 
 	// Subscribe to on_create meta event.
 	onCreateEvents := make(chan *wamp.Event)
-	err = subscriber.SubscribeChan(metaOnCreate, onCreateEvents, nil)
-	if err != nil {
-		t.Fatal("subscribe error:", err)
-	}
+	err := subscriber.SubscribeChan(metaOnCreate, onCreateEvents, nil)
+	require.NoError(t, err)
 
 	// Subscribe to on_subscribe meta event.
 	onSubEvents := make(chan *wamp.Event)
 	err = subscriber.SubscribeChan(metaOnSubscribe, onSubEvents, nil)
-	if err != nil {
-		t.Fatal("subscribe error:", err)
-	}
+	require.NoError(t, err)
 
 	select {
 	case <-onCreateEvents:
-		t.Fatal("Received on_create when subscribing to meta event")
+		require.FailNow(t, "Received on_create when subscribing to meta event")
 	case <-onSubEvents:
-		t.Fatal("Received on_subscribe when subscribing to meta event")
+		require.FailNow(t, "Received on_subscribe when subscribing to meta event")
 	case <-time.After(200 * time.Millisecond):
 	}
 
 	// Connect another client.
-	sess, err := connectClient()
-	if err != nil {
-		t.Fatal("Failed to connect client:", err)
-	}
+	sess := connectClient(t)
 
 	// Subscribe to something to generate meta on_subcribe event
 	nullHandler := func(_ *wamp.Event) {}
 	err = sess.Subscribe("some.topic", nullHandler, nil)
-	if err != nil {
-		t.Fatal("subscribe error:", err)
-	}
+	require.NoError(t, err)
 	subID, ok := sess.SubscriptionID("some.topic")
-	if !ok {
-		t.Fatal("client does not have subscription ID")
-	}
+	require.True(t, ok, "client does not have subscription ID")
 
 	var onCreateID, onCreateSessID wamp.ID
 	onCreate := func(event *wamp.Event) error {
@@ -100,18 +86,13 @@ func TestMetaEventOnCreateOnSubscribe(t *testing.T) {
 	var event *wamp.Event
 	select {
 	case event = <-onCreateEvents:
-		if err = onCreate(event); err != nil {
-			t.Fatal("Event error:", err)
-		}
+		err = onCreate(event)
+		require.NoError(t, err)
 	case <-time.After(200 * time.Millisecond):
-		t.Fatal("did not get", metaOnCreate, "event")
+		require.FailNowf(t, "did not get %s event", metaOnCreate)
 	}
-	if onCreateSessID != sess.ID() {
-		t.Fatal(metaOnCreate, "meta even had wrong session ID")
-	}
-	if onCreateID != subID {
-		t.Fatal("meta event did not return expected subscription ID")
-	}
+	require.Equal(t, sess.ID(), onCreateSessID, "meta even had wrong session ID")
+	require.Equal(t, subID, onCreateID, "meta event did not return expected subscription ID")
 
 	var onSubSubID, onSubSessID wamp.ID
 	onSub := func(event *wamp.Event) error {
@@ -134,88 +115,55 @@ func TestMetaEventOnCreateOnSubscribe(t *testing.T) {
 	// Make sure the on_subscribe event was received.
 	select {
 	case event = <-onSubEvents:
-		if err = onSub(event); err != nil {
-			t.Fatal("Event error:", err)
-		}
+		err = onSub(event)
+		require.NoError(t, err)
 	case <-time.After(200 * time.Millisecond):
-		t.Fatal("did not get", metaOnSubscribe, "event")
+		require.FailNowf(t, "did not get %s event", metaOnSubscribe)
 	}
-	if onSubSessID != sess.ID() {
-		t.Fatal(metaOnSubscribe, "meta even had wrong session ID")
-	}
-	if onSubSubID != subID {
-		t.Fatal("meta event did not return expected subscription ID")
-	}
+	require.Equal(t, sess.ID(), onSubSessID, "meta even had wrong session ID")
+	require.Equal(t, subID, onSubSubID, "meta event did not return expected subscription ID")
 
 	err = sess.Unsubscribe("some.topic")
-	if err != nil {
-		t.Fatal("unsubscribe error:", err)
-	}
+	require.NoError(t, err)
 
 	err = subscriber.Unsubscribe(metaOnSubscribe)
-	if err != nil {
-		t.Fatal("unsubscribe error:", err)
-	}
-
-	err = sess.Close()
-	if err != nil {
-		t.Fatal("Failed to disconnect client:", err)
-	}
-
-	err = subscriber.Close()
-	if err != nil {
-		t.Fatal("Failed to disconnect client:", err)
-	}
+	require.NoError(t, err)
 }
 
 func TestMetaEventOnUnsubscribeOnDelete(t *testing.T) {
 	// Connect subscriber session.
-	subscriber, err := connectClient()
-	if err != nil {
-		t.Fatal("Failed to connect client:", err)
-	}
+	subscriber := connectClient(t)
 
 	// Subscribe to on_unsubscribe event.
 	onUnsubEvents := make(chan *wamp.Event)
-	err = subscriber.SubscribeChan(metaOnUnsubscribe, onUnsubEvents, nil)
-	if err != nil {
-		t.Fatal("subscribe error:", err)
-	}
+	err := subscriber.SubscribeChan(metaOnUnsubscribe, onUnsubEvents, nil)
+	require.NoError(t, err)
 
 	// Subscribe to on_delete event.
 	onDelEvents := make(chan *wamp.Event)
 	err = subscriber.SubscribeChan(metaOnDelete, onDelEvents, nil)
-	if err != nil {
-		t.Fatal("subscribe error:", err)
-	}
+	require.NoError(t, err)
 
 	select {
 	case <-onUnsubEvents:
-		t.Fatal("Received on_unsubscribe when unsubscribing to meta event")
+		require.FailNow(t, "Received on_unsubscribe when unsubscribing to meta event")
 	case <-onDelEvents:
-		t.Fatal("Received on_delete when unsubscribing to meta event")
+		require.FailNow(t, "Received on_delete when unsubscribing to meta event")
 	case <-time.After(200 * time.Millisecond):
 	}
 
 	// Connect another client.
-	sess, err := connectClient()
-	if err != nil {
-		t.Fatal("Failed to connect client:", err)
-	}
+	sess := connectClient(t)
 
 	// Subscribe to something and then unsubscribe to generate meta on_subcribe
 	// event.
 	nullHandler := func(_ *wamp.Event) {}
-	if err = sess.Subscribe("some.topic", nullHandler, nil); err != nil {
-		t.Fatal("subscribe error:", err)
-	}
+	err = sess.Subscribe("some.topic", nullHandler, nil)
+	require.NoError(t, err)
 	subID, ok := sess.SubscriptionID("some.topic")
-	if !ok {
-		t.Fatal("client does not have subscription ID")
-	}
-	if err = sess.Unsubscribe("some.topic"); err != nil {
-		t.Fatal("unsubscribe error:", err)
-	}
+	require.True(t, ok, "client does not have subscription ID")
+	err = sess.Unsubscribe("some.topic")
+	require.NoError(t, err)
 
 	var onUnsubSubID, onUnsubSessID wamp.ID
 	onUnsub := func(event *wamp.Event) error {
@@ -239,18 +187,13 @@ func TestMetaEventOnUnsubscribeOnDelete(t *testing.T) {
 	var event *wamp.Event
 	select {
 	case event := <-onUnsubEvents:
-		if err = onUnsub(event); err != nil {
-			t.Fatal("Event error:", err)
-		}
+		err = onUnsub(event)
+		require.NoError(t, err)
 	case <-time.After(200 * time.Millisecond):
-		t.Fatal("did not get", metaOnUnsubscribe, "event")
+		require.FailNowf(t, "did not get %s event", metaOnUnsubscribe)
 	}
-	if onUnsubSessID != sess.ID() {
-		t.Fatal(metaOnUnsubscribe, "meta even had wrong session ID")
-	}
-	if onUnsubSubID != subID {
-		t.Fatal("meta event did not return expected subscription ID")
-	}
+	require.Equal(t, sess.ID(), onUnsubSessID, "meta even had wrong session ID")
+	require.Equal(t, subID, onUnsubSubID, "meta event did not return expected subscription ID")
 
 	var onDelSubID, onDelSessID wamp.ID
 	onDel := func(event *wamp.Event) error {
@@ -273,101 +216,54 @@ func TestMetaEventOnUnsubscribeOnDelete(t *testing.T) {
 	// Make sure the delete event was received.
 	select {
 	case event = <-onDelEvents:
-		if err = onDel(event); err != nil {
-			t.Fatal("Event error:", err)
-		}
+		err = onDel(event)
+		require.NoError(t, err)
 	case <-time.After(200 * time.Millisecond):
-		t.Fatal("did not get", metaOnDelete, "event")
+		require.FailNowf(t, "did not get %s event", metaOnDelete)
 	}
-	if onDelSessID != sess.ID() {
-		t.Fatal(metaOnUnsubscribe, "meta even had wrong session ID")
-	}
-	if onDelSubID != subID {
-		t.Fatal("meta event did not return expected subscription ID")
-	}
+	require.Equal(t, sess.ID(), onDelSessID, "meta even had wrong session ID")
+	require.Equal(t, subID, onDelSubID, "meta event did not return expected subscription ID")
 
 	err = subscriber.Unsubscribe(metaOnUnsubscribe)
-	if err != nil {
-		t.Fatal("unsubscribe error:", err)
-	}
-
-	err = sess.Close()
-	if err != nil {
-		t.Fatal("Failed to disconnect client:", err)
-	}
-
-	err = subscriber.Close()
-	if err != nil {
-		t.Fatal("Failed to disconnect client:", err)
-	}
+	require.NoError(t, err)
 }
 
 func TestMetaProcSubGet(t *testing.T) {
 	// Connect subscriber session.
-	subscriber, err := connectClient()
-	if err != nil {
-		t.Fatal("Failed to connect client:", err)
-	}
-	defer subscriber.Close()
+	subscriber := connectClient(t)
 
 	// Subscribe to something
 	nullHandler := func(_ *wamp.Event) {}
-	err = subscriber.Subscribe(testTopicWC, nullHandler, wamp.Dict{"match": "wildcard"})
-	if err != nil {
-		t.Fatal("subscribe error:", err)
-	}
+	err := subscriber.Subscribe(testTopicWC, nullHandler, wamp.Dict{"match": "wildcard"})
+	require.NoError(t, err)
 	subID, ok := subscriber.SubscriptionID(testTopicWC)
-	if !ok {
-		t.Fatal("client does not have subscription ID")
-	}
+	require.True(t, ok, "client does not have subscription ID")
 
 	// Connect caller
-	caller, err := connectClient()
-	if err != nil {
-		t.Fatal("Failed to connect client:", err)
-	}
-	defer caller.Close()
+	caller := connectClient(t)
 
 	ctx, cancel := context.WithTimeout(context.Background(), time.Second)
 	defer cancel()
 	result, err := caller.Call(ctx, metaSubGet, nil, wamp.List{subID}, nil, nil)
-	if err != nil {
-		t.Fatal("error calling", metaSubGet, err)
-	}
+	require.NoError(t, err)
 	subDetails, ok := wamp.AsDict(result.Arguments[0])
-	if !ok {
-		t.Fatal("Result argument is not dict")
-	}
+	require.True(t, ok, "Result argument is not dict")
 	id, _ := wamp.AsID(subDetails["id"])
-	if id != subID {
-		t.Error("Received wrong subscription ID")
-	}
+	require.Equal(t, subID, id, "Received wrong subscription ID")
 	m, _ := wamp.AsString(subDetails["match"])
-	if m != "wildcard" {
-		t.Error("subscription does not have wildcard policy, has", m)
-	}
+	require.Equal(t, "wildcard", m, "subscription does not have wildcard policy")
 	uri, _ := wamp.AsURI(subDetails["uri"])
-	if uri != testTopicWC {
-		t.Error("subscription has wrong topic URI")
-	}
+	require.Equal(t, wamp.URI(testTopicWC), uri, "subscription has wrong topic URI")
 
 	err = subscriber.Unsubscribe(testTopicWC)
-	if err != nil {
-		t.Fatal("unsubscribe error:", err)
-	}
+	require.NoError(t, err)
 
 	cancel()
 	ctx, cancel = context.WithTimeout(context.Background(), time.Second)
 	defer cancel()
 	result, err = caller.Call(ctx, metaSubGet, nil, wamp.List{subID}, nil, nil)
-	if err == nil {
-		t.Fatal("expected error")
-	}
-	rpcErr, ok := err.(client.RPCError)
-	if !ok {
-		t.Fatal("expected error to be client.RPCError")
-	}
-	if rpcErr.Err.Error != wamp.ErrNoSuchSubscription {
-		t.Fatal("wrong error:", rpcErr.Err.Error)
-	}
+	require.Error(t, err)
+	var rpcErr client.RPCError
+	require.ErrorAs(t, err, &rpcErr)
+	require.Equal(t, wamp.ErrNoSuchSubscription, rpcErr.Err.Error)
 }

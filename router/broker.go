@@ -74,6 +74,7 @@ type broker struct {
 	sessionSubIDSet map[*wamp.Session]map[wamp.ID]struct{}
 
 	actionChan chan func()
+	stopped    chan struct{}
 
 	// Generate subscription IDs.
 	idGen *wamp.IDGen
@@ -107,6 +108,7 @@ func newBroker(logger stdlog.StdLog, strictURI, allowDisclose, debug bool, publi
 		// critical section that does the only routing.  So, and unbuffered
 		// channel is appropriate.
 		actionChan: make(chan func()),
+		stopped:    make(chan struct{}),
 
 		idGen: new(wamp.IDGen),
 
@@ -331,15 +333,17 @@ func (b *broker) removeSession(sess *wamp.Session) {
 // Close stops the broker, letting already queued actions finish.
 func (b *broker) close() {
 	close(b.actionChan)
+	<-b.stopped
+	if b.debug {
+		b.log.Print("Broker stopped")
+	}
 }
 
 func (b *broker) run() {
 	for action := range b.actionChan {
 		action()
 	}
-	if b.debug {
-		b.log.Print("Broker stopped")
-	}
+	close(b.stopped)
 }
 
 func (b *broker) syncPublish(pub *wamp.Session, msg *wamp.Publish, pubID wamp.ID, excludePub, disclose bool, filter PublishFilter, eventDetails wamp.Dict) { //nolint:lll

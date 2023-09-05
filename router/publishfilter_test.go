@@ -4,6 +4,7 @@ import (
 	"testing"
 
 	"github.com/gammazero/nexus/v3/wamp"
+	"github.com/stretchr/testify/require"
 )
 
 func TestFilterBlacklist(t *testing.T) {
@@ -38,35 +39,25 @@ func TestFilterBlacklist(t *testing.T) {
 		"misc":     "other",
 	}
 	sess := &wamp.Session{ID: allowedID, Details: details}
-	if !pf.Allowed(sess) {
-		t.Error(shouldAllowMsg)
-	}
+	require.True(t, pf.Allowed(sess), shouldAllowMsg)
 
 	sess = &wamp.Session{ID: blacklistID, Details: details}
 	// Check that session is denied by ID.
-	if pf.Allowed(sess) {
-		t.Error(shouldDenyMsg)
-	}
+	require.False(t, pf.Allowed(sess), shouldDenyMsg)
 
 	sess = &wamp.Session{ID: allowedID, Details: details}
 	// Check that session is denied by authid.
 	sess.Details["authid"] = blacklistAuthid
-	if pf.Allowed(sess) {
-		t.Error(shouldDenyMsg)
-	}
+	require.False(t, pf.Allowed(sess), shouldDenyMsg)
 
 	// Check that session is denied by authrole.
 	sess.Details["authid"] = allowedAuthid
 	sess.Details["authrole"] = blacklistAuthrole
-	if pf.Allowed(sess) {
-		t.Error(shouldDenyMsg)
-	}
+	require.False(t, pf.Allowed(sess), shouldDenyMsg)
 
 	// Check that session is allowed by not having value in blacklist.
 	delete(sess.Details, "authrole")
-	if !pf.Allowed(sess) {
-		t.Error(shouldDenyMsg)
-	}
+	require.True(t, pf.Allowed(sess), shouldAllowMsg)
 }
 
 func TestFilterWhitelist(t *testing.T) {
@@ -101,35 +92,25 @@ func TestFilterWhitelist(t *testing.T) {
 		"misc":     "other",
 	}
 	sess := &wamp.Session{ID: allowedID, Details: details}
-	if !pf.Allowed(sess) {
-		t.Error(shouldAllowMsg)
-	}
+	require.True(t, pf.Allowed(sess), shouldAllowMsg)
 
 	sess = &wamp.Session{ID: deniedID, Details: details}
 	// Check that session is denied by ID.
-	if pf.Allowed(sess) {
-		t.Error(shouldDenyMsg)
-	}
+	require.False(t, pf.Allowed(sess), shouldDenyMsg)
 
 	sess = &wamp.Session{ID: allowedID, Details: details}
 	// Check that session is denied by authid.
 	sess.Details["authid"] = deniedAuthid
-	if pf.Allowed(sess) {
-		t.Error(shouldDenyMsg)
-	}
+	require.False(t, pf.Allowed(sess), shouldDenyMsg)
 
 	// Check that session is denied by authrole.
 	sess.Details["authid"] = allowedAuthid
 	sess.Details["authrole"] = deniedAuthrole
-	if pf.Allowed(sess) {
-		t.Error(shouldDenyMsg)
-	}
+	require.False(t, pf.Allowed(sess), shouldDenyMsg)
 
 	// Check that session is denied by not having value in whitelise.
 	delete(sess.Details, "authrole")
-	if pf.Allowed(sess) {
-		t.Error(shouldDenyMsg)
-	}
+	require.False(t, pf.Allowed(sess), shouldDenyMsg)
 }
 
 func TestFilterBlackWhitelistPrecedence(t *testing.T) {
@@ -168,20 +149,14 @@ func TestFilterBlackWhitelistPrecedence(t *testing.T) {
 	}
 
 	sess := &wamp.Session{ID: allowedID, Details: details}
-	if !pf.Allowed(sess) {
-		t.Error(shouldAllowMsg)
-	}
+	require.True(t, pf.Allowed(sess), shouldAllowMsg)
 
 	sess = &wamp.Session{ID: blacklistID, Details: details}
 	// Check that session is denied by ID even thought ID is also in whitelist.
-	if pf.Allowed(sess) {
-		t.Error(shouldDenyMsg)
-	}
+	require.False(t, pf.Allowed(sess), shouldDenyMsg)
 
 	sess = &wamp.Session{ID: allowedID, Details: details}
 	// Check that session is denied by authid even though also whitelisted.
 	sess.Details["authid"] = blacklistAuthid
-	if pf.Allowed(sess) {
-		t.Error(shouldDenyMsg)
-	}
+	require.False(t, pf.Allowed(sess), shouldDenyMsg)
 }

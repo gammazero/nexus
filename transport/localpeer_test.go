@@ -6,6 +6,7 @@ import (
 	"time"
 
 	"github.com/gammazero/nexus/v3/wamp"
+	"github.com/stretchr/testify/require"
 )
 
 func TestSendRecv(t *testing.T) {
@@ -15,24 +16,22 @@ func TestSendRecv(t *testing.T) {
 	select {
 	case <-r.Recv():
 	case <-time.After(time.Second):
-		t.Fatal("Router peer did not receive msg")
+		require.FailNow(t, "Router peer did not receive msg")
 	}
 
 	r.Send(&wamp.Welcome{})
 	select {
 	case <-c.Recv():
 	default:
-		t.Fatal("Client peer did not receive msg")
+		require.FailNow(t, "Client peer did not receive msg")
 	}
 
 	r.Close()
 	select {
 	case msg := <-c.Recv():
-		if msg != nil {
-			t.Fatal("Expected nil msg on close")
-		}
+		require.Nil(t, msg, "Expected nil msg on close")
 	case <-time.After(time.Second):
-		t.Fatal("Client did not wake up when router closed.")
+		require.FailNow(t, "Client did not wake up when router closed.")
 	}
 }
 
@@ -53,11 +52,9 @@ func TestDropOnBlockedClient(t *testing.T) {
 	select {
 	case <-done:
 	case <-time.After(50 * time.Millisecond):
-		t.Fatal("Send should have dropped and not blocked")
+		require.FailNow(t, "Send should have dropped and not blocked")
 	}
-	if err == nil || err.Error() != "blocked" {
-		t.Fatal("Expected blocked error")
-	}
+	require.EqualError(t, err, "blocked")
 }
 
 func TestBlockOnBlockedRouter(t *testing.T) {
@@ -72,7 +69,7 @@ func TestBlockOnBlockedRouter(t *testing.T) {
 	}()
 	select {
 	case <-done:
-		t.Fatal("Expected send to be blocked")
+		require.FailNow(t, "Expected send to be blocked")
 	case <-time.After(time.Second):
 	}
 	<-r.Recv()

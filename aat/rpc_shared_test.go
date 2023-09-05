@@ -6,6 +6,7 @@ import (
 
 	"github.com/gammazero/nexus/v3/client"
 	"github.com/gammazero/nexus/v3/wamp"
+	"github.com/stretchr/testify/require"
 )
 
 func TestRPCSharedRoundRobin(t *testing.T) {
@@ -13,52 +14,36 @@ func TestRPCSharedRoundRobin(t *testing.T) {
 	options := wamp.SetOption(nil, "invoke", "roundrobin")
 
 	// Connect callee1 and register test procedure.
-	callee1, err := connectClient()
-	if err != nil {
-		t.Fatal("Failed to connect client:", err)
-	}
+	callee1 := connectClient(t)
 
 	// Check for feature support in router.
-	if !callee1.HasFeature(wamp.RoleDealer, wamp.FeatureSharedReg) {
-		t.Error("Dealer does not support", wamp.FeatureSharedReg)
-	}
+	has := callee1.HasFeature(wamp.RoleDealer, wamp.FeatureSharedReg)
+	require.Truef(t, has, "Dealer does not support %s", wamp.FeatureSharedReg)
 
 	testProc1 := func(ctx context.Context, inv *wamp.Invocation) client.InvokeResult {
 		return client.InvokeResult{Args: wamp.List{1}}
 	}
-	if err = callee1.Register(procName, testProc1, options); err != nil {
-		t.Fatal("failed to register procedure:", err)
-	}
+	err := callee1.Register(procName, testProc1, options)
+	require.NoError(t, err)
 
 	// Connect callee2 and register test procedure.
-	callee2, err := connectClient()
-	if err != nil {
-		t.Fatal("Failed to connect client:", err)
-	}
+	callee2 := connectClient(t)
 	testProc2 := func(ctx context.Context, inv *wamp.Invocation) client.InvokeResult {
 		return client.InvokeResult{Args: wamp.List{2}}
 	}
-	if err = callee2.Register(procName, testProc2, options); err != nil {
-		t.Fatal("failed to register procedure:", err)
-	}
+	err = callee2.Register(procName, testProc2, options)
+	require.NoError(t, err)
 
 	// Connect callee3 and register test procedure.
-	callee3, err := connectClient()
-	if err != nil {
-		t.Fatal("Failed to connect client:", err)
-	}
+	callee3 := connectClient(t)
 	testProc3 := func(ctx context.Context, inv *wamp.Invocation) client.InvokeResult {
 		return client.InvokeResult{Args: wamp.List{3}}
 	}
-	if err = callee3.Register(procName, testProc3, options); err != nil {
-		t.Fatal("failed to register procedure:", err)
-	}
+	err = callee3.Register(procName, testProc3, options)
+	require.NoError(t, err)
 
 	// Connect caller session.
-	caller, err := connectClient()
-	if err != nil {
-		t.Fatal("Failed to connect client:", err)
-	}
+	caller := connectClient(t)
 
 	expect := int64(1)
 	var result *wamp.Result
@@ -66,13 +51,9 @@ func TestRPCSharedRoundRobin(t *testing.T) {
 		// Test calling the procedure - expect callee1-3
 		ctx := context.Background()
 		result, err = caller.Call(ctx, procName, options, nil, nil, nil)
-		if err != nil {
-			t.Fatal("failed to call procedure:", err)
-		}
+		require.NoError(t, err)
 		num, _ := wamp.AsInt64(result.Arguments[0])
-		if num != expect {
-			t.Fatal("got result from wrong callee")
-		}
+		require.Equal(t, expect, num)
 		if expect == 3 {
 			expect = 1
 		} else {
@@ -81,22 +62,17 @@ func TestRPCSharedRoundRobin(t *testing.T) {
 	}
 
 	// Unregister callee2 and make sure round robin still works.
-	if err = callee2.Unregister(procName); err != nil {
-		t.Fatal("failed to unregister procedure:", err)
-	}
+	err = callee2.Unregister(procName)
+	require.NoError(t, err)
 
 	expect = int64(1)
 	for i := 0; i < 5; i++ {
 		// Test calling the procedure - expect callee1-3
 		ctx := context.Background()
 		result, err = caller.Call(ctx, procName, options, nil, nil, nil)
-		if err != nil {
-			t.Fatal("failed to call procedure:", err)
-		}
+		require.NoError(t, err)
 		num, _ := wamp.AsInt64(result.Arguments[0])
-		if num != expect {
-			t.Fatal("got result from wrong callee")
-		}
+		require.Equal(t, expect, num)
 		if expect == 1 {
 			expect = 3
 		} else {
@@ -105,30 +81,8 @@ func TestRPCSharedRoundRobin(t *testing.T) {
 	}
 
 	// Test unregister.
-	if err = callee1.Unregister(procName); err != nil {
-		t.Fatal("failed to unregister procedure:", err)
-	}
-	if err = callee3.Unregister(procName); err != nil {
-		t.Fatal("failed to unregister procedure:", err)
-	}
-
-	err = callee1.Close()
-	if err != nil {
-		t.Fatal("Failed to disconnect client:", err)
-	}
-	err = callee2.Close()
-	if err != nil {
-		t.Fatal("Failed to disconnect client:", err)
-	}
-	err = callee3.Close()
-	if err != nil {
-		t.Fatal("Failed to disconnect client:", err)
-	}
-
-	err = caller.Close()
-	if err != nil {
-		t.Fatal("Failed to disconnect client:", err)
-	}
+	require.NoError(t, callee1.Unregister(procName))
+	require.NoError(t, callee3.Unregister(procName))
 }
 
 func TestRPCSharedRandom(t *testing.T) {
@@ -136,46 +90,31 @@ func TestRPCSharedRandom(t *testing.T) {
 	options := wamp.SetOption(nil, "invoke", "random")
 
 	// Connect callee1 and register test procedure.
-	callee1, err := connectClient()
-	if err != nil {
-		t.Fatal("Failed to connect client:", err)
-	}
+	callee1 := connectClient(t)
 	testProc1 := func(ctx context.Context, inv *wamp.Invocation) client.InvokeResult {
 		return client.InvokeResult{Args: wamp.List{1}}
 	}
-	if err = callee1.Register(procName, testProc1, options); err != nil {
-		t.Fatal("failed to register procedure:", err)
-	}
+	err := callee1.Register(procName, testProc1, options)
+	require.NoError(t, err)
 
 	// Connect callee2 and register test procedure.
-	callee2, err := connectClient()
-	if err != nil {
-		t.Fatal("Failed to connect client:", err)
-	}
+	callee2 := connectClient(t)
 	testProc2 := func(ctx context.Context, inv *wamp.Invocation) client.InvokeResult {
 		return client.InvokeResult{Args: wamp.List{2}}
 	}
-	if err = callee2.Register(procName, testProc2, options); err != nil {
-		t.Fatal("failed to register procedure:", err)
-	}
+	err = callee2.Register(procName, testProc2, options)
+	require.NoError(t, err)
 
 	// Connect callee3 and register test procedure.
-	callee3, err := connectClient()
-	if err != nil {
-		t.Fatal("Failed to connect client:", err)
-	}
+	callee3 := connectClient(t)
 	testProc3 := func(ctx context.Context, inv *wamp.Invocation) client.InvokeResult {
 		return client.InvokeResult{Args: wamp.List{3}}
 	}
-	if err = callee3.Register(procName, testProc3, options); err != nil {
-		t.Fatal("failed to register procedure:", err)
-	}
+	err = callee3.Register(procName, testProc3, options)
+	require.NoError(t, err)
 
 	// Connect caller session.
-	caller, err := connectClient()
-	if err != nil {
-		t.Fatal("Failed to connect client:", err)
-	}
+	caller := connectClient(t)
 
 	var called1, called2, called3 int
 	var i int
@@ -184,9 +123,7 @@ func TestRPCSharedRandom(t *testing.T) {
 		// Test calling the procedure - expect callee1-3
 		ctx := context.Background()
 		result, err = caller.Call(ctx, procName, options, nil, nil, nil)
-		if err != nil {
-			t.Fatal("failed to call procedure:", err)
-		}
+		require.NoError(t, err)
 		num, _ := wamp.AsInt64(result.Arguments[0])
 		switch num {
 		case 1:
@@ -198,35 +135,11 @@ func TestRPCSharedRandom(t *testing.T) {
 		}
 	}
 	if called1 == i || called2 == i || called3 == i {
-		t.Error("only called one callee with random distribution")
+		panic("only called one callee with random distribution")
 	}
 
 	// Test unregister.
-	if err = callee1.Unregister(procName); err != nil {
-		t.Fatal("failed to unregister procedure:", err)
-	}
-	if err = callee2.Unregister(procName); err != nil {
-		t.Fatal("failed to unregister procedure:", err)
-	}
-	if err = callee3.Unregister(procName); err != nil {
-		t.Fatal("failed to unregister procedure:", err)
-	}
-
-	err = callee1.Close()
-	if err != nil {
-		t.Fatal("Failed to disconnect client:", err)
-	}
-	err = callee2.Close()
-	if err != nil {
-		t.Fatal("Failed to disconnect client:", err)
-	}
-	err = callee3.Close()
-	if err != nil {
-		t.Fatal("Failed to disconnect client:", err)
-	}
-
-	err = caller.Close()
-	if err != nil {
-		t.Fatal("Failed to disconnect client:", err)
-	}
+	require.NoError(t, callee1.Unregister(procName))
+	require.NoError(t, callee2.Unregister(procName))
+	require.NoError(t, callee3.Unregister(procName))
 }

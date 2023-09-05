@@ -4,32 +4,17 @@ import (
 	"testing"
 	"time"
 
-	"github.com/fortytw2/leaktest"
 	"github.com/gammazero/nexus/v3/wamp"
+	"github.com/stretchr/testify/require"
 )
 
 func TestSessionKill(t *testing.T) {
-	defer leaktest.Check(t)()
-	r, err := newTestRouter()
-	if err != nil {
-		t.Error(err)
-	}
-	defer r.Close()
+	checkGoLeaks(t)
+	r := newTestRouter(t)
 
-	cli1, err := testClient(r)
-	if err != nil {
-		t.Fatal(err)
-	}
-
-	cli2, err := testClient(r)
-	if err != nil {
-		t.Fatal(err)
-	}
-
-	cli3, err := testClient(r)
-	if err != nil {
-		t.Fatal(err)
-	}
+	cli1 := testClient(t, r)
+	cli2 := testClient(t, r)
+	cli3 := testClient(t, r)
 
 	reason := wamp.URI("foo.bar.baz")
 	message := "this is a test"
@@ -42,35 +27,22 @@ func TestSessionKill(t *testing.T) {
 		ArgumentsKw: wamp.Dict{"reason": reason, "message": message}})
 
 	msg, err := wamp.RecvTimeout(cli1, time.Second)
-	if err != nil {
-		t.Fatal(err)
-	}
+	require.NoError(t, err)
 	_, ok := msg.(*wamp.Result)
-	if !ok {
-		t.Fatal("Expected RESULT, got", msg.MessageType())
-	}
+	require.True(t, ok, "Expected RESULT")
 
 	// Check that client-3 received GOODBYE.
 	msg, err = wamp.RecvTimeout(cli3, time.Second)
-	if err != nil {
-		t.Fatal(err)
-	}
+	require.NoError(t, err)
 	g, ok := msg.(*wamp.Goodbye)
-	if !ok {
-		t.Fatal("expected GOODBYE, got", msg.MessageType())
-	}
-	if g.Reason != reason {
-		t.Error("Wrong GOODBYE.Reason, got", g.Reason, "expected", reason)
-	}
-	if m, _ := wamp.AsString(g.Details["message"]); m != message {
-		t.Error("Wrong message in GOODBYE, got", m, "expected", message)
-	}
+	require.True(t, ok, "expected GOODBYE")
+	require.Equal(t, reason, g.Reason, "Wrong GOODBYE.Reason")
+	m, _ := wamp.AsString(g.Details["message"])
+	require.Equal(t, message, m, "Wrong message in GOODBYE")
 
 	// Check that client-2 did not get anything.
 	_, err = wamp.RecvTimeout(cli2, time.Millisecond)
-	if err == nil {
-		t.Fatal("Expected timeout")
-	}
+	require.Error(t, err, "Expected timeout")
 
 	// Test that killing self gets error.
 	cli1.Send(&wamp.Call{
@@ -80,43 +52,19 @@ func TestSessionKill(t *testing.T) {
 		ArgumentsKw: nil})
 
 	msg, err = wamp.RecvTimeout(cli1, time.Second)
-	if err != nil {
-		t.Fatal(err)
-	}
+	require.NoError(t, err)
 	e, ok := msg.(*wamp.Error)
-	if !ok {
-		t.Fatal("Expected ERROR, got", msg.MessageType())
-	}
-	if e.Error != wamp.ErrNoSuchSession {
-		t.Error("Wrong error, got", e.Error, "expected", wamp.ErrNoSuchSession)
-	}
-
-	cli1.Close()
-	cli2.Close()
+	require.True(t, ok, "Expected ERROR")
+	require.Equal(t, wamp.ErrNoSuchSession, e.Error)
 }
 
 func TestSessionKillAll(t *testing.T) {
-	defer leaktest.Check(t)()
-	r, err := newTestRouter()
-	if err != nil {
-		t.Error(err)
-	}
-	defer r.Close()
+	checkGoLeaks(t)
+	r := newTestRouter(t)
 
-	cli1, err := testClient(r)
-	if err != nil {
-		t.Fatal(err)
-	}
-
-	cli2, err := testClient(r)
-	if err != nil {
-		t.Fatal(err)
-	}
-
-	cli3, err := testClient(r)
-	if err != nil {
-		t.Fatal(err)
-	}
+	cli1 := testClient(t, r)
+	cli2 := testClient(t, r)
+	cli3 := testClient(t, r)
 
 	reason := wamp.URI("foo.bar.baz")
 	message := "this is a test"
@@ -127,77 +75,37 @@ func TestSessionKillAll(t *testing.T) {
 		ArgumentsKw: wamp.Dict{"reason": reason, "message": message}})
 
 	msg, err := wamp.RecvTimeout(cli1, time.Second)
-	if err != nil {
-		t.Fatal(err)
-	}
+	require.NoError(t, err)
 	_, ok := msg.(*wamp.Result)
-	if !ok {
-		t.Fatal("Expected RESULT, got", msg.MessageType())
-	}
+	require.True(t, ok, "Expected RESULT")
 
 	msg, err = wamp.RecvTimeout(cli2, time.Second)
-	if err != nil {
-		t.Fatal(err)
-	}
+	require.NoError(t, err)
 	g, ok := msg.(*wamp.Goodbye)
-	if !ok {
-		t.Fatal("expected GOODBYE, got", msg.MessageType())
-	}
-	if g.Reason != reason {
-		t.Error("Wrong GOODBYE.Reason, got", g.Reason, "expected", reason)
-	}
-	if m, _ := wamp.AsString(g.Details["message"]); m != message {
-		t.Error("Wrong message in GOODBYE, got", m, "expected", message)
-	}
+	require.True(t, ok, "expected GOODBYE")
+	require.Equal(t, reason, g.Reason, "Wrong GOODBYE.Reason")
+	m, _ := wamp.AsString(g.Details["message"])
+	require.Equal(t, message, m, "Wrong message in GOODBYE")
 
 	msg, err = wamp.RecvTimeout(cli3, time.Second)
-	if err != nil {
-		t.Fatal(err)
-	}
+	require.NoError(t, err)
 	g, ok = msg.(*wamp.Goodbye)
-	if !ok {
-		t.Fatal("expected GOODBYE, got", msg.MessageType())
-	}
-	if g.Reason != reason {
-		t.Error("Wrong GOODBYE.Reason, got", g.Reason, "expected", reason)
-	}
-	if m, _ := wamp.AsString(g.Details["message"]); m != message {
-		t.Error("Wrong message in GOODBYE, got", m, "expected", message)
-	}
+	require.True(t, ok, "expected GOODBYE")
+	require.Equal(t, reason, g.Reason, "Wrong GOODBYE.Reason")
+	m, _ = wamp.AsString(g.Details["message"])
+	require.Equal(t, message, m, "Wrong message in GOODBYE")
 
 	_, err = wamp.RecvTimeout(cli1, time.Millisecond)
-	if err == nil {
-		t.Fatal("Expected timeout")
-	}
-
-	cli1.Close()
+	require.Error(t, err, "Expected timeout")
 }
 
 func TestSessionKillByAuthid(t *testing.T) {
-	defer leaktest.Check(t)()
-	r, err := newTestRouter()
-	if err != nil {
-		t.Error(err)
-	}
-	defer r.Close()
+	checkGoLeaks(t)
+	r := newTestRouter(t)
 
-	cli1, err := testClient(r)
-	if err != nil {
-		t.Fatal(err)
-	}
-	defer cli1.Close()
-
-	cli2, err := testClient(r)
-	if err != nil {
-		t.Fatal(err)
-	}
-	defer cli2.Close()
-
-	cli3, err := testClient(r)
-	if err != nil {
-		t.Fatal(err)
-	}
-	defer cli3.Close()
+	cli1 := testClient(t, r)
+	cli2 := testClient(t, r)
+	cli3 := testClient(t, r)
 
 	reason := wamp.URI("foo.bar.baz")
 	message := "this is a test"
@@ -211,65 +119,38 @@ func TestSessionKillByAuthid(t *testing.T) {
 		ArgumentsKw: wamp.Dict{"reason": reason, "message": message}})
 
 	msg, err := wamp.RecvTimeout(cli1, time.Second)
-	if err != nil {
-		t.Fatal(err)
-	}
+	require.NoError(t, err)
 	_, ok := msg.(*wamp.Result)
-	if !ok {
-		t.Fatal("Expected RESULT, got", msg.MessageType())
-	}
+	require.True(t, ok, "Expected RESULT")
 
 	// Check that client 2 gets kicked off.
 	msg, err = wamp.RecvTimeout(cli2, time.Second)
-	if err != nil {
-		t.Fatal(err)
-	}
+	require.NoError(t, err)
 	g, ok := msg.(*wamp.Goodbye)
-	if !ok {
-		t.Fatal("expected GOODBYE, got", msg.MessageType())
-	}
-	if g.Reason != reason {
-		t.Error("Wrong GOODBYE.Reason, got", g.Reason, "expected", reason)
-	}
-	if m, _ := wamp.AsString(g.Details["message"]); m != message {
-		t.Error("Wrong message in GOODBYE, got", m, "expected", message)
-	}
+	require.True(t, ok, "expected GOODBYE")
+	require.Equal(t, reason, g.Reason, "Wrong GOODBYE.Reason")
+	m, _ := wamp.AsString(g.Details["message"])
+	require.Equal(t, message, m, "Wrong message in GOODBYE")
 
 	// Check that client 3 gets kicked off.
 	msg, err = wamp.RecvTimeout(cli3, time.Second)
-	if err != nil {
-		t.Fatal(err)
-	}
+	require.NoError(t, err)
 	g, ok = msg.(*wamp.Goodbye)
-	if !ok {
-		t.Fatal("expected GOODBYE, got", msg.MessageType())
-	}
-	if g.Reason != reason {
-		t.Error("Wrong GOODBYE.Reason, got", g.Reason, "expected", reason)
-	}
-	if m, _ := wamp.AsString(g.Details["message"]); m != message {
-		t.Error("Wrong message in GOODBYE, got", m, "expected", message)
-	}
+	require.True(t, ok, "expected GOODBYE")
+	require.Equal(t, reason, g.Reason, "Wrong GOODBYE.Reason")
+	m, _ = wamp.AsString(g.Details["message"])
+	require.Equal(t, message, m, "Wrong message in GOODBYE")
 
 	// Check that client 1 is not kicked off.
 	_, err = wamp.RecvTimeout(cli1, time.Millisecond)
-	if err == nil {
-		t.Fatal("Expected timeout")
-	}
+	require.Error(t, err, "Expected timeout")
 }
 
 func TestSessionModifyDetails(t *testing.T) {
-	defer leaktest.Check(t)()
-	r, err := newTestRouter()
-	if err != nil {
-		t.Error(err)
-	}
-	defer r.Close()
+	checkGoLeaks(t)
+	r := newTestRouter(t)
 
-	caller, err := testClient(r)
-	if err != nil {
-		t.Fatal(err)
-	}
+	caller := testClient(t, r)
 	sessID := caller.ID
 
 	// Call session meta-procedure to get session information.
@@ -281,16 +162,10 @@ func TestSessionModifyDetails(t *testing.T) {
 		Arguments: wamp.List{caller.ID, delta},
 	})
 	msg, err := wamp.RecvTimeout(caller, time.Second)
-	if err != nil {
-		t.Fatal(err)
-	}
+	require.NoError(t, err)
 	result, ok := msg.(*wamp.Result)
-	if !ok {
-		t.Fatal("expected RESULT, got", msg.MessageType())
-	}
-	if result.Request != callID {
-		t.Fatal("wrong result ID")
-	}
+	require.True(t, ok, "expected RESULT")
+	require.Equal(t, callID, result.Request, "wrong result ID")
 
 	// Call session meta-procedure to get session information.
 	callID = wamp.GlobalID()
@@ -300,32 +175,17 @@ func TestSessionModifyDetails(t *testing.T) {
 		Arguments: wamp.List{sessID},
 	})
 	msg, err = wamp.RecvTimeout(caller, time.Second)
-	if err != nil {
-		t.Fatal(err)
-	}
+	require.NoError(t, err)
 	result, ok = msg.(*wamp.Result)
-	if !ok {
-		t.Fatal("expected RESULT, got", msg.MessageType())
-	}
-	if result.Request != callID {
-		t.Fatal("wrong result ID")
-	}
-	if len(result.Arguments) == 0 {
-		t.Fatal("missing expected arguemnt")
-	}
+	require.True(t, ok, "expected RESULT")
+	require.Equal(t, callID, result.Request, "wrong result ID")
+	require.NotZero(t, len(result.Arguments), "missing expected arguemnt")
 	details, ok := result.Arguments[0].(wamp.Dict)
-	if !ok {
-		t.Fatal("expected dict type arg")
-	}
+	require.True(t, ok, "expected dict type arg")
 	authid, _ := wamp.AsString(details["authid"])
-	if authid != "bob" {
-		t.Error("expected bob, got", authid)
-	}
-	if _, ok = details["xyzzy"]; ok {
-		t.Error("xyzzy should have been delete from details")
-	}
+	require.Equal(t, "bob", authid)
+	_, ok = details["xyzzy"]
+	require.False(t, ok, "xyzzy should have been delete from details")
 	val, _ := wamp.AsFloat64(details["pi"])
-	if val != 3.14 {
-		t.Error("Did not get correct value for pi")
-	}
+	require.Equal(t, 3.14, val)
 }

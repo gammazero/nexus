@@ -6,8 +6,8 @@ import (
 	"testing"
 	"time"
 
-	"github.com/fortytw2/leaktest"
 	"github.com/gammazero/nexus/v3/wamp"
+	"github.com/stretchr/testify/require"
 )
 
 const (
@@ -17,13 +17,10 @@ const (
 )
 
 func TestPubSub(t *testing.T) {
-	defer leaktest.Check(t)()
+	checkGoLeaks(t)
 
 	// Connect subscriber session.
-	subscriber, err := connectClient()
-	if err != nil {
-		t.Fatal("Failed to connect client:", err)
-	}
+	subscriber := connectClient(t)
 
 	errChan := make(chan error)
 	eventHandler := func(event *wamp.Event) {
@@ -40,61 +37,36 @@ func TestPubSub(t *testing.T) {
 	}
 
 	// Subscribe to event.
-	err = subscriber.Subscribe(testTopic, eventHandler, nil)
-	if err != nil {
-		t.Fatal("subscribe error:", err)
-	}
+	err := subscriber.Subscribe(testTopic, eventHandler, nil)
+	require.NoError(t, err)
 
 	// Connect publisher session.
-	publisher, err := connectClient()
-	if err != nil {
-		t.Fatal("Failed to connect client:", err)
-	}
+	publisher := connectClient(t)
 	// Publish an event to topic.
 	err = publisher.Publish(testTopic, wamp.Dict{wamp.OptAcknowledge: true},
 		wamp.List{"hello world"}, nil)
-	if err != nil {
-		t.Fatal("Error waiting for published response:", err)
-	}
+	require.NoError(t, err, "Error waiting for published response")
 
 	// Make sure the event was received.
 	select {
 	case err = <-errChan:
-		if err != nil {
-			t.Fatal("Event error:", err)
-		}
+		require.NoError(t, err, "Event error")
 	case <-time.After(200 * time.Millisecond):
-		t.Fatal("did not get published event")
+		require.FailNow(t, "did not get published event")
 	}
 
 	err = subscriber.Unsubscribe(testTopic)
-	if err != nil {
-		t.Fatal("unsubscribe error:", err)
-	}
-
-	err = publisher.Close()
-	if err != nil {
-		t.Fatal("Failed to disconnect client:", err)
-	}
-
-	err = subscriber.Close()
-	if err != nil {
-		t.Fatal("Failed to disconnect client:", err)
-	}
+	require.NoError(t, err)
 }
 
 func TestPubSubWildcard(t *testing.T) {
-	defer leaktest.Check(t)()
+	checkGoLeaks(t)
 	// Connect subscriber session.
-	subscriber, err := connectClient()
-	if err != nil {
-		t.Fatal("Failed to connect client:", err)
-	}
+	subscriber := connectClient(t)
 
 	// Check for feature support in router.
-	if !subscriber.HasFeature(wamp.RoleBroker, wamp.FeaturePatternSub) {
-		t.Error("Broker does not support", wamp.FeaturePatternSub)
-	}
+	has := subscriber.HasFeature(wamp.RoleBroker, wamp.FeaturePatternSub)
+	require.Truef(t, has, "Broker does not support %s", wamp.FeaturePatternSub)
 
 	errChan := make(chan error)
 	eventHandler := func(event *wamp.Event) {
@@ -116,16 +88,11 @@ func TestPubSubWildcard(t *testing.T) {
 	}
 
 	// Subscribe to event with wildcard match.
-	err = subscriber.Subscribe(testTopicWC, eventHandler, wamp.SetOption(nil, "match", "wildcard"))
-	if err != nil {
-		t.Fatal("subscribe error:", err)
-	}
+	err := subscriber.Subscribe(testTopicWC, eventHandler, wamp.SetOption(nil, "match", "wildcard"))
+	require.NoError(t, err)
 
 	// Connect publisher session.
-	publisher, err := connectClient()
-	if err != nil {
-		t.Fatal("Failed to connect client:", err)
-	}
+	publisher := connectClient(t)
 	// Publish an event to something that matches by wildcard.
 	publisher.Publish(testTopic, nil, wamp.List{"hello world"}, nil)
 
@@ -133,116 +100,65 @@ func TestPubSubWildcard(t *testing.T) {
 	select {
 	case err = <-errChan:
 	case <-time.After(200 * time.Millisecond):
-		t.Fatal("did not get published event")
+		require.FailNow(t, "did not get published event")
 	}
-	if err != nil {
-		t.Fatal(err)
-	}
+	require.NoError(t, err)
 
 	err = subscriber.Unsubscribe(testTopicWC)
-	if err != nil {
-		t.Fatal("unsubscribe error:", err)
-	}
-
-	err = publisher.Close()
-	if err != nil {
-		t.Fatal("Failed to disconnect client:", err)
-	}
-
-	err = subscriber.Close()
-	if err != nil {
-		t.Fatal("Failed to disconnect client:", err)
-	}
+	require.NoError(t, err)
 }
 
 func TestUnsubscribeWrongTopic(t *testing.T) {
-	defer leaktest.Check(t)()
+	checkGoLeaks(t)
 	// Connect subscriber session.
-	subscriber, err := connectClient()
-	if err != nil {
-		t.Fatal("Failed to connect client:", err)
-	}
+	subscriber := connectClient(t)
 
 	eventHandler := func(_ *wamp.Event) {}
 
 	// Subscribe to event.
-	err = subscriber.Subscribe(testTopic, eventHandler, nil)
-	if err != nil {
-		t.Fatal("subscribe error:", err)
-	}
+	err := subscriber.Subscribe(testTopic, eventHandler, nil)
+	require.NoError(t, err)
 
 	err = subscriber.Unsubscribe(testTopicWC)
-	if err == nil {
-		t.Fatal("expected error unsubscribing from wrong topic")
-	}
+	require.Error(t, err, "expected error unsubscribing from wrong topic")
 
 	// Connect subscriber session2.
-	subscriber2, err := connectClient()
-	if err != nil {
-		t.Fatal("Failed to connect client:", err)
-	}
+	subscriber2 := connectClient(t)
 
 	// Subscribe to other event.
 	topic2 := "nexus.test.topic2"
 	err = subscriber2.Subscribe(topic2, eventHandler, nil)
-	if err != nil {
-		t.Fatal("subscribe error:", err)
-	}
+	require.NoError(t, err)
 
 	// Unsubscribe from other subscriber's topic.
 	err = subscriber2.Unsubscribe(testTopic)
-	if err == nil {
-		t.Fatal("expected error unsubscribing from other's topic")
-	}
+	require.Error(t, err, "expected error unsubscribing from other's topic")
 
 	err = subscriber.Unsubscribe(testTopic)
-	if err != nil {
-		t.Fatal("unsubscribe error:", err)
-	}
+	require.NoError(t, err)
 
 	err = subscriber2.Unsubscribe(topic2)
-	if err != nil {
-		t.Fatal("unsubscribe error:", err)
-	}
-
-	err = subscriber.Close()
-	if err != nil {
-		t.Fatal("Failed to disconnect client:", err)
-	}
-
-	err = subscriber2.Close()
-	if err != nil {
-		t.Fatal("Failed to disconnect client:", err)
-	}
+	require.NoError(t, err)
 }
 
 func TestSubscribeBurst(t *testing.T) {
-	defer leaktest.Check(t)()
+	checkGoLeaks(t)
 	// Connect subscriber session.
-	sub, err := connectClient()
-	if err != nil {
-		t.Fatal("Failed to connect client:", err)
-	}
+	sub := connectClient(t)
 
 	eventHandler := func(_ *wamp.Event) {}
 
 	for i := 0; i < 10; i++ {
 		// Subscribe to event.
 		topic := fmt.Sprintf("test.topic%d", i)
-		err = sub.Subscribe(topic, eventHandler, nil)
-		if err != nil {
-			t.Fatal("subscribe error:", err)
-		}
+		err := sub.Subscribe(topic, eventHandler, nil)
+		require.NoError(t, err)
 	}
 
 	for i := 0; i < 10; i++ {
 		// Subscribe to event.
 		topic := fmt.Sprintf("test.topic%d", i)
-		err = sub.Unsubscribe(topic)
-		if err != nil {
-			t.Fatal("subscribe error:", err)
-		}
+		err := sub.Unsubscribe(topic)
+		require.NoError(t, err)
 	}
-
-	sub.Close()
 }

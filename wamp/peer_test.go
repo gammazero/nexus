@@ -4,6 +4,8 @@ import (
 	"context"
 	"testing"
 	"time"
+
+	"github.com/stretchr/testify/require"
 )
 
 type testPeer struct {
@@ -35,31 +37,24 @@ func (p *testPeer) IsLocal() bool { return true }
 func TestRecvTimeout(t *testing.T) {
 	p := newTestPeer()
 	msg, err := RecvTimeout(p, time.Millisecond)
-	if err == nil {
-		t.Fatal("Expected timeout error")
-	}
+	require.Error(t, err)
 
 	go func() {
 		p.Send(&Hello{})
 	}()
 	msg, err = RecvTimeout(p, time.Millisecond)
-	if err != nil || msg == nil {
-		t.Fatal("Failed to recv message")
-	}
+	require.NoError(t, err)
+	require.NotNil(t, msg, "Failed to recv message")
 
 	p.Close()
 	_, err = RecvTimeout(p, time.Millisecond)
-	if err == nil || err.Error() != "receive channel closed" {
-		t.Fatal("Expected closed channel error")
-	}
+	require.EqualError(t, err, "receive channel closed")
 }
 
 func TestTrySend(t *testing.T) {
 	p := newTestPeer()
 	err := p.TrySend(&Hello{})
-	if err == nil {
-		t.Fatal("Expected error")
-	}
+	require.Error(t, err)
 
 	ready := make(chan struct{})
 	go func() {
@@ -68,9 +63,8 @@ func TestTrySend(t *testing.T) {
 	}()
 	<-ready
 
-	if err = p.TrySend(&Hello{}); err != nil {
-		t.Fatal("Failed to send message")
-	}
+	err = p.TrySend(&Hello{})
+	require.NoError(t, err)
 
 	p.Close()
 }
@@ -82,13 +76,10 @@ func TestSendCtx(t *testing.T) {
 		<-p.Recv()
 	}()
 	err := p.SendCtx(ctx, &Hello{})
-	if err != nil {
-		t.Fatal(err)
-	}
+	require.NoError(t, err)
+
 	cancel()
 	err = p.SendCtx(ctx, &Hello{})
-	if err != context.Canceled {
-		t.Fatal("Expected context.Canceled error")
-	}
+	require.ErrorIs(t, err, context.Canceled)
 	p.Close()
 }

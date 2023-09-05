@@ -54,13 +54,17 @@ type router struct {
 	realms map[wamp.URI]*realm
 
 	actionChan chan func()
-	waitRealms sync.WaitGroup
+	stopped    chan struct{}
 
 	realmTemplate *RealmConfig
 	closed        bool
+	closeOnce     sync.Once
 
 	log   stdlog.StdLog
 	debug bool
+
+	stopMemStats    chan struct{}
+	memStatsStopped chan struct{}
 }
 
 // NewRouter creates a WAMP router instance.
@@ -74,6 +78,7 @@ func NewRouter(config *Config, logger stdlog.StdLog) (Router, error) {
 	r := &router{
 		realms:        map[wamp.URI]*realm{},
 		actionChan:    make(chan func()),
+		stopped:       make(chan struct{}),
 		realmTemplate: config.RealmTemplate,
 		log:           logger,
 		debug:         config.Debug,
@@ -85,18 +90,11 @@ func NewRouter(config *Config, logger stdlog.StdLog) (Router, error) {
 		}
 	}
 
-	// Create a realm from the template to validate the template
-	if r.realmTemplate != nil {
-		realmTemplate := *r.realmTemplate
-		realmTemplate.URI = "some.valid.realm"
-		if _, err := newRealm(&realmTemplate, nil, nil, r.log, r.debug); err != nil {
-			return nil, fmt.Errorf("invalid realmTemplate: %w", err)
-		}
-	}
-
 	go r.run()
 
 	if config.MemStatsLogSec != 0 {
+		r.stopMemStats = make(chan struct{})
+		r.memStatsStopped = make(chan struct{})
 		go r.logMemStats(time.Duration(config.MemStatsLogSec) * time.Second)
 	}
 
@@ -104,11 +102,19 @@ func NewRouter(config *Config, logger stdlog.StdLog) (Router, error) {
 }
 
 func (r *router) logMemStats(interval time.Duration) {
+	t := time.NewTimer(interval)
 	var m runtime.MemStats
 	for {
-		time.Sleep(interval)
-		runtime.ReadMemStats(&m)
-		r.log.Printf("MemStats: Alloc=%d Mallocs=%d Frees=%d NumGC=%d", m.Alloc, m.Mallocs, m.Frees, m.NumGC)
+		select {
+		case <-t.C:
+			runtime.ReadMemStats(&m)
+			r.log.Printf("MemStats: Alloc=%d Mallocs=%d Frees=%d NumGC=%d", m.Alloc, m.Mallocs, m.Frees, m.NumGC)
+			t.Reset(interval)
+		case <-r.stopMemStats:
+			t.Stop()
+			close(r.memStatsStopped)
+			return
+		}
 	}
 }
 
@@ -285,24 +291,29 @@ func (r *router) AttachClient(client wamp.Peer, transportDetails wamp.Dict) erro
 
 // Close stops the router and waits message processing to stop.
 func (r *router) Close() {
-	sync := make(chan struct{})
-	r.actionChan <- func() {
-		// Prevent new or attachment to existing realms.
-		r.closed = true
-		// Close all existing realms.
-		for uri, realm := range r.realms {
-			realm.close()
-			// Delete the realm
-			delete(r.realms, uri)
-			r.log.Println("Realm", uri, "completed shutdown")
+	r.closeOnce.Do(func() {
+		done := make(chan struct{})
+		r.actionChan <- func() {
+			// Prevent new or attachment to existing realms.
+			r.closed = true
+			// Close all existing realms.
+			for uri, realm := range r.realms {
+				realm.close()
+				// Delete the realm
+				delete(r.realms, uri)
+				r.log.Println("Realm", uri, "completed shutdown")
+			}
+			close(done)
 		}
-		close(sync)
-	}
-	<-sync
-	// Wait for all existing realms to close.
-	r.waitRealms.Wait()
-	close(r.actionChan)
-	r.log.Println("Router stopped")
+		<-done
+		close(r.actionChan)
+		if r.stopMemStats != nil {
+			close(r.stopMemStats)
+			<-r.memStatsStopped
+		}
+		r.log.Println("Router stopped")
+	})
+	<-r.stopped
 }
 
 // AddRealm allows the addition of a realm after construction.
@@ -374,14 +385,6 @@ func (r *router) addRealm(config *RealmConfig) (*realm, error) {
 		return nil, err
 	}
 	r.realms[config.URI] = realm
-
-	r.waitRealms.Add(1)
-	go func() {
-		realm.run()
-		r.waitRealms.Done()
-	}()
-
-	realm.waitReady()
 	r.log.Println("Added realm:", config.URI)
 	return realm, nil
 }
@@ -391,4 +394,5 @@ func (r *router) run() {
 	for action := range r.actionChan {
 		action()
 	}
+	close(r.stopped)
 }

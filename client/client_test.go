@@ -7,19 +7,18 @@ import (
 	"io"
 	"log"
 	"os"
-	"reflect"
 	"regexp"
-	"strings"
 	"sync"
 	"testing"
 	"time"
 
-	"github.com/fortytw2/leaktest"
 	"github.com/gammazero/nexus/v3/router"
 	"github.com/gammazero/nexus/v3/router/auth"
 	"github.com/gammazero/nexus/v3/stdlog"
 	"github.com/gammazero/nexus/v3/wamp"
 	"github.com/gammazero/nexus/v3/wamp/crsign"
+	"github.com/stretchr/testify/require"
+	"go.uber.org/goleak"
 )
 
 const (
@@ -38,14 +37,25 @@ func init() {
 	logger = log.New(os.Stdout, "", log.LstdFlags)
 }
 
-func getTestRouter(realmConfig *router.RealmConfig) (router.Router, error) {
+func checkGoLeaks(t *testing.T) {
+	t.Cleanup(func() {
+		goleak.VerifyNone(t)
+	})
+}
+
+func getTestRouter(t *testing.T, realmConfig *router.RealmConfig) router.Router {
 	config := &router.Config{
 		RealmConfigs: []*router.RealmConfig{realmConfig},
 	}
-	return router.NewRouter(config, logger)
+	r, err := router.NewRouter(config, logger)
+	require.NoError(t, err)
+	t.Cleanup(func() {
+		r.Close()
+	})
+	return r
 }
 
-func connectedTestClients() (*Client, *Client, router.Router, error) {
+func connectedTestClients(t *testing.T) (*Client, *Client, router.Router) {
 	realmConfig := &router.RealmConfig{
 		URI:              wamp.URI(testRealm),
 		StrictURI:        true,
@@ -54,20 +64,11 @@ func connectedTestClients() (*Client, *Client, router.Router, error) {
 		RequireLocalAuth: true,
 		EnableMetaKill:   true,
 	}
-	r, err := getTestRouter(realmConfig)
-	if err != nil {
-		return nil, nil, nil, err
-	}
+	r := getTestRouter(t, realmConfig)
 
-	c1, err := newTestClient(r)
-	if err != nil {
-		return nil, nil, nil, err
-	}
-	c2, err := newTestClient(r)
-	if err != nil {
-		return nil, nil, nil, err
-	}
-	return c1, c2, r, nil
+	c1 := newTestClient(t, r)
+	c2 := newTestClient(t, r)
+	return c1, c2, r
 }
 
 type realmConfigMutator func(*router.RealmConfig)
@@ -101,55 +102,44 @@ func newTestClientConfig(realmName string, fns ...clientConfigMutator) *Config {
 	return clientConfig
 }
 
-func newTestClientWithConfig(r router.Router, clientConfig *Config) (*Client, error) {
-	return ConnectLocal(r, *clientConfig)
+func newTestClientWithConfig(t *testing.T, r router.Router, clientConfig *Config) *Client {
+	c, err := ConnectLocal(r, *clientConfig)
+	require.NoError(t, err, "failed to connect test clients")
+	t.Cleanup(func() {
+		c.Close()
+	})
+	return c
 }
 
-func newTestClient(r router.Router) (*Client, error) {
-	return newTestClientWithConfig(r, newTestClientConfig(testRealm))
+func newTestClient(t *testing.T, r router.Router) *Client {
+	return newTestClientWithConfig(t, r, newTestClientConfig(testRealm))
 }
 
 func TestJoinRealm(t *testing.T) {
-	defer leaktest.Check(t)()
+	checkGoLeaks(t)
 
 	realmConfig := newTestRealmConfig(testRealm)
-	r, err := getTestRouter(realmConfig)
-	if err != nil {
-		t.Fatal(err)
-	}
+	r := getTestRouter(t, realmConfig)
 
 	// Test that client can join realm.
-	client, err := newTestClient(r)
-	if err != nil {
-		t.Fatal(err)
-	}
-
-	if client.ID() == wamp.ID(0) {
-		t.Fatalf("Expected non-0 client id, saw %q", client.ID())
-	}
+	client := newTestClient(t, r)
+	require.NotEqual(t, wamp.ID(0), client.ID(), "Expected non-0 client id")
 
 	realmInfo := client.RealmDetails()
-	_, err = wamp.DictValue(realmInfo, []string{"roles", "broker"})
-	if err != nil {
-		t.Fatal("Router missing broker role")
-	}
+	_, err := wamp.DictValue(realmInfo, []string{"roles", "broker"})
+	require.NoError(t, err, "Router missing broker role")
 	_, err = wamp.DictValue(realmInfo, []string{"roles", "dealer"})
-	if err != nil {
-		t.Fatal("Router missing dealer role")
-	}
+	require.NoError(t, err, "Router missing dealer role")
 
 	client.Close()
 	r.Close()
-
-	if err = client.Close(); err == nil {
-		t.Fatal("No error from double Close()")
-	}
+	require.Error(t, client.Close(), "No error from double Close()")
 
 	// Test the Done is signaled.
 	select {
 	case <-client.Done():
 	case <-time.After(time.Millisecond):
-		t.Fatal("Expected client done")
+		require.FailNow(t, "Expected client done")
 	}
 
 	// Test that client cannot join realm when anonymous auth is disabled.
@@ -160,10 +150,7 @@ func TestJoinRealm(t *testing.T) {
 		AllowDisclose:    false,
 		RequireLocalAuth: true,
 	}
-	r, err = getTestRouter(realmConfig)
-	if err != nil {
-		t.Fatal(err)
-	}
+	r = getTestRouter(t, realmConfig)
 
 	cfg := Config{
 		Realm:           "nexus.testnoanon",
@@ -171,14 +158,11 @@ func TestJoinRealm(t *testing.T) {
 		Logger:          logger,
 	}
 	_, err = ConnectLocal(r, cfg)
-	if err == nil {
-		t.Fatal("expected error due to no anonymous authentication")
-	}
-	r.Close()
+	require.Error(t, err, "expected error due to no anonymous authentication")
 }
 
 func TestClientJoinRealmWithCRAuth(t *testing.T) {
-	defer leaktest.Check(t)()
+	checkGoLeaks(t)
 
 	crAuth := auth.NewCRAuthenticator(&serverKeyStore{"static"}, time.Second)
 	realmConfig := &router.RealmConfig{
@@ -189,10 +173,7 @@ func TestClientJoinRealmWithCRAuth(t *testing.T) {
 		Authenticators:   []auth.Authenticator{crAuth},
 		RequireLocalAuth: true,
 	}
-	r, err := getTestRouter(realmConfig)
-	if err != nil {
-		t.Fatal(err)
-	}
+	r := getTestRouter(t, realmConfig)
 
 	cfg := Config{
 		Realm: "nexus.test.auth",
@@ -205,21 +186,15 @@ func TestClientJoinRealmWithCRAuth(t *testing.T) {
 		Logger: logger,
 	}
 	client, err := ConnectLocal(r, cfg)
-	if err != nil {
-		t.Fatal(err)
-	}
+	require.NoError(t, err)
 	client.Close()
-	r.Close()
 }
 
 func TestSubscribe(t *testing.T) {
-	defer leaktest.Check(t)()
+	checkGoLeaks(t)
 
 	// Connect two clients to the same server
-	sub, pub, r, err := connectedTestClients()
-	if err != nil {
-		t.Fatal("failed to connect test clients:", err)
-	}
+	sub, pub, _ := connectedTestClients(t)
 
 	testTopic := "nexus.test.topic"
 	errChan := make(chan error)
@@ -239,66 +214,50 @@ func TestSubscribe(t *testing.T) {
 
 	// Expect invalid URI error if not setting match option.
 	wcTopic := "nexus..topic"
-	err = sub.Subscribe(wcTopic, eventHandler, nil)
-	if err == nil {
-		t.Fatal("expected invalid uri error")
-	}
+	err := sub.Subscribe(wcTopic, eventHandler, nil)
+	require.Error(t, err, "expected invalid uri error")
 
 	// Subscribe should work with match set to wildcard.
 	err = sub.Subscribe(wcTopic, eventHandler, wamp.SetOption(nil, "match", "wildcard"))
-	if err != nil {
-		t.Fatal("subscribe error:", err)
-	}
+	require.NoError(t, err)
 
 	// Test getting subscription ID.
-	if _, ok := sub.SubscriptionID(wcTopic); !ok {
-		t.Fatal("Did not get subscription ID")
-	}
-	if _, ok := sub.SubscriptionID("no.such.topic"); ok {
-		t.Fatal("Expected !ok looking up subscription ID for bad topic")
-	}
+	_, ok := sub.SubscriptionID(wcTopic)
+	require.True(t, ok, "Did not get subscription ID")
+	_, ok = sub.SubscriptionID("no.such.topic")
+	require.False(t, ok, "Expected false looking up subscription ID for bad topic")
 
 	// Publish an event to something that matches by wildcard.
 	args := wamp.List{"hello world"}
 	err = pub.Publish(testTopic, nil, args, nil)
-	if err != nil {
-		t.Fatal("Failed to publish without ack:", err)
-	}
+	require.NoError(t, err, "Failed to publish without ack")
+
 	// Make sure the event was received.
 	select {
 	case err = <-errChan:
+		require.NoError(t, err)
 	case <-time.After(time.Second):
-		t.Fatal("did not get published event")
-	}
-	if err != nil {
-		t.Fatal(err)
+		require.FailNow(t, "did not get published event")
 	}
 
 	opts := wamp.SetOption(nil, wamp.OptAcknowledge, true)
 	err = pub.Publish(testTopic, opts, args, nil)
-	if err != nil {
-		t.Fatal("Failed to publish with ack:", err)
-	}
+	require.NoError(t, err, "Failed to publish with ack")
+
 	// Make sure the event was received.
 	select {
 	case err = <-errChan:
+		require.NoError(t, err)
 	case <-time.After(time.Second):
-		t.Fatal("did not get published event")
-	}
-	if err != nil {
-		t.Fatal(err)
+		require.FailNow(t, "did not get published event")
 	}
 
 	// Publish to invalid URI and check for error.
 	err = pub.Publish(".bad-uri.bad bad.", opts, args, nil)
-	if err == nil {
-		t.Fatal("Expected error publishing to bad URI with ack")
-	}
+	require.Error(t, err, "Expected error publishing to bad URI with ack")
 
 	err = sub.Unsubscribe(wcTopic)
-	if err != nil {
-		t.Fatal("unsubscribe error:", err)
-	}
+	require.NoError(t, err)
 
 	// ***Testing PPT Mode****
 
@@ -309,15 +268,13 @@ func TestSubscribe(t *testing.T) {
 	}
 	args = wamp.List{"hello world"}
 	err = pub.Publish(testTopic, options, args, nil)
-	if err == nil {
-		t.Fatal("Expected error publishing with invalid PPT Scheme")
-	}
+	require.Error(t, err, "Expected error publishing with invalid PPT Scheme")
 
 	// Make sure the event was not received.
 	select {
 	case <-time.After(time.Millisecond):
 	case <-errChan:
-		t.Fatal("Should not have called event handler")
+		require.FailNow(t, "Should not have called event handler")
 	}
 
 	// Publish with invalid PPT serializer and check for error.
@@ -327,15 +284,13 @@ func TestSubscribe(t *testing.T) {
 	}
 	args = wamp.List{"hello world"}
 	err = pub.Publish(testTopic, options, args, nil)
-	if err == nil {
-		t.Fatal("Expected error publishing with invalid PPT serializer")
-	}
+	require.Error(t, err, "Expected error publishing with invalid PPT serializer")
 
 	// Make sure the event was not received.
 	select {
 	case <-time.After(time.Millisecond):
 	case <-errChan:
-		t.Fatal("Should not have called event handler")
+		require.FailNow(t, "Should not have called event handler")
 	}
 
 	eventHandler = func(event *wamp.Event) {
@@ -355,9 +310,7 @@ func TestSubscribe(t *testing.T) {
 	// Subscribe to test topic
 	testTopic = "test.ppt"
 	err = sub.Subscribe(testTopic, eventHandler, nil)
-	if err != nil {
-		t.Fatal("subscribe error:", err)
-	}
+	require.NoError(t, err)
 
 	// Publish an event within custom ppt scheme and native serializer
 	options = wamp.Dict{
@@ -367,18 +320,14 @@ func TestSubscribe(t *testing.T) {
 	args = wamp.List{"hello world"}
 	kwargs := wamp.Dict{"prop": "hello world"}
 	err = pub.Publish(testTopic, options, args, kwargs)
-	if err != nil {
-		t.Fatal("Failed to publish without ack:", err)
-	}
+	require.NoError(t, err, "Failed to publish without ack")
 
 	// Make sure the event was received.
 	select {
 	case err = <-errChan:
+		require.NoError(t, err)
 	case <-time.After(time.Second):
-		t.Fatal("did not get published event")
-	}
-	if err != nil {
-		t.Fatal(err)
+		require.FailNow(t, "did not get published event")
 	}
 
 	// Publish an event within custom ppt scheme and cbor serializer
@@ -389,18 +338,14 @@ func TestSubscribe(t *testing.T) {
 	args = wamp.List{"hello world"}
 	kwargs = wamp.Dict{"prop": "hello world"}
 	err = pub.Publish(testTopic, options, args, kwargs)
-	if err != nil {
-		t.Fatal("Failed to publish without ack:", err)
-	}
+	require.NoError(t, err, "Failed to publish without ack")
 
 	// Make sure the event was received.
 	select {
 	case err = <-errChan:
+		require.NoError(t, err)
 	case <-time.After(time.Second):
-		t.Fatal("did not get published event")
-	}
-	if err != nil {
-		t.Fatal(err)
+		require.FailNow(t, "did not get published event")
 	}
 
 	// Publish an event within custom ppt scheme and msgpack serializer
@@ -411,18 +356,14 @@ func TestSubscribe(t *testing.T) {
 	args = wamp.List{"hello world"}
 	kwargs = wamp.Dict{"prop": "hello world"}
 	err = pub.Publish(testTopic, options, args, kwargs)
-	if err != nil {
-		t.Fatal("Failed to publish without ack:", err)
-	}
+	require.NoError(t, err, "Failed to publish without ack")
 
 	// Make sure the event was received.
 	select {
 	case err = <-errChan:
+		require.NoError(t, err)
 	case <-time.After(time.Second):
-		t.Fatal("did not get published event")
-	}
-	if err != nil {
-		t.Fatal(err)
+		require.FailNow(t, "did not get published event")
 	}
 
 	// Publish an event within custom ppt scheme and json serializer
@@ -433,104 +374,70 @@ func TestSubscribe(t *testing.T) {
 	args = wamp.List{"hello world"}
 	kwargs = wamp.Dict{"prop": "hello world"}
 	err = pub.Publish(testTopic, options, args, kwargs)
-	if err != nil {
-		t.Fatal("Failed to publish without ack:", err)
-	}
+	require.NoError(t, err, "Failed to publish without ack")
 
 	// Make sure the event was received.
 	select {
 	case err = <-errChan:
+		require.NoError(t, err)
 	case <-time.After(time.Second):
-		t.Fatal("did not get published event")
+		require.FailNow(t, "did not get published event")
 	}
-	if err != nil {
-		t.Fatal(err)
-	}
-
-	pub.Close()
-	sub.Close()
-	r.Close()
 }
 
 func TestRemoteProcedureCall(t *testing.T) {
-	defer leaktest.Check(t)()
+	checkGoLeaks(t)
 
 	// Connect two clients to the same server
-	callee, caller, r, err := connectedTestClients()
-	if err != nil {
-		t.Fatal("failed to connect test clients:", err)
-	}
+	callee, caller, _ := connectedTestClients(t)
 
 	// Test unregister invalid procedure.
-	if err = callee.Unregister("invalidmethod"); err == nil {
-		t.Fatal("expected error unregistering invalid procedure")
-	}
+	err := callee.Unregister("invalidmethod")
+	require.Error(t, err, "expected error unregistering invalid procedure")
 
 	// Test registering a valid procedure.
 	handler := func(ctx context.Context, inv *wamp.Invocation) InvokeResult {
 		return InvokeResult{Args: wamp.List{inv.Arguments[0].(int) * 37}}
 	}
 	procName := "myproc"
-	if err = callee.Register(procName, handler, nil); err != nil {
-		t.Fatal("failed to register procedure:", err)
-	}
+	err = callee.Register(procName, handler, nil)
+	require.NoError(t, err, "failed to register procedure")
 
 	// Test getting registration ID.
-	if _, ok := callee.RegistrationID(procName); !ok {
-		t.Fatal("Did not get subscription ID")
-	}
-	if _, ok := callee.RegistrationID("no.such.procedure"); ok {
-		t.Fatal("Expected !ok looking up registration ID for bad procedure")
-	}
+	_, ok := callee.RegistrationID(procName)
+	require.True(t, ok, "Did not get subscription ID")
+	_, ok = callee.RegistrationID("no.such.procedure")
+	require.False(t, ok, "Expected false looking up registration ID for bad procedure")
 
 	// Test calling the procedure.
 	callArgs := wamp.List{73}
 	ctx := context.Background()
 	result, err := caller.Call(ctx, procName, nil, callArgs, nil, nil)
-	if err != nil {
-		t.Fatal("failed to call procedure:", err)
-	}
-	if result.Arguments[0] != 2701 {
-		t.Fatal("wrong result:", result.Arguments)
-	}
+	require.NoError(t, err)
+	require.Equal(t, 2701, result.Arguments[0])
 
 	// Test unregister.
-	if err = callee.Unregister(procName); err != nil {
-		t.Fatal("failed to unregister procedure:", err)
-	}
+	err = callee.Unregister(procName)
+	require.NoError(t, err)
 
 	// Test calling unregistered procedure.
 	callArgs = wamp.List{555}
 	result, err = caller.Call(ctx, procName, nil, callArgs, nil, nil)
-	if err == nil {
-		t.Fatal("expected error calling unregistered procedure")
-	}
-	if result != nil {
-		t.Fatal("result should be nil on error")
-	}
-	if !strings.HasSuffix(err.Error(), "wamp.error.no_such_procedure") {
-		t.Fatal("Wrong error when calling unregistered procedure")
-	}
-	rpcErr, ok := err.(RPCError)
-	if !ok {
-		t.Fatal("Expected err to be RPCError")
-	}
-	if rpcErr.Err.Error != wamp.ErrNoSuchProcedure {
-		t.Fatal("Wrong error URI in RPC error")
-	}
+	require.Error(t, err, "expected error calling unregistered procedure")
+	require.Nil(t, result, "result should be nil on error")
+	require.ErrorContains(t, err, "wamp.error.no_such_procedure")
+	var rpcErr RPCError
+	require.ErrorAs(t, err, &rpcErr)
+	require.Equal(t, wamp.ErrNoSuchProcedure, rpcErr.Err.Error, "Wrong error URI in RPC error")
 
 	// ***Testing PPT Mode****
 
 	// Test registering a valid procedure.
 	handler = func(ctx context.Context, inv *wamp.Invocation) InvokeResult {
 		arg, _ := wamp.AsString(inv.Arguments[0])
-		if arg != "hello world" {
-			t.Fatal("event missing or bad args")
-		}
+		require.Equal(t, "hello world", arg, "event missing or bad args")
 		kwarg, _ := wamp.AsString(inv.ArgumentsKw["prop"])
-		if kwarg != "hello world" {
-			t.Fatal("event missing or bad kwargs")
-		}
+		require.Equal(t, "hello world", kwarg, "event missing or bad kwargs")
 
 		resArgs := wamp.List{"goodbye world"}
 		resKwargs := wamp.Dict{"prop": "goodbye world"}
@@ -542,9 +449,8 @@ func TestRemoteProcedureCall(t *testing.T) {
 		return InvokeResult{Args: resArgs, Kwargs: resKwargs, Options: options}
 	}
 	procName = "test.ppt"
-	if err = callee.Register(procName, handler, nil); err != nil {
-		t.Fatal("failed to register procedure:", err)
-	}
+	err = callee.Register(procName, handler, nil)
+	require.NoError(t, err)
 
 	// Test calling the procedure with invalid PPT Scheme
 	options := wamp.Dict{
@@ -555,9 +461,7 @@ func TestRemoteProcedureCall(t *testing.T) {
 	kwargs := wamp.Dict{"prop": "hello world"}
 	ctx = context.Background()
 	result, err = caller.Call(ctx, procName, options, args, kwargs, nil)
-	if err == nil {
-		t.Fatal("Expected error calling procedure")
-	}
+	require.Error(t, err, "Expected error calling procedure")
 
 	// Test calling the procedure with invalid PPT serializer
 	options = wamp.Dict{
@@ -568,9 +472,7 @@ func TestRemoteProcedureCall(t *testing.T) {
 	kwargs = wamp.Dict{"prop": "hello world"}
 	ctx = context.Background()
 	result, err = caller.Call(ctx, procName, options, args, kwargs, nil)
-	if err == nil {
-		t.Fatal("Expected error calling procedure")
-	}
+	require.Error(t, err, "Expected error calling procedure")
 
 	// Test calling the procedure within custom ppt scheme and native serializer
 	options = wamp.Dict{
@@ -581,15 +483,9 @@ func TestRemoteProcedureCall(t *testing.T) {
 	kwargs = wamp.Dict{"prop": "hello world"}
 	ctx = context.Background()
 	result, err = caller.Call(ctx, procName, options, args, kwargs, nil)
-	if err != nil {
-		t.Fatal("failed to call procedure:", err)
-	}
-	if result.Arguments[0] != "goodbye world" {
-		t.Fatal("wrong result:", result.Arguments)
-	}
-	if result.ArgumentsKw["prop"] != "goodbye world" {
-		t.Fatal("wrong result:", result.ArgumentsKw)
-	}
+	require.NoError(t, err)
+	require.Equal(t, "goodbye world", result.Arguments[0])
+	require.Equal(t, "goodbye world", result.ArgumentsKw["prop"])
 
 	// Test calling the procedure within custom ppt scheme and json serializer
 	options = wamp.Dict{
@@ -600,15 +496,9 @@ func TestRemoteProcedureCall(t *testing.T) {
 	kwargs = wamp.Dict{"prop": "hello world"}
 	ctx = context.Background()
 	result, err = caller.Call(ctx, procName, options, args, kwargs, nil)
-	if err != nil {
-		t.Fatal("failed to call procedure:", err)
-	}
-	if result.Arguments[0] != "goodbye world" {
-		t.Fatal("wrong result:", result.Arguments)
-	}
-	if result.ArgumentsKw["prop"] != "goodbye world" {
-		t.Fatal("wrong result:", result.ArgumentsKw)
-	}
+	require.NoError(t, err)
+	require.Equal(t, "goodbye world", result.Arguments[0])
+	require.Equal(t, "goodbye world", result.ArgumentsKw["prop"])
 
 	// Test calling the procedure within custom ppt scheme and cbor serializer
 	options = wamp.Dict{
@@ -619,15 +509,9 @@ func TestRemoteProcedureCall(t *testing.T) {
 	kwargs = wamp.Dict{"prop": "hello world"}
 	ctx = context.Background()
 	result, err = caller.Call(ctx, procName, options, args, kwargs, nil)
-	if err != nil {
-		t.Fatal("failed to call procedure:", err)
-	}
-	if result.Arguments[0] != "goodbye world" {
-		t.Fatal("wrong result:", result.Arguments)
-	}
-	if result.ArgumentsKw["prop"] != "goodbye world" {
-		t.Fatal("wrong result:", result.ArgumentsKw)
-	}
+	require.NoError(t, err)
+	require.Equal(t, "goodbye world", result.Arguments[0])
+	require.Equal(t, "goodbye world", result.ArgumentsKw["prop"])
 
 	// Test calling the procedure within custom ppt scheme and msgpack serializer
 	options = wamp.Dict{
@@ -638,15 +522,9 @@ func TestRemoteProcedureCall(t *testing.T) {
 	kwargs = wamp.Dict{"prop": "hello world"}
 	ctx = context.Background()
 	result, err = caller.Call(ctx, procName, options, args, kwargs, nil)
-	if err != nil {
-		t.Fatal("failed to call procedure:", err)
-	}
-	if result.Arguments[0] != "goodbye world" {
-		t.Fatal("wrong result:", result.Arguments)
-	}
-	if result.ArgumentsKw["prop"] != "goodbye world" {
-		t.Fatal("wrong result:", result.ArgumentsKw)
-	}
+	require.NoError(t, err)
+	require.Equal(t, "goodbye world", result.Arguments[0])
+	require.Equal(t, "goodbye world", result.ArgumentsKw["prop"])
 
 	// Bad handler
 	handler = func(ctx context.Context, inv *wamp.Invocation) InvokeResult {
@@ -659,17 +537,14 @@ func TestRemoteProcedureCall(t *testing.T) {
 		return InvokeResult{Args: resArgs, Kwargs: resKwargs, Options: options}
 	}
 	procName = "test.ppt.invoke.bad.scheme"
-	if err = callee.Register(procName, handler, nil); err != nil {
-		t.Fatal("failed to register procedure:", err)
-	}
+	err = callee.Register(procName, handler, nil)
+	require.NoError(t, err, "failed to register procedure")
 
 	// Test calling the procedure with invalid PPT Scheme in YIELD
 	args = wamp.List{"hello world"}
 	ctx = context.Background()
 	result, err = caller.Call(ctx, procName, nil, args, nil, nil)
-	if err == nil {
-		t.Fatal("Expected error calling procedure")
-	}
+	require.Error(t, err, "Expected error calling procedure")
 
 	// Bad handler
 	handler = func(ctx context.Context, inv *wamp.Invocation) InvokeResult {
@@ -683,29 +558,19 @@ func TestRemoteProcedureCall(t *testing.T) {
 		return InvokeResult{Args: resArgs, Kwargs: resKwargs, Options: options}
 	}
 	procName = "test.ppt.invoke.bad.serializer"
-	if err = callee.Register(procName, handler, nil); err != nil {
-		t.Fatal("failed to register procedure:", err)
-	}
+	err = callee.Register(procName, handler, nil)
+	require.NoError(t, err)
 
 	// Test calling the procedure with invalid PPT Scheme in YIELD
 	args = wamp.List{"hello world"}
 	ctx = context.Background()
 	result, err = caller.Call(ctx, procName, nil, args, nil, nil)
-	if err == nil {
-		t.Fatal("Expected error calling procedure")
-	}
-
-	caller.Close()
-	callee.Close()
-	r.Close()
+	require.Error(t, err, "Expected error calling procedure")
 }
 
 func TestProgressiveCallResults(t *testing.T) {
 	// Connect two clients to the same server
-	callee, caller, r, err := connectedTestClients()
-	if err != nil {
-		t.Fatal("failed to connect test clients:", err)
-	}
+	callee, caller, _ := connectedTestClients(t)
 
 	// Handler sends progressive results.
 	handler := func(ctx context.Context, inv *wamp.Invocation) InvokeResult {
@@ -743,9 +608,8 @@ func TestProgressiveCallResults(t *testing.T) {
 	procName := "nexus.test.progproc"
 
 	// Register procedure
-	if err = callee.Register(procName, handler, nil); err != nil {
-		t.Fatal("Failed to register procedure:", err)
-	}
+	err := callee.Register(procName, handler, nil)
+	require.NoError(t, err)
 
 	progCount := 0
 	progHandler := func(result *wamp.Result) {
@@ -759,42 +623,25 @@ func TestProgressiveCallResults(t *testing.T) {
 	callArgs := wamp.List{1, 2, 3, 4, 5, 6, 7, 8, 9, 10}
 	ctx := context.Background()
 	result, err := caller.Call(ctx, procName, nil, callArgs, nil, progHandler)
-	if err != nil {
-		t.Fatal("Failed to call procedure:", err)
-	}
+	require.NoError(t, err)
 	sum, ok := wamp.AsInt64(result.Arguments[0])
-	if !ok {
-		t.Fatal("Could not convert result to int64:", result.Arguments[0])
-	}
-	if sum != 55 {
-		t.Fatal("Wrong result:", sum)
-	}
-	if progCount != 3 {
-		t.Fatal("Expected progCount == 3")
-	}
+	require.True(t, ok, "Could not convert result to int64")
+	require.Equal(t, int64(55), sum)
+	require.Equal(t, 3, progCount)
 
 	// Test unregister.
-	if err = callee.Unregister(procName); err != nil {
-		t.Fatal("Failed to unregister procedure:", err)
-	}
-
-	caller.Close()
-	callee.Close()
-	r.Close()
+	err = callee.Unregister(procName)
+	require.NoError(t, err)
 }
 
 func TestProgressiveCallInvocations(t *testing.T) {
 	// Connect two clients to the same server
-	callee, caller, r, err := connectedTestClients()
-	if err != nil {
-		t.Fatal("failed to connect test clients:", err)
-	}
+	callee, caller, _ := connectedTestClients(t)
 
 	var progressiveIncPayload []int
 	var mu sync.Mutex
 
 	invocationHandler := func(ctx context.Context, inv *wamp.Invocation) InvokeResult {
-
 		mu.Lock()
 		progressiveIncPayload = append(progressiveIncPayload, inv.Arguments[0].(int))
 		mu.Unlock()
@@ -816,9 +663,8 @@ func TestProgressiveCallInvocations(t *testing.T) {
 	procName := "nexus.test.progproc"
 
 	// Register procedure
-	if err = callee.Register(procName, invocationHandler, nil); err != nil {
-		t.Fatal("Failed to register procedure:", err)
-	}
+	err := callee.Register(procName, invocationHandler, nil)
+	require.NoError(t, err)
 
 	// Test calling the procedure.
 	callArgs := []int{1, 2, 3, 4, 5, 6, 7, 8, 9, 10}
@@ -841,62 +687,41 @@ func TestProgressiveCallInvocations(t *testing.T) {
 	}
 
 	result, err := caller.CallProgressive(ctx, procName, sendProgDataCb, nil)
-	if err != nil {
-		t.Fatal("Failed to call procedure:", err)
-	}
+	require.NoError(t, err)
 	sum, ok := wamp.AsInt64(result.Arguments[0])
-	if !ok {
-		t.Fatal("Could not convert result to int64:", result.Arguments[0])
-	}
-	if sum != 55 {
-		t.Fatal("Wrong result:", sum)
-	}
-	if callSends != 10 {
-		t.Fatal("Expected callSends == 10")
-	}
-	if !reflect.DeepEqual(callArgs, progressiveIncPayload) {
-		t.Fatal("Progressive data should be processed sequentially")
-	}
+	require.True(t, ok, "Could not convert result to int64")
+	require.Equal(t, int64(55), sum)
+	require.Equal(t, 10, callSends)
+
+	require.Equal(t, progressiveIncPayload, callArgs, "Progressive data should be processed sequentially")
 
 	// Test unregister.
-	if err = callee.Unregister(procName); err != nil {
-		t.Fatal("Failed to unregister procedure:", err)
-	}
-
-	caller.Close()
-	callee.Close()
-	r.Close()
+	err = callee.Unregister(procName)
+	require.NoError(t, err)
 }
 
 func TestProgressiveCallsAndResults(t *testing.T) {
 	// Connect two clients to the same server
-	callee, caller, r, err := connectedTestClients()
-	if err != nil {
-		t.Fatal("failed to connect test clients:", err)
-	}
+	callee, caller, _ := connectedTestClients(t)
 
 	// Handler sends progressive results.
 	invocationHandler := func(ctx context.Context, inv *wamp.Invocation) InvokeResult {
-
 		if isInProgress, _ := inv.Details[wamp.OptProgress].(bool); !isInProgress {
 			return InvokeResult{Args: inv.Arguments}
-		} else {
-			senderr := callee.SendProgress(ctx, inv.Arguments, nil)
-			if senderr != nil {
-				callee.log.Println("Error sending progress:", senderr)
-				return InvokeResult{Err: "test.failed"}
-			}
 		}
-
+		senderr := callee.SendProgress(ctx, inv.Arguments, nil)
+		if senderr != nil {
+			callee.log.Println("Error sending progress:", senderr)
+			return InvokeResult{Err: "test.failed"}
+		}
 		return InvokeResult{Err: wamp.InternalProgressiveOmitResult}
 	}
 
 	procName := "nexus.test.progproc"
 
 	// Register procedure
-	if err = callee.Register(procName, invocationHandler, nil); err != nil {
-		t.Fatal("Failed to register procedure:", err)
-	}
+	err := callee.Register(procName, invocationHandler, nil)
+	require.NoError(t, err)
 
 	// Test calling the procedure.
 	callArgs := []int{1, 2, 3, 4, 5, 6, 7, 8, 9, 10}
@@ -928,9 +753,7 @@ func TestProgressiveCallsAndResults(t *testing.T) {
 	}
 
 	result, err := caller.CallProgressive(ctx, procName, sendProgDataCb, progRescb)
-	if err != nil {
-		t.Fatal("Failed to call procedure:", err)
-	}
+	require.NoError(t, err)
 	progressiveResults = append(progressiveResults, result.Arguments[0].(int))
 	var sum int64
 	for _, arg := range progressiveResults {
@@ -939,34 +762,21 @@ func TestProgressiveCallsAndResults(t *testing.T) {
 			sum += n
 		}
 	}
-	if sum != 55 {
-		t.Fatal("Wrong result:", sum)
-	}
-	if callSends != 10 {
-		t.Fatal("Expected callSends == 10")
-	}
-	if !reflect.DeepEqual(callArgs, progressiveResults) {
-		t.Fatal("Progressive data should be processed sequentially")
-	}
+	require.Equal(t, int64(55), sum)
+	require.Equal(t, 10, callSends)
+
+	require.Equal(t, progressiveResults, callArgs, "Progressive data should be processed sequentially")
 
 	// Test unregister.
-	if err = callee.Unregister(procName); err != nil {
-		t.Fatal("Failed to unregister procedure:", err)
-	}
-
-	caller.Close()
-	callee.Close()
-	r.Close()
+	err = callee.Unregister(procName)
+	require.NoError(t, err)
 }
 
 func TestTimeoutCancelRemoteProcedureCall(t *testing.T) {
-	defer leaktest.Check(t)()
+	checkGoLeaks(t)
 
 	// Connect two clients to the same server
-	callee, caller, r, err := connectedTestClients()
-	if err != nil {
-		t.Fatal("failed to connect test clients:", err)
-	}
+	callee, caller, _ := connectedTestClients(t)
 
 	// Test registering a valid procedure.
 	handler := func(ctx context.Context, inv *wamp.Invocation) InvokeResult {
@@ -974,13 +784,11 @@ func TestTimeoutCancelRemoteProcedureCall(t *testing.T) {
 		return InvokeResult{Err: wamp.ErrCanceled}
 	}
 	procName := "myproc"
-	if err = callee.Register(procName, handler, nil); err != nil {
-		t.Fatal("failed to register procedure:", err)
-	}
+	err := callee.Register(procName, handler, nil)
+	require.NoError(t, err)
 
-	if err = caller.SetCallCancelMode(wamp.CancelModeKillNoWait); err != nil {
-		t.Fatal(err)
-	}
+	err = caller.SetCallCancelMode(wamp.CancelModeKillNoWait)
+	require.NoError(t, err)
 	errChan := make(chan error)
 	ctx, cancel := context.WithTimeout(context.Background(), time.Second)
 	defer cancel()
@@ -994,35 +802,25 @@ func TestTimeoutCancelRemoteProcedureCall(t *testing.T) {
 	// Make sure the call is blocked.
 	select {
 	case err = <-errChan:
-		t.Fatal("call should have been blocked")
+		require.FailNow(t, "call should have been blocked")
 	case <-time.After(200 * time.Millisecond):
 	}
 
 	// Make sure the call is canceled.
 	select {
 	case err = <-errChan:
+		require.ErrorIs(t, err, context.DeadlineExceeded)
 	case <-time.After(2 * time.Second):
-		t.Fatal("call should have been canceled")
+		require.FailNow(t, "call should have been canceled")
 	}
 
-	if !errors.Is(err, context.DeadlineExceeded) {
-		t.Fatal("expected context.DeadlineExceeded error")
-	}
-	if err = callee.Unregister(procName); err != nil {
-		t.Fatal("failed to unregister procedure:", err)
-	}
-
-	caller.Close()
-	callee.Close()
-	r.Close()
+	err = callee.Unregister(procName)
+	require.NoError(t, err)
 }
 
 func TestCancelRemoteProcedureCall(t *testing.T) {
 	// Connect two clients to the same server
-	callee, caller, r, err := connectedTestClients()
-	if err != nil {
-		t.Fatal("failed to connect test clients:", err)
-	}
+	callee, caller, _ := connectedTestClients(t)
 
 	// Test registering a valid procedure.
 	handler := func(ctx context.Context, inv *wamp.Invocation) InvokeResult {
@@ -1030,9 +828,8 @@ func TestCancelRemoteProcedureCall(t *testing.T) {
 		return InvokeResult{Err: wamp.ErrCanceled}
 	}
 	procName := "myproc"
-	if err = callee.Register(procName, handler, nil); err != nil {
-		t.Fatal("failed to register procedure:", err)
-	}
+	err := callee.Register(procName, handler, nil)
+	require.NoError(t, err)
 
 	errChan := make(chan error)
 	ctx, cancel := context.WithCancel(context.Background())
@@ -1045,8 +842,8 @@ func TestCancelRemoteProcedureCall(t *testing.T) {
 
 	// Make sure the call is blocked.
 	select {
-	case err = <-errChan:
-		t.Fatal("call should have been blocked")
+	case <-errChan:
+		require.FailNow(t, "call should have been blocked")
 	case <-time.After(200 * time.Millisecond):
 	}
 
@@ -1055,30 +852,20 @@ func TestCancelRemoteProcedureCall(t *testing.T) {
 	// Make sure the call is canceled.
 	select {
 	case err = <-errChan:
+		require.ErrorIs(t, err, context.Canceled)
 	case <-time.After(time.Second):
-		t.Fatal("call should have been canceled")
+		require.FailNow(t, "call should have been canceled")
 	}
 
-	if !errors.Is(err, context.Canceled) {
-		t.Fatal("expected context.Canceled error")
-	}
-	if err = callee.Unregister(procName); err != nil {
-		t.Fatal("failed to unregister procedure:", err)
-	}
-
-	caller.Close()
-	callee.Close()
-	r.Close()
+	err = callee.Unregister(procName)
+	require.NoError(t, err)
 }
 
 func TestTimeoutRemoteProcedureCall(t *testing.T) {
-	defer leaktest.Check(t)()
+	checkGoLeaks(t)
 
 	// Connect two clients to the same server
-	callee, caller, r, err := connectedTestClients()
-	if err != nil {
-		t.Fatal("failed to connect test clients:", err)
-	}
+	callee, caller, _ := connectedTestClients(t)
 
 	// Test registering a valid procedure.
 	handler := func(ctx context.Context, inv *wamp.Invocation) InvokeResult {
@@ -1086,13 +873,11 @@ func TestTimeoutRemoteProcedureCall(t *testing.T) {
 		return InvokeResult{Err: wamp.ErrCanceled}
 	}
 	procName := "myproc"
-	if err = callee.Register(procName, handler, nil); err != nil {
-		t.Fatal("failed to register procedure:", err)
-	}
+	err := callee.Register(procName, handler, nil)
+	require.NoError(t, err)
 
-	if err = callee.Register("bad proc! no no", handler, nil); err == nil {
-		t.Fatal("Expected error registering with bad procedure name")
-	}
+	err = callee.Register("bad proc! no no", handler, nil)
+	require.Error(t, err, "Expected error registering with bad procedure name")
 
 	errChan := make(chan error)
 	ctx := context.Background()
@@ -1106,32 +891,23 @@ func TestTimeoutRemoteProcedureCall(t *testing.T) {
 
 	// Make sure the call is blocked.
 	select {
-	case err = <-errChan:
-		t.Fatal("call should have been blocked")
+	case _ = <-errChan:
+		require.FailNow(t, "call should have been blocked")
 	case <-time.After(200 * time.Millisecond):
 	}
 
 	// Make sure the call is canceled.
 	select {
 	case err = <-errChan:
+		rpcError, ok := err.(RPCError)
+		require.True(t, ok, "expected RPCError type of error")
+		require.Equal(t, wamp.ErrCanceled, rpcError.Err.Error)
 	case <-time.After(2 * time.Second):
-		t.Fatal("call should have been canceled")
+		require.FailNow(t, "call should have been canceled")
 	}
 
-	rpcError, ok := err.(RPCError)
-	if !ok {
-		t.Fatal("expected RPCError type of error")
-	}
-	if rpcError.Err.Error != wamp.ErrCanceled {
-		t.Fatal("expected canceled error, got:", err)
-	}
-	if err = callee.Unregister(procName); err != nil {
-		t.Fatal("failed to unregister procedure:", err)
-	}
-
-	caller.Close()
-	callee.Close()
-	r.Close()
+	err = callee.Unregister(procName)
+	require.NoError(t, err)
 }
 
 // ---- authentication test stuff ------
@@ -1193,36 +969,31 @@ func TestConnectContext(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
 	cancel()
 	_, err := ConnectNet(ctx, "http://localhost:9999/ws", cfg)
+	require.Error(t, err)
 	resStrMatch, _ := regexp.MatchString(expect, err.Error())
-	if err == nil || !resStrMatch {
-		t.Fatalf("expected error %q, got %q", expect, err)
-	}
+	require.True(t, resStrMatch)
 
 	_, err = ConnectNet(ctx, "https://localhost:9999/ws", cfg)
+	require.Error(t, err)
 	resStrMatch, _ = regexp.MatchString(expect, err.Error())
-	if err == nil || !resStrMatch {
-		t.Fatalf("expected error %q, got %q", expect, err)
-	}
+	require.True(t, resStrMatch)
 
 	_, err = ConnectNet(ctx, "tcp://localhost:9999", cfg)
+	require.Error(t, err)
 	resStrMatch, _ = regexp.MatchString(expect, err.Error())
-	if err == nil || !resStrMatch {
-		t.Fatalf("expected error %q, got %q", expect, err)
-	}
+	require.True(t, resStrMatch)
 
 	_, err = ConnectNet(ctx, "tcps://localhost:9999", cfg)
+	require.Error(t, err)
 	resStrMatch, _ = regexp.MatchString(expect, err.Error())
-	if err == nil || !resStrMatch {
-		t.Fatalf("expected error %q, got %q", expect, err)
-	}
+	require.True(t, resStrMatch)
 
 	_, err = ConnectNet(ctx, "unix:///tmp/wamp.sock", cfg)
-	if err == nil || err.Error() != unixExpect {
-		t.Fatalf("expected error %s, got %s", expect, err)
-	}
+	require.Error(t, err)
+	require.EqualError(t, err, unixExpect)
 }
 
-func createTestServer() (router.Router, io.Closer, error) {
+func createTestServer(t *testing.T) (router.Router, io.Closer) {
 	realmConfig := &router.RealmConfig{
 		URI:            wamp.URI(testRealm),
 		StrictURI:      true,
@@ -1230,19 +1001,17 @@ func createTestServer() (router.Router, io.Closer, error) {
 		AllowDisclose:  true,
 		EnableMetaKill: true,
 	}
-	r, err := getTestRouter(realmConfig)
-	if err != nil {
-		return nil, nil, err
-	}
+	r := getTestRouter(t, realmConfig)
 
 	// Create and run server.
 	closer, err := router.NewWebsocketServer(r).ListenAndServe(testAddress)
-	if err != nil {
-		return nil, nil, err
-	}
+	require.NoError(t, err)
+	t.Cleanup(func() {
+		closer.Close()
+	})
 	log.Printf("Websocket server listening on ws://%s/", testAddress)
 
-	return r, closer, nil
+	return r, closer
 }
 
 func newNetTestClientConfig(realmName string, logger *log.Logger) *Config {
@@ -1256,15 +1025,20 @@ func newNetTestClientConfig(realmName string, logger *log.Logger) *Config {
 	return &clientConfig
 }
 
-func newNetTestCalleeWithConfig(routerURL string, clientConfig *Config) (*Client, error) {
+func newNetTestCalleeWithConfig(t *testing.T, routerURL string, clientConfig *Config) *Client {
 	cl, err := ConnectNet(context.Background(), routerURL, *clientConfig)
-	if err != nil {
-		return nil, fmt.Errorf("connect error: %w", err)
-	}
+	require.NoError(t, err)
+	t.Cleanup(func() {
+		cl.Close()
+	})
 
 	sleep := func(ctx context.Context, inv *wamp.Invocation) InvokeResult {
 		logger.Println("sleep rpc start")
-		time.Sleep(5 * time.Second)
+		select {
+		case <-ctx.Done():
+			return InvocationCanceled
+		case <-time.After(5 * time.Second):
+		}
 		logger.Println("sleep rpc done")
 		return InvokeResult{Kwargs: wamp.Dict{"success": true}}
 	}
@@ -1278,22 +1052,24 @@ func newNetTestCalleeWithConfig(routerURL string, clientConfig *Config) (*Client
 			logger.Println("Registered procedure", procedureName, "with router")
 		}
 	}
-	return cl, nil
+	return cl
 }
 
-func newNetTestCallee(routerURL string) (*Client, error) {
+func newNetTestCallee(t *testing.T, routerURL string) *Client {
 	return newNetTestCalleeWithConfig(
+		t,
 		routerURL,
 		newNetTestClientConfig(testRealm, log.New(os.Stderr, "CALLEE> ", log.Lmicroseconds)),
 	)
 }
 
-func newNetTestKillerWithConfig(t *testing.T, routerURL string, clientConfig *Config) (*Client, error) {
+func newNetTestKillerWithConfig(t *testing.T, routerURL string, clientConfig *Config) *Client {
 	logger := clientConfig.Logger
 	cl, err := ConnectNet(context.Background(), routerURL, *clientConfig)
-	if err != nil {
-		return nil, err
-	}
+	require.NoError(t, err)
+	t.Cleanup(func() {
+		cl.Close()
+	})
 
 	// Define function to handle on_join events received.
 	onJoin := func(event *wamp.Event) {
@@ -1324,15 +1100,13 @@ func newNetTestKillerWithConfig(t *testing.T, routerURL string, clientConfig *Co
 
 	// Subscribe to on_join topic.
 	err = cl.Subscribe(string(wamp.MetaEventSessionOnJoin), onJoin, nil)
-	if err != nil {
-		t.Fatalf("subscribe error: %v", err)
-	}
+	require.NoError(t, err)
 	logger.Println("Subscribed to", wamp.MetaEventSessionOnJoin)
 
-	return cl, nil
+	return cl
 }
 
-func newNetTestKiller(t *testing.T, routerURL string) (*Client, error) {
+func newNetTestKiller(t *testing.T, routerURL string) *Client {
 	return newNetTestKillerWithConfig(
 		t,
 		routerURL,
@@ -1343,43 +1117,26 @@ func newNetTestKiller(t *testing.T, routerURL string) (*Client, error) {
 // Test for races in client when session is killed by router.
 func TestClientRace(t *testing.T) {
 	// Create a websocket server
-	r, closer, err := createTestServer()
-	if err != nil {
-		t.Fatal("failed to connect test clients:", err)
-	}
+	_, _ = createTestServer(t)
 
 	testUrl := fmt.Sprintf("ws://%s/ws", testAddress)
-	killer, err := newNetTestKiller(t, testUrl)
-	if err != nil {
-		t.Fatal("failed to connect caller:", err)
-	}
+	_ = newNetTestKiller(t, testUrl)
 	logger.Println("Starting callee")
 
-	callee, err := newNetTestCallee(testUrl)
-	if err != nil {
-		t.Fatal("failed to connect callee:", err)
-	}
+	_ = newNetTestCallee(t, testUrl)
 
 	// If we hit a race condition with the client register, we do not ever return from the Register()
 	logger.Println("Finished test - cleanup")
-
-	closer.Close()
-	r.Close()
-	killer.Close()
-	callee.Close()
 }
 
 // Test that if the router disconnects the client, while the client is running
 // an invocation handler, that the handler still gets marked as done when it
 // completes.
 func TestInvocationHandlerMissedDone(t *testing.T) {
-	//defer leaktest.Check(t)()
+	//checkGoLeaks(t)
 
 	// Connect two clients to the same server
-	callee, caller, r, err := connectedTestClients()
-	if err != nil {
-		t.Fatal("failed to connect test clients:", err)
-	}
+	callee, caller, _ := connectedTestClients(t)
 
 	calledChan := make(chan struct{})
 
@@ -1387,13 +1144,11 @@ func TestInvocationHandlerMissedDone(t *testing.T) {
 	handler := func(ctx context.Context, inv *wamp.Invocation) InvokeResult {
 		close(calledChan)
 		<-ctx.Done()
-		time.Sleep(2 * time.Second)
 		return InvokeResult{Args: wamp.List{inv.Arguments[0].(int) * 37}}
 	}
 	procName := "myproc"
-	if err = callee.Register(procName, handler, nil); err != nil {
-		t.Fatal("failed to register procedure:", err)
-	}
+	err := callee.Register(procName, handler, nil)
+	require.NoError(t, err)
 
 	// Call procedure
 	callArgs := wamp.List{73}
@@ -1424,21 +1179,15 @@ func TestInvocationHandlerMissedDone(t *testing.T) {
 	select {
 	case <-done:
 	case <-time.After(2 * time.Second):
-		t.Fatal("Timed out waiting to close client")
+		require.FailNow(t, "Timed out waiting to close client")
 	}
-	r.Close()
 }
 
 func TestProgressDisconnect(t *testing.T) {
-	defer leaktest.Check(t)()
+	checkGoLeaks(t)
 
 	// Create a websocket server
-	r, closer, err := createTestServer()
-	if err != nil {
-		t.Fatal("failed to connect test clients:", err)
-	}
-	//defer r.Close()
-	defer closer.Close()
+	r, closer := createTestServer(t)
 
 	testURL := fmt.Sprintf("ws://%s/ws", testAddress)
 
@@ -1451,9 +1200,7 @@ func TestProgressDisconnect(t *testing.T) {
 		Debug:           true,
 	}
 	callee, err := ConnectNet(context.Background(), testURL, cfg)
-	if err != nil {
-		t.Fatalf("connect error: %s", err)
-	}
+	require.NoError(t, err)
 	defer callee.Close()
 
 	const chunkProc = "example.progress.text"
@@ -1476,16 +1223,13 @@ func TestProgressDisconnect(t *testing.T) {
 	}
 
 	// Register procedure.
-	if err = callee.Register(chunkProc, handler, nil); err != nil {
-		t.Fatal("Failed to register procedure:", err)
-	}
+	err = callee.Register(chunkProc, handler, nil)
+	require.NoError(t, err)
 
 	// Connect caller session.
 	cfg.Logger = log.New(os.Stderr, "CALLER> ", log.Lmicroseconds)
 	caller, err := ConnectNet(context.Background(), testURL, cfg)
-	if err != nil {
-		t.Fatalf("connect error: %s", err)
-	}
+	require.NoError(t, err)
 	defer caller.Close()
 
 	progHandler := func(result *wamp.Result) {
@@ -1509,14 +1253,13 @@ func TestProgressDisconnect(t *testing.T) {
 
 	// Check for expected error from caller.
 	err = <-progErr
-	if !errors.Is(err, ErrNotConn) {
-		t.Fatalf("expected error from caller: %q got %q", ErrNotConn, err)
-	}
+	require.ErrorIs(t, err, ErrNotConn)
 
 	// Check for expected error from callee.
 	err = <-sendProgErr
+	require.Error(t, err)
 	if !errors.Is(err, context.Canceled) && !errors.Is(err, ErrNotConn) {
-		t.Fatalf("wrong error from SendProgress: %s", err)
+		require.FailNowf(t, "wrong error from SendProgress: %s", err.Error())
 	}
 }
 
@@ -1542,7 +1285,7 @@ func (*testEmptyDictLeakAuthorizer) Authorize(sess *wamp.Session, message wamp.M
 }
 
 func TestEmptyDictLeak(t *testing.T) {
-	defer leaktest.Check(t)()
+	checkGoLeaks(t)
 
 	// realm configs
 	realm1Config := newTestRealmConfig(testRealm, func(config *router.RealmConfig) {
@@ -1559,63 +1302,28 @@ func TestEmptyDictLeak(t *testing.T) {
 	client2Config := newTestClientConfig(testRealm2)
 
 	// construct routers
-	router1, err := getTestRouter(realm1Config)
-	if err != nil {
-		t.Fatal(err)
-	}
-	router2, err := getTestRouter(realm2Config)
-	if err != nil {
-		t.Fatal(err)
-	}
+	router1 := getTestRouter(t, realm1Config)
+	router2 := getTestRouter(t, realm2Config)
 
 	// create local clients to each realm
-	client1, err := newTestClientWithConfig(router1, client1Config)
-	if err != nil {
-		t.Fatal(err)
-	}
-	if client1.ID() == wamp.ID(0) {
-		t.Fatalf("Expected non-0 client id, saw %q", client1.ID())
-	}
-	client2, err := newTestClientWithConfig(router2, client2Config)
-	if err != nil {
-		t.Fatal(err)
-	}
-	if client2.ID() == wamp.ID(0) {
-		t.Fatalf("Expected non-0 client id, saw %q", client2.ID())
-	}
+	client1 := newTestClientWithConfig(t, router1, client1Config)
+	require.NotEqual(t, wamp.ID(0), client1.ID(), "Expected non-0 client id")
+	client2 := newTestClientWithConfig(t, router2, client2Config)
+	require.NotEqual(t, wamp.ID(0), client2.ID(), "Expected non-0 client id")
 
 	// subscribe to topics in each realm and test for leak
-	err = client1.Subscribe(testTopic, func(*wamp.Event) {}, nil)
-	if err != nil {
-		t.Fatalf("Error during subscribe: %v", err)
-	}
+	err := client1.Subscribe(testTopic, func(*wamp.Event) {}, nil)
+	require.NoError(t, err)
 	err = client2.Subscribe(testTopic2, func(*wamp.Event) {}, nil)
-	if err != nil {
-		t.Fatalf("Error during subscribe: %v", err)
-	}
-
-	client1.Close()
-	client2.Close()
-	router1.Close()
-	router2.Close()
+	require.NoError(t, err)
 }
 
 func TestEventContentSafety(t *testing.T) {
-	defer leaktest.Check(t)()
+	checkGoLeaks(t)
 
 	// Connect two subscribers and one publisher to router
-	sub1, sub2, r, err := connectedTestClients()
-	if err != nil {
-		t.Fatal("failed to connect subscribers clients:", err)
-	}
-	defer sub1.Close()
-	defer sub2.Close()
-	defer r.Close()
-	pub, err := newTestClient(r)
-	if err != nil {
-		t.Fatal("failed to connect published client:", err)
-	}
-	defer pub.Close()
+	sub1, sub2, r := connectedTestClients(t)
+	pub := newTestClient(t, r)
 
 	errChan := make(chan error)
 	gate := make(chan struct{}, 1)
@@ -1654,25 +1362,20 @@ func TestEventContentSafety(t *testing.T) {
 	}
 
 	// Expect invalid URI error if not setting match option.
-	if err = sub1.Subscribe(testTopic, eventHandler, nil); err != nil {
-		t.Fatal(err)
-	}
-	if err = sub2.Subscribe(testTopic, eventHandler, nil); err != nil {
-		t.Fatal(err)
-	}
+	err := sub1.Subscribe(testTopic, eventHandler, nil)
+	require.NoError(t, err)
+	err = sub2.Subscribe(testTopic, eventHandler, nil)
+	require.NoError(t, err)
 
-	if err = pub.Publish(testTopic, nil, wamp.List{"Hello"}, wamp.Dict{"prop": "value"}); err != nil {
-		t.Fatal("Failed to publish:", err)
-	}
+	err = pub.Publish(testTopic, nil, wamp.List{"Hello"}, wamp.Dict{"prop": "value"})
+	require.NoError(t, err)
 
 	for i := 0; i < 2; i++ {
 		select {
 		case err = <-errChan:
-			if err != nil {
-				t.Fatal(err)
-			}
+			require.NoError(t, err)
 		case <-time.After(3 * time.Second):
-			t.Fatal("did not get published event")
+			require.FailNow(t, "did not get published event")
 		}
 	}
 }
@@ -1683,20 +1386,13 @@ func TestRouterFeatures(t *testing.T) {
 		StrictURI:     true,
 		AnonymousAuth: true,
 	}
-	r, err := getTestRouter(realmConfig)
-	if err != nil {
-		t.Fatal(err)
-	}
+	r := getTestRouter(t, realmConfig)
 
 	routerFeatures := r.RouterFeatures()
 
 	dealerFeatures := (*routerFeatures)["roles"].(wamp.Dict)[wamp.RoleDealer].(wamp.Dict)
-	if len(dealerFeatures) < 1 {
-		t.Fatal("dealer features are missed")
-	}
+	require.GreaterOrEqual(t, len(dealerFeatures), 1, "dealer features are missed")
 
 	brokerFeatures := (*routerFeatures)["roles"].(wamp.Dict)[wamp.RoleBroker].(wamp.Dict)
-	if len(brokerFeatures) < 1 {
-		t.Fatal("broker features are missed")
-	}
+	require.GreaterOrEqual(t, len(brokerFeatures), 1, "broker features are missed")
 }

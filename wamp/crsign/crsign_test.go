@@ -6,6 +6,7 @@ import (
 	"testing"
 
 	"github.com/gammazero/nexus/v3/wamp"
+	"github.com/stretchr/testify/require"
 	"golang.org/x/crypto/pbkdf2"
 )
 
@@ -15,9 +16,7 @@ var chStr = "{ \"nonce\":\"LHRTC9zeOIrt_9U3\", \"authprovider\":\"userdb\", \"au
 
 func TestCRSign(t *testing.T) {
 	sig := SignChallenge(chStr, []byte("secret"))
-	if sig != "NWktSrMd4ItBSAKYEwvu1bTY7G/sSyjKbz+pNP9c04A=" {
-		t.Fatal("Wrong signature")
-	}
+	require.Equal(t, "NWktSrMd4ItBSAKYEwvu1bTY7G/sSyjKbz+pNP9c04A=", sig)
 }
 
 func TestRespondChallenge(t *testing.T) {
@@ -49,12 +48,8 @@ func TestRespondChallenge(t *testing.T) {
 	// Router computes its own signature for the challenge and compares it with
 	// the client's.Sign challenge using derived key.
 	sigServer := SignChallenge(chStr, derivedKey)
-	if sigClient != sigServer {
-		t.Fatal("Client and server signatures do not match")
-	}
+	require.Equal(t, sigClient, sigServer, "Client and server signatures do not match")
 
 	// Check that signature was what was expected.
-	if sigServer != "hk/2riA2JqydfL5wLoicrYfAt8uNeP6nikk9kqDhsnM=" {
-		t.Fatal("Wrong signature:", sigServer)
-	}
+	require.Equal(t, "hk/2riA2JqydfL5wLoicrYfAt8uNeP6nikk9kqDhsnM=", sigServer)
 }
