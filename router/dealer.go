@@ -398,9 +398,9 @@ func (d *dealer) removeSession(sess *wamp.Session) {
 func (d *dealer) close() {
 	close(d.actionChan)
 	<-d.stopped
-	//if d.debug {
-	d.log.Print("Dealer stopped")
-	//}
+	if d.debug {
+		d.log.Print("Dealer stopped")
+	}
 }
 
 func (d *dealer) run() {

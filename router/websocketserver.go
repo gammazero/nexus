@@ -297,21 +297,19 @@ func (s *WebsocketServer) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		}
 		const cookieName = "nexus-wamp-cookie"
 		if reqCk, err := r.Cookie(cookieName); err == nil {
+			// Received tracking cookie.
 			authDict["cookie"] = reqCk
-			//fmt.Println("===> Received tracking cookie: ", reqCk)
 		}
 		b := make([]byte, 18)
 		_, err := rand.Read(b)
 		if err == nil {
-			// Create new auth cookie with 20 byte random value.
+			// Create next auth cookie with 20 byte random value.
 			nextCookie = &http.Cookie{
 				Name:  cookieName,
 				Value: base64.URLEncoding.EncodeToString(b),
 			}
 			http.SetCookie(w, nextCookie)
 			authDict["nextcookie"] = nextCookie
-			//fmt.Println("===> Sent Next tracking cookie:", nextCookie)
-			//fmt.Println()
 		}
 	}
 
