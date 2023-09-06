@@ -333,12 +333,14 @@ MsgLoop:
 		case <-rs.closed:
 			// If closed, try for one second to send the last message and then
 			// exit recvHandler.
+			timer := time.NewTimer(time.Second)
 			select {
 			case rs.rd <- msg:
-			case <-time.After(time.Second):
-				rs.conn.Close()
-				return
+			case <-timer.C:
 			}
+			rs.conn.Close()
+			timer.Stop()
+			return
 		}
 	}
 }
