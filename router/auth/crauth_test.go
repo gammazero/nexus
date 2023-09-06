@@ -1,4 +1,4 @@
-package auth
+package auth_test
 
 import (
 	"errors"
@@ -6,6 +6,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/gammazero/nexus/v3/router/auth"
 	"github.com/gammazero/nexus/v3/transport"
 	"github.com/gammazero/nexus/v3/wamp"
 	"github.com/gammazero/nexus/v3/wamp/crsign"
@@ -71,7 +72,7 @@ func (ks *testKeyStore) AlreadyAuth(authid string, details wamp.Dict) bool {
 func (ks *testKeyStore) OnWelcome(authid string, welcome *wamp.Welcome, details wamp.Dict) error {
 	v, err := wamp.DictValue(details, []string{"transport", "auth", "nextcookie"})
 	if err != nil {
-		return nil
+		return err
 	}
 	// Update tracking cookie that will identify this authenticated client.
 	ks.cookie = v.(*http.Cookie)
@@ -120,17 +121,18 @@ func TestTicketAuth(t *testing.T) {
 	defer rp.Close()
 	go cliRsp(cp)
 
-	ticketAuth := NewTicketAuthenticator(tks, time.Second)
+	ticketAuth := auth.NewTicketAuthenticator(tks, time.Second)
 	sid := wamp.ID(212)
 
 	// Test with missing authid
 	details := wamp.Dict{}
 	welcome, err := ticketAuth.Authenticate(sid, details, rp)
 	require.Error(t, err, "expected error with missing authid")
+	require.Nil(t, welcome)
 
 	// Test with unknown authid.
 	details["authid"] = "unknown"
-	welcome, err = ticketAuth.Authenticate(sid, details, rp)
+	_, err = ticketAuth.Authenticate(sid, details, rp)
 	require.Error(t, err, "expected error from unknown authid")
 
 	// Test with known authid.
@@ -176,17 +178,17 @@ func TestCRAuth(t *testing.T) {
 	defer rp.Close()
 	go cliRsp(cp)
 
-	crAuth := NewCRAuthenticator(tks, time.Second)
+	crAuth := auth.NewCRAuthenticator(tks, time.Second)
 	sid := wamp.ID(212)
 
 	// Test with missing authid
 	details := wamp.Dict{}
-	welcome, err := crAuth.Authenticate(sid, details, rp)
+	_, err := crAuth.Authenticate(sid, details, rp)
 	require.Error(t, err, "expected error with missing authid")
 
 	// Test with unknown authid.
 	details["authid"] = "unknown"
-	welcome, err = crAuth.Authenticate(sid, details, rp)
+	_, err = crAuth.Authenticate(sid, details, rp)
 	require.Error(t, err, "expected error from unknown authid")
 
 	// Test with known authid.
@@ -195,7 +197,7 @@ func TestCRAuth(t *testing.T) {
 	authDict := wamp.Dict{"nextcookie": nextCookie}
 	details["transport"] = wamp.Dict{"auth": authDict}
 
-	welcome, err = crAuth.Authenticate(sid, details, rp)
+	welcome, err := crAuth.Authenticate(sid, details, rp)
 	require.NoError(t, err, "challenge failed")
 	require.NotNil(t, welcome, "received nil welcome msg")
 	require.Equal(t, wamp.WELCOME, welcome.MessageType(), "expected WELCOME message")

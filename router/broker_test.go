@@ -5,7 +5,6 @@ import (
 	"testing"
 	"time"
 
-	"github.com/gammazero/nexus/v3/stdlog"
 	"github.com/gammazero/nexus/v3/wamp"
 	"github.com/stretchr/testify/require"
 )
@@ -38,8 +37,8 @@ func (p *testPeer) Close()                    {}
 
 func (p *testPeer) IsLocal() bool { return true }
 
-func newTestBroker(t *testing.T, logger stdlog.StdLog, strictURI, allowDisclose, debug bool, publishFilter FilterFactory, eventCfgs []*TopicEventHistoryConfig) *broker {
-	b, err := newBroker(logger, strictURI, allowDisclose, debug, publishFilter, eventCfgs)
+func newTestBroker(t *testing.T, eventCfgs []*TopicEventHistoryConfig) *broker {
+	b, err := newBroker(logger, false, true, debug, nil, eventCfgs)
 	require.NoError(t, err, "Can not initialize broker")
 	t.Cleanup(func() {
 		b.close()
@@ -49,7 +48,7 @@ func newTestBroker(t *testing.T, logger stdlog.StdLog, strictURI, allowDisclose,
 
 func TestBasicSubscribe(t *testing.T) {
 	// Test subscribing to a topic.
-	broker := newTestBroker(t, logger, false, true, debug, nil, nil)
+	broker := newTestBroker(t, nil)
 	subscriber := newTestPeer()
 	sess := wamp.NewSession(subscriber, 0, nil, nil)
 	testTopic := wamp.URI("nexus.test.topic")
@@ -113,7 +112,7 @@ func TestBasicSubscribe(t *testing.T) {
 }
 
 func TestUnsubscribe(t *testing.T) {
-	broker := newTestBroker(t, logger, false, true, debug, nil, nil)
+	broker := newTestBroker(t, nil)
 	testTopic := wamp.URI("nexus.test.topic")
 
 	// Subscribe session1 to topic
@@ -195,7 +194,7 @@ func TestUnsubscribe(t *testing.T) {
 
 func TestRemove(t *testing.T) {
 	// Subscribe to topic
-	broker := newTestBroker(t, logger, false, true, debug, nil, nil)
+	broker := newTestBroker(t, nil)
 	subscriber := newTestPeer()
 	sess := wamp.NewSession(subscriber, 0, nil, nil)
 	testTopic := wamp.URI("nexus.test.topic")
@@ -231,7 +230,7 @@ func TestRemove(t *testing.T) {
 }
 
 func TestBasicPubSub(t *testing.T) {
-	broker := newTestBroker(t, logger, false, true, debug, nil, nil)
+	broker := newTestBroker(t, nil)
 	subscriber := newTestPeer()
 	sess := wamp.NewSession(subscriber, 0, nil, nil)
 	testTopic := wamp.URI("nexus.test.topic")
@@ -261,7 +260,7 @@ func TestBasicPubSub(t *testing.T) {
 // ----- WAMP v.2 Testing -----
 
 func TestAdvancedPubSub(t *testing.T) {
-	broker := newTestBroker(t, logger, false, true, debug, nil, nil)
+	broker := newTestBroker(t, nil)
 	subscriber := newTestPeer()
 	sess := wamp.NewSession(subscriber, 0, nil, nil)
 	testTopic := wamp.URI("nexus.test.topic")
@@ -303,7 +302,7 @@ func TestAdvancedPubSub(t *testing.T) {
 }
 
 func TestPPTPubSub(t *testing.T) {
-	broker := newTestBroker(t, logger, false, true, debug, nil, nil)
+	broker := newTestBroker(t, nil)
 	subscriber := newTestPeer()
 	sess := wamp.NewSession(subscriber, 0, nil, nil)
 	testTopic := wamp.URI("nexus.test.topic")
@@ -367,7 +366,7 @@ func TestPPTPubSub(t *testing.T) {
 
 func TestPrefixPatternBasedSubscription(t *testing.T) {
 	// Test match=prefix
-	broker := newTestBroker(t, logger, false, true, debug, nil, nil)
+	broker := newTestBroker(t, nil)
 	subscriber := newTestPeer()
 	sess := wamp.NewSession(subscriber, 0, nil, nil)
 	testTopic := wamp.URI("nexus.test.topic")
@@ -411,7 +410,7 @@ func TestPrefixPatternBasedSubscription(t *testing.T) {
 
 func TestWildcardPatternBasedSubscription(t *testing.T) {
 	// Test match=prefix
-	broker := newTestBroker(t, logger, false, true, debug, nil, nil)
+	broker := newTestBroker(t, nil)
 	subscriber := newTestPeer()
 	sess := wamp.NewSession(subscriber, 0, nil, nil)
 	testTopic := wamp.URI("nexus.test.topic")
@@ -457,7 +456,7 @@ func TestWildcardPatternBasedSubscription(t *testing.T) {
 }
 
 func TestSubscriberBlackWhiteListing(t *testing.T) {
-	broker := newTestBroker(t, logger, false, true, debug, nil, nil)
+	broker := newTestBroker(t, nil)
 	subscriber := newTestPeer()
 	details := wamp.Dict{
 		"authid":   "jdoe",
@@ -552,7 +551,7 @@ func TestSubscriberBlackWhiteListing(t *testing.T) {
 }
 
 func TestPublisherExclusion(t *testing.T) {
-	broker := newTestBroker(t, logger, false, true, debug, nil, nil)
+	broker := newTestBroker(t, nil)
 	subscriber := newTestPeer()
 	sess := wamp.NewSession(subscriber, 0, nil, nil)
 	testTopic := wamp.URI("nexus.test.topic")
@@ -610,7 +609,7 @@ func TestPublisherExclusion(t *testing.T) {
 }
 
 func TestPublisherIdentification(t *testing.T) {
-	broker := newTestBroker(t, logger, false, true, debug, nil, nil)
+	broker := newTestBroker(t, nil)
 	subscriber := newTestPeer()
 
 	details := wamp.Dict{
@@ -672,7 +671,7 @@ func TestEventHistory(t *testing.T) {
 		},
 	}
 
-	broker := newTestBroker(t, logger, false, true, debug, nil, eventHistoryConfig)
+	broker := newTestBroker(t, eventHistoryConfig)
 	publisher := newTestPeer()
 	pubSess := wamp.NewSession(publisher, 0, nil, nil)
 
@@ -771,7 +770,7 @@ func TestEventHistory(t *testing.T) {
 	yield, ok := msg.(*wamp.Yield)
 	require.Truef(t, ok, "MetaRPC eventHistoryLast for topic %s should return Yield message", topic)
 	require.Equalf(t, 3, len(yield.Arguments), "MetaRPC eventHistoryLast for topic %s should return 3 records", topic)
-	limitReachedVal, _ := yield.ArgumentsKw["is_limit_reached"]
+	limitReachedVal := yield.ArgumentsKw["is_limit_reached"]
 	limitReached, _ := wamp.AsBool(limitReachedVal)
 	require.Truef(t, limitReached, "is_limit_reached for topic %s should be true", topic)
 
@@ -790,7 +789,7 @@ func TestEventHistory(t *testing.T) {
 	yield, ok = msg.(*wamp.Yield)
 	require.Truef(t, ok, "MetaRPC eventHistoryLast for topic %s should return Yield message", topic)
 	require.Equalf(t, 10, len(yield.Arguments), "MetaRPC eventHistoryLast for topic %s should return 10 records", topic)
-	limitReachedVal, _ = yield.ArgumentsKw["is_limit_reached"]
+	limitReachedVal = yield.ArgumentsKw["is_limit_reached"]
 	limitReached, _ = wamp.AsBool(limitReachedVal)
 	require.Falsef(t, limitReached, "is_limit_reached for topic %s should be false", topic)
 

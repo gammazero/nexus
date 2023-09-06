@@ -38,6 +38,7 @@ func TestRecvTimeout(t *testing.T) {
 	p := newTestPeer()
 	msg, err := RecvTimeout(p, time.Millisecond)
 	require.Error(t, err)
+	require.Nil(t, msg)
 
 	go func() {
 		p.Send(&Hello{})

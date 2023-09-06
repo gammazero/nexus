@@ -801,7 +801,7 @@ func TestTimeoutCancelRemoteProcedureCall(t *testing.T) {
 
 	// Make sure the call is blocked.
 	select {
-	case err = <-errChan:
+	case <-errChan:
 		require.FailNow(t, "call should have been blocked")
 	case <-time.After(200 * time.Millisecond):
 	}
@@ -891,7 +891,7 @@ func TestTimeoutRemoteProcedureCall(t *testing.T) {
 
 	// Make sure the call is blocked.
 	select {
-	case _ = <-errChan:
+	case <-errChan:
 		require.FailNow(t, "call should have been blocked")
 	case <-time.After(200 * time.Millisecond):
 	}
@@ -899,8 +899,8 @@ func TestTimeoutRemoteProcedureCall(t *testing.T) {
 	// Make sure the call is canceled.
 	select {
 	case err = <-errChan:
-		rpcError, ok := err.(RPCError)
-		require.True(t, ok, "expected RPCError type of error")
+		var rpcError RPCError
+		require.ErrorAs(t, err, &rpcError)
 		require.Equal(t, wamp.ErrCanceled, rpcError.Err.Error)
 	case <-time.After(2 * time.Second):
 		require.FailNow(t, "call should have been canceled")
@@ -1232,7 +1232,7 @@ func TestProgressDisconnect(t *testing.T) {
 	require.NoError(t, err)
 	defer caller.Close()
 
-	progHandler := func(result *wamp.Result) {
+	progHandler := func(_ *wamp.Result) {
 		close(disconnect)
 	}
 

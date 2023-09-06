@@ -23,6 +23,7 @@ func TestSessionTestaments(t *testing.T) {
 	sub.Send(&wamp.Subscribe{Request: subscribeID, Topic: "testament.test2"})
 	msg, err = wamp.RecvTimeout(sub, time.Second)
 	require.NoError(t, err)
+	require.NotNil(t, msg)
 
 	caller1 := testClient(t, r)
 	caller2 := testClient(t, r)

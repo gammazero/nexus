@@ -204,30 +204,27 @@ func TestRPCTimeoutCall(t *testing.T) {
 
 	// Make sure the call is blocked.
 	select {
-	case err = <-errChan:
-		t.Fatal("call should have been blocked")
+	case <-errChan:
+		require.FailNow(t, "call should have been blocked")
 	case <-time.After(200 * time.Millisecond):
 	}
 
 	// Make sure the call is canceled on caller side.
 	select {
 	case err = <-errChan:
-		if err == nil {
-			t.Fatal("Expected error from canceling call")
-		}
-		if err.(client.RPCError).Err.Error != wamp.ErrCanceled {
-			t.Fatal("Wrong error for canceled call, got",
-				err.(client.RPCError).Err.Error, "want", wamp.ErrCanceled)
-		}
+		require.Error(t, err)
+		var rpcErr client.RPCError
+		require.ErrorAs(t, err, &rpcErr)
+		require.Equal(t, wamp.ErrCanceled, rpcErr.Err.Error)
 	case <-time.After(2 * time.Second):
-		t.Fatal("call should have been canceled")
+		require.FailNow(t, "call should have been canceled")
 	}
 
 	// Make sure the invocation is canceled on callee side.
 	select {
 	case <-invkCanceled:
 	case <-time.After(time.Second):
-		t.Fatal("invocation should have been canceled")
+		require.FailNow(t, "invocation should have been canceled")
 	}
 
 	var rpcError client.RPCError

@@ -1,14 +1,15 @@
-package auth
+package auth_test
 
 import (
 	"testing"
 
+	"github.com/gammazero/nexus/v3/router/auth"
 	"github.com/gammazero/nexus/v3/wamp"
 	"github.com/stretchr/testify/require"
 )
 
 func TestAnonAuth(t *testing.T) {
-	anonAuth := AnonymousAuth{
+	anonAuth := auth.AnonymousAuth{
 		AuthRole: "guest",
 	}
 

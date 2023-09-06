@@ -78,7 +78,7 @@ func (b *BinaryData) UnmarshalJSON(v []byte) error {
 	var s string
 	err := codec.NewDecoderBytes(v, jh).Decode(&s)
 	if err != nil {
-		return nil
+		return err
 	}
 	if s[0] != '\x00' {
 		return errors.New("binary string does not start with NUL")

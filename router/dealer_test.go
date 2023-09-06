@@ -198,7 +198,7 @@ func TestRemovePeer(t *testing.T) {
 	sess2 := wamp.NewSession(callee, 0, nil, nil)
 	dealer.register(sess2,
 		&wamp.Register{Request: 789, Procedure: wamp.URI("nexus.test.p2")})
-	rsp = <-callee.Recv()
+	<-callee.Recv()
 
 	_, ok = dealer.procRegMap[testProcedure]
 	require.False(t, ok, "dealer still has registered procedure")
@@ -499,7 +499,7 @@ func TestSharedRegistrationRoundRobin(t *testing.T) {
 	case rsp = <-callee1.Recv():
 		inv, ok = rsp.(*wamp.Invocation)
 		require.True(t, ok, "expected INVOCATION")
-	case rsp = <-callee2.Recv():
+	case <-callee2.Recv():
 		require.FailNow(t, "should not have received from callee2")
 	case <-time.After(time.Second):
 		require.FailNow(t, "Timed out waiting for INVOCATION")
@@ -522,7 +522,7 @@ func TestSharedRegistrationRoundRobin(t *testing.T) {
 	case rsp = <-callee2.Recv():
 		inv, ok = rsp.(*wamp.Invocation)
 		require.True(t, ok, "expected INVOCATION")
-	case rsp = <-callee1.Recv():
+	case <-callee1.Recv():
 		require.FailNow(t, "should not have received from callee1")
 	case <-time.After(time.Second):
 		require.FailNow(t, "Timed out waiting for INVOCATION")
@@ -745,7 +745,7 @@ func TestSharedRegistrationLast(t *testing.T) {
 	case rsp = <-callee2.Recv():
 		inv, ok = rsp.(*wamp.Invocation)
 		require.True(t, ok, "expected INVOCATION")
-	case rsp = <-callee1.Recv():
+	case <-callee1.Recv():
 		require.FailNow(t, "should not have received from callee1")
 	case <-time.After(time.Second):
 		require.FailNow(t, "Timed out waiting for INVOCATION")
@@ -768,7 +768,7 @@ func TestSharedRegistrationLast(t *testing.T) {
 	case rsp = <-callee2.Recv():
 		inv, ok = rsp.(*wamp.Invocation)
 		require.True(t, ok, "expected INVOCATION")
-	case rsp = <-callee1.Recv():
+	case <-callee1.Recv():
 		require.FailNow(t, "should not have received from callee1")
 	case <-time.After(time.Second):
 		require.FailNow(t, "Timed out waiting for INVOCATION")
@@ -795,7 +795,7 @@ func TestSharedRegistrationLast(t *testing.T) {
 	case rsp = <-callee1.Recv():
 		inv, ok = rsp.(*wamp.Invocation)
 		require.True(t, ok, "expected INVOCATION")
-	case rsp = <-callee2.Recv():
+	case <-callee2.Recv():
 		require.FailNow(t, "should not have received from callee2")
 	case <-time.After(time.Second):
 		require.FailNow(t, "Timed out waiting for INVOCATION")
@@ -1001,7 +1001,7 @@ func TestWrongYielder(t *testing.T) {
 
 	// Check that caller did not received a RESULT message.
 	select {
-	case rsp = <-caller.Recv():
+	case <-caller.Recv():
 		require.FailNow(t, "Caller received response from imposter callee")
 	case <-time.After(200 * time.Millisecond):
 	}

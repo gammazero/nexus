@@ -188,7 +188,7 @@ func (ks *serverKeyStore) AuthKey(authid, authmethod string) ([]byte, error) {
 		// Lookup the user's key.
 		secret := []byte(password)
 		salt := []byte(pwSalt)
-		dk := pbkdf2.Key([]byte(secret), salt, iterations, keylen, sha256.New)
+		dk := pbkdf2.Key(secret, salt, iterations, keylen, sha256.New)
 		return []byte(base64.StdEncoding.EncodeToString(dk)), nil
 	case "ticket":
 		// Lookup the user's key.
@@ -239,7 +239,7 @@ func (ks *serverKeyStore) AlreadyAuth(authid string, details wamp.Dict) bool {
 func (ks *serverKeyStore) OnWelcome(authid string, welcome *wamp.Welcome, details wamp.Dict) error {
 	v, err := wamp.DictValue(details, []string{"transport", "auth", "nextcookie"})
 	if err != nil {
-		// Tracking cookie not enabled.
+		// Tracking cookie not enabled, return no error.
 		return nil
 	}
 	nextcookie := v.(*http.Cookie)

@@ -7,16 +7,6 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
-func hasRole(d Dict, role string) bool {
-	_, err := DictValue(d, []string{"roles", role})
-	return err == nil
-}
-
-func hasFeature(d Dict, role, feature string) bool {
-	b, _ := DictFlag(d, []string{"roles", role, "features", feature})
-	return b
-}
-
 func checkRoles(sess *Session) error {
 	if !sess.HasRole("caller") {
 		return errors.New("session does not have caller role")

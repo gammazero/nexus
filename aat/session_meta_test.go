@@ -275,32 +275,21 @@ func TestMetaProcSessionGet(t *testing.T) {
 	// Subscribe to on_leave event.
 	eventChan := make(chan *wamp.Event)
 	err := subscriber.SubscribeChan(metaOnLeave, eventChan, nil)
-	if err != nil {
-		t.Fatal("subscribe error:", err)
-	}
+	require.NoError(t, err)
 
 	// Call meta procedure to get session info.
 	ctx := context.Background()
 	args := wamp.List{sess.ID()}
 	result, err := caller.Call(ctx, metaGet, nil, args, nil, nil)
-	if err != nil {
-		t.Fatal("Call error:", err)
-	}
-	if len(result.Arguments) == 0 {
-		t.Fatal("Missing result argument")
-	}
+	require.NoError(t, err)
+	require.NotZero(t, len(result.Arguments), "Missing result argument")
 	dict, ok := wamp.AsDict(result.Arguments[0])
-	if !ok {
-		t.Fatal("Could not convert result to wamp.Dict")
-	}
+	require.True(t, ok, "Could not convert result to wamp.Dict")
 	resultID, _ := wamp.AsID(dict["session"])
-	if resultID != sess.ID() {
-		t.Fatal("Wrong session ID in result")
-	}
+	require.Equal(t, sess.ID(), resultID, "Wrong session ID in result")
 	for _, attr := range []string{"authid", "authrole", "authmethod", "authprovider"} {
-		if _, ok = dict[attr]; !ok {
-			t.Fatal("Result missing", attr, "DICT:", dict)
-		}
+		_, ok = dict[attr]
+		require.Truef(t, ok, "Result missing: %s", attr)
 	}
 
 	// Wait for any events from previously closed clients.
@@ -316,19 +305,15 @@ func TestMetaProcSessionGet(t *testing.T) {
 	sid := sess.ID()
 
 	err = sess.Close()
-	if err != nil {
-		t.Fatal("Failed to disconnect client:", err)
-	}
+	require.NoError(t, err)
 	// Wait for router to register client leaving.
 	<-eventChan
 
 	// Call meta procedure to get session list.
 	result, err = caller.Call(ctx, metaGet, nil, wamp.List{sid}, nil, nil)
-	if err == nil {
-		t.Fatal("Expected error")
-	}
-	rpcErr := err.(client.RPCError)
-	if rpcErr.Err.Error != wamp.ErrNoSuchSession {
-		t.Fatal("Expected error URI:", wamp.ErrNoSuchSession, "got", rpcErr.Err.Error)
-	}
+	require.Error(t, err)
+
+	var rpcErr client.RPCError
+	require.ErrorAs(t, err, &rpcErr)
+	require.Equal(t, wamp.ErrNoSuchSession, rpcErr.Err.Error)
 }
