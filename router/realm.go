@@ -284,7 +284,6 @@ func (r *realm) createMetaSession() {
 // Note: onJoin() is called from handleSession, not handleInboundMessages, so
 // that it is not called for the meta client.
 func (r *realm) onJoin(sess *wamp.Session) {
-	r.waitHandlers.Add(1)
 	sync := make(chan struct{})
 	r.actionChan <- func() {
 		r.clients[sess.ID] = sess
@@ -342,8 +341,6 @@ func (r *realm) onLeave(sess *wamp.Session, shutdown, killAll bool) {
 	}
 	<-sync
 
-	defer r.waitHandlers.Done()
-
 	if shutdown || killAll {
 		return
 	}
@@ -387,6 +384,8 @@ func (r *realm) handleSession(sess *wamp.Session) error {
 		return err
 	}
 
+	r.waitHandlers.Add(1)
+
 	// Ensure session is capable of receiving exit signal before releasing lock
 	r.onJoin(sess)
 	r.closeLock.Unlock()
@@ -406,6 +405,7 @@ func (r *realm) handleSession(sess *wamp.Session) error {
 		}
 		r.onLeave(sess, shutdown, killAll)
 		sess.Close()
+		r.waitHandlers.Done()
 	}()
 
 	return nil

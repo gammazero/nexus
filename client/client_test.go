@@ -1133,7 +1133,7 @@ func TestClientRace(t *testing.T) {
 // an invocation handler, that the handler still gets marked as done when it
 // completes.
 func TestInvocationHandlerMissedDone(t *testing.T) {
-	//checkGoLeaks(t)
+	checkGoLeaks(t)
 
 	// Connect two clients to the same server
 	callee, caller, _ := connectedTestClients(t)

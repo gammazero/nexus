@@ -90,13 +90,13 @@ func NewRouter(config *Config, logger stdlog.StdLog) (Router, error) {
 		}
 	}
 
-	go r.run()
-
 	if config.MemStatsLogSec != 0 {
 		r.stopMemStats = make(chan struct{})
 		r.memStatsStopped = make(chan struct{})
 		go r.logMemStats(time.Duration(config.MemStatsLogSec) * time.Second)
 	}
+
+	go r.run()
 
 	return r, nil
 }
