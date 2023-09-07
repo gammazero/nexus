@@ -338,7 +338,7 @@ MsgLoop:
 			case rs.rd <- msg:
 			case <-timer.C:
 			}
-			rs.conn.Close()
+			_ = rs.conn.Close()
 			timer.Stop()
 			return
 		}
