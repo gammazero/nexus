@@ -5,6 +5,7 @@ import (
 	"time"
 
 	"github.com/gammazero/nexus/v3/wamp"
+	"github.com/stretchr/testify/require"
 )
 
 const (
@@ -51,31 +52,23 @@ func TestAuthorizer(t *testing.T) {
 		Debug: debug,
 	}
 	r, err := NewRouter(config, logger)
-	if err != nil {
-		t.Fatal(err)
-	}
+	require.NoError(t, err)
 	defer r.Close()
 
-	sub, err := testClient(r)
-	if err != nil {
-		t.Fatal(err)
-	}
+	sub := testClient(t, r)
 
 	// Test that authorizer forbids denyTopic.
 	subscribeID := wamp.GlobalID()
 	sub.Send(&wamp.Subscribe{Request: subscribeID, Topic: denyTopic})
 	msg := <-sub.Recv()
 	_, ok := msg.(*wamp.Error)
-	if !ok {
-		t.Fatal("Expected ERROR, got:", msg.MessageType())
-	}
+	require.True(t, ok, "Expected ERROR")
 
 	// Test that authorizer allows allowTopic.
 	sub.Send(&wamp.Subscribe{Request: subscribeID, Topic: allowTopic})
 	msg = <-sub.Recv()
-	if _, ok = msg.(*wamp.Subscribed); !ok {
-		t.Fatal("Expected SUBSCRIBED, got:", msg.MessageType())
-	}
+	_, ok = msg.(*wamp.Subscribed)
+	require.True(t, ok, "Expected SUBSCRIBED")
 }
 
 // Test that authorizer is not called with a local session and config does not
@@ -91,22 +84,16 @@ func TestAuthorizerBypassLocal(t *testing.T) {
 		Debug: debug,
 	}
 	r, err := NewRouter(config, logger)
-	if err != nil {
-		t.Fatal(err)
-	}
+	require.NoError(t, err)
 	defer r.Close()
 
-	sub, err := testClient(r)
-	if err != nil {
-		t.Fatal(err)
-	}
+	sub := testClient(t, r)
 
 	subscribeID := wamp.GlobalID()
 	sub.Send(&wamp.Subscribe{Request: subscribeID, Topic: denyTopic})
 	msg := <-sub.Recv()
-	if _, ok := msg.(*wamp.Subscribed); !ok {
-		t.Fatal("Expected SUBSCRIBED, got:", msg.MessageType())
-	}
+	_, ok := msg.(*wamp.Subscribed)
+	require.True(t, ok, "Expected SUBSCRIBED")
 }
 
 func TestAuthorizerModify(t *testing.T) {
@@ -121,15 +108,10 @@ func TestAuthorizerModify(t *testing.T) {
 		Debug: debug,
 	}
 	r, err := NewRouter(config, logger)
-	if err != nil {
-		t.Fatal(err)
-	}
+	require.NoError(t, err)
 	defer r.Close()
 
-	cli, err := testClient(r)
-	if err != nil {
-		t.Fatal(err)
-	}
+	cli := testClient(t, r)
 	for i := 1; i <= 10; i++ {
 		cli.Send(&wamp.Call{
 			Request:   wamp.ID(i),
@@ -137,31 +119,18 @@ func TestAuthorizerModify(t *testing.T) {
 			Arguments: wamp.List{cli.ID},
 		})
 		msg, err := wamp.RecvTimeout(cli, time.Second)
-		if err != nil {
-			t.Fatal(err)
-		}
+		require.NoError(t, err)
 		result, ok := msg.(*wamp.Result)
-		if !ok {
-			t.Fatal("expected wamp.Result, got", msg.MessageType())
-		}
+		require.True(t, ok, "expected wamp.Result")
 		details, ok := wamp.AsDict(result.Arguments[0])
-		if !ok {
-			t.Fatal("Result.Arguments[0] was not wamp.Dict")
-		}
+		require.True(t, ok, "Result.Arguments[0] was not wamp.Dict")
 		i64, ok := wamp.AsInt64(details["count"])
-		if !ok {
-			t.Fatal("Session details did not have count")
-		}
-		if i64 != int64(i) {
-			t.Fatal("Expected count to be", i, "got", i64)
-		}
+		require.True(t, ok, "Session details did not have count")
+		require.Equal(t, int64(i), i64)
 		foo, _ := wamp.AsString(details["foo"])
-		if foo != "bar" {
-			t.Fatal("Wrong value for foo")
-		}
-		if _, ok = details["xyzzy"]; ok {
-			t.Fatal("Should not have xyzzy detail")
-		}
+		require.Equal(t, "bar", foo)
+		_, ok = details["xyzzy"]
+		require.False(t, ok, "Should not have xyzzy detail")
 	}
 }
 
@@ -178,37 +147,21 @@ func TestAuthorizerRace(t *testing.T) {
 		Debug: debug,
 	}
 	r, err := NewRouter(config, logger)
-	if err != nil {
-		t.Fatal(err)
-	}
+	require.NoError(t, err)
 	defer r.Close()
 
-	sub, err := testClient(r)
-	if err != nil {
-		t.Fatal(err)
-	}
-
-	pub, err := testClient(r)
-	if err != nil {
-		t.Fatal(err)
-	}
-
-	cli, err := testClient(r)
-	if err != nil {
-		t.Fatal(err)
-	}
+	sub := testClient(t, r)
+	pub := testClient(t, r)
+	cli := testClient(t, r)
 
 	// Test that authorizer forbids denyTopic.
 	subscribeID := wamp.GlobalID()
 	const topic = "whatever.topic"
 	sub.Send(&wamp.Subscribe{Request: subscribeID, Topic: topic})
 	msg, err := wamp.RecvTimeout(sub, time.Second)
-	if err != nil {
-		t.Fatal(err)
-	}
-	if _, ok := msg.(*wamp.Subscribed); !ok {
-		t.Fatal("Expected SUBSCRIBED, got:", msg.MessageType())
-	}
+	require.NoError(t, err)
+	_, ok := msg.(*wamp.Subscribed)
+	require.True(t, ok, "Expected SUBSCRIBED")
 
 	done := make(chan struct{})
 	go func() {

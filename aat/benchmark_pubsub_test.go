@@ -32,7 +32,11 @@ func benchPubSub(subCount int, b *testing.B) {
 	}
 
 	// Connect publisher session.
-	publisher, err := connectClient()
+	cfg := client.Config{
+		Realm:           testRealm,
+		ResponseTimeout: clientResponseTimeout,
+	}
+	publisher, err := connectClientCfgErr(cfg)
 	if err != nil {
 		panic("Failed to connect client: " + err.Error())
 	}
@@ -64,7 +68,11 @@ func benchPubSub(subCount int, b *testing.B) {
 
 func connectSubscriber(fn client.EventHandler) *client.Client {
 	// Connect subscriber session.
-	subscriber, err := connectClient()
+	cfg := client.Config{
+		Realm:           testRealm,
+		ResponseTimeout: clientResponseTimeout,
+	}
+	subscriber, err := connectClientCfgErr(cfg)
 	if err != nil {
 		panic("Failed to connect client: " + err.Error())
 	}

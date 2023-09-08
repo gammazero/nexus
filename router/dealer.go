@@ -92,6 +92,7 @@ type dealer struct {
 	calleeRegIDSet map[*wamp.Session]map[wamp.ID]struct{}
 
 	actionChan chan func()
+	stopped    chan struct{}
 
 	// Generate registration IDs.
 	idGen *wamp.IDGen
@@ -132,6 +133,7 @@ func newDealer(logger stdlog.StdLog, strictURI, allowDisclose, debug bool) *deal
 		// critical section that does the only routing.  So, and unbuffered
 		// channel is appropriate.
 		actionChan: make(chan func()),
+		stopped:    make(chan struct{}),
 
 		idGen: new(wamp.IDGen),
 		prng:  rand.New(rand.NewSource(time.Now().Unix())),
@@ -395,15 +397,17 @@ func (d *dealer) removeSession(sess *wamp.Session) {
 // close stops the dealer, letting already queued actions finish.
 func (d *dealer) close() {
 	close(d.actionChan)
+	<-d.stopped
+	if d.debug {
+		d.log.Print("Dealer stopped")
+	}
 }
 
 func (d *dealer) run() {
 	for action := range d.actionChan {
 		action()
 	}
-	if d.debug {
-		d.log.Print("Dealer stopped")
-	}
+	close(d.stopped)
 }
 
 func (d *dealer) syncRegister(callee *wamp.Session, msg *wamp.Register, match, invokePolicy string, disclose, wampURI bool) []*wamp.Publish { //nolint:lll

@@ -88,6 +88,7 @@ type websocketPeer struct {
 	cancelSender context.CancelFunc
 	ctxSender    context.Context
 
+	recvDone   chan struct{}
 	writerDone chan struct{}
 
 	log stdlog.StdLog
@@ -188,6 +189,7 @@ func NewWebsocketPeer(conn WebsocketConnection, serializer serialize.Serializer,
 		serializer:  serializer,
 		payloadType: payloadType,
 		closed:      make(chan struct{}),
+		recvDone:    make(chan struct{}),
 		writerDone:  make(chan struct{}),
 
 		// The router will read from this channel and immediately dispatch the
@@ -257,6 +259,9 @@ func (w *websocketPeer) Close() {
 	w.conn.WriteControl(websocket.CloseMessage, closeMsg,
 		time.Now().Add(ctrlTimeout))
 	w.conn.Close()
+
+	// Wait for the recvHandler goroutine to exit.
+	<-w.recvDone
 }
 
 // sendHandler pulls messages from the write channel, and pushes them to the
@@ -369,6 +374,7 @@ recvLoop:
 // recvHandler pulls messages from the websocket and pushes them to the read
 // channel.
 func (w *websocketPeer) recvHandler() {
+	defer close(w.recvDone)
 	// When done, close read channel to cause router to remove session if not
 	// already removed.
 	defer close(w.rd)
@@ -419,10 +425,12 @@ func (w *websocketPeer) recvHandler() {
 		case <-w.closed:
 			// If closed, try for one second to send the last message and then
 			// exit recvHandler.
+			timer := time.NewTimer(time.Second)
 			select {
 			case w.rd <- msg:
-			case <-time.After(time.Second):
+			case <-timer.C:
 			}
+			timer.Stop()
 			return
 		}
 	}

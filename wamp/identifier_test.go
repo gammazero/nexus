@@ -1,6 +1,10 @@
 package wamp
 
-import "testing"
+import (
+	"testing"
+
+	"github.com/stretchr/testify/require"
+)
 
 func TestURIPrefixMatch(t *testing.T) {
 	uri := URI("this.is.a.test")
@@ -10,18 +14,14 @@ func TestURIPrefixMatch(t *testing.T) {
 		"this.i",
 	}
 	for i := range matches {
-		if !uri.PrefixMatch(matches[i]) {
-			t.Error("expected prefix", matches[i], "to match", uri)
-		}
+		require.True(t, uri.PrefixMatch(matches[i]), "expected prefix to match")
 	}
 
 	nonMatches := []URI{
 		"this.is.a.test.ok",
 		"not.a.test"}
 	for i := range nonMatches {
-		if uri.PrefixMatch(nonMatches[i]) {
-			t.Error("expected prefix", nonMatches[i], "to not match", uri)
-		}
+		require.False(t, uri.PrefixMatch(nonMatches[i]), "expected prefix to not match")
 	}
 }
 
@@ -37,9 +37,7 @@ func TestURIWildcardMatch(t *testing.T) {
 		".is.a.",
 		"..."}
 	for i := range matches {
-		if !uri.WildcardMatch(matches[i]) {
-			t.Error("expected wildcard", matches[i], "to match", uri)
-		}
+		require.True(t, uri.WildcardMatch(matches[i]), "expected wildcard to match")
 	}
 
 	nonMatches := []URI{
@@ -49,9 +47,7 @@ func TestURIWildcardMatch(t *testing.T) {
 		".is..test.",
 		"...."}
 	for i := range nonMatches {
-		if uri.WildcardMatch(nonMatches[i]) {
-			t.Error("expected wildcard", nonMatches[i], "to not match", uri)
-		}
+		require.False(t, uri.WildcardMatch(nonMatches[i]), "expected wildcard to not match")
 	}
 }
 
@@ -65,9 +61,7 @@ func TestValidURI(t *testing.T) {
 		"test.11_22_33.v88.something",
 		"somewhere"}
 	for i := range strictGood {
-		if !strictGood[i].ValidURI(true, "") {
-			t.Error("expected", strictGood[i], "to be valid")
-		}
+		require.True(t, strictGood[i].ValidURI(true, ""))
 	}
 
 	strictBad := []URI{
@@ -76,9 +70,7 @@ func TestValidURI(t *testing.T) {
 		"Mixed.cAsE.URI",
 		"this.one has.whitespace"}
 	for i := range strictBad {
-		if strictBad[i].ValidURI(true, "") {
-			t.Error("expected", strictBad[i], "to be invalid")
-		}
+		require.False(t, strictBad[i].ValidURI(true, ""))
 	}
 
 	strictGoodPrefix := []URI{
@@ -86,9 +78,7 @@ func TestValidURI(t *testing.T) {
 		"this.is.hello_123",
 		"somewhere"}
 	for i := range strictGoodPrefix {
-		if !strictGoodPrefix[i].ValidURI(true, "prefix") {
-			t.Error("expected", strictGoodPrefix[i], "to be valid")
-		}
+		require.True(t, strictGoodPrefix[i].ValidURI(true, "prefix"))
 	}
 
 	strictBadPrefix := []URI{
@@ -97,9 +87,7 @@ func TestValidURI(t *testing.T) {
 		".somewhere",
 		".."}
 	for i := range strictBadPrefix {
-		if strictBadPrefix[i].ValidURI(true, "prefix") {
-			t.Error("expected", strictBadPrefix[i], "to be invalid")
-		}
+		require.False(t, strictBadPrefix[i].ValidURI(true, "prefix"))
 	}
 
 	strictGoodWildcard := []URI{
@@ -112,9 +100,7 @@ func TestValidURI(t *testing.T) {
 		".is.a.",
 		"..."}
 	for i := range strictGoodWildcard {
-		if !strictGoodWildcard[i].ValidURI(true, "wildcard") {
-			t.Error("expected", strictGoodWildcard[i], "to be valid")
-		}
+		require.True(t, strictGoodWildcard[i].ValidURI(true, "wildcard"))
 	}
 
 	strictBadWildcard := []URI{
@@ -122,9 +108,7 @@ func TestValidURI(t *testing.T) {
 		"Mixed.cAsE.URI",
 		"this.one has.whitespace"}
 	for i := range strictBadWildcard {
-		if strictBadWildcard[i].ValidURI(true, "wildcard") {
-			t.Error("expected", strictBad[i], "to be invalid")
-		}
+		require.False(t, strictBadWildcard[i].ValidURI(true, "wildcard"))
 	}
 
 	looseGood := []URI{
@@ -133,9 +117,7 @@ func TestValidURI(t *testing.T) {
 		"test.11_22_33.v88.something",
 		"somewhere"}
 	for i := range looseGood {
-		if !looseGood[i].ValidURI(false, "") {
-			t.Error("expected", looseGood[i], "to be valid")
-		}
+		require.True(t, looseGood[i].ValidURI(false, ""))
 	}
 
 	looseBad := []URI{
@@ -143,9 +125,7 @@ func TestValidURI(t *testing.T) {
 		"this#is_not.allowed",
 		"this.one has.whitespace"}
 	for i := range looseBad {
-		if looseBad[i].ValidURI(false, "") {
-			t.Error("expected", looseBad[i], "to be invalid")
-		}
+		require.False(t, looseBad[i].ValidURI(false, ""))
 	}
 
 	looseGoodPrefix := []URI{
@@ -153,9 +133,7 @@ func TestValidURI(t *testing.T) {
 		"this.is.H-E-L-L-O_123",
 		"somewhere"}
 	for i := range looseGoodPrefix {
-		if !looseGoodPrefix[i].ValidURI(false, "prefix") {
-			t.Error("expected", looseGoodPrefix[i], "to be valid")
-		}
+		require.True(t, looseGoodPrefix[i].ValidURI(false, "prefix"))
 	}
 
 	looseBadPrefix := []URI{
@@ -165,9 +143,7 @@ func TestValidURI(t *testing.T) {
 		".somewhere",
 		".."}
 	for i := range looseBadPrefix {
-		if looseBadPrefix[i].ValidURI(false, "prefix") {
-			t.Error("expected", looseBadPrefix[i], "to be invalid")
-		}
+		require.False(t, looseBadPrefix[i].ValidURI(false, "prefix"))
 	}
 
 	looseGoodWildcard := []URI{
@@ -181,18 +157,13 @@ func TestValidURI(t *testing.T) {
 		".is.a.",
 		"..."}
 	for i := range looseGoodWildcard {
-		if !looseGoodWildcard[i].ValidURI(false, "wildcard") {
-			t.Error("expected", looseGoodWildcard[i], "to be valid")
-		}
+		require.True(t, looseGoodWildcard[i].ValidURI(false, "wildcard"))
 	}
 
 	looseBadWildcard := []URI{
 		"this#is_not.allowed",
 		"this.one has.whitespace"}
 	for i := range looseBadWildcard {
-		if looseBadWildcard[i].ValidURI(false, "wildcard") {
-			t.Error("expected", looseBad[i], "to be invalid")
-		}
+		require.False(t, looseBadWildcard[i].ValidURI(false, "wildcard"))
 	}
-
 }

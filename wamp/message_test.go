@@ -1,16 +1,16 @@
 package wamp
 
-import "testing"
+import (
+	"testing"
+
+	"github.com/stretchr/testify/require"
+)
 
 func chkMsgType(mt MessageType, expect string, t *testing.T) {
 	m := NewMessage(mt)
 	mt2 := m.MessageType()
-	if mt != mt2 {
-		t.Error("Created wrong message type")
-	}
-	if mt2.String() != expect {
-		t.Error("Wrong message type string for", mt)
-	}
+	require.Equal(t, mt, mt2, "Created wrong message type")
+	require.Equal(t, expect, mt2.String(), "Wrong message type string")
 }
 
 func TestMessage(t *testing.T) {
@@ -40,7 +40,5 @@ func TestMessage(t *testing.T) {
 	chkMsgType(YIELD, "YIELD", t)
 
 	m := NewMessage(99999)
-	if m != nil {
-		t.Fatal("Message should be nil for bad type")
-	}
+	require.Nil(t, m, "Message should be nil for bad type")
 }

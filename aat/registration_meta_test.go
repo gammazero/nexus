@@ -9,6 +9,7 @@ import (
 
 	"github.com/gammazero/nexus/v3/client"
 	"github.com/gammazero/nexus/v3/wamp"
+	"github.com/stretchr/testify/require"
 )
 
 const (
@@ -20,55 +21,41 @@ const (
 
 func TestMetaEventRegOnCreateRegOnRegister(t *testing.T) {
 	// Connect subscriber session.
-	subscriber, err := connectClient()
-	if err != nil {
-		t.Fatal("Failed to connect client:", err)
-	}
+	subscriber := connectClient(t)
 
 	// Check for feature support in router.
-	if !subscriber.HasFeature(wamp.RoleDealer, wamp.FeatureRegMetaAPI) {
-		t.Error("Dealer does not support", wamp.FeatureRegMetaAPI)
-	}
+	has := subscriber.HasFeature(wamp.RoleDealer, wamp.FeatureRegMetaAPI)
+	require.Truef(t, has, "Dealer does not support %s", wamp.FeatureRegMetaAPI)
 
 	// Subscribe to event.
 	onCreateEvents := make(chan *wamp.Event)
-	err = subscriber.SubscribeChan(metaRegOnCreate, onCreateEvents, nil)
-	if err != nil {
-		t.Fatal("subscribe error:", err)
-	}
+	err := subscriber.SubscribeChan(metaRegOnCreate, onCreateEvents, nil)
+	require.NoError(t, err)
 
 	onRegEvents := make(chan *wamp.Event)
 	err = subscriber.SubscribeChan(metaOnRegister, onRegEvents, nil)
-	if err != nil {
-		t.Fatal("subscribe error:", err)
-	}
+	require.NoError(t, err)
 
 	select {
 	case <-onCreateEvents:
-		t.Fatal("Received on_create when subscribing to meta event")
+		require.FailNow(t, "Received on_create when subscribing to meta event")
 	case <-onRegEvents:
-		t.Fatal("Received on_register when subscribing to meta event")
+		require.FailNow(t, "Received on_register when subscribing to meta event")
 	case <-time.After(200 * time.Millisecond):
 	}
 
 	// Connect another client.
-	sess, err := connectClient()
-	if err != nil {
-		t.Fatal("Failed to connect client:", err)
-	}
+	sess := connectClient(t)
 
 	// Register procedure to generate meta on_register event
 	nullHandler := func(ctx context.Context, inv *wamp.Invocation) client.InvokeResult {
 		return client.InvokeResult{Args: wamp.List{"hello"}}
 	}
 	err = sess.Register("some.proc", nullHandler, nil)
-	if err != nil {
-		t.Fatal("register error:", err)
-	}
+	require.NoError(t, err)
+
 	regID, ok := sess.RegistrationID("some.proc")
-	if !ok {
-		t.Fatal("client does not have registration ID")
-	}
+	require.True(t, ok, "client does not have registration ID")
 
 	var onCreateID, onCreateSessID wamp.ID
 	onCreate := func(event *wamp.Event) error {
@@ -99,18 +86,13 @@ func TestMetaEventRegOnCreateRegOnRegister(t *testing.T) {
 	var event *wamp.Event
 	select {
 	case event = <-onCreateEvents:
-		if err = onCreate(event); err != nil {
-			t.Fatal("Event error:", err)
-		}
+		err = onCreate(event)
+		require.NoError(t, err)
 	case <-time.After(200 * time.Millisecond):
-		t.Fatal("did not get", metaRegOnCreate, "event")
+		require.FailNowf(t, "did not get %s event", metaRegOnCreate)
 	}
-	if onCreateSessID != sess.ID() {
-		t.Fatal(metaRegOnCreate, "meta even had wrong session ID")
-	}
-	if onCreateID != regID {
-		t.Fatal("meta event did not return expected registration ID")
-	}
+	require.Equal(t, sess.ID(), onCreateSessID, "meta even had wrong session ID")
+	require.Equal(t, regID, onCreateID, "meta event did not return expected registration ID")
 
 	var onRegRegID, onRegSessID wamp.ID
 	onReg := func(event *wamp.Event) error {
@@ -133,74 +115,45 @@ func TestMetaEventRegOnCreateRegOnRegister(t *testing.T) {
 	// Make sure the on_register event was received.
 	select {
 	case event = <-onRegEvents:
-		if err = onReg(event); err != nil {
-			t.Fatal("Event error:", err)
-		}
+		err = onReg(event)
+		require.NoError(t, err)
 	case <-time.After(200 * time.Millisecond):
-		t.Fatal("did not get", metaOnRegister, "event")
+		require.FailNowf(t, "did not get %s event", metaOnRegister)
 	}
-	if onRegSessID != sess.ID() {
-		t.Fatal(metaOnRegister, "meta even had wrong session ID")
-	}
-	if onRegRegID != regID {
-		t.Fatal("meta event did not return expected registration ID")
-	}
+	require.Equal(t, sess.ID(), onRegSessID, "meta even had wrong session ID")
+	require.Equal(t, regID, onRegRegID, "meta event did not return expected registration ID")
 
 	err = sess.Unregister("some.proc")
-	if err != nil {
-		t.Fatal("unregister error:", err)
-	}
+	require.NoError(t, err)
 
 	err = subscriber.Unsubscribe(metaOnRegister)
-	if err != nil {
-		t.Fatal("unsubscribe error:", err)
-	}
-
-	err = sess.Close()
-	if err != nil {
-		t.Fatal("Failed to disconnect client:", err)
-	}
-
-	err = subscriber.Close()
-	if err != nil {
-		t.Fatal("Failed to disconnect client:", err)
-	}
+	require.NoError(t, err)
 }
 
 func TestMetaEventRegOnUnregisterRegOnDelete(t *testing.T) {
 	// Connect subscriber session.
-	subscriber, err := connectClient()
-	if err != nil {
-		t.Fatal("Failed to connect client:", err)
-	}
+	subscriber := connectClient(t)
 
 	// Subscribe to on_unregister event.
 	onUnregEvents := make(chan *wamp.Event)
-	err = subscriber.SubscribeChan(metaOnUnregister, onUnregEvents, nil)
-	if err != nil {
-		t.Fatal("subscribe error:", err)
-	}
+	err := subscriber.SubscribeChan(metaOnUnregister, onUnregEvents, nil)
+	require.NoError(t, err)
 
 	// Subscribe to on_delete event.
 	onDelEvents := make(chan *wamp.Event)
 	err = subscriber.SubscribeChan(metaRegOnDelete, onDelEvents, nil)
-	if err != nil {
-		t.Fatal("subscribe error:", err)
-	}
+	require.NoError(t, err)
 
 	select {
 	case <-onUnregEvents:
-		t.Fatal("Received on_unregister when unsubscribing to meta event")
+		require.FailNow(t, "Received on_unregister when unsubscribing to meta event")
 	case <-onDelEvents:
-		t.Fatal("Received on_delete when unsubscribing to meta event")
+		require.FailNow(t, "Received on_delete when unsubscribing to meta event")
 	case <-time.After(200 * time.Millisecond):
 	}
 
 	// Connect another client.
-	sess, err := connectClient()
-	if err != nil {
-		t.Fatal("Failed to connect client:", err)
-	}
+	sess := connectClient(t)
 
 	// Register something and then unregister to generate meta on_unregister
 	// event.
@@ -208,17 +161,11 @@ func TestMetaEventRegOnUnregisterRegOnDelete(t *testing.T) {
 		return client.InvokeResult{Args: wamp.List{"hello"}}
 	}
 	err = sess.Register("some.proc", nullHandler, nil)
-	if err != nil {
-		t.Fatal("Register error:", err)
-	}
+	require.NoError(t, err)
 	regID, ok := sess.RegistrationID("some.proc")
-	if !ok {
-		t.Fatal("client does not have registration ID")
-	}
+	require.True(t, ok, "client does not have registration ID")
 	err = sess.Unregister("some.proc")
-	if err != nil {
-		t.Fatal("unregister error:", err)
-	}
+	require.NoError(t, err)
 
 	var onUnregRegID, onUnregSessID wamp.ID
 	onUnreg := func(event *wamp.Event) error {
@@ -242,18 +189,13 @@ func TestMetaEventRegOnUnregisterRegOnDelete(t *testing.T) {
 	var event *wamp.Event
 	select {
 	case event = <-onUnregEvents:
-		if err = onUnreg(event); err != nil {
-			t.Fatal("Event error:", err)
-		}
+		err = onUnreg(event)
+		require.NoError(t, err)
 	case <-time.After(200 * time.Millisecond):
-		t.Fatal("did not get", metaOnUnregister, "event")
+		require.FailNowf(t, "did not get %s event", metaOnUnregister)
 	}
-	if onUnregSessID != sess.ID() {
-		t.Fatal(metaOnUnregister, "meta even had wrong session ID")
-	}
-	if onUnregRegID != regID {
-		t.Fatal("meta event did not return expected registration ID")
-	}
+	require.Equal(t, sess.ID(), onUnregSessID, "meta even had wrong session ID")
+	require.Equal(t, regID, onUnregRegID, "meta event did not return expected registration ID")
 
 	var onDelRegID, onDelSessID wamp.ID
 	onDel := func(event *wamp.Event) error {
@@ -276,31 +218,14 @@ func TestMetaEventRegOnUnregisterRegOnDelete(t *testing.T) {
 	// Make sure the delete event was received.
 	select {
 	case event = <-onDelEvents:
-		if err = onDel(event); err != nil {
-			t.Fatal("Event error:", err)
-		}
+		err = onDel(event)
+		require.NoError(t, err)
 	case <-time.After(200 * time.Millisecond):
-		t.Fatal("did not get", metaRegOnDelete, "event")
+		require.FailNowf(t, "did not get %s event", metaRegOnDelete)
 	}
-	if onDelSessID != sess.ID() {
-		t.Fatal(metaOnUnregister, "meta even had wrong session ID")
-	}
-	if onDelRegID != regID {
-		t.Fatal("meta event did not return expected registration ID")
-	}
+	require.Equal(t, sess.ID(), onDelSessID, "meta even had wrong session ID")
+	require.Equal(t, regID, onDelRegID, "meta event did not return expected registration ID")
 
 	err = subscriber.Unsubscribe(metaOnUnregister)
-	if err != nil {
-		t.Fatal("unsubscribe error:", err)
-	}
-
-	err = sess.Close()
-	if err != nil {
-		t.Fatal("Failed to disconnect client:", err)
-	}
-
-	err = subscriber.Close()
-	if err != nil {
-		t.Fatal("Failed to disconnect client:", err)
-	}
+	require.NoError(t, err)
 }

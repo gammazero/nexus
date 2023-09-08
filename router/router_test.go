@@ -1,16 +1,16 @@
 package router
 
 import (
-	"fmt"
 	"log"
 	"os"
 	"testing"
 	"time"
 
-	"github.com/fortytw2/leaktest"
 	"github.com/gammazero/nexus/v3/stdlog"
 	"github.com/gammazero/nexus/v3/transport"
 	"github.com/gammazero/nexus/v3/wamp"
+	"github.com/stretchr/testify/require"
+	"go.uber.org/goleak"
 )
 
 const (
@@ -55,7 +55,13 @@ var clientRoles = wamp.Dict{
 	"authmethods": wamp.List{"anonymous", "ticket"},
 }
 
-func newTestRouter() (Router, error) {
+func checkGoLeaks(t *testing.T) {
+	t.Cleanup(func() {
+		goleak.VerifyNone(t)
+	})
+}
+
+func newTestRouter(t *testing.T) Router {
 	config := &Config{
 		RealmConfigs: []*RealmConfig{
 			{
@@ -69,10 +75,16 @@ func newTestRouter() (Router, error) {
 		},
 		Debug: debug,
 	}
-	return NewRouter(config, logger)
+
+	r, err := NewRouter(config, logger)
+	require.NoError(t, err)
+	t.Cleanup(func() {
+		r.Close()
+	})
+	return r
 }
 
-func testClientInRealm(r Router, realm wamp.URI) (*wamp.Session, error) {
+func testClientInRealm(t *testing.T, r Router, realm wamp.URI) *wamp.Session {
 	client, server := transport.LinkedPeers()
 	// Run as goroutine since Send will block until message read by router, if
 	// client uses unbuffered channel.
@@ -82,185 +94,109 @@ func testClientInRealm(r Router, realm wamp.URI) (*wamp.Session, error) {
 	//go client.Send(&wamp.Hello{Realm: realm, Details: clientRoles})
 	go client.Send(&wamp.Hello{Realm: realm, Details: details})
 	err := r.Attach(server)
-	if err != nil {
-		return nil, err
-	}
+	require.NoError(t, err)
 
 	msg, err := wamp.RecvTimeout(client, time.Second)
-	if err != nil {
-		return nil, fmt.Errorf("error waiting for welcome: %w", err)
-	}
+	require.NoError(t, err, "error waiting for welcome")
 	welcome, ok := msg.(*wamp.Welcome)
-	if !ok {
-		return nil, fmt.Errorf("expected %v, got %v", wamp.WELCOME,
-			msg.MessageType())
-	}
+	require.True(t, ok, "expected WELCOME")
 
 	return &wamp.Session{
 		Peer:    client,
 		ID:      welcome.ID,
 		Details: welcome.Details,
-	}, nil
+	}
 }
 
-func testClient(r Router) (*wamp.Session, error) {
-	return testClientInRealm(r, testRealm)
+func testClient(t *testing.T, r Router) *wamp.Session {
+	return testClientInRealm(t, r, testRealm)
 }
 
 func TestHandshake(t *testing.T) {
-	defer leaktest.Check(t)()
-	r, err := newTestRouter()
-	if err != nil {
-		t.Fatal(err)
-	}
-	defer r.Close()
-	cli, err := testClient(r)
-	if err != nil {
-		t.Fatal(err)
-	}
+	checkGoLeaks(t)
+	r := newTestRouter(t)
 
+	cli := testClient(t, r)
 	cli.Send(&wamp.Goodbye{})
 	msg, err := wamp.RecvTimeout(cli, time.Second)
-	if err != nil {
-		t.Fatal("no goodbye message after sending goodbye:", err)
-	}
-	if _, ok := msg.(*wamp.Goodbye); !ok {
-		t.Fatal("expected GOODBYE, received:", msg.MessageType())
-	}
+	require.NoError(t, err, "no goodbye message after sending goodbye")
+	_, ok := msg.(*wamp.Goodbye)
+	require.True(t, ok, "expected GOODBYE")
 }
 
 func TestHandshakeBadRealm(t *testing.T) {
-	defer leaktest.Check(t)()
-	r, err := newTestRouter()
-	if err != nil {
-		t.Error(err)
-	}
-	defer r.Close()
-
+	checkGoLeaks(t)
+	r := newTestRouter(t)
 	client, server := transport.LinkedPeers()
 	go client.Send(&wamp.Hello{Realm: "does.not.exist"})
-	err = r.Attach(server)
-	if err == nil {
-		t.Fatal("expected error")
-	}
+	err := r.Attach(server)
+	require.Error(t, err)
 
 	msg, err := wamp.RecvTimeout(client, time.Second)
-	if err != nil {
-		t.Fatal("timed out waiting for response to HELLO")
-	}
-	if _, ok := msg.(*wamp.Abort); !ok {
-		t.Error("Expected ABORT after bad handshake")
-	}
+	require.NoError(t, err, "timed out waiting for response to HELLO")
+	_, ok := msg.(*wamp.Abort)
+	require.True(t, ok, "Expected ABORT after bad handshake")
 }
 
 // Test for protocol violation.
 func TestProtocolViolation(t *testing.T) {
-	defer leaktest.Check(t)()
-	r, err := newTestRouter()
-	if err != nil {
-		t.Fatal(err)
-	}
-	defer r.Close()
-	cli, err := testClient(r)
-	if err != nil {
-		t.Fatal(err)
-	}
+	checkGoLeaks(t)
+	r := newTestRouter(t)
+	cli := testClient(t, r)
 
 	// Send HELLO message after session established.
 	cli.Send(&wamp.Hello{Realm: testRealm, Details: clientRoles})
 	msg, err := wamp.RecvTimeout(cli, time.Second)
-	if err != nil {
-		t.Fatal("timed out waiting for ABORT")
-	}
+	require.NoError(t, err, "timed out waiting for ABORT")
 	abort, ok := msg.(*wamp.Abort)
-	if !ok {
-		t.Fatal("expected ABORT, received:", msg.MessageType())
-	}
-	if abort.Reason != wamp.ErrProtocolViolation {
-		t.Fatal("Expected reason to be", wamp.ErrProtocolViolation)
-	}
+	require.True(t, ok, "expected ABORT")
+	require.Equal(t, wamp.ErrProtocolViolation, abort.Reason)
 
 	// Send SUBSCRIBE before session established.
 	client, server := transport.LinkedPeers()
 	// Run as goroutine since Send will block until message read by router, if
 	// client uses unbuffered channel.
 	go client.Send(&wamp.Subscribe{Request: wamp.GlobalID(), Topic: wamp.URI("some.uri")})
-	if err = r.Attach(server); err == nil {
-		t.Fatal("Expected error from Attach")
-	}
+	err = r.Attach(server)
+	require.Error(t, err)
 
 	msg, err = wamp.RecvTimeout(client, time.Second)
-	if err != nil {
-		t.Fatal("timed out waiting for ABORT")
-	}
+	require.NoError(t, err, "timed out waiting for ABORT")
 	abort, ok = msg.(*wamp.Abort)
-	if !ok {
-		t.Fatal("expected ABORT, received:", msg.MessageType())
-	}
-	if abort.Reason != wamp.ErrProtocolViolation {
-		t.Fatal("Expected reason to be", wamp.ErrProtocolViolation)
-	}
+	require.True(t, ok, "expected ABORT")
+	require.Equal(t, wamp.ErrProtocolViolation, abort.Reason)
 }
 
 func TestRouterSubscribe(t *testing.T) {
-	defer leaktest.Check(t)()
-	r, err := newTestRouter()
-	if err != nil {
-		t.Error(err)
-	}
-	defer r.Close()
+	checkGoLeaks(t)
 
-	sub, err := testClient(r)
-	if err != nil {
-		t.Fatal(err)
-	}
+	r := newTestRouter(t)
+	sub := testClient(t, r)
 
 	subscribeID := wamp.GlobalID()
 	sub.Send(&wamp.Subscribe{Request: subscribeID, Topic: testTopic})
 	msg, err := wamp.RecvTimeout(sub, time.Second)
-	if err != nil {
-		t.Fatal("Timed out waiting for SUBSCRIBED")
-	}
+	require.NoError(t, err, "Timed out waiting for SUBSCRIBED")
 	subMsg, ok := msg.(*wamp.Subscribed)
-	if !ok {
-		t.Fatal("Expected SUBSCRIBED, got:", msg.MessageType())
-	}
-	if subMsg.Request != subscribeID {
-		t.Fatal("wrong request ID")
-	}
+	require.True(t, ok, "Expected SUBSCRIBED")
+	require.Equal(t, subscribeID, subMsg.Request, "wrong request ID")
 	subscriptionID := subMsg.Subscription
 
-	pub, err := testClient(r)
-	if err != nil {
-		t.Fatal(err)
-	}
+	pub := testClient(t, r)
 	pubID := wamp.GlobalID()
 	pub.Send(&wamp.Publish{Request: pubID, Topic: testTopic})
 
 	msg, err = wamp.RecvTimeout(sub, time.Second)
-	if err != nil {
-		t.Fatal("Timed out waiting for EVENT")
-	}
+	require.NoError(t, err, "Timed out waiting for EVENT")
 	event, ok := msg.(*wamp.Event)
-	if !ok {
-		t.Fatal("Expected EVENT, got:", msg.MessageType())
-	}
-	if event.Subscription != subscriptionID {
-		t.Fatal("wrong subscription ID")
-	}
+	require.True(t, ok, "Expected EVENT")
+	require.Equal(t, subscriptionID, event.Subscription, "wrong subscription ID")
 }
 
 func TestPublishAcknowledge(t *testing.T) {
-	defer leaktest.Check(t)()
-	r, err := newTestRouter()
-	if err != nil {
-		t.Error(err)
-	}
-	defer r.Close()
-	client, err := testClient(r)
-	if err != nil {
-		t.Fatal(err)
-	}
+	checkGoLeaks(t)
+	r := newTestRouter(t)
+	client := testClient(t, r)
 
 	id := wamp.GlobalID()
 	client.Send(&wamp.Publish{
@@ -269,29 +205,15 @@ func TestPublishAcknowledge(t *testing.T) {
 		Topic:   "some.uri"})
 
 	msg, err := wamp.RecvTimeout(client, time.Second)
-	if err != nil {
-		t.Fatal("sent acknowledge=true, timed out waiting for PUBLISHED")
-	}
+	require.NoError(t, err, "sent acknowledge=true, timed out waiting for PUBLISHED")
 	pub, ok := msg.(*wamp.Published)
-	if !ok {
-		t.Fatal("sent acknowledge=true, expected PUBLISHED, got:",
-			msg.MessageType())
-	}
-	if pub.Request != id {
-		t.Fatal("wrong request id")
-	}
+	require.Truef(t, ok, "sent acknowledge=true, expected PUBLISHED, got: %s", msg.MessageType())
+	require.Equal(t, id, pub.Request, "wrong request id")
 }
 
 func TestPublishFalseAcknowledge(t *testing.T) {
-	r, err := newTestRouter()
-	if err != nil {
-		t.Error(err)
-	}
-	defer r.Close()
-	client, err := testClient(r)
-	if err != nil {
-		t.Fatal(err)
-	}
+	r := newTestRouter(t)
+	client := testClient(t, r)
 
 	id := wamp.GlobalID()
 	client.Send(&wamp.Publish{
@@ -301,138 +223,80 @@ func TestPublishFalseAcknowledge(t *testing.T) {
 
 	msg, err := wamp.RecvTimeout(client, 200*time.Millisecond)
 	if err == nil {
-		if _, ok := msg.(*wamp.Published); ok {
-			t.Fatal("Sent acknowledge=false, but received PUBLISHED:",
-				msg.MessageType())
-		}
+		_, ok := msg.(*wamp.Published)
+		require.Falsef(t, ok, "Sent acknowledge=false, but received PUBLISHED: %s", msg.MessageType())
 	}
 }
 
 func TestPublishNoAcknowledge(t *testing.T) {
-	r, err := newTestRouter()
-	if err != nil {
-		t.Error(err)
-	}
-	defer r.Close()
-	client, err := testClient(r)
-	if err != nil {
-		t.Fatal(err)
-	}
+	r := newTestRouter(t)
+	client := testClient(t, r)
 
 	id := wamp.GlobalID()
 	client.Send(&wamp.Publish{Request: id, Topic: "some.uri"})
 	msg, err := wamp.RecvTimeout(client, 200*time.Millisecond)
 	if err == nil {
-		if _, ok := msg.(*wamp.Published); ok {
-			t.Fatal("Sent acknowledge=false, but received PUBLISHED:",
-				msg.MessageType())
-		}
+		_, ok := msg.(*wamp.Published)
+		require.Falsef(t, ok, "Sent acknowledge=false, but received PUBLISHED: %s", msg.MessageType())
 	}
 }
 
 func TestRouterCall(t *testing.T) {
-	defer leaktest.Check(t)()
-	r, err := newTestRouter()
-	if err != nil {
-		t.Error(err)
-	}
-	defer r.Close()
-	callee, err := testClient(r)
-	if err != nil {
-		t.Fatal(err)
-	}
+	checkGoLeaks(t)
+	r := newTestRouter(t)
+	callee := testClient(t, r)
 
 	registerID := wamp.GlobalID()
 	// Register remote procedure
 	callee.Send(&wamp.Register{Request: registerID, Procedure: testProcedure})
 
 	msg, err := wamp.RecvTimeout(callee, time.Second)
-	if err != nil {
-		t.Fatal("Timed out waiting for REGISTERED")
-	}
+	require.NoError(t, err, "Timed out waiting for REGISTERED")
 	registered, ok := msg.(*wamp.Registered)
-	if !ok {
-		t.Fatal("expected REGISTERED,got:", msg.MessageType())
-	}
-	if registered.Request != registerID {
-		t.Fatal("wrong request ID")
-	}
+	require.True(t, ok, "expected REGISTERED")
+	require.Equal(t, registerID, registered.Request)
 	registrationID := registered.Registration
 
-	caller, err := testClient(r)
-	if err != nil {
-		t.Fatal("Error connecting caller:", err)
-	}
+	caller := testClient(t, r)
 	callID := wamp.GlobalID()
 	// Call remote procedure
 	caller.Send(&wamp.Call{Request: callID, Procedure: testProcedure})
 
 	msg, err = wamp.RecvTimeout(callee, time.Second)
-	if err != nil {
-		t.Fatal("Timed out waiting for INVOCATION")
-	}
+	require.NoError(t, err, "Timed out waiting for INVOCATION")
 	invocation, ok := msg.(*wamp.Invocation)
-	if !ok {
-		t.Fatal("expected INVOCATION, got:", msg.MessageType())
-	}
-	if invocation.Registration != registrationID {
-		t.Fatal("wrong registration id")
-	}
+	require.True(t, ok, "expected INVOCATION")
+	require.Equal(t, registrationID, invocation.Registration)
 	invocationID := invocation.Request
 
 	// Returns result of remove procedure
 	callee.Send(&wamp.Yield{Request: invocationID})
 
 	msg, err = wamp.RecvTimeout(caller, time.Second)
-	if err != nil {
-		t.Fatal("Timed out waiting for RESULT")
-	}
+	require.NoError(t, err, "Timed out waiting for RESULT")
 	result, ok := msg.(*wamp.Result)
-	if !ok {
-		t.Fatal("expected RESULT, got", msg.MessageType())
-	}
-	if result.Request != callID {
-		t.Fatal("wrong result ID")
-	}
+	require.True(t, ok, "expected RESULT")
+	require.Equal(t, callID, result.Request)
 }
 
 func TestSessionCountMetaProcedure(t *testing.T) {
-	defer leaktest.Check(t)()
-	r, err := newTestRouter()
-	if err != nil {
-		t.Error(err)
-	}
-	defer r.Close()
+	checkGoLeaks(t)
+	r := newTestRouter(t)
 
-	caller, err := testClient(r)
-	if err != nil {
-		t.Fatal(err)
-	}
+	caller := testClient(t, r)
 
 	// Call wamp.MetaProcSessionCount
 	req := &wamp.Call{Request: wamp.GlobalID(), Procedure: wamp.MetaProcSessionCount}
 	caller.Send(req)
 	msg, err := wamp.RecvTimeout(caller, time.Second)
-	if err != nil {
-		t.Fatal(err)
-	}
+	require.NoError(t, err)
 	result, ok := msg.(*wamp.Result)
-	if !ok {
-		t.Fatal("expected RESULT, got", msg.MessageType())
-	}
-	if result.Request != req.Request {
-		t.Fatal("wrong result ID")
-	}
-	if len(result.Arguments) == 0 {
-		t.Fatal("missing expected arguemnt")
-	}
+	require.True(t, ok, "expected RESULT")
+	require.Equal(t, req.Request, result.Request)
+	require.NotZero(t, len(result.Arguments), "missing expected arguemnt")
 	count, ok := result.Arguments[0].(int)
-	if !ok {
-		t.Fatal("expected int arguemnt")
-	}
-	if count != 1 {
-		t.Fatal("wrong session count")
-	}
+	require.True(t, ok, "expected int arguemnt")
+	require.Equal(t, 1, count, "wrong session count")
 
 	// Call wamp.MetaProcSessionCount with invalid argument
 	req = &wamp.Call{
@@ -442,16 +306,10 @@ func TestSessionCountMetaProcedure(t *testing.T) {
 	}
 	caller.Send(req)
 	msg, err = wamp.RecvTimeout(caller, time.Second)
-	if err != nil {
-		t.Fatal(err)
-	}
+	require.NoError(t, err)
 	errResult, ok := msg.(*wamp.Error)
-	if !ok {
-		t.Fatal("expected ERROR, got", msg.MessageType())
-	}
-	if errResult.Request != req.Request {
-		t.Fatal("wrong result ID")
-	}
+	require.True(t, ok, "expected ERROR")
+	require.Equal(t, req.Request, errResult.Request)
 
 	// Call wamp.MetaProcSessionCount with non-matching filter
 	filter := wamp.List{"user", "def"}
@@ -462,23 +320,13 @@ func TestSessionCountMetaProcedure(t *testing.T) {
 	}
 	caller.Send(req)
 	msg, err = wamp.RecvTimeout(caller, time.Second)
-	if err != nil {
-		t.Fatal(err)
-	}
+	require.NoError(t, err)
 	result, ok = msg.(*wamp.Result)
-	if !ok {
-		t.Fatal("expected RESULT, got", msg.MessageType())
-	}
-	if result.Request != req.Request {
-		t.Fatal("wrong result ID")
-	}
-	if len(result.Arguments) == 0 {
-		t.Fatal("missing expected arguemnt")
-	}
+	require.True(t, ok, "expected RESULT")
+	require.Equal(t, req.Request, result.Request, "wrong result ID")
+	require.NotZero(t, len(result.Arguments), "missing expected arguemnt")
 	count = result.Arguments[0].(int)
-	if count != 0 {
-		t.Fatal("wrong session count")
-	}
+	require.Zero(t, count, "wrong session count")
 
 	// Call wamp.MetaProcSessionCount with matching filter
 	filter = wamp.List{"trusted", "user", "def"}
@@ -489,37 +337,20 @@ func TestSessionCountMetaProcedure(t *testing.T) {
 	}
 	caller.Send(req)
 	msg, err = wamp.RecvTimeout(caller, time.Second)
-	if err != nil {
-		t.Fatal(err)
-	}
+	require.NoError(t, err)
 	result, ok = msg.(*wamp.Result)
-	if !ok {
-		t.Fatal("expected RESULT, got", msg.MessageType())
-	}
-	if result.Request != req.Request {
-		t.Fatal("wrong result ID")
-	}
-	if len(result.Arguments) == 0 {
-		t.Fatal("missing expected arguemnt")
-	}
+	require.True(t, ok, "expected RESULT")
+	require.Equal(t, req.Request, result.Request)
+	require.NotZero(t, len(result.Arguments), "missing expected arguemnt")
 	count = result.Arguments[0].(int)
-	if count != 1 {
-		t.Fatal("wrong session count")
-	}
+	require.Equal(t, 1, count, "wrong session count")
 }
 
 func TestListSessionMetaProcedures(t *testing.T) {
-	defer leaktest.Check(t)()
-	r, err := newTestRouter()
-	if err != nil {
-		t.Error(err)
-	}
-	defer r.Close()
+	checkGoLeaks(t)
+	r := newTestRouter(t)
 
-	caller, err := testClient(r)
-	if err != nil {
-		t.Fatal(err)
-	}
+	caller := testClient(t, r)
 	sessID := caller.ID
 
 	// Call wamp.MetaProcSessionList to get session list.
@@ -529,29 +360,15 @@ func TestListSessionMetaProcedures(t *testing.T) {
 	}
 	caller.Send(req)
 	msg, err := wamp.RecvTimeout(caller, time.Second)
-	if err != nil {
-		t.Fatal(err)
-	}
+	require.NoError(t, err)
 	result, ok := msg.(*wamp.Result)
-	if !ok {
-		t.Fatal("expected RESULT, got", msg.MessageType())
-	}
-	if result.Request != req.Request {
-		t.Fatal("wrong result ID")
-	}
-	if len(result.Arguments) == 0 {
-		t.Fatal("missing expected arguemnt")
-	}
+	require.True(t, ok, "expected RESULT")
+	require.Equal(t, req.Request, result.Request)
+	require.NotZero(t, len(result.Arguments), "missing expected arguemnt")
 	ids, ok := result.Arguments[0].([]wamp.ID)
-	if !ok {
-		t.Fatal("wrong arg type")
-	}
-	if len(ids) != 1 {
-		t.Fatal("wrong number of session IDs")
-	}
-	if sessID != ids[0] {
-		t.Fatal("wrong session ID")
-	}
+	require.True(t, ok, "wrong arg type")
+	require.Equal(t, 1, len(ids), "wrong number of session IDs")
+	require.Equal(t, ids[0], sessID, "wrong session ID")
 
 	// Call wamp.MetaProcSessionList with matching filter
 	filter := wamp.List{"trusted"}
@@ -562,43 +379,22 @@ func TestListSessionMetaProcedures(t *testing.T) {
 	}
 	caller.Send(req)
 	msg, err = wamp.RecvTimeout(caller, time.Second)
-	if err != nil {
-		t.Fatal(err)
-	}
+	require.NoError(t, err)
 	result, ok = msg.(*wamp.Result)
-	if !ok {
-		t.Fatal("expected RESULT, got", msg.MessageType())
-	}
-	if result.Request != req.Request {
-		t.Fatal("wrong result ID")
-	}
-	if len(result.Arguments) == 0 {
-		t.Fatal("missing expected arguemnt")
-	}
+	require.True(t, ok, "expected RESULT")
+	require.Equal(t, req.Request, result.Request)
+	require.NotZero(t, len(result.Arguments), "missing expected arguemnt")
 	ids, ok = result.Arguments[0].([]wamp.ID)
-	if !ok {
-		t.Fatal("wrong arg type")
-	}
-	if len(ids) != 1 {
-		t.Fatal("wrong number of session IDs")
-	}
-	if sessID != ids[0] {
-		t.Fatal("wrong session ID")
-	}
+	require.True(t, ok, "wrong arg type")
+	require.Equal(t, 1, len(ids), "wrong number of session IDs")
+	require.Equal(t, ids[0], sessID, "wrong session ID")
 }
 
 func TestGetSessionMetaProcedures(t *testing.T) {
-	defer leaktest.Check(t)()
-	r, err := newTestRouter()
-	if err != nil {
-		t.Error(err)
-	}
-	defer r.Close()
+	checkGoLeaks(t)
+	r := newTestRouter(t)
 
-	caller, err := testClient(r)
-	if err != nil {
-		t.Fatal(err)
-	}
+	caller := testClient(t, r)
 	sessID := caller.ID
 
 	// Call session meta-procedure with bad session ID
@@ -609,16 +405,10 @@ func TestGetSessionMetaProcedures(t *testing.T) {
 		Arguments: wamp.List{wamp.ID(123456789)},
 	})
 	msg, err := wamp.RecvTimeout(caller, time.Second)
-	if err != nil {
-		t.Fatal(err)
-	}
+	require.NoError(t, err)
 	errRsp, ok := msg.(*wamp.Error)
-	if !ok {
-		t.Fatal("expected ERROR, got", msg.MessageType())
-	}
-	if errRsp.Error != wamp.ErrNoSuchSession {
-		t.Fatal("wrong error value")
-	}
+	require.True(t, ok, "expected ERROR")
+	require.Equal(t, wamp.ErrNoSuchSession, errRsp.Error, "wrong error value")
 
 	// Call session meta-procedure to get session information.
 	callID = wamp.GlobalID()
@@ -628,96 +418,51 @@ func TestGetSessionMetaProcedures(t *testing.T) {
 		Arguments: wamp.List{sessID},
 	})
 	msg, err = wamp.RecvTimeout(caller, time.Second)
-	if err != nil {
-		t.Fatal(err)
-	}
+	require.NoError(t, err)
 	result, ok := msg.(*wamp.Result)
-	if !ok {
-		t.Fatal("expected RESULT, got", msg.MessageType())
-	}
-	if result.Request != callID {
-		t.Fatal("wrong result ID")
-	}
-	if len(result.Arguments) == 0 {
-		t.Fatal("missing expected arguemnt")
-	}
+	require.True(t, ok, "expected RESULT")
+	require.Equal(t, callID, result.Request, "wrong result ID")
+	require.NotZero(t, len(result.Arguments), "missing expected arguemnt")
 	details, ok := result.Arguments[0].(wamp.Dict)
-	if !ok {
-		t.Fatal("expected dict type arg")
-	}
+	require.True(t, ok, "expected dict type arg")
 	sid, _ := wamp.AsID(details["session"])
-	if sid != sessID {
-		t.Fatal("wrong session ID")
-	}
+	require.Equal(t, sessID, sid, "wrong session ID")
 }
 
 func TestRegistrationMetaProcedures(t *testing.T) {
-	defer leaktest.Check(t)()
-	r, err := newTestRouter()
-	if err != nil {
-		t.Error(err)
-	}
-	defer r.Close()
-
-	caller, err := testClient(r)
-	if err != nil {
-		t.Fatal(err)
-	}
+	checkGoLeaks(t)
+	r := newTestRouter(t)
+	caller := testClient(t, r)
 
 	// ----- Test wamp.registration.list meta procedure -----
 	callID := wamp.GlobalID()
 	caller.Send(&wamp.Call{Request: callID, Procedure: wamp.MetaProcRegList})
 	msg, err := wamp.RecvTimeout(caller, time.Second)
-	if err != nil {
-		t.Fatal("Timed out waiting for RESULT")
-	}
+	require.NoError(t, err, "Timed out waiting for RESULT")
 	result, ok := msg.(*wamp.Result)
-	if !ok {
-		t.Fatal("expected RESULT, got", msg.MessageType())
-	}
-	if result.Request != callID {
-		t.Fatal("wrong result ID")
-	}
-	if len(result.Arguments) == 0 {
-		t.Fatal("missing expected arguemnt")
-	}
+	require.True(t, ok, "expected RESULT")
+	require.Equal(t, callID, result.Request, "wrong result ID")
+	require.NotZero(t, len(result.Arguments), "missing expected arguemnt")
 	dict, ok := result.Arguments[0].(wamp.Dict)
-	if !ok {
-		t.Fatal("expected wamp.Dict")
-	}
+	require.True(t, ok, "expected wamp.Dict")
 	exactPrev, ok := dict["exact"].([]wamp.ID)
-	if !ok {
-		t.Fatal("expected []wamp.ID")
-	}
+	require.True(t, ok, "expected []wamp.ID")
 	prefixPrev, ok := dict["prefix"].([]wamp.ID)
-	if !ok {
-		t.Fatal("expected []wamp.ID")
-	}
+	require.True(t, ok, "expected []wamp.ID")
 	wildcardPrev, ok := dict["wildcard"].([]wamp.ID)
-	if !ok {
-		t.Fatal("expected []wamp.ID")
-	}
+	require.True(t, ok, "expected []wamp.ID")
 
-	callee, err := testClient(r)
-	if err != nil {
-		t.Fatal("Error connecting client:", err)
-	}
+	callee := testClient(t, r)
 	sessID := callee.ID
 	// Register remote procedure
 	registerID := wamp.GlobalID()
 	callee.Send(&wamp.Register{Request: registerID, Procedure: testProcedure})
 
 	msg, err = wamp.RecvTimeout(callee, time.Second)
-	if err != nil {
-		t.Fatal("Timed out waiting for REGISTERED")
-	}
+	require.NoError(t, err, "Timed out waiting for REGISTERED")
 	registered, ok := msg.(*wamp.Registered)
-	if !ok {
-		t.Fatal("expected REGISTERED, got:", msg.MessageType())
-	}
-	if registered.Request != registerID {
-		t.Fatal("wrong request ID")
-	}
+	require.True(t, ok, "expected REGISTERED")
+	require.Equal(t, registerID, registered.Request, "wrong request ID")
 	registrationID := registered.Registration
 
 	// Register remote procedure
@@ -727,44 +472,27 @@ func TestRegistrationMetaProcedures(t *testing.T) {
 		Options:   wamp.Dict{"match": "wildcard"},
 	})
 	msg = <-callee.Recv()
-	if _, ok = msg.(*wamp.Registered); !ok {
-		t.Fatal("expected REGISTERED, got:", msg.MessageType())
-	}
+	_, ok = msg.(*wamp.Registered)
+	require.True(t, ok, "expected REGISTERED")
 
 	// Call session meta-procedure to get session count.
 	callID = wamp.GlobalID()
 	caller.Send(&wamp.Call{Request: callID, Procedure: wamp.MetaProcRegList})
 	msg, err = wamp.RecvTimeout(caller, time.Second)
-	if err != nil {
-		t.Fatal("Timed out waiting for RESULT")
-	}
+	require.NoError(t, err, "Timed out waiting for RESULT")
 	result, ok = msg.(*wamp.Result)
-	if !ok {
-		t.Fatal("expected RESULT, got", msg.MessageType())
-	}
-	if result.Request != callID {
-		t.Fatal("wrong result ID")
-	}
-	if len(result.Arguments) == 0 {
-		t.Fatal("missing expected arguemnt")
-	}
+	require.True(t, ok, "expected RESULT")
+	require.Equal(t, callID, result.Request, "wrong result ID")
+	require.NotZero(t, len(result.Arguments), "missing expected arguemnt")
 	dict, ok = result.Arguments[0].(wamp.Dict)
-	if !ok {
-		t.Fatal("expected wamp.Dict")
-	}
+	require.True(t, ok, "expected wamp.Dict")
 	exact := dict["exact"].([]wamp.ID)
 	prefix := dict["prefix"].([]wamp.ID)
 	wildcard := dict["wildcard"].([]wamp.ID)
 
-	if len(exact) != len(exactPrev)+1 {
-		t.Fatal("expected additional exact match")
-	}
-	if len(prefix) != len(prefixPrev) {
-		t.Fatal("prefix matches should not have changed")
-	}
-	if len(wildcard) != len(wildcardPrev)+1 {
-		t.Fatal("expected additional wildcard match")
-	}
+	require.Equal(t, len(exactPrev)+1, len(exact), "expected additional exact match")
+	require.Equal(t, len(prefixPrev), len(prefix), "prefix matches should not have changed")
+	require.Equal(t, len(wildcardPrev)+1, len(wildcard), "expected additional wildcard match")
 
 	var found bool
 	for i := range exact {
@@ -773,9 +501,7 @@ func TestRegistrationMetaProcedures(t *testing.T) {
 			break
 		}
 	}
-	if !found {
-		t.Fatal("missing expected registration ID")
-	}
+	require.True(t, found, "missing expected registration ID")
 
 	// ----- Test wamp.registration.lookup meta procedure -----
 	callID = wamp.GlobalID()
@@ -785,26 +511,14 @@ func TestRegistrationMetaProcedures(t *testing.T) {
 		Arguments: wamp.List{testProcedure},
 	})
 	msg, err = wamp.RecvTimeout(caller, time.Second)
-	if err != nil {
-		t.Fatal("Timed out waiting for RESULT")
-	}
+	require.NoError(t, err, "Timed out waiting for RESULT")
 	result, ok = msg.(*wamp.Result)
-	if !ok {
-		t.Fatal("expected RESULT, got", msg.MessageType())
-	}
-	if result.Request != callID {
-		t.Fatal("wrong result ID")
-	}
-	if len(result.Arguments) == 0 {
-		t.Fatal("missing expected arguemnt")
-	}
+	require.True(t, ok, "expected RESULT")
+	require.Equal(t, callID, result.Request, "wrong result ID")
+	require.NotZero(t, len(result.Arguments), "missing expected arguemnt")
 	regID, ok := result.Arguments[0].(wamp.ID)
-	if !ok {
-		t.Fatal("expected wamp.ID")
-	}
-	if regID != registrationID {
-		t.Fatal("received wrong registration ID")
-	}
+	require.True(t, ok, "expected wamp.ID")
+	require.Equal(t, registrationID, regID, "received wrong registration ID")
 
 	// ----- Test wamp.registration.match meta procedure -----
 	callID = wamp.GlobalID()
@@ -814,26 +528,14 @@ func TestRegistrationMetaProcedures(t *testing.T) {
 		Arguments: wamp.List{testProcedure},
 	})
 	msg, err = wamp.RecvTimeout(caller, time.Second)
-	if err != nil {
-		t.Fatal("Timed out waiting for RESULT")
-	}
+	require.NoError(t, err, "Timed out waiting for RESULT")
 	result, ok = msg.(*wamp.Result)
-	if !ok {
-		t.Fatal("expected RESULT, got", msg.MessageType())
-	}
-	if result.Request != callID {
-		t.Fatal("wrong result ID")
-	}
-	if len(result.Arguments) == 0 {
-		t.Fatal("missing expected arguemnt")
-	}
+	require.True(t, ok, "expected RESULT")
+	require.Equal(t, callID, result.Request, "wrong result ID")
+	require.NotZero(t, len(result.Arguments), "missing expected arguemnt")
 	regID, ok = wamp.AsID(result.Arguments[0])
-	if !ok {
-		t.Fatal("expected wamp.ID")
-	}
-	if regID != registrationID {
-		t.Fatal("received wrong registration ID")
-	}
+	require.True(t, ok, "expected wamp.ID")
+	require.Equal(t, registrationID, regID, "received wrong registration ID")
 
 	// ----- Test wamp.registration.get meta procedure -----
 	callID = wamp.GlobalID()
@@ -843,31 +545,17 @@ func TestRegistrationMetaProcedures(t *testing.T) {
 		Arguments: wamp.List{registrationID},
 	})
 	msg, err = wamp.RecvTimeout(caller, time.Second)
-	if err != nil {
-		t.Fatal("Timed out waiting for RESULT")
-	}
+	require.NoError(t, err, "Timed out waiting for RESULT")
 	result, ok = msg.(*wamp.Result)
-	if !ok {
-		t.Fatalf("expected RESULT, got %s %+v", msg.MessageType(), msg)
-	}
-	if result.Request != callID {
-		t.Fatal("wrong result ID")
-	}
-	if len(result.Arguments) == 0 {
-		t.Fatal("missing expected arguemnt")
-	}
+	require.True(t, ok, "expected RESULT")
+	require.Equal(t, callID, result.Request, "wrong result ID")
+	require.NotZero(t, len(result.Arguments), "missing expected arguemnt")
 	dict, ok = result.Arguments[0].(wamp.Dict)
-	if !ok {
-		t.Fatal("expected wamp.Dict")
-	}
+	require.True(t, ok, "expected wamp.Dict")
 	regID, _ = wamp.AsID(dict["id"])
-	if regID != registrationID {
-		t.Fatal("received wrong registration")
-	}
+	require.Equal(t, registrationID, regID, "received wrong registration")
 	uri, _ := wamp.AsURI(dict["uri"])
-	if uri != testProcedure {
-		t.Fatal("registration has wrong uri:", uri)
-	}
+	require.Equal(t, testProcedure, uri, "registration has wrong uri")
 
 	// ----- Test wamp.registration.list_callees meta procedure -----
 	callID = wamp.GlobalID()
@@ -877,29 +565,15 @@ func TestRegistrationMetaProcedures(t *testing.T) {
 		Arguments: wamp.List{registrationID},
 	})
 	msg, err = wamp.RecvTimeout(caller, time.Second)
-	if err != nil {
-		t.Fatal("Timed out waiting for RESULT")
-	}
+	require.NoError(t, err, "Timed out waiting for RESULT")
 	result, ok = msg.(*wamp.Result)
-	if !ok {
-		t.Fatal("expected RESULT, got", msg.MessageType())
-	}
-	if result.Request != callID {
-		t.Fatal("wrong result ID")
-	}
-	if len(result.Arguments) == 0 {
-		t.Fatal("missing expected arguemnt")
-	}
+	require.True(t, ok, "expected RESULT")
+	require.Equal(t, callID, result.Request, "wrong result ID")
+	require.NotZero(t, len(result.Arguments), "missing expected arguemnt")
 	idList, ok := result.Arguments[0].([]wamp.ID)
-	if !ok {
-		t.Fatal("Expected []wamp.ID")
-	}
-	if len(idList) != 1 {
-		t.Fatal("Expected 1 callee in list")
-	}
-	if idList[0] != sessID {
-		t.Fatal("Wrong callee session ID")
-	}
+	require.True(t, ok, "Expected []wamp.ID")
+	require.Equal(t, 1, len(idList), "Expected 1 callee in list")
+	require.Equal(t, sessID, idList[0], "Wrong callee session ID")
 
 	// ----- Test wamp.registration.count_callees meta procedure -----
 	callID = wamp.GlobalID()
@@ -909,94 +583,49 @@ func TestRegistrationMetaProcedures(t *testing.T) {
 		Arguments: wamp.List{registrationID},
 	})
 	msg, err = wamp.RecvTimeout(caller, time.Second)
-	if err != nil {
-		t.Fatal("Timed out waiting for RESULT")
-	}
+	require.NoError(t, err, "Timed out waiting for RESULT")
 	result, ok = msg.(*wamp.Result)
-	if !ok {
-		t.Fatal("expected RESULT, got", msg.MessageType())
-	}
-	if result.Request != callID {
-		t.Fatal("wrong result ID")
-	}
-	if len(result.Arguments) == 0 {
-		t.Fatal("missing expected arguemnt")
-	}
+	require.True(t, ok, "expected RESULT")
+	require.Equal(t, callID, result.Request, "wrong result ID")
+	require.NotZero(t, len(result.Arguments), "missing expected arguemnt")
 	count, ok := wamp.AsInt64(result.Arguments[0])
-	if !ok {
-		t.Fatal("Argument is not an int")
-	}
-	if count != 1 {
-		t.Fatal("Wring number of callees")
-	}
+	require.True(t, ok, "Argument is not an int")
+	require.Equal(t, int64(1), count, "Wring number of callees")
 }
 
 func TestSubscriptionMetaProcedures(t *testing.T) {
-	defer leaktest.Check(t)()
-	r, err := newTestRouter()
-	if err != nil {
-		t.Error(err)
-	}
-	defer r.Close()
-
-	caller, err := testClient(r)
-	if err != nil {
-		t.Fatal(err)
-	}
+	checkGoLeaks(t)
+	r := newTestRouter(t)
+	caller := testClient(t, r)
 
 	// ----- Test wamp.subscription.list meta procedure -----
 	callID := wamp.GlobalID()
 	caller.Send(&wamp.Call{Request: callID, Procedure: wamp.MetaProcSubList})
 	msg, err := wamp.RecvTimeout(caller, time.Second)
-	if err != nil {
-		t.Fatal("Timed out waiting for RESULT")
-	}
+	require.NoError(t, err, "Timed out waiting for RESULT")
 	result, ok := msg.(*wamp.Result)
-	if !ok {
-		t.Fatal("expected RESULT, got", msg.MessageType())
-	}
-	if result.Request != callID {
-		t.Fatal("wrong result ID")
-	}
-	if len(result.Arguments) == 0 {
-		t.Fatal("missing expected arguemnt")
-	}
+	require.True(t, ok, "expected RESULT")
+	require.Equal(t, callID, result.Request, "wrong result ID")
+	require.NotZero(t, len(result.Arguments), "missing expected arguemnt")
 	dict, ok := result.Arguments[0].(wamp.Dict)
-	if !ok {
-		t.Fatal("expected wamp.Dict")
-	}
+	require.True(t, ok, "expected wamp.Dict")
 	exactPrev, ok := dict["exact"].([]wamp.ID)
-	if !ok {
-		t.Fatal("expected []wamp.ID")
-	}
+	require.True(t, ok, "expected []wamp.ID")
 	prefixPrev, ok := dict["prefix"].([]wamp.ID)
-	if !ok {
-		t.Fatal("expected []wamp.ID")
-	}
+	require.True(t, ok, "expected []wamp.ID")
 	wildcardPrev, ok := dict["wildcard"].([]wamp.ID)
-	if !ok {
-		t.Fatal("expected []wamp.ID")
-	}
+	require.True(t, ok, "expected []wamp.ID")
 
-	subscriber, err := testClient(r)
-	if err != nil {
-		t.Fatal("Error connecting client:", err)
-	}
+	subscriber := testClient(t, r)
 	sessID := subscriber.ID
 	// Subscribe to topic
 	reqID := wamp.GlobalID()
 	subscriber.Send(&wamp.Subscribe{Request: reqID, Topic: testTopic})
 	msg, err = wamp.RecvTimeout(subscriber, time.Second)
-	if err != nil {
-		t.Fatal("Timed out waiting for SUBSCRIBED")
-	}
+	require.NoError(t, err, "Timed out waiting for SUBSCRIBED")
 	subscribed, ok := msg.(*wamp.Subscribed)
-	if !ok {
-		t.Fatal("expected SUBSCRIBED, got:", msg.MessageType())
-	}
-	if subscribed.Request != reqID {
-		t.Fatal("wrong request ID")
-	}
+	require.True(t, ok, "expected SUBSCRIBED")
+	require.Equal(t, reqID, subscribed.Request, "wrong request ID")
 	subscriptionID := subscribed.Subscription
 
 	// Subscriber to wildcard topic
@@ -1006,45 +635,28 @@ func TestSubscriptionMetaProcedures(t *testing.T) {
 		Options: wamp.Dict{"match": "wildcard"},
 	})
 	msg = <-subscriber.Recv()
-	if subscribed, ok = msg.(*wamp.Subscribed); !ok {
-		t.Fatal("expected SUBSCRIBED, got:", msg.MessageType())
-	}
+	subscribed, ok = msg.(*wamp.Subscribed)
+	require.True(t, ok, "expected SUBSCRIBED")
 	wcSubscriptionID := subscribed.Subscription
 
 	// Call subscription meta-procedure to get subscriptions.
 	callID = wamp.GlobalID()
 	caller.Send(&wamp.Call{Request: callID, Procedure: wamp.MetaProcSubList})
 	msg, err = wamp.RecvTimeout(caller, time.Second)
-	if err != nil {
-		t.Fatal("Timed out waiting for RESULT")
-	}
+	require.NoError(t, err, "Timed out waiting for RESULT")
 	result, ok = msg.(*wamp.Result)
-	if !ok {
-		t.Fatal("expected RESULT, got", msg.MessageType())
-	}
-	if result.Request != callID {
-		t.Fatal("wrong result ID")
-	}
-	if len(result.Arguments) == 0 {
-		t.Fatal("missing expected arguemnt")
-	}
+	require.True(t, ok, "expected RESULT")
+	require.Equal(t, callID, result.Request, "wrong result ID")
+	require.NotZero(t, len(result.Arguments), "missing expected arguemnt")
 	dict, ok = result.Arguments[0].(wamp.Dict)
-	if !ok {
-		t.Fatal("expected wamp.Dict")
-	}
+	require.True(t, ok, "expected wamp.Dict")
 	exact := dict["exact"].([]wamp.ID)
 	prefix := dict["prefix"].([]wamp.ID)
 	wildcard := dict["wildcard"].([]wamp.ID)
 
-	if len(exact) != len(exactPrev)+1 {
-		t.Error("expected additional exact match")
-	}
-	if len(prefix) != len(prefixPrev) {
-		t.Error("prefix matches should not have changed")
-	}
-	if len(wildcard) != len(wildcardPrev)+1 {
-		t.Error("expected additional wildcard match")
-	}
+	require.Equal(t, len(exactPrev)+1, len(exact), "expected additional exact match")
+	require.Equal(t, len(prefixPrev), len(prefix), "prefix matches should not have changed")
+	require.Equal(t, len(wildcardPrev)+1, len(wildcard), "expected additional wildcard match")
 
 	var found bool
 	for i := range exact {
@@ -1053,9 +665,7 @@ func TestSubscriptionMetaProcedures(t *testing.T) {
 			break
 		}
 	}
-	if !found {
-		t.Error("missing expected subscription ID")
-	}
+	require.True(t, found, "missing expected subscription ID")
 
 	// ----- Test wamp.subscription.lookup meta procedure -----
 	callID = wamp.GlobalID()
@@ -1065,26 +675,14 @@ func TestSubscriptionMetaProcedures(t *testing.T) {
 		Arguments: wamp.List{testTopic},
 	})
 	msg, err = wamp.RecvTimeout(caller, time.Second)
-	if err != nil {
-		t.Fatal("Timed out waiting for RESULT")
-	}
+	require.NoError(t, err, "Timed out waiting for RESULT")
 	result, ok = msg.(*wamp.Result)
-	if !ok {
-		t.Fatal("expected RESULT, got", msg.MessageType())
-	}
-	if result.Request != callID {
-		t.Fatal("wrong result ID")
-	}
-	if len(result.Arguments) == 0 {
-		t.Fatal("missing expected arguemnt")
-	}
+	require.True(t, ok, "expected RESULT")
+	require.Equal(t, callID, result.Request, "wrong result ID")
+	require.NotZero(t, len(result.Arguments), "missing expected arguemnt")
 	subID, ok := result.Arguments[0].(wamp.ID)
-	if !ok {
-		t.Fatal("expected wamp.ID")
-	}
-	if subID != subscriptionID {
-		t.Fatal("received wrong subscription ID")
-	}
+	require.True(t, ok, "expected wamp.ID")
+	require.Equal(t, subscriptionID, subID, "received wrong subscription ID")
 
 	// ----- Test wamp.subscription.match meta procedure -----
 	callID = wamp.GlobalID()
@@ -1094,32 +692,16 @@ func TestSubscriptionMetaProcedures(t *testing.T) {
 		Arguments: wamp.List{testTopic},
 	})
 	msg, err = wamp.RecvTimeout(caller, time.Second)
-	if err != nil {
-		t.Fatal("Timed out waiting for RESULT")
-	}
+	require.NoError(t, err, "Timed out waiting for RESULT")
 	result, ok = msg.(*wamp.Result)
-	if !ok {
-		t.Fatal("expected RESULT, got", msg.MessageType())
-	}
-	if result.Request != callID {
-		t.Fatal("wrong result ID")
-	}
-	if len(result.Arguments) == 0 {
-		t.Fatal("missing expected arguemnt")
-	}
+	require.True(t, ok, "expected RESULT")
+	require.Equal(t, callID, result.Request, "wrong result ID")
+	require.NotZero(t, len(result.Arguments), "missing expected arguemnt")
 	subIDs, ok := wamp.AsList(result.Arguments[0])
-	if !ok {
-		t.Fatal("expected wamp.List")
-	}
-	if len(subIDs) != 2 {
-		t.Error("expected 2 subscriptions for wamp.subscription.match, got", len(subIDs))
-	}
-	if subscriptionID != subIDs[0] && subscriptionID != subIDs[1] {
-		t.Fatal("did not match subscription ID")
-	}
-	if wcSubscriptionID != subIDs[0] && wcSubscriptionID != subIDs[1] {
-		t.Fatal("did not match wildcard subscription ID")
-	}
+	require.True(t, ok, "expected wamp.List")
+	require.Equal(t, 2, len(subIDs), "expected 2 subscriptions for wamp.subscription.match")
+	require.Contains(t, subIDs, subscriptionID, "did not match subscription ID")
+	require.Contains(t, subIDs, wcSubscriptionID, "did not match wildcard subscription ID")
 
 	// ----- Test wamp.subscription.get meta procedure -----
 	callID = wamp.GlobalID()
@@ -1129,31 +711,17 @@ func TestSubscriptionMetaProcedures(t *testing.T) {
 		Arguments: wamp.List{subscriptionID},
 	})
 	msg, err = wamp.RecvTimeout(caller, time.Second)
-	if err != nil {
-		t.Fatal("Timed out waiting for RESULT")
-	}
+	require.NoError(t, err, "Timed out waiting for RESULT")
 	result, ok = msg.(*wamp.Result)
-	if !ok {
-		t.Fatalf("expected RESULT, got %s %+v", msg.MessageType(), msg)
-	}
-	if result.Request != callID {
-		t.Fatal("wrong result ID")
-	}
-	if len(result.Arguments) == 0 {
-		t.Fatal("missing expected arguemnt")
-	}
+	require.True(t, ok, "expected RESULT")
+	require.Equal(t, callID, result.Request, "wrong result ID")
+	require.NotZero(t, len(result.Arguments), "missing expected arguemnt")
 	dict, ok = result.Arguments[0].(wamp.Dict)
-	if !ok {
-		t.Fatal("expected wamp.Dict")
-	}
+	require.True(t, ok, "expected wamp.Dict")
 	subID, _ = wamp.AsID(dict["id"])
-	if subID != subscriptionID {
-		t.Fatal("received wrong subscription")
-	}
+	require.Equal(t, subscriptionID, subID, "received wrong subscription")
 	uri, _ := wamp.AsURI(dict["uri"])
-	if uri != testTopic {
-		t.Fatal("subscription has wrong uri:", uri)
-	}
+	require.Equal(t, testTopic, uri, "subscription has wrong uri")
 
 	// ----- Test wamp.subscription.list_subscribers meta procedure -----
 	callID = wamp.GlobalID()
@@ -1163,29 +731,15 @@ func TestSubscriptionMetaProcedures(t *testing.T) {
 		Arguments: wamp.List{subscriptionID},
 	})
 	msg, err = wamp.RecvTimeout(caller, time.Second)
-	if err != nil {
-		t.Fatal("Timed out waiting for RESULT")
-	}
+	require.NoError(t, err, "Timed out waiting for RESULT")
 	result, ok = msg.(*wamp.Result)
-	if !ok {
-		t.Fatal("expected RESULT, got", msg.MessageType())
-	}
-	if result.Request != callID {
-		t.Fatal("wrong result ID")
-	}
-	if len(result.Arguments) == 0 {
-		t.Fatal("missing expected arguemnt")
-	}
+	require.True(t, ok, "expected RESULT")
+	require.Equal(t, callID, result.Request, "wrong result ID")
+	require.NotZero(t, len(result.Arguments), "missing expected arguemnt")
 	idList, ok := result.Arguments[0].([]wamp.ID)
-	if !ok {
-		t.Fatal("Expected []wamp.ID")
-	}
-	if len(idList) != 1 {
-		t.Fatal("Expected 1 subscriber in list")
-	}
-	if idList[0] != sessID {
-		t.Fatal("Wrong subscriber session ID")
-	}
+	require.True(t, ok, "Expected []wamp.ID")
+	require.Equal(t, 1, len(idList), "Expected 1 subscriber in list")
+	require.Equal(t, sessID, idList[0], "Wrong subscriber session ID")
 
 	// ----- Test wamp.subscription.count_subscribers meta procedure -----
 	callID = wamp.GlobalID()
@@ -1195,66 +749,36 @@ func TestSubscriptionMetaProcedures(t *testing.T) {
 		Arguments: wamp.List{subscriptionID},
 	})
 	msg, err = wamp.RecvTimeout(caller, time.Second)
-	if err != nil {
-		t.Fatal("Timed out waiting for RESULT")
-	}
+	require.NoError(t, err, "Timed out waiting for RESULT")
 	result, ok = msg.(*wamp.Result)
-	if !ok {
-		t.Fatal("expected RESULT, got", msg.MessageType())
-	}
-	if result.Request != callID {
-		t.Fatal("wrong result ID")
-	}
-	if len(result.Arguments) == 0 {
-		t.Fatal("missing expected arguemnt")
-	}
+	require.True(t, ok, "expected RESULT")
+	require.Equal(t, callID, result.Request, "wrong result ID")
+	require.NotZero(t, result.Arguments, "missing expected arguemnt")
 	count, ok := wamp.AsInt64(result.Arguments[0])
-	if !ok {
-		t.Fatal("Argument is not an int")
-	}
-	if count != 1 {
-		t.Fatal("Wring number of subscribers")
-	}
+	require.True(t, ok, "Argument is not an int")
+	require.Equal(t, int64(1), count, "Wring number of subscribers")
 }
 
 func TestDynamicRealmChange(t *testing.T) {
-	defer leaktest.Check(t)
+	checkGoLeaks(t)
 
-	dr, err := newTestRouter()
-	if err != nil {
-		t.Fatal(err)
-	}
-	defer dr.Close()
-
-	err = dr.AddRealm(&RealmConfig{
+	dr := newTestRouter(t)
+	err := dr.AddRealm(&RealmConfig{
 		URI:           testRealm2,
 		StrictURI:     false,
 		AnonymousAuth: true,
 		AllowDisclose: false,
 	})
-	if err != nil {
-		t.Fatal(err)
-	}
+	require.NoError(t, err)
 
-	cli, err := testClientInRealm(dr, testRealm2)
-	if err != nil {
-		t.Fatal(err)
-	}
-
+	cli := testClientInRealm(t, dr, testRealm2)
 	cli.Send(&wamp.Goodbye{})
 	msg, err := wamp.RecvTimeout(cli, time.Second)
-	if err != nil {
-		t.Fatal("no goodbye message after sending goodbye")
-	}
-	if _, ok := msg.(*wamp.Goodbye); !ok {
-		t.Fatalf("expected GOODBYE, received %s", msg.MessageType())
-	}
+	require.NoError(t, err, "no goodbye message after sending goodbye")
+	_, ok := msg.(*wamp.Goodbye)
+	require.True(t, ok, "expected GOODBYE")
 
-	cli, err = testClientInRealm(dr, testRealm2)
-	if err != nil {
-		t.Fatal(err)
-	}
-
+	cli = testClientInRealm(t, dr, testRealm2)
 	sync := make(chan wamp.Message)
 	go func() {
 		sync <- <-cli.Recv()
@@ -1264,10 +788,9 @@ func TestDynamicRealmChange(t *testing.T) {
 
 	select {
 	case <-time.After(time.Second):
-		t.Fatal("expected client to be booted when removing realm")
+		require.FailNow(t, "expected client to be booted when removing realm")
 	case msg := <-sync:
-		if _, ok := msg.(*wamp.Goodbye); !ok {
-			t.Fatalf("expected GOODBYE, received %s", msg.MessageType())
-		}
+		_, ok := msg.(*wamp.Goodbye)
+		require.True(t, ok, "expected GOODBYE")
 	}
 }

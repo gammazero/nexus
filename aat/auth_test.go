@@ -8,14 +8,13 @@ import (
 	"fmt"
 	"net/http"
 	"net/http/cookiejar"
-	"strings"
 	"testing"
 	"time"
 
-	"github.com/fortytw2/leaktest"
 	"github.com/gammazero/nexus/v3/client"
 	"github.com/gammazero/nexus/v3/wamp"
 	"github.com/gammazero/nexus/v3/wamp/crsign"
+	"github.com/stretchr/testify/require"
 	"golang.org/x/crypto/pbkdf2"
 )
 
@@ -27,7 +26,7 @@ const (
 )
 
 func TestJoinRealmWithCRAuth(t *testing.T) {
-	defer leaktest.Check(t)()
+	checkGoLeaks(t)
 
 	cfg := client.Config{
 		Realm: testAuthRealm,
@@ -40,17 +39,11 @@ func TestJoinRealmWithCRAuth(t *testing.T) {
 		ResponseTimeout: time.Second,
 	}
 
-	cli, err := connectClientCfg(cfg)
-	if err != nil {
-		t.Fatal("Failed to connect client:", err)
-	}
+	cli := connectClientCfg(t, cfg)
 
 	realmDetails := cli.RealmDetails()
-	if s, _ := wamp.AsString(realmDetails["authrole"]); s != "user" {
-		t.Fatal("missing or incorrect authrole")
-	}
-
-	cli.Close()
+	s, _ := wamp.AsString(realmDetails["authrole"])
+	require.Equal(t, "user", s, "missing or incorrect authrole")
 }
 
 func TestJoinRealmWithCRCookieAuth(t *testing.T) {
@@ -67,45 +60,34 @@ func TestJoinRealmWithCRCookieAuth(t *testing.T) {
 
 	if scheme == "ws" || scheme == "wss" {
 		jar, err := cookiejar.New(nil)
-		if err != nil {
-			t.Fatal("failed to create CookieJar:", err)
-		}
+		require.NoError(t, err, "failed to create CookieJar")
 		cfg.WsCfg.Jar = jar
 	}
 
-	cli, err := connectClientCfg(cfg)
-	if err != nil {
-		t.Fatal("Failed to connect client:", err)
-	}
+	cli := connectClientCfg(t, cfg)
 	details := cli.RealmDetails()
 	cli.Close()
 
 	// Client should not have be authenticated by cookie first time.
-	if ok, _ := wamp.AsBool(details["authbycookie"]); ok {
-		t.Fatal("authbycookie set incorrectly to true")
-	}
+	ok, _ := wamp.AsBool(details["authbycookie"])
+	require.False(t, ok, "authbycookie set incorrectly to true")
 
-	cli, err = connectClientCfg(cfg)
-	if err != nil {
-		t.Fatal("Failed to connect client:", err)
-	}
+	cli = connectClientCfg(t, cfg)
 	details = cli.RealmDetails()
 	cli.Close()
 
 	// If websocket, then should be authenticated by cookie this time.
 	if cfg.WsCfg.Jar != nil {
-		if ok, _ := wamp.AsBool(details["authbycookie"]); !ok {
-			t.Fatal("should have been authenticated by cookie")
-		}
+		ok, _ := wamp.AsBool(details["authbycookie"])
+		require.True(t, ok, "should have been authenticated by cookie")
 	} else {
-		if ok, _ := wamp.AsBool(details["authbycookie"]); ok {
-			t.Fatal("authbycookie set incorrectly to true")
-		}
+		ok, _ := wamp.AsBool(details["authbycookie"])
+		require.False(t, ok, "authbycookie set incorrectly to true")
 	}
 }
 
 func TestJoinRealmWithCRAuthBad(t *testing.T) {
-	defer leaktest.Check(t)()
+	checkGoLeaks(t)
 
 	cfg := client.Config{
 		Realm: testAuthRealm,
@@ -118,20 +100,14 @@ func TestJoinRealmWithCRAuthBad(t *testing.T) {
 		ResponseTimeout: time.Second,
 	}
 
-	cli, err := connectClientCfg(cfg)
-	if err == nil {
-		t.Fatal("expected error with bad username")
-	}
-	if !strings.HasSuffix(err.Error(), "invalid signature") {
-		t.Fatal("wrong error message:", err)
-	}
-	if cli != nil {
-		t.Fatal("Client should be nil on connect error")
-	}
+	cli, err := connectClientCfgErr(cfg)
+	require.Error(t, err, "expected error with bad username")
+	require.ErrorContains(t, err, "invalid signature")
+	require.Nil(t, cli, "Client should be nil on connect error")
 }
 
 func TestAuthz(t *testing.T) {
-	defer leaktest.Check(t)()
+	checkGoLeaks(t)
 
 	cfg := client.Config{
 		Realm:           testAuthRealm,
@@ -139,30 +115,19 @@ func TestAuthz(t *testing.T) {
 	}
 
 	// Connect subscriber session.
-	subscriber, err := connectClientCfg(cfg)
-	if err != nil {
-		t.Fatal("Failed to connect client:", err)
-	}
-	defer subscriber.Close()
+	subscriber := connectClientCfg(t, cfg)
 
 	// Connect caller.
-	caller, err := connectClientCfg(cfg)
-	if err != nil {
-		t.Fatal("Failed to connect client:", err)
-	}
-	defer caller.Close()
+	caller := connectClientCfg(t, cfg)
 
 	// Check that subscriber does not have special info provided by authorizer.
 	ctx := context.Background()
 	args := wamp.List{subscriber.ID()}
 	result, err := caller.Call(ctx, metaGet, nil, args, nil, nil)
-	if err != nil {
-		t.Fatal("Call error:", err)
-	}
+	require.NoError(t, err)
 	dict, _ := wamp.AsDict(result.Arguments[0])
-	if _, ok := dict["foobar"]; ok {
-		t.Fatal("Should not have special info in session")
-	}
+	_, ok := dict["foobar"]
+	require.False(t, ok, "Should not have special info in session")
 
 	// Subscribe to event.
 	errChan := make(chan error)
@@ -176,41 +141,30 @@ func TestAuthz(t *testing.T) {
 	}
 
 	err = subscriber.Subscribe("nexus.interceptor", evtHandler, nil)
-	if err != nil {
-		t.Fatal("subscribe error:", err)
-	}
+	require.NoError(t, err)
 
 	// Check that authorizer modified session with special info.
 	result, err = caller.Call(ctx, metaGet, nil, args, nil, nil)
-	if err != nil {
-		t.Fatal("Call error:", err)
-	}
+	require.NoError(t, err)
 	dict, _ = wamp.AsDict(result.Arguments[0])
-	if s, _ := wamp.AsString(dict["foobar"]); s != "baz" {
-		t.Fatal("Missing special info in session")
-	}
+	s, _ := wamp.AsString(dict["foobar"])
+	require.Equal(t, "baz", s, "Missing special info in session")
 
 	// Publish an event to something that matches by wildcard.
 	caller.Publish("nexus.interceptor.foobar.baz", nil, wamp.List{"hi"}, nil)
 	// Make sure the event was received.
 	select {
 	case err = <-errChan:
-		if err != nil {
-			t.Fatalf("Event error: %s", err)
-		}
+		require.NoError(t, err, "Event error")
 	case <-time.After(200 * time.Millisecond):
-		t.Fatal("did not get published event")
+		require.FailNow(t, "did not get published event")
 	}
 
 	// Have caller call a procedure that will fail authz.
 	_, err = caller.Call(ctx, "need.ldap.auth",
 		wamp.Dict{wamp.OptAcknowledge: true}, nil, nil, nil)
-	if err == nil {
-		t.Fatal("Expected error")
-	}
-	if !strings.HasSuffix(err.Error(), "wamp.error.authorization_failed: Cannot contact LDAP server") {
-		t.Fatal("Did not get expected error message with reason, got:", err)
-	}
+	require.Error(t, err)
+	require.ErrorContains(t, err, "wamp.error.authorization_failed: Cannot contact LDAP server")
 }
 
 func clientAuthFunc(c *wamp.Challenge) (string, wamp.Dict) {
@@ -234,7 +188,7 @@ func (ks *serverKeyStore) AuthKey(authid, authmethod string) ([]byte, error) {
 		// Lookup the user's key.
 		secret := []byte(password)
 		salt := []byte(pwSalt)
-		dk := pbkdf2.Key([]byte(secret), salt, iterations, keylen, sha256.New)
+		dk := pbkdf2.Key(secret, salt, iterations, keylen, sha256.New)
 		return []byte(base64.StdEncoding.EncodeToString(dk)), nil
 	case "ticket":
 		// Lookup the user's key.
@@ -285,7 +239,7 @@ func (ks *serverKeyStore) AlreadyAuth(authid string, details wamp.Dict) bool {
 func (ks *serverKeyStore) OnWelcome(authid string, welcome *wamp.Welcome, details wamp.Dict) error {
 	v, err := wamp.DictValue(details, []string{"transport", "auth", "nextcookie"})
 	if err != nil {
-		// Tracking cookie not enabled.
+		// Tracking cookie not enabled, return no error.
 		return nil
 	}
 	nextcookie := v.(*http.Cookie)

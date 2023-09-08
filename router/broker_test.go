@@ -6,6 +6,7 @@ import (
 	"time"
 
 	"github.com/gammazero/nexus/v3/wamp"
+	"github.com/stretchr/testify/require"
 )
 
 type testPeer struct {
@@ -36,12 +37,18 @@ func (p *testPeer) Close()                    {}
 
 func (p *testPeer) IsLocal() bool { return true }
 
+func newTestBroker(t *testing.T, eventCfgs []*TopicEventHistoryConfig) *broker {
+	b, err := newBroker(logger, false, true, debug, nil, eventCfgs)
+	require.NoError(t, err, "Can not initialize broker")
+	t.Cleanup(func() {
+		b.close()
+	})
+	return b
+}
+
 func TestBasicSubscribe(t *testing.T) {
 	// Test subscribing to a topic.
-	broker, err := newBroker(logger, false, true, debug, nil, nil)
-	if err != nil {
-		t.Fatal("Can not initialize broker")
-	}
+	broker := newTestBroker(t, nil)
 	subscriber := newTestPeer()
 	sess := wamp.NewSession(subscriber, 0, nil, nil)
 	testTopic := wamp.URI("nexus.test.topic")
@@ -50,65 +57,38 @@ func TestBasicSubscribe(t *testing.T) {
 	// Test that subscriber received SUBSCRIBED message
 	rsp := <-sess.Recv()
 	subMsg, ok := rsp.(*wamp.Subscribed)
-	if !ok {
-		t.Fatal("expected", wamp.SUBSCRIBED, "got:", rsp.MessageType())
-	}
+	require.True(t, ok, "expected SUBSCRIBED")
 	subID := subMsg.Subscription
-	if subID == 0 {
-		t.Fatal("invalid suvscription ID")
-	}
+	require.NotZero(t, subID, "invalid suvscription ID")
 
 	// Check that broker created subscription.
 	sub, ok := broker.subscriptions[subID]
-	if !ok {
-		t.Fatal("broker missing subscription")
-	}
-	if sub.topic != testTopic {
-		t.Fatal("subscription to wrong topic")
-	}
+	require.True(t, ok, "broker missing subscription")
+	require.Equal(t, testTopic, sub.topic, "subscription to wrong topic")
 	sub2, ok := broker.topicSubscription[testTopic]
-	if !ok {
-		t.Fatal("broker missing subscribers for topic")
-	}
-	if sub.id != sub2.id {
-		t.Fatal("topic->subscription has wrong subscription")
-	}
+	require.True(t, ok, "broker missing subscribers for topic")
+	require.Equal(t, sub2.id, sub.id, "topic->subscription has wrong subscription")
 	subIDSet, ok := broker.sessionSubIDSet[sess]
-	if !ok {
-		t.Fatal("broker missing subscriber ID for session")
-	}
-	if _, ok = subIDSet[sub.id]; !ok {
-		t.Fatal("broker session's subscriber ID set missing subscription ID")
-	}
+	require.True(t, ok, "broker missing subscriber ID for session")
+	_, ok = subIDSet[sub.id]
+	require.True(t, ok, "broker session's subscriber ID set missing subscription ID")
 
 	// Test subscribing to same topic again.
 	broker.subscribe(sess, &wamp.Subscribe{Request: 123, Topic: testTopic})
 	// Test that subscriber received SUBSCRIBED message
 	rsp = <-sess.Recv()
 	subMsg, ok = rsp.(*wamp.Subscribed)
-	if !ok {
-		t.Fatal("expected", wamp.SUBSCRIBED, "got:", rsp.MessageType())
-	}
+	require.True(t, ok, "expected SUBSCRIBED")
 	// Should get same subscription ID.
 	subID2 := subMsg.Subscription
-	if subID2 != subID {
-		t.Fatal("invalid suvscription ID")
-	}
-	if len(broker.subscriptions) != 1 {
-		t.Fatal("broker has too many subscriptions")
-	}
-	if sub, ok = broker.topicSubscription[testTopic]; !ok {
-		t.Fatal("broker missing topic->subscription")
-	}
-	if len(sub.subscribers) != 1 {
-		t.Fatal("too many subscribers to", testTopic)
-	}
-	if _, ok = sub.subscribers[sess]; !ok {
-		t.Fatal("broker missing subscriber on subscription")
-	}
-	if len(broker.sessionSubIDSet[sess]) != 1 {
-		t.Fatal("too many subscriptions for session")
-	}
+	require.Equal(t, subID, subID2, "invalid suvscription ID")
+	require.Equal(t, 1, len(broker.subscriptions), "broker has too many subscriptions")
+	sub, ok = broker.topicSubscription[testTopic]
+	require.True(t, ok, "broker missing topic->subscription")
+	require.Equalf(t, 1, len(sub.subscribers), "too many subscribers to %s", testTopic)
+	_, ok = sub.subscribers[sess]
+	require.True(t, ok, "broker missing subscriber on subscription")
+	require.Equal(t, 1, len(broker.sessionSubIDSet[sess]), "too many subscriptions for session")
 
 	// Test subscribing to different topic.
 	testTopic2 := wamp.URI("nexus.test.topic2")
@@ -116,41 +96,23 @@ func TestBasicSubscribe(t *testing.T) {
 	// Test that subscriber received SUBSCRIBED message
 	rsp = <-sess.Recv()
 	subMsg, ok = rsp.(*wamp.Subscribed)
-	if !ok {
-		t.Fatal("expected", wamp.SUBSCRIBED, "got:", rsp.MessageType())
-	}
+	require.True(t, ok, "expected SUBSCRIBED")
 	subID2 = subMsg.Subscription
-	if subID2 == subID {
-		t.Fatal("wrong suvscription ID")
-	}
-	if len(broker.subscriptions) != 2 {
-		t.Fatal("wrong number of subscriptions")
-	}
+	require.NotEqual(t, subID, subID2, "wrong subscription ID")
+	require.Equal(t, 2, len(broker.subscriptions), "wrong number of subscriptions")
 
-	if sub, ok = broker.topicSubscription[testTopic]; !ok {
-		t.Fatal("broker missing topic->subscription for topic", testTopic)
-	}
-	if len(sub.subscribers) != 1 {
-		t.Fatal("too many subscribers to", testTopic)
-	}
+	sub, ok = broker.topicSubscription[testTopic]
+	require.True(t, ok, "broker missing topic->subscription for topic")
+	require.Equal(t, 1, len(sub.subscribers), "too many subscribers")
 
-	if sub, ok = broker.topicSubscription[testTopic2]; !ok {
-		t.Fatal("broker missing topic->subscription for topic", testTopic2)
-	}
-	if len(sub.subscribers) != 1 {
-		t.Fatal("too many subscribers to", testTopic2)
-	}
-
-	if len(broker.sessionSubIDSet[sess]) != 2 {
-		t.Fatal("wrong number of subscriptions for session")
-	}
+	sub, ok = broker.topicSubscription[testTopic2]
+	require.True(t, ok, "broker missing topic->subscription for topic")
+	require.Equalf(t, 1, len(sub.subscribers), "too many subscribers to %s", testTopic2)
+	require.Equal(t, 2, len(broker.sessionSubIDSet[sess]), "wrong number of subscriptions for session")
 }
 
 func TestUnsubscribe(t *testing.T) {
-	broker, err := newBroker(logger, false, true, debug, nil, nil)
-	if err != nil {
-		t.Fatal("Can not initialize broker")
-	}
+	broker := newTestBroker(t, nil)
 	testTopic := wamp.URI("nexus.test.topic")
 
 	// Subscribe session1 to topic
@@ -166,111 +128,73 @@ func TestUnsubscribe(t *testing.T) {
 	broker.subscribe(sess2, &wamp.Subscribe{Request: 567, Topic: testTopic})
 	rsp = <-sess2.Recv()
 	subID2 := rsp.(*wamp.Subscribed).Subscription
-
-	if subID != subID2 {
-		t.Fatal("subscribe to same topic resulted in different subscriptions")
-	}
+	require.Equal(t, subID2, subID, "subscribe to same topic resulted in different subscriptions")
 
 	// Check that subscription is present and has 2 subscribers.
 	sub, ok := broker.subscriptions[subID]
-	if !ok {
-		t.Fatal("broker missing subscription")
-	}
-	if len(sub.subscribers) != 2 {
-		t.Fatal("subscription should have 2 subecribers")
-	}
+	require.True(t, ok, "broker missing subscription")
+	require.Equal(t, 2, len(sub.subscribers), "subscription should have 2 subecribers")
 	subIDSet, ok := broker.sessionSubIDSet[sess1]
-	if !ok {
-		t.Fatal("session 1 subscription ID set missing")
-	}
-	if len(subIDSet) != 1 {
-		t.Error("wrong number of subscription ID for session 1")
-	}
-	if subIDSet, ok = broker.sessionSubIDSet[sess2]; !ok {
-		t.Fatal("session 2 subscription ID set missing")
-	}
-	if len(subIDSet) != 1 {
-		t.Error("wrong number of subscription ID for session 2")
-	}
+	require.True(t, ok, "session 1 subscription ID set missing")
+	require.Equal(t, 1, len(subIDSet), "wrong number of subscription ID for session 1")
+	subIDSet, ok = broker.sessionSubIDSet[sess2]
+	require.True(t, ok, "session 2 subscription ID set missing")
+	require.Equal(t, 1, len(subIDSet), "wrong number of subscription ID for session 2")
 
 	// Test unsubscribing session1 from topic.
 	broker.unsubscribe(sess1, &wamp.Unsubscribe{Request: 124, Subscription: subID})
 	// Check that session received UNSUBSCRIBED message.
 	rsp = <-sess1.Recv()
 	unsub, ok := rsp.(*wamp.Unsubscribed)
-	if !ok {
-		t.Fatal("expected", wamp.UNSUBSCRIBED, "got:", rsp.MessageType())
-	}
+	require.True(t, ok, "expected UNSUBSCRIBED")
 	unsubID := unsub.Request
-	if unsubID == 0 {
-		t.Fatal("invalid unsibscribe ID")
-	}
+	require.NotZero(t, unsubID, "invalid unsibscribe ID")
 
 	// Check that subscription is still present and now has 1 subscriber.
 	sub, ok = broker.subscriptions[subID]
-	if !ok {
-		t.Fatal("broker missing subscription")
-	}
-	if len(sub.subscribers) != 1 {
-		t.Fatal("subscription should have 1 subecribers")
-	}
+	require.True(t, ok, "broker missing subscription")
+	require.Equal(t, 1, len(sub.subscribers), "subscription should have 1 subecribers")
 	// Check that subscriber 1 is gone and subscriber 2 remains.
-	if _, ok = sub.subscribers[sess1]; ok {
-		t.Fatal("subscription should not have unsubscribed session 1")
-	}
-	if _, ok = sub.subscribers[sess2]; !ok {
-		t.Fatal("subscription missing session 2")
-	}
+	_, ok = sub.subscribers[sess1]
+	require.False(t, ok, "subscription should not have unsubscribed session 1")
+	_, ok = sub.subscribers[sess2]
+	require.True(t, ok, "subscription missing session 2")
 	// Check that topic->subscription remains
-	if _, ok = broker.topicSubscription[testTopic]; !ok {
-		t.Fatal("topic subscription was deleted but subscription exists")
-	}
-	if _, ok = broker.sessionSubIDSet[sess1]; ok {
-		t.Fatal("session 1 subscription ID set still exists")
-	}
-	if _, ok = broker.sessionSubIDSet[sess2]; !ok {
-		t.Fatal("session 2 subscription ID set missing")
-	}
+	_, ok = broker.topicSubscription[testTopic]
+	require.True(t, ok, "topic subscription was deleted but subscription exists")
+	_, ok = broker.sessionSubIDSet[sess1]
+	require.False(t, ok, "session 1 subscription ID set still exists")
+	_, ok = broker.sessionSubIDSet[sess2]
+	require.True(t, ok, "session 2 subscription ID set missing")
 
 	// Test unsubscribing session2 from invalid subscription ID.
 	broker.unsubscribe(sess2, &wamp.Unsubscribe{Request: 124, Subscription: 747})
 	// Check that session received ERROR message.
 	rsp = <-sess2.Recv()
 	_, ok = rsp.(*wamp.Error)
-	if !ok {
-		t.Fatal("expected", wamp.ERROR, "got:", rsp.MessageType())
-	}
+	require.True(t, ok, "expected ERROR")
 
 	// Test unsubscribing session2 from topic.
 	broker.unsubscribe(sess2, &wamp.Unsubscribe{Request: 124, Subscription: subID})
 	// Check that session received UNSUBSCRIBED message.
 	rsp = <-sess2.Recv()
 	_, ok = rsp.(*wamp.Unsubscribed)
-	if !ok {
-		t.Fatal("expected", wamp.UNSUBSCRIBED, "got:", rsp.MessageType())
-	}
+	require.True(t, ok, "expected UNSUBSCRIBED")
 
 	// Check the broker removed subscription.
-	if _, ok = broker.subscriptions[subID]; ok {
-		t.Fatal("subscription still exists")
-	}
-	if _, ok = broker.topicSubscription[testTopic]; ok {
-		t.Fatal("topic subscription still exists")
-	}
-	if _, ok = broker.sessionSubIDSet[sess1]; ok {
-		t.Fatal("session 1 subscription ID set still exists")
-	}
-	if _, ok = broker.sessionSubIDSet[sess2]; ok {
-		t.Fatal("session 2 subscription ID set still exists")
-	}
+	_, ok = broker.subscriptions[subID]
+	require.False(t, ok, "subscription still exists")
+	_, ok = broker.topicSubscription[testTopic]
+	require.False(t, ok, "topic subscription still exists")
+	_, ok = broker.sessionSubIDSet[sess1]
+	require.False(t, ok, "session 1 subscription ID set still exists")
+	_, ok = broker.sessionSubIDSet[sess2]
+	require.False(t, ok, "session 2 subscription ID set still exists")
 }
 
 func TestRemove(t *testing.T) {
 	// Subscribe to topic
-	broker, err := newBroker(logger, false, true, debug, nil, nil)
-	if err != nil {
-		t.Fatal("Can not initialize broker")
-	}
+	broker := newTestBroker(t, nil)
 	subscriber := newTestPeer()
 	sess := wamp.NewSession(subscriber, 0, nil, nil)
 	testTopic := wamp.URI("nexus.test.topic")
@@ -294,28 +218,19 @@ func TestRemove(t *testing.T) {
 
 	// Check the broker removed subscription.
 	_, ok := broker.subscriptions[subID]
-	if ok {
-		t.Fatal("subscription still exists")
-	}
-	if _, ok = broker.topicSubscription[testTopic]; ok {
-		t.Fatal("topic subscriber still exists")
-	}
-	if _, ok = broker.subscriptions[subID2]; ok {
-		t.Fatal("subscription still exists")
-	}
-	if _, ok = broker.topicSubscription[testTopic2]; ok {
-		t.Fatal("topic subscriber still exists")
-	}
-	if _, ok = broker.sessionSubIDSet[sess]; ok {
-		t.Fatal("session subscription ID set still exists")
-	}
+	require.False(t, ok, "subscription still exists")
+	_, ok = broker.topicSubscription[testTopic]
+	require.False(t, ok, "topic subscriber still exists")
+	_, ok = broker.subscriptions[subID2]
+	require.False(t, ok, "subscription still exists")
+	_, ok = broker.topicSubscription[testTopic2]
+	require.False(t, ok, "topic subscriber still exists")
+	_, ok = broker.sessionSubIDSet[sess]
+	require.False(t, ok, "session subscription ID set still exists")
 }
 
 func TestBasicPubSub(t *testing.T) {
-	broker, err := newBroker(logger, false, true, debug, nil, nil)
-	if err != nil {
-		t.Fatal("Can not initialize broker")
-	}
+	broker := newTestBroker(t, nil)
 	subscriber := newTestPeer()
 	sess := wamp.NewSession(subscriber, 0, nil, nil)
 	testTopic := wamp.URI("nexus.test.topic")
@@ -328,9 +243,7 @@ func TestBasicPubSub(t *testing.T) {
 	// Test that subscriber received SUBSCRIBED message
 	rsp := <-sess.Recv()
 	_, ok := rsp.(*wamp.Subscribed)
-	if !ok {
-		t.Fatal("expected", wamp.SUBSCRIBED, "got:", rsp.MessageType())
-	}
+	require.True(t, ok, "expected SUBSCRIBED")
 
 	publisher := newTestPeer()
 	pubSess := wamp.NewSession(publisher, 0, nil, nil)
@@ -338,25 +251,16 @@ func TestBasicPubSub(t *testing.T) {
 		Arguments: wamp.List{"hello world"}})
 	rsp = <-sess.Recv()
 	evt, ok := rsp.(*wamp.Event)
-	if !ok {
-		t.Fatal("expected", wamp.EVENT, "got:", rsp.MessageType())
-	}
-	if len(evt.Arguments) == 0 {
-		t.Fatal("missing event payload")
-	}
+	require.True(t, ok, "expected EVENT")
+	require.NotZero(t, len(evt.Arguments), "missing event payload")
 	arg, _ := wamp.AsString(evt.Arguments[0])
-	if arg != "hello world" {
-		t.Fatal("wrong argument value in payload:", arg)
-	}
+	require.Equal(t, "hello world", arg, "wrong argument value in payload")
 }
 
 // ----- WAMP v.2 Testing -----
 
 func TestAdvancedPubSub(t *testing.T) {
-	broker, err := newBroker(logger, false, true, debug, nil, nil)
-	if err != nil {
-		t.Fatal("Can not initialize broker")
-	}
+	broker := newTestBroker(t, nil)
 	subscriber := newTestPeer()
 	sess := wamp.NewSession(subscriber, 0, nil, nil)
 	testTopic := wamp.URI("nexus.test.topic")
@@ -371,9 +275,7 @@ func TestAdvancedPubSub(t *testing.T) {
 	// Test that subscriber received SUBSCRIBED message
 	rsp := <-sess.Recv()
 	_, ok := rsp.(*wamp.Error)
-	if !ok {
-		t.Fatal("expected", wamp.ERROR, "got:", rsp.MessageType())
-	}
+	require.True(t, ok, "expected ERROR")
 
 	msg = &wamp.Subscribe{
 		Request: 123,
@@ -385,9 +287,7 @@ func TestAdvancedPubSub(t *testing.T) {
 	// Test that subscriber received SUBSCRIBED message
 	rsp = <-sess.Recv()
 	_, ok = rsp.(*wamp.Subscribed)
-	if !ok {
-		t.Fatal("expected", wamp.SUBSCRIBED, "got:", rsp.MessageType())
-	}
+	require.True(t, ok, "expected SUBSCRIBED")
 
 	publisher := newTestPeer()
 	pubSess := wamp.NewSession(publisher, 0, nil, nil)
@@ -398,17 +298,11 @@ func TestAdvancedPubSub(t *testing.T) {
 	broker.publish(pubSess, &wamp.Publish{Request: 125, Topic: "invalid!@#@#$topicuri", Options: options})
 	rsp = <-pubSess.Recv()
 	_, ok = rsp.(*wamp.Error)
-	if !ok {
-		t.Fatal("expected", wamp.ERROR, "got:", rsp.MessageType())
-	}
-
+	require.True(t, ok, "expected ERROR")
 }
 
 func TestPPTPubSub(t *testing.T) {
-	broker, err := newBroker(logger, false, true, debug, nil, nil)
-	if err != nil {
-		t.Fatal("Can not initialize broker")
-	}
+	broker := newTestBroker(t, nil)
 	subscriber := newTestPeer()
 	sess := wamp.NewSession(subscriber, 0, nil, nil)
 	testTopic := wamp.URI("nexus.test.topic")
@@ -423,13 +317,9 @@ func TestPPTPubSub(t *testing.T) {
 	// Test that subscriber received SUBSCRIBED message
 	rsp := <-sess.Recv()
 	subMsg, ok := rsp.(*wamp.Subscribed)
-	if !ok {
-		t.Fatal("expected", wamp.SUBSCRIBED, "got:", rsp.MessageType())
-	}
+	require.True(t, ok, "expected SUBSCRIBED")
 	subID := subMsg.Subscription
-	if subID == 0 {
-		t.Fatal("invalid suvscription ID")
-	}
+	require.NotZero(t, subID, "invalid suvscription ID")
 
 	publisher := newTestPeer()
 	pubSess := wamp.NewSession(publisher, 0, nil, nil)
@@ -440,9 +330,7 @@ func TestPPTPubSub(t *testing.T) {
 	broker.publish(pubSess, &wamp.Publish{Request: 125, Topic: "invalid!@#@#$topicuri", Options: options})
 	rsp = <-pubSess.Recv()
 	_, ok = rsp.(*wamp.Error)
-	if !ok {
-		t.Fatal("expected", wamp.ERROR, "got:", rsp.MessageType())
-	}
+	require.True(t, ok, "expected ERROR")
 
 	options = wamp.Dict{
 		wamp.OptPPTScheme:     "x_custom",
@@ -451,9 +339,7 @@ func TestPPTPubSub(t *testing.T) {
 	broker.publish(pubSess, &wamp.Publish{Request: 126, Topic: testTopic, Options: options})
 	rsp = <-pubSess.Recv()
 	_, ok = rsp.(*wamp.Abort)
-	if !ok {
-		t.Fatal("expected", wamp.ABORT, "got:", rsp.MessageType())
-	}
+	require.True(t, ok, "expected ABORT")
 
 	greetDetails := wamp.Dict{
 		"roles": wamp.Dict{
@@ -475,18 +361,12 @@ func TestPPTPubSub(t *testing.T) {
 	broker.publish(pubSess, &wamp.Publish{Request: 124, Topic: testTopic, Options: options})
 	rsp = <-sess.Recv()
 	_, ok = rsp.(*wamp.Event)
-	if !ok {
-		t.Fatal("expected", wamp.EVENT, "got:", rsp.MessageType())
-	}
-
+	require.True(t, ok, "expected EVENT")
 }
 
 func TestPrefixPatternBasedSubscription(t *testing.T) {
 	// Test match=prefix
-	broker, err := newBroker(logger, false, true, debug, nil, nil)
-	if err != nil {
-		t.Fatal("Can not initialize broker")
-	}
+	broker := newTestBroker(t, nil)
 	subscriber := newTestPeer()
 	sess := wamp.NewSession(subscriber, 0, nil, nil)
 	testTopic := wamp.URI("nexus.test.topic")
@@ -501,58 +381,36 @@ func TestPrefixPatternBasedSubscription(t *testing.T) {
 	// Test that subscriber received SUBSCRIBED message
 	rsp := <-sess.Recv()
 	subMsg, ok := rsp.(*wamp.Subscribed)
-	if !ok {
-		t.Fatal("expected", wamp.SUBSCRIBED, "got:", rsp.MessageType())
-	}
+	require.True(t, ok, "expected SUBSCRIBED")
 	subID := subMsg.Subscription
-	if subID == 0 {
-		t.Fatal("invalid suvscription ID")
-	}
+	require.NotZero(t, subID, "invalid suvscription ID")
 
 	// Check that broker created subscription.
 	sub, ok := broker.subscriptions[subID]
-	if !ok {
-		t.Fatal("broker missing subscription")
-	}
-	if _, ok = sub.subscribers[sess]; !ok {
-		t.Fatal("broker missing subscriber on subscription")
-	}
-	if sub.topic != testTopicPfx {
-		t.Fatal("subscription to wrong topic")
-	}
+	require.True(t, ok, "broker missing subscription")
+	_, ok = sub.subscribers[sess]
+	require.True(t, ok, "broker missing subscriber on subscription")
+	require.Equal(t, testTopicPfx, sub.topic, "subscription to wrong topic")
 	_, ok = broker.pfxTopicSubscription[testTopicPfx]
-	if !ok {
-		t.Fatal("broker missing subscribers for topic")
-	}
+	require.True(t, ok, "broker missing subscribers for topic")
 	_, ok = broker.sessionSubIDSet[sess]
-	if !ok {
-		t.Fatal("broker missing subscriber ID for session")
-	}
+	require.True(t, ok, "broker missing subscriber ID for session")
 
 	publisher := newTestPeer()
 	pubSess := wamp.NewSession(publisher, 0, nil, nil)
 	broker.publish(pubSess, &wamp.Publish{Request: 124, Topic: testTopic})
 	rsp = <-sess.Recv()
 	evt, ok := rsp.(*wamp.Event)
-	if !ok {
-		t.Fatal("expected", wamp.EVENT, "got:", rsp.MessageType())
-	}
+	require.True(t, ok, "expected EVENT")
 	_topic, ok := evt.Details["topic"]
-	if !ok {
-		t.Fatalf("event missing topic")
-	}
+	require.True(t, ok, "event missing topic")
 	topic := _topic.(wamp.URI)
-	if topic != testTopic {
-		t.Fatal("wrong topic received")
-	}
+	require.Equal(t, testTopic, topic, "wrong topic received")
 }
 
 func TestWildcardPatternBasedSubscription(t *testing.T) {
 	// Test match=prefix
-	broker, err := newBroker(logger, false, true, debug, nil, nil)
-	if err != nil {
-		t.Fatal("Can not initialize broker")
-	}
+	broker := newTestBroker(t, nil)
 	subscriber := newTestPeer()
 	sess := wamp.NewSession(subscriber, 0, nil, nil)
 	testTopic := wamp.URI("nexus.test.topic")
@@ -567,66 +425,38 @@ func TestWildcardPatternBasedSubscription(t *testing.T) {
 	// Test that subscriber received SUBSCRIBED message
 	rsp := <-sess.Recv()
 	subMsg, ok := rsp.(*wamp.Subscribed)
-	if !ok {
-		t.Fatal("expected", wamp.SUBSCRIBED, "got:", rsp.MessageType())
-	}
+	require.True(t, ok, "expected SUBSCRIBED")
 	subID := subMsg.Subscription
-	if subID == 0 {
-		t.Fatal("invalid suvscription ID")
-	}
+	require.NotZero(t, subID, "invalid suvscription ID")
 
 	// Check that broker created subscription.
 	sub, ok := broker.subscriptions[subID]
-	if !ok {
-		t.Fatal("broker missing subscription")
-	}
-	if sub.id != subID {
-		t.Fatal("broker subscriptions has subscription with wrong ID")
-	}
-	if _, ok = sub.subscribers[sess]; !ok {
-		t.Fatal("broker missing subscriber on subscription")
-	}
-	if sub.topic != testTopicWc {
-		t.Fatal("subscription to wrong topic")
-	}
-	if sub.match != "wildcard" {
-		t.Fatal("subscription has wrong match policy")
-	}
+	require.True(t, ok, "broker missing subscription")
+	require.Equal(t, subID, sub.id, "broker subscriptions has subscription with wrong ID")
+	_, ok = sub.subscribers[sess]
+	require.True(t, ok, "broker missing subscriber on subscription")
+	require.Equal(t, testTopicWc, sub.topic, "subscription to wrong topic")
+	require.Equal(t, "wildcard", sub.match, "subscription has wrong match policy")
 	sub2, ok := broker.wcTopicSubscription[testTopicWc]
-	if !ok {
-		t.Fatal("broker missing subscription for topic")
-	}
-	if sub2.id != subID {
-		t.Fatal("topic->session has wrong session")
-	}
+	require.True(t, ok, "broker missing subscription for topic")
+	require.Equal(t, subID, sub2.id, "topic->session has wrong session")
 	_, ok = broker.sessionSubIDSet[sess]
-	if !ok {
-		t.Fatal("broker missing subscriber ID for session")
-	}
+	require.True(t, ok, "broker missing subscriber ID for session")
 
 	publisher := newTestPeer()
 	pubSess := wamp.NewSession(publisher, 0, nil, nil)
 	broker.publish(pubSess, &wamp.Publish{Request: 124, Topic: testTopic})
 	rsp = <-sess.Recv()
 	evt, ok := rsp.(*wamp.Event)
-	if !ok {
-		t.Fatal("expected", wamp.EVENT, "got:", rsp.MessageType())
-	}
+	require.True(t, ok, "expected EVENT")
 	_topic, ok := evt.Details["topic"]
-	if !ok {
-		t.Fatalf("event missing topic")
-	}
+	require.True(t, ok, "event missing topic")
 	topic := _topic.(wamp.URI)
-	if topic != testTopic {
-		t.Fatal("wrong topic received")
-	}
+	require.Equal(t, testTopic, topic, "wrong topic received")
 }
 
 func TestSubscriberBlackWhiteListing(t *testing.T) {
-	broker, err := newBroker(logger, false, true, debug, nil, nil)
-	if err != nil {
-		t.Fatal("Can not initialize broker")
-	}
+	broker := newTestBroker(t, nil)
 	subscriber := newTestPeer()
 	details := wamp.Dict{
 		"authid":   "jdoe",
@@ -640,9 +470,7 @@ func TestSubscriberBlackWhiteListing(t *testing.T) {
 	// Test that subscriber received SUBSCRIBED message
 	rsp := <-sess.Recv()
 	_, ok := rsp.(*wamp.Subscribed)
-	if !ok {
-		t.Fatal("expected", wamp.SUBSCRIBED, "got:", rsp.MessageType())
-	}
+	require.True(t, ok, "expected SUBSCRIBED")
 
 	publisher := newTestPeer()
 
@@ -663,30 +491,26 @@ func TestSubscriberBlackWhiteListing(t *testing.T) {
 		Topic:   testTopic,
 		Options: wamp.Dict{"eligible": wamp.List{sess.ID}},
 	})
-	rsp, err = wamp.RecvTimeout(sess, time.Second)
-	if err != nil {
-		t.Fatal("not allowed by whitelist")
-	}
+	_, err := wamp.RecvTimeout(sess, time.Second)
+	require.NoError(t, err, "not allowed by whitelist")
+
 	// Test whitelist authrole
 	broker.publish(pubSess, &wamp.Publish{
 		Request: 125,
 		Topic:   testTopic,
 		Options: wamp.Dict{"eligible_authrole": wamp.List{"admin"}},
 	})
-	rsp, err = wamp.RecvTimeout(sess, time.Second)
-	if err != nil {
-		t.Fatal("not allowed by authrole whitelist")
-	}
+	_, err = wamp.RecvTimeout(sess, time.Second)
+	require.NoError(t, err, "not allowed by authrole whitelist")
+
 	// Test whitelist authid
 	broker.publish(pubSess, &wamp.Publish{
 		Request: 126,
 		Topic:   testTopic,
 		Options: wamp.Dict{"eligible_authid": wamp.List{"jdoe"}},
 	})
-	rsp, err = wamp.RecvTimeout(sess, time.Second)
-	if err != nil {
-		t.Fatal("not allowed by authid whitelist")
-	}
+	_, err = wamp.RecvTimeout(sess, time.Second)
+	require.NoError(t, err, "not allowed by authid whitelist")
 
 	// Test blacklist.
 	broker.publish(pubSess, &wamp.Publish{
@@ -694,30 +518,26 @@ func TestSubscriberBlackWhiteListing(t *testing.T) {
 		Topic:   testTopic,
 		Options: wamp.Dict{"exclude": wamp.List{sess.ID}},
 	})
-	rsp, err = wamp.RecvTimeout(sess, time.Second)
-	if err == nil {
-		t.Fatal("not excluded by blacklist")
-	}
+	_, err = wamp.RecvTimeout(sess, time.Second)
+	require.Error(t, err, "not excluded by blacklist")
+
 	// Test blacklist authrole
 	broker.publish(pubSess, &wamp.Publish{
 		Request: 128,
 		Topic:   testTopic,
 		Options: wamp.Dict{"exclude_authrole": wamp.List{"admin"}},
 	})
-	rsp, err = wamp.RecvTimeout(sess, time.Second)
-	if err == nil {
-		t.Fatal("not excluded by authrole blacklist")
-	}
+	_, err = wamp.RecvTimeout(sess, time.Second)
+	require.Error(t, err, "not excluded by authrole blacklist")
+
 	// Test blacklist authid
 	broker.publish(pubSess, &wamp.Publish{
 		Request: 129,
 		Topic:   testTopic,
 		Options: wamp.Dict{"exclude_authid": wamp.List{"jdoe"}},
 	})
-	rsp, err = wamp.RecvTimeout(sess, time.Second)
-	if err == nil {
-		t.Fatal("not excluded by authid blacklist")
-	}
+	_, err = wamp.RecvTimeout(sess, time.Second)
+	require.Error(t, err, "not excluded by authid blacklist")
 
 	// Test that blacklist takes precedence over whitelist.
 	broker.publish(pubSess, &wamp.Publish{
@@ -726,17 +546,12 @@ func TestSubscriberBlackWhiteListing(t *testing.T) {
 		Options: wamp.Dict{"eligible_authid": []string{"jdoe"},
 			"exclude_authid": []string{"jdoe"}},
 	})
-	rsp, err = wamp.RecvTimeout(sess, time.Second)
-	if err == nil {
-		t.Fatal("should have been excluded by blacklist")
-	}
+	_, err = wamp.RecvTimeout(sess, time.Second)
+	require.Error(t, err, "should have been excluded by blacklist")
 }
 
 func TestPublisherExclusion(t *testing.T) {
-	broker, err := newBroker(logger, false, true, debug, nil, nil)
-	if err != nil {
-		t.Fatal("Can not initialize broker")
-	}
+	broker := newTestBroker(t, nil)
 	subscriber := newTestPeer()
 	sess := wamp.NewSession(subscriber, 0, nil, nil)
 	testTopic := wamp.URI("nexus.test.topic")
@@ -745,13 +560,9 @@ func TestPublisherExclusion(t *testing.T) {
 
 	// Test that subscriber received SUBSCRIBED message
 	rsp, err := wamp.RecvTimeout(sess, time.Second)
-	if err != nil {
-		t.Fatal("subscribe session did not get response to SUBSCRIBE")
-	}
+	require.NoError(t, err, "subscribe session did not get response to SUBSCRIBE")
 	_, ok := rsp.(*wamp.Subscribed)
-	if !ok {
-		t.Fatal("expected", wamp.SUBSCRIBED, "got:", rsp.MessageType())
-	}
+	require.True(t, ok, "expected SUBSCRIBED")
 
 	publisher := newTestPeer()
 
@@ -770,13 +581,9 @@ func TestPublisherExclusion(t *testing.T) {
 	broker.subscribe(pubSess, &wamp.Subscribe{Request: 123, Topic: testTopic})
 	// Test that pub session received SUBSCRIBED message
 	rsp, err = wamp.RecvTimeout(pubSess, time.Second)
-	if err != nil {
-		t.Fatal("publish session did not get response to SUBSCRIBE")
-	}
+	require.NoError(t, err, "publish session did not get response to SUBSCRIBE")
 	_, ok = rsp.(*wamp.Subscribed)
-	if !ok {
-		t.Fatal("expected", wamp.SUBSCRIBED, "got:", rsp.MessageType())
-	}
+	require.True(t, ok, "expected SUBSCRIBED")
 
 	// Publish message with exclud_me = false.
 	broker.publish(pubSess, &wamp.Publish{
@@ -784,14 +591,10 @@ func TestPublisherExclusion(t *testing.T) {
 		Topic:   testTopic,
 		Options: wamp.Dict{"exclude_me": false},
 	})
-	rsp, err = wamp.RecvTimeout(sess, time.Second)
-	if err != nil {
-		t.Fatal("subscriber did not receive event")
-	}
-	rsp, err = wamp.RecvTimeout(pubSess, time.Second)
-	if err != nil {
-		t.Fatal("pub session should have received event")
-	}
+	_, err = wamp.RecvTimeout(sess, time.Second)
+	require.NoError(t, err, "subscriber did not receive event")
+	_, err = wamp.RecvTimeout(pubSess, time.Second)
+	require.NoError(t, err, "pub session should have received event")
 
 	// Publish message with exclud_me = true.
 	broker.publish(pubSess, &wamp.Publish{
@@ -799,21 +602,14 @@ func TestPublisherExclusion(t *testing.T) {
 		Topic:   testTopic,
 		Options: wamp.Dict{"exclude_me": true},
 	})
-	rsp, err = wamp.RecvTimeout(sess, time.Second)
-	if err != nil {
-		t.Fatal("subscriber did not receive event")
-	}
-	rsp, err = wamp.RecvTimeout(pubSess, time.Second)
-	if err == nil {
-		t.Fatal("pub session should NOT have received event")
-	}
+	_, err = wamp.RecvTimeout(sess, time.Second)
+	require.NoError(t, err, "subscriber did not receive event")
+	_, err = wamp.RecvTimeout(pubSess, time.Second)
+	require.Error(t, err, "pub session should NOT have received event")
 }
 
 func TestPublisherIdentification(t *testing.T) {
-	broker, err := newBroker(logger, false, true, debug, nil, nil)
-	if err != nil {
-		t.Fatal("Can not initialize broker")
-	}
+	broker := newTestBroker(t, nil)
 	subscriber := newTestPeer()
 
 	details := wamp.Dict{
@@ -834,9 +630,7 @@ func TestPublisherIdentification(t *testing.T) {
 	// Test that subscriber received SUBSCRIBED message
 	rsp := <-sess.Recv()
 	_, ok := rsp.(*wamp.Subscribed)
-	if !ok {
-		t.Fatal("expected", wamp.SUBSCRIBED, "got:", rsp.MessageType())
-	}
+	require.True(t, ok, "expected SUBSCRIBED")
 
 	publisher := newTestPeer()
 	pubSess := wamp.NewSession(publisher, wamp.GlobalID(), nil, nil)
@@ -847,16 +641,10 @@ func TestPublisherIdentification(t *testing.T) {
 	})
 	rsp = <-sess.Recv()
 	evt, ok := rsp.(*wamp.Event)
-	if !ok {
-		t.Fatal("expected", wamp.EVENT, "got:", rsp.MessageType())
-	}
+	require.True(t, ok, "expected EVENT")
 	pub, ok := evt.Details["publisher"]
-	if !ok {
-		t.Fatal("missing publisher ID")
-	}
-	if pub.(wamp.ID) != pubSess.ID {
-		t.Fatal("incorrect publisher ID disclosed")
-	}
+	require.True(t, ok, "missing publisher ID")
+	require.Equal(t, pubSess.ID, pub.(wamp.ID), "incorrect publisher ID disclosed")
 }
 
 func TestEventHistory(t *testing.T) {
@@ -883,11 +671,7 @@ func TestEventHistory(t *testing.T) {
 		},
 	}
 
-	broker, err := newBroker(logger, false, true, debug, nil, eventHistoryConfig)
-	if err != nil {
-		t.Fatal("Can not initialize broker")
-	}
-
+	broker := newTestBroker(t, eventHistoryConfig)
 	publisher := newTestPeer()
 	pubSess := wamp.NewSession(publisher, 0, nil, nil)
 
@@ -927,108 +711,48 @@ func TestEventHistory(t *testing.T) {
 	topic := wamp.URI("nexus.test.exact.topic")
 	subscription := broker.topicSubscription[topic]
 	subEvents := broker.eventHistoryStore[subscription].entries
-	if len(subEvents) != 3 {
-		t.Fatalf("Store for topic %s should hold 3 records", topic)
-	}
-	if broker.eventHistoryStore[subscription].isLimitReached != true {
-		t.Fatalf("Limit for the store for topic %s should be reached", topic)
-	}
-	if subEvents[0].event.ArgumentsKw["topic"] != "nexus.test.exact.topic" {
-		t.Fatalf("Event store for topic %s holds invalid event", topic)
-	}
-	if subEvents[0].event.Arguments[0] != 25509 {
-		t.Fatalf("Event store for topic %s holds invalid event", topic)
-	}
-	if subEvents[1].event.ArgumentsKw["topic"] != "nexus.test.exact.topic" {
-		t.Fatalf("Event store for topic %s holds invalid event", topic)
-	}
-	if subEvents[1].event.Arguments[0] != 25513 {
-		t.Fatalf("Event store for topic %s holds invalid event", topic)
-	}
-	if subEvents[2].event.ArgumentsKw["topic"] != "nexus.test.exact.topic" {
-		t.Fatalf("Event store for topic %s holds invalid event", topic)
-	}
-	if subEvents[2].event.Arguments[0] != 25517 {
-		t.Fatalf("Event store for topic %s holds invalid event", topic)
-	}
+	require.Equalf(t, 3, len(subEvents), "Store for topic %s should hold 3 records", topic)
+	require.Truef(t, broker.eventHistoryStore[subscription].isLimitReached, "Limit for the store for topic %s should be reached", topic)
+	require.Equalf(t, "nexus.test.exact.topic", subEvents[0].event.ArgumentsKw["topic"], "Event store for topic %s holds invalid event", topic)
+	require.Equalf(t, 25509, subEvents[0].event.Arguments[0], "Event store for topic %s holds invalid event", topic)
+	require.Equalf(t, "nexus.test.exact.topic", subEvents[1].event.ArgumentsKw["topic"], "Event store for topic %s holds invalid event", topic)
+	require.Equalf(t, 25513, subEvents[1].event.Arguments[0], "Event store for topic %s holds invalid event", topic)
+	require.Equalf(t, "nexus.test.exact.topic", subEvents[2].event.ArgumentsKw["topic"], "Event store for topic %s holds invalid event", topic)
+	require.Equalf(t, 25517, subEvents[2].event.Arguments[0], "Event store for topic %s holds invalid event", topic)
 
 	topic = wamp.URI("nexus.test")
 	subscription = broker.pfxTopicSubscription[topic]
 	subEvents = broker.eventHistoryStore[subscription].entries
-	if len(subEvents) != 4 {
-		t.Fatalf("Store for topic %s should hold 3 records", topic)
-	}
-	if broker.eventHistoryStore[subscription].isLimitReached != true {
-		t.Fatalf("Limit for the store for topic %s should be reached", topic)
-	}
-	if subEvents[0].event.ArgumentsKw["topic"] != "nexus.test.exact.topic" {
-		t.Fatalf("Event store for topic %s holds invalid event", topic)
-	}
-	if subEvents[0].event.Arguments[0] != 25517 {
-		t.Fatalf("Event store for topic %s holds invalid event", topic)
-	}
-	if subEvents[1].event.ArgumentsKw["topic"] != "nexus.test.prefix.catch" {
-		t.Fatalf("Event store for topic %s holds invalid event", topic)
-	}
-	if subEvents[1].event.Arguments[0] != 25518 {
-		t.Fatalf("Event store for topic %s holds invalid event", topic)
-	}
-	if subEvents[2].event.ArgumentsKw["topic"] != "nexus.test.wildcard.topic" {
-		t.Fatalf("Event store for topic %s holds invalid event", topic)
-	}
-	if subEvents[2].event.Arguments[0] != 25519 {
-		t.Fatalf("Event store for topic %s holds invalid event", topic)
-	}
-	if subEvents[3].event.ArgumentsKw["topic"] != "nexus.test.wildcard.miss" {
-		t.Fatalf("Event store for topic %s holds invalid event", topic)
-	}
-	if subEvents[3].event.Arguments[0] != 25520 {
-		t.Fatalf("Event store for topic %s holds invalid event", topic)
-	}
+	require.Equalf(t, 4, len(subEvents), "Store for topic %s should hold 3 records", topic)
+	require.Truef(t, broker.eventHistoryStore[subscription].isLimitReached, "Limit for the store for topic %s should be reached", topic)
+	require.Equalf(t, "nexus.test.exact.topic", subEvents[0].event.ArgumentsKw["topic"], "Event store for topic %s holds invalid event", topic)
+	require.Equalf(t, 25517, subEvents[0].event.Arguments[0], "Event store for topic %s holds invalid event", topic)
+	require.Equalf(t, "nexus.test.prefix.catch", subEvents[1].event.ArgumentsKw["topic"], "Event store for topic %s holds invalid event", topic)
+	require.Equalf(t, 25518, subEvents[1].event.Arguments[0], "Event store for topic %s holds invalid event", topic)
+	require.Equalf(t, "nexus.test.wildcard.topic", subEvents[2].event.ArgumentsKw["topic"], "Event store for topic %s holds invalid event", topic)
+	require.Equalf(t, 25519, subEvents[2].event.Arguments[0], "Event store for topic %s holds invalid event", topic)
+	require.Equalf(t, "nexus.test.wildcard.miss", subEvents[3].event.ArgumentsKw["topic"], "Event store for topic %s holds invalid event", topic)
+	require.Equalf(t, 25520, subEvents[3].event.Arguments[0], "Event store for topic %s holds invalid event", topic)
 
 	topic = wamp.URI("nexus.test..topic")
 	subscription = broker.wcTopicSubscription[topic]
 	subEvents = broker.eventHistoryStore[subscription].entries
-	if len(subEvents) != 4 {
-		t.Fatalf("Store for topic %s should hold 3 records", topic)
-	}
-	if broker.eventHistoryStore[subscription].isLimitReached != true {
-		t.Fatalf("Limit for the store for topic %s should be reached", topic)
-	}
-	if subEvents[0].event.ArgumentsKw["topic"] != "nexus.test.exact.topic" {
-		t.Fatalf("Event store for topic %s holds invalid event", topic)
-	}
-	if subEvents[0].event.Arguments[0] != 25513 {
-		t.Fatalf("Event store for topic %s holds invalid event", topic)
-	}
-	if subEvents[1].event.ArgumentsKw["topic"] != "nexus.test.wildcard.topic" {
-		t.Fatalf("Event store for topic %s holds invalid event", topic)
-	}
-	if subEvents[1].event.Arguments[0] != 25515 {
-		t.Fatalf("Event store for topic %s holds invalid event", topic)
-	}
-	if subEvents[2].event.ArgumentsKw["topic"] != "nexus.test.exact.topic" {
-		t.Fatalf("Event store for topic %s holds invalid event", topic)
-	}
-	if subEvents[2].event.Arguments[0] != 25517 {
-		t.Fatalf("Event store for topic %s holds invalid event", topic)
-	}
-	if subEvents[3].event.ArgumentsKw["topic"] != "nexus.test.wildcard.topic" {
-		t.Fatalf("Event store for topic %s holds invalid event", topic)
-	}
-	if subEvents[3].event.Arguments[0] != 25519 {
-		t.Fatalf("Event store for topic %s holds invalid event", topic)
-	}
+	require.Equalf(t, 4, len(subEvents), "Store for topic %s should hold 3 records", topic)
+	require.Truef(t, broker.eventHistoryStore[subscription].isLimitReached, "Limit for the store for topic %s should be reached", topic)
+	require.Equalf(t, "nexus.test.exact.topic", subEvents[0].event.ArgumentsKw["topic"], "Event store for topic %s holds invalid event", topic)
+	require.Equalf(t, 25513, subEvents[0].event.Arguments[0], "Event store for topic %s holds invalid event", topic)
+	require.Equalf(t, "nexus.test.wildcard.topic", subEvents[1].event.ArgumentsKw["topic"], "Event store for topic %s holds invalid event", topic)
+	require.Equalf(t, 25515, subEvents[1].event.Arguments[0], "Event store for topic %s holds invalid event", topic)
+	require.Equalf(t, "nexus.test.exact.topic", subEvents[2].event.ArgumentsKw["topic"], "Event store for topic %s holds invalid event", topic)
+	require.Equalf(t, 25517, subEvents[2].event.Arguments[0], "Event store for topic %s holds invalid event", topic)
+	require.Equalf(t, "nexus.test.wildcard.topic", subEvents[3].event.ArgumentsKw["topic"], "Event store for topic %s holds invalid event", topic)
+	require.Equalf(t, 25519, subEvents[3].event.Arguments[0], "Event store for topic %s holds invalid event", topic)
 
 	topic = wamp.URI("nexus")
 	subscription = broker.pfxTopicSubscription[topic]
 	subEvents = broker.eventHistoryStore[subscription].entries
-	if len(subEvents) != 20 {
-		t.Fatalf("Store for topic %s should hold 20 records", topic)
-	}
-	if broker.eventHistoryStore[subscription].isLimitReached == true {
-		t.Fatalf("Limit for the store for topic %s should not be reached", topic)
-	}
+	require.Equalf(t, 20, len(subEvents), "Store for topic %s should hold 20 records", topic)
+	require.Falsef(t, broker.eventHistoryStore[subscription].isLimitReached, "Limit for the store for topic %s should not be reached", topic)
 
 	//Now let's test Event History MetaRPCs
 	topic = wamp.URI("nexus.test.exact.topic")
@@ -1044,15 +768,11 @@ func TestEventHistory(t *testing.T) {
 
 	msg := broker.subEventHistory(&inv)
 	yield, ok := msg.(*wamp.Yield)
-	if !ok {
-		t.Fatalf("MetaRPC eventHistoryLast for topic %s should return Yield message", topic)
-	}
-	if len(yield.Arguments) != 3 {
-		t.Fatalf("MetaRPC eventHistoryLast for topic %s should return 3 records", topic)
-	}
-	if yield.ArgumentsKw["is_limit_reached"] != true {
-		t.Fatalf("is_limit_reached for topic %s should be true", topic)
-	}
+	require.Truef(t, ok, "MetaRPC eventHistoryLast for topic %s should return Yield message", topic)
+	require.Equalf(t, 3, len(yield.Arguments), "MetaRPC eventHistoryLast for topic %s should return 3 records", topic)
+	limitReachedVal := yield.ArgumentsKw["is_limit_reached"]
+	limitReached, _ := wamp.AsBool(limitReachedVal)
+	require.Truef(t, limitReached, "is_limit_reached for topic %s should be true", topic)
 
 	topic = wamp.URI("nexus")
 	subId = broker.pfxTopicSubscription[topic].id
@@ -1067,15 +787,11 @@ func TestEventHistory(t *testing.T) {
 
 	msg = broker.subEventHistory(&inv)
 	yield, ok = msg.(*wamp.Yield)
-	if !ok {
-		t.Fatalf("MetaRPC eventHistoryLast for topic %s should return Yield message", topic)
-	}
-	if len(yield.Arguments) != 10 {
-		t.Fatalf("MetaRPC eventHistoryLast for topic %s should return 10 records", topic)
-	}
-	if yield.ArgumentsKw["is_limit_reached"] == true {
-		t.Fatalf("is_limit_reached for topic %s should be false", topic)
-	}
+	require.Truef(t, ok, "MetaRPC eventHistoryLast for topic %s should return Yield message", topic)
+	require.Equalf(t, 10, len(yield.Arguments), "MetaRPC eventHistoryLast for topic %s should return 10 records", topic)
+	limitReachedVal = yield.ArgumentsKw["is_limit_reached"]
+	limitReached, _ = wamp.AsBool(limitReachedVal)
+	require.Falsef(t, limitReached, "is_limit_reached for topic %s should be false", topic)
 
 	inv = wamp.Invocation{
 		Request:      wamp.ID(reqId),
@@ -1088,12 +804,8 @@ func TestEventHistory(t *testing.T) {
 
 	msg = broker.subEventHistory(&inv)
 	yield, ok = msg.(*wamp.Yield)
-	if !ok {
-		t.Fatalf("MetaRPC eventHistoryLast for topic %s should return Yield message", topic)
-	}
-	if len(yield.Arguments) != 20 {
-		t.Fatalf("MetaRPC eventHistoryLast for topic %s should return 20 records", topic)
-	}
+	require.Truef(t, ok, "MetaRPC eventHistoryLast for topic %s should return Yield message", topic)
+	require.Equalf(t, 20, len(yield.Arguments), "MetaRPC eventHistoryLast for topic %s should return 20 records", topic)
 
 	inv = wamp.Invocation{
 		Request:      wamp.ID(reqId),
@@ -1106,12 +818,8 @@ func TestEventHistory(t *testing.T) {
 
 	msg = broker.subEventHistory(&inv)
 	yield, ok = msg.(*wamp.Yield)
-	if !ok {
-		t.Fatalf("MetaRPC subEventHistory for topic %s should return Yield message", topic)
-	}
-	if len(yield.Arguments) != 20 {
-		t.Fatalf("MetaRPC subEventHistory for topic %s should return 20 records", topic)
-	}
+	require.Truef(t, ok, "MetaRPC subEventHistory for topic %s should return Yield message", topic)
+	require.Equalf(t, 20, len(yield.Arguments), "MetaRPC subEventHistory for topic %s should return 20 records", topic)
 
 	inv = wamp.Invocation{
 		Request:      wamp.ID(reqId),
@@ -1124,12 +832,8 @@ func TestEventHistory(t *testing.T) {
 
 	msg = broker.subEventHistory(&inv)
 	yield, ok = msg.(*wamp.Yield)
-	if !ok {
-		t.Fatalf("MetaRPC subEventHistory for topic %s should return Yield message", topic)
-	}
-	if len(yield.Arguments) != 20 {
-		t.Fatalf("MetaRPC subEventHistory for topic %s should return 20 records", topic)
-	}
+	require.Truef(t, ok, "MetaRPC subEventHistory for topic %s should return Yield message", topic)
+	require.Equalf(t, 20, len(yield.Arguments), "MetaRPC subEventHistory for topic %s should return 20 records", topic)
 
 	inv = wamp.Invocation{
 		Request:      wamp.ID(reqId),
@@ -1142,12 +846,8 @@ func TestEventHistory(t *testing.T) {
 
 	msg = broker.subEventHistory(&inv)
 	yield, ok = msg.(*wamp.Yield)
-	if !ok {
-		t.Fatalf("MetaRPC subEventHistory for topic %s should return Yield message", topic)
-	}
-	if len(yield.Arguments) != 20 {
-		t.Fatalf("MetaRPC subEventHistory for topic %s should return 20 records", topic)
-	}
+	require.Truef(t, ok, "MetaRPC subEventHistory for topic %s should return Yield message", topic)
+	require.Equalf(t, 20, len(yield.Arguments), "MetaRPC subEventHistory for topic %s should return 20 records", topic)
 
 	inv = wamp.Invocation{
 		Request:      wamp.ID(reqId),
@@ -1160,12 +860,8 @@ func TestEventHistory(t *testing.T) {
 
 	msg = broker.subEventHistory(&inv)
 	yield, ok = msg.(*wamp.Yield)
-	if !ok {
-		t.Fatalf("MetaRPC subEventHistory for topic %s should return Yield message", topic)
-	}
-	if len(yield.Arguments) != 20 {
-		t.Fatalf("MetaRPC subEventHistory for topic %s should return 20 records", topic)
-	}
+	require.Truef(t, ok, "MetaRPC subEventHistory for topic %s should return Yield message", topic)
+	require.Equalf(t, 20, len(yield.Arguments), "MetaRPC subEventHistory for topic %s should return 20 records", topic)
 
 	inv = wamp.Invocation{
 		Request:      wamp.ID(reqId),
@@ -1181,12 +877,8 @@ func TestEventHistory(t *testing.T) {
 
 	msg = broker.subEventHistory(&inv)
 	yield, ok = msg.(*wamp.Yield)
-	if !ok {
-		t.Fatalf("MetaRPC subEventHistory for topic %s should return Yield message", topic)
-	}
-	if len(yield.Arguments) != 20 {
-		t.Fatalf("MetaRPC subEventHistory for topic %s should return 20 records", topic)
-	}
+	require.Truef(t, ok, "MetaRPC subEventHistory for topic %s should return Yield message", topic)
+	require.Equalf(t, 20, len(yield.Arguments), "MetaRPC subEventHistory for topic %s should return 20 records", topic)
 
 	inv = wamp.Invocation{
 		Request:      wamp.ID(reqId),
@@ -1199,12 +891,8 @@ func TestEventHistory(t *testing.T) {
 
 	msg = broker.subEventHistory(&inv)
 	yield, ok = msg.(*wamp.Yield)
-	if !ok {
-		t.Fatalf("MetaRPC subEventHistory for topic %s should return Yield message", topic)
-	}
-	if len(yield.Arguments) != 5 {
-		t.Fatalf("MetaRPC subEventHistory for topic %s should return 5 records", topic)
-	}
+	require.Truef(t, ok, "MetaRPC subEventHistory for topic %s should return Yield message", topic)
+	require.Equalf(t, 5, len(yield.Arguments), "MetaRPC subEventHistory for topic %s should return 5 records", topic)
 
 	// Let's test filtering based on publication ID
 	topic = wamp.URI("nexus")
@@ -1221,12 +909,8 @@ func TestEventHistory(t *testing.T) {
 
 	msg = broker.subEventHistory(&inv)
 	yield, ok = msg.(*wamp.Yield)
-	if !ok {
-		t.Fatalf("MetaRPC subEventHistory for topic %s should return Yield message", topic)
-	}
-	if len(yield.Arguments) != 16 {
-		t.Fatalf("MetaRPC subEventHistory for topic %s should return 16 records", topic)
-	}
+	require.Truef(t, ok, "MetaRPC subEventHistory for topic %s should return Yield message", topic)
+	require.Equalf(t, 16, len(yield.Arguments), "MetaRPC subEventHistory for topic %s should return 16 records", topic)
 
 	inv = wamp.Invocation{
 		Request:      wamp.ID(reqId),
@@ -1239,12 +923,8 @@ func TestEventHistory(t *testing.T) {
 
 	msg = broker.subEventHistory(&inv)
 	yield, ok = msg.(*wamp.Yield)
-	if !ok {
-		t.Fatalf("MetaRPC subEventHistory for topic %s should return Yield message", topic)
-	}
-	if len(yield.Arguments) != 15 {
-		t.Fatalf("MetaRPC subEventHistory for topic %s should return 15 records", topic)
-	}
+	require.Truef(t, ok, "MetaRPC subEventHistory for topic %s should return Yield message", topic)
+	require.Equalf(t, 15, len(yield.Arguments), "MetaRPC subEventHistory for topic %s should return 15 records", topic)
 
 	inv = wamp.Invocation{
 		Request:      wamp.ID(reqId),
@@ -1257,12 +937,8 @@ func TestEventHistory(t *testing.T) {
 
 	msg = broker.subEventHistory(&inv)
 	yield, ok = msg.(*wamp.Yield)
-	if !ok {
-		t.Fatalf("MetaRPC subEventHistory for topic %s should return Yield message", topic)
-	}
-	if len(yield.Arguments) != 4 {
-		t.Fatalf("MetaRPC subEventHistory for topic %s should return 4 records", topic)
-	}
+	require.Truef(t, ok, "MetaRPC subEventHistory for topic %s should return Yield message", topic)
+	require.Equalf(t, 4, len(yield.Arguments), "MetaRPC subEventHistory for topic %s should return 4 records", topic)
 
 	inv = wamp.Invocation{
 		Request:      wamp.ID(reqId),
@@ -1275,12 +951,8 @@ func TestEventHistory(t *testing.T) {
 
 	msg = broker.subEventHistory(&inv)
 	yield, ok = msg.(*wamp.Yield)
-	if !ok {
-		t.Fatalf("MetaRPC subEventHistory for topic %s should return Yield message", topic)
-	}
-	if len(yield.Arguments) != 5 {
-		t.Fatalf("MetaRPC subEventHistory for topic %s should return 5 records", topic)
-	}
+	require.Truef(t, ok, "MetaRPC subEventHistory for topic %s should return Yield message", topic)
+	require.Equalf(t, 5, len(yield.Arguments), "MetaRPC subEventHistory for topic %s should return 5 records", topic)
 
 	// Let's test reverse order
 	inv = wamp.Invocation{
@@ -1293,25 +965,13 @@ func TestEventHistory(t *testing.T) {
 
 	msg = broker.subEventHistory(&inv)
 	yield, ok = msg.(*wamp.Yield)
-	if !ok {
-		t.Fatalf("MetaRPC subEventHistory for topic %s should return Yield message", topic)
-	}
-	if len(yield.Arguments) != 3 {
-		t.Fatalf("MetaRPC subEventHistory for topic %s should return 5 records", topic)
-	}
+	require.Truef(t, ok, "MetaRPC subEventHistory for topic %s should return Yield message", topic)
+	require.Equalf(t, 3, len(yield.Arguments), "MetaRPC subEventHistory for topic %s should return 5 records", topic)
 	ev1, ok := yield.Arguments[0].(storedEvent)
-	if !ok {
-		t.Fatalf("0 item in Arguments should be of type storedEvent")
-	}
+	require.True(t, ok, "0 item in Arguments should be of type storedEvent")
 	ev2, ok := yield.Arguments[2].(storedEvent)
-	if !ok {
-		t.Fatalf("2 item in Arguments should be of type storedEvent")
-	}
-
-	if ev1.Arguments[0].(int) < ev2.Arguments[0].(int) {
-		t.Fatalf("MetaRPC subEventHistory for topic %s should return records in reverse order", topic)
-	}
-	reqId++
+	require.True(t, ok, "2 item in Arguments should be of type storedEvent")
+	require.GreaterOrEqual(t, ev1.Arguments[0].(int), ev2.Arguments[0].(int), "MetaRPC subEventHistory for topic should return records in reverse order")
 
 	// Let's test with zero args
 	inv = wamp.Invocation{
@@ -1324,11 +984,6 @@ func TestEventHistory(t *testing.T) {
 
 	msg = broker.subEventHistory(&inv)
 	wErr, ok := msg.(*wamp.Error)
-	if !ok {
-		t.Fatalf("MetaRPC subEventHistory for topic %s should return Error message", topic)
-	}
-
-	if wErr.Error != wamp.ErrInvalidArgument {
-		t.Fatalf("Error URI must be %s when MetaRPC subEventHistory called without arguments", wamp.ErrInvalidArgument)
-	}
+	require.Truef(t, ok, "MetaRPC subEventHistory for topic %s should return Error message", topic)
+	require.Equal(t, wamp.ErrInvalidArgument, wErr.Error, "Error URI must be ErrInvalidArgument when MetaRPC subEventHistory called without arguments")
 }

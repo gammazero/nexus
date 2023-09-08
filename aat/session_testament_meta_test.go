@@ -6,8 +6,8 @@ import (
 	"testing"
 	"time"
 
-	"github.com/fortytw2/leaktest"
 	"github.com/gammazero/nexus/v3/wamp"
+	"github.com/stretchr/testify/require"
 )
 
 const (
@@ -16,27 +16,18 @@ const (
 )
 
 func TestAddTestament(t *testing.T) {
-	defer leaktest.Check(t)()
+	checkGoLeaks(t)
 	// Connect subscriber session.
-	subscriber, err := connectClient()
-	if err != nil {
-		t.Fatal("Failed to connect client:", err)
-	}
+	subscriber := connectClient(t)
 
 	// Check for feature support in router.
-	if !subscriber.HasFeature(wamp.RoleDealer, wamp.FeatureTestamentMetaAPI) {
-		t.Error("Dealer does not support", wamp.FeatureTestamentMetaAPI)
-	}
+	has := subscriber.HasFeature(wamp.RoleDealer, wamp.FeatureTestamentMetaAPI)
+	require.Truef(t, has, "Dealer does not support %s", wamp.FeatureTestamentMetaAPI)
 
 	eventChan := make(chan *wamp.Event)
-	err = subscriber.SubscribeChan("testament.test", eventChan, nil)
-	if err != nil {
-		t.Fatal("subscribe error:", err)
-	}
-	sess, err := connectClient()
-	if err != nil {
-		t.Fatal("Failed to connect client:", err)
-	}
+	err := subscriber.SubscribeChan("testament.test", eventChan, nil)
+	require.NoError(t, err)
+	sess := connectClient(t)
 	tstmtArgs := wamp.List{
 		"testament.test",
 		wamp.List{
@@ -45,15 +36,11 @@ func TestAddTestament(t *testing.T) {
 		wamp.Dict{},
 	}
 	_, err = sess.Call(context.Background(), metaAddTestament, nil, tstmtArgs, nil, nil)
-	if err != nil {
-		t.Fatal("Failed to add testament:", err)
-	}
+	require.NoError(t, err)
 
 	// Disconnect client to trigger testament
 	err = sess.Close()
-	if err != nil {
-		t.Fatal("Failed to disconnect client:", err)
-	}
+	require.NoError(t, err)
 
 	checkEvent := func(event *wamp.Event) error {
 		args := event.Arguments
@@ -76,36 +63,22 @@ func TestAddTestament(t *testing.T) {
 	// Make sure the event was received.
 	select {
 	case event := <-eventChan:
-		if err = checkEvent(event); err != nil {
-			t.Fatal("Event error:", err)
-		}
+		err = checkEvent(event)
+		require.NoError(t, err)
 	case <-time.After(200 * time.Millisecond):
-		t.Fatal("did not get published event")
-	}
-
-	err = subscriber.Close()
-	if err != nil {
-		t.Fatal("Failed to disconnect subscriber:", err)
+		require.FailNow(t, "did not get published event")
 	}
 }
 
 func TestAddFlushTestament(t *testing.T) {
-	defer leaktest.Check(t)()
+	checkGoLeaks(t)
 	// Connect subscriber session.
-	subscriber, err := connectClient()
-	if err != nil {
-		t.Fatal("Failed to connect client:", err)
-	}
+	subscriber := connectClient(t)
 
 	eventChan := make(chan *wamp.Event)
-	err = subscriber.SubscribeChan("testament.test", eventChan, nil)
-	if err != nil {
-		t.Fatal("subscribe error:", err)
-	}
-	sess, err := connectClient()
-	if err != nil {
-		t.Fatal("Failed to connect client:", err)
-	}
+	err := subscriber.SubscribeChan("testament.test", eventChan, nil)
+	require.NoError(t, err)
+	sess := connectClient(t)
 	tstmtArgs := wamp.List{
 		"testament.test",
 		wamp.List{
@@ -114,30 +87,19 @@ func TestAddFlushTestament(t *testing.T) {
 		wamp.Dict{},
 	}
 	_, err = sess.Call(context.Background(), metaAddTestament, nil, tstmtArgs, nil, nil)
-	if err != nil {
-		t.Fatal("Failed to add testament:", err)
-	}
+	require.NoError(t, err, "Failed to add testament")
 	_, err = sess.Call(context.Background(), metaFlushTestaments, nil, nil, nil, nil)
-	if err != nil {
-		t.Fatal("Failed to flush testament:", err)
-	}
+	require.NoError(t, err, "Failed to flush testament")
 
 	// Disconnect client to trigge testament, which should not exist since it
 	// was flushed above.
 	err = sess.Close()
-	if err != nil {
-		t.Fatal("Failed to disconnect client:", err)
-	}
+	require.NoError(t, err)
 
 	// Make sure the event was received.
 	select {
 	case <-eventChan:
-		t.Fatal("should not have received event")
+		require.FailNow(t, "should not have received event")
 	case <-time.After(200 * time.Millisecond):
-	}
-
-	err = subscriber.Close()
-	if err != nil {
-		t.Fatal("Failed to disconnect subscriber:", err)
 	}
 }

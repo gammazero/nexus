@@ -14,13 +14,14 @@ import (
 	"testing"
 	"time"
 
-	"github.com/fortytw2/leaktest"
 	"github.com/gammazero/nexus/v3/client"
 	"github.com/gammazero/nexus/v3/router"
 	"github.com/gammazero/nexus/v3/router/auth"
 	"github.com/gammazero/nexus/v3/stdlog"
 	"github.com/gammazero/nexus/v3/transport/serialize"
 	"github.com/gammazero/nexus/v3/wamp"
+	"github.com/stretchr/testify/require"
+	"go.uber.org/goleak"
 )
 
 const (
@@ -43,8 +44,6 @@ var (
 	cliLogger stdlog.StdLog
 	rtrLogger stdlog.StdLog
 
-	err error
-
 	// scheme determines the transport and use of TLS.  Value must be one of
 	// the following: "http", "https", "ws", "wss", "tcp", "tcps", "unix", "".
 	// Empty indicates direct (in proc) connection to router.  TLS is not
@@ -62,6 +61,14 @@ var (
 )
 
 type testAuthz struct{}
+
+var ignCurOpt goleak.Option
+
+func checkGoLeaks(t *testing.T) {
+	t.Cleanup(func() {
+		goleak.VerifyNone(t, ignCurOpt)
+	})
+}
 
 func (a *testAuthz) Authorize(sess *wamp.Session, msg wamp.Message) (bool, error) {
 	m, ok := msg.(*wamp.Subscribe)
@@ -98,7 +105,7 @@ func TestMain(m *testing.M) {
 
 	var certPath, keyPath string
 	if scheme == "https" || scheme == "wss" || scheme == "tcps" {
-		if _, err = os.Stat(certFile); os.IsNotExist(err) {
+		if _, err := os.Stat(certFile); os.IsNotExist(err) {
 			certPath = path.Join("aat", certFile)
 			keyPath = path.Join("aat", keyFile)
 		} else {
@@ -147,6 +154,7 @@ func TestMain(m *testing.M) {
 		},
 		//Debug: true,
 	}
+	var err error
 	nxr, err = router.NewRouter(routerConfig, rtrLogger)
 	if err != nil {
 		panic(err)
@@ -214,6 +222,7 @@ func TestMain(m *testing.M) {
 		os.Exit(1)
 	}
 	if closer != nil {
+		defer closer.Close()
 		rtrLogger.Printf("Server listening on %s://%s compression=%t", scheme, addr, compress)
 	}
 	if serType != "" {
@@ -223,45 +232,14 @@ func TestMain(m *testing.M) {
 	if compress {
 		fmt.Println("Compression enabled")
 	}
-	// Connect and disconnect so that router is started before running tests.
-	// Otherwise, goroutine leak detection will think the router goroutines
-	// have leaked if that are not already running.
-	cli, err := connectClient()
-	if err != nil {
-		fmt.Fprintln(os.Stderr, "Failed to connect client:", err)
-		os.Exit(1)
-	}
-	err = cli.Close()
-	if err != nil {
-		fmt.Fprintln(os.Stderr, "Failed to disconnect client:", err)
-		os.Exit(1)
-	}
-	cfg := client.Config{
-		Realm:           testAuthRealm,
-		ResponseTimeout: clientResponseTimeout,
-	}
-	cli, err = connectClientCfg(cfg)
-	if err != nil {
-		fmt.Fprintln(os.Stderr, "Failed to connect client:", err)
-		os.Exit(1)
-	}
-	err = cli.Close()
-	if err != nil {
-		fmt.Fprintln(os.Stderr, "Failed to disconnect client:", err)
-		os.Exit(1)
-	}
+
+	ignCurOpt = goleak.IgnoreCurrent()
 
 	// Run tests.
-	rc := m.Run()
-
-	// Shutdown router and client environment.
-	if closer != nil {
-		closer.Close()
-	}
-	os.Exit(rc)
+	os.Exit(m.Run())
 }
 
-func connectClientCfg(cfg client.Config) (*client.Client, error) {
+func connectClientCfgErr(cfg client.Config) (*client.Client, error) {
 	var cli *client.Client
 	var err error
 
@@ -347,20 +325,25 @@ func connectClientCfg(cfg client.Config) (*client.Client, error) {
 	return cli, nil
 }
 
-func connectClient() (*client.Client, error) {
+func connectClientCfg(t *testing.T, cfg client.Config) *client.Client {
+	c, err := connectClientCfgErr(cfg)
+	require.NoError(t, err)
+	t.Cleanup(func() {
+		c.Close()
+	})
+	return c
+}
+
+func connectClient(t *testing.T) *client.Client {
 	cfg := client.Config{
 		Realm:           testRealm,
 		ResponseTimeout: clientResponseTimeout,
 	}
-	cli, err := connectClientCfg(cfg)
-	if err != nil {
-		return nil, err
-	}
-	return cli, nil
+	return connectClientCfg(t, cfg)
 }
 
 func TestHandshake(t *testing.T) {
-	defer leaktest.Check(t)()
+	checkGoLeaks(t)
 
 	cfg := client.Config{
 		Realm:           testRealm,
@@ -378,16 +361,10 @@ func TestHandshake(t *testing.T) {
 		cfg.WsCfg.KeepAlive = keepAliveInterval
 	}
 
-	cli, err := connectClientCfg(cfg)
-	if err != nil {
-		t.Fatal("Failed to connect client:", err)
-	}
+	cli, err := connectClientCfgErr(cfg)
+	require.NoError(t, err, "Failed to connect client")
 	err = cli.Close()
-	if err != nil {
-		t.Fatal("Failed to close client:", err)
-	}
+	require.NoError(t, err, "Failed to close client")
 	err = cli.Close()
-	if err == nil {
-		t.Fatal("Expected error if client already closed")
-	}
+	require.Error(t, err, "Expected error if client already closed")
 }

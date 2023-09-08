@@ -6,6 +6,7 @@ import (
 
 	"github.com/gammazero/nexus/v3/client"
 	"github.com/gammazero/nexus/v3/wamp"
+	"github.com/stretchr/testify/require"
 )
 
 func TestWhitelistAttribute(t *testing.T) {
@@ -15,36 +16,23 @@ func TestWhitelistAttribute(t *testing.T) {
 		HelloDetails:    wamp.Dict{"org_id": "zcorp"},
 		ResponseTimeout: time.Second,
 	}
-	subscriber1, err := connectClientCfg(cfg)
-	if err != nil {
-		t.Fatal("Failed to connect client:", err)
-	}
+	subscriber1 := connectClientCfg(t, cfg)
 	sub1Events := make(chan *wamp.Event)
-	err = subscriber1.SubscribeChan(testTopic, sub1Events, nil)
-	if err != nil {
-		t.Fatal("subscribe error:", err)
-	}
+	err := subscriber1.SubscribeChan(testTopic, sub1Events, nil)
+	require.NoError(t, err)
 
 	// Setup subscriber2
 	cfg = client.Config{
 		Realm:        testRealm,
 		HelloDetails: wamp.Dict{"org_id": "other"},
 	}
-	subscriber2, err := connectClientCfg(cfg)
-	if err != nil {
-		t.Fatal("Failed to connect client:", err)
-	}
+	subscriber2 := connectClientCfg(t, cfg)
 	sub2Events := make(chan *wamp.Event)
 	err = subscriber2.SubscribeChan(testTopic, sub2Events, nil)
-	if err != nil {
-		t.Fatal("subscribe error:", err)
-	}
+	require.NoError(t, err)
 
 	// Connect publisher
-	publisher, err := connectClient()
-	if err != nil {
-		t.Fatal("Failed to connect client:", err)
-	}
+	publisher := connectClient(t)
 
 	// Publish an event with whitelist that matches subscriber1 non-standard
 	// hello options.
@@ -55,13 +43,13 @@ func TestWhitelistAttribute(t *testing.T) {
 	select {
 	case <-sub1Events:
 	case <-time.After(200 * time.Millisecond):
-		t.Fatal("Subscriber1 did not get published event")
+		require.FailNow(t, "Subscriber1 did not get published event")
 	}
 
 	// Make sure the event was not received by subscriber2
 	select {
 	case <-sub2Events:
-		t.Fatal("Subscriber2 received published event")
+		require.FailNow(t, "Subscriber2 received published event")
 	case <-time.After(200 * time.Millisecond):
 	}
 
@@ -74,12 +62,12 @@ func TestWhitelistAttribute(t *testing.T) {
 	select {
 	case <-sub2Events:
 	case <-time.After(200 * time.Millisecond):
-		t.Fatal("Subscriber2 did not get published event")
+		require.FailNow(t, "Subscriber2 did not get published event")
 	}
 	// Make sure the event was not received by subscriber1
 	select {
 	case <-sub1Events:
-		t.Fatal("Subscriber1 received published event")
+		require.FailNow(t, "Subscriber1 received published event")
 	case <-time.After(200 * time.Millisecond):
 	}
 
@@ -92,22 +80,13 @@ func TestWhitelistAttribute(t *testing.T) {
 	select {
 	case <-sub1Events:
 	case <-time.After(200 * time.Millisecond):
-		t.Fatal("Subscriber1 did not get published event")
+		require.FailNow(t, "Subscriber1 did not get published event")
 	}
 	// Make sure the event was received by subscriber2
 	select {
 	case <-sub2Events:
 	case <-time.After(200 * time.Millisecond):
-		t.Fatal("Subscriber2 did not get published event")
-	}
-
-	err = subscriber1.Close()
-	if err != nil {
-		t.Fatal("Failed to disconnect client:", err)
-	}
-	err = subscriber2.Close()
-	if err != nil {
-		t.Fatal("Failed to disconnect client:", err)
+		require.FailNow(t, "Subscriber2 did not get published event")
 	}
 }
 
@@ -118,42 +97,28 @@ func TestBlacklistAttribute(t *testing.T) {
 		HelloDetails:    wamp.Dict{"org_id": "zcorp"},
 		ResponseTimeout: time.Second,
 	}
-	subscriber1, err := connectClientCfg(cfg)
-	if err != nil {
-		t.Fatal("Failed to connect client:", err)
-	}
+	subscriber1 := connectClientCfg(t, cfg)
 
 	// Check for feature support in router.
-	if !subscriber1.HasFeature(wamp.RoleBroker, wamp.FeatureSubBlackWhiteListing) {
-		t.Error("Broker does not support", wamp.FeatureSubBlackWhiteListing)
-	}
+	has := subscriber1.HasFeature(wamp.RoleBroker, wamp.FeatureSubBlackWhiteListing)
+	require.Truef(t, has, "Broker does not support %s", wamp.FeatureSubBlackWhiteListing)
 
 	sub1Events := make(chan *wamp.Event)
-	err = subscriber1.SubscribeChan(testTopic, sub1Events, nil)
-	if err != nil {
-		t.Fatal("subscribe error:", err)
-	}
+	err := subscriber1.SubscribeChan(testTopic, sub1Events, nil)
+	require.NoError(t, err)
 
 	// Setup subscriber2
 	cfg = client.Config{
 		Realm:        testRealm,
 		HelloDetails: wamp.Dict{"org_id": "other"},
 	}
-	subscriber2, err := connectClientCfg(cfg)
-	if err != nil {
-		t.Fatal("Failed to connect client:", err)
-	}
+	subscriber2 := connectClientCfg(t, cfg)
 	sub2Events := make(chan *wamp.Event)
 	err = subscriber2.SubscribeChan(testTopic, sub2Events, nil)
-	if err != nil {
-		t.Fatal("subscribe error:", err)
-	}
+	require.NoError(t, err)
 
 	// Connect publisher
-	publisher, err := connectClient()
-	if err != nil {
-		t.Fatal("Failed to connect client:", err)
-	}
+	publisher := connectClient(t)
 
 	opts := wamp.Dict{"exclude_org_id": wamp.List{"other", "bagduy"}}
 
@@ -164,22 +129,13 @@ func TestBlacklistAttribute(t *testing.T) {
 	select {
 	case <-sub1Events:
 	case <-time.After(200 * time.Millisecond):
-		t.Fatal("Subscriber1 did not get published event")
+		require.FailNow(t, "Subscriber1 did not get published event")
 	}
 
 	// Make sure the event was not received by subscriber2
 	select {
 	case <-sub2Events:
-		t.Fatal("Subscriber2 received published event")
+		require.FailNow(t, "Subscriber2 received published event")
 	case <-time.After(200 * time.Millisecond):
-	}
-
-	err = subscriber1.Close()
-	if err != nil {
-		t.Fatal("Failed to disconnect client:", err)
-	}
-	err = subscriber2.Close()
-	if err != nil {
-		t.Fatal("Failed to disconnect client:", err)
 	}
 }

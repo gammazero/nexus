@@ -69,7 +69,11 @@ func BenchmarkRpcDict(b *testing.B) {
 }
 
 func BenchmarkRPCProgress(b *testing.B) {
-	server, err := connectClient()
+	cfg := client.Config{
+		Realm:           testRealm,
+		ResponseTimeout: clientResponseTimeout,
+	}
+	server, err := connectClientCfgErr(cfg)
 	if err != nil {
 		panic("Failed to connect client: " + err.Error())
 	}
@@ -105,7 +109,7 @@ func BenchmarkRPCProgress(b *testing.B) {
 		panic(err)
 	}
 
-	client, err := connectClient()
+	client, err := connectClientCfgErr(cfg)
 	if err != nil {
 		panic("Failed to connect client: " + err.Error())
 	}
@@ -142,7 +146,11 @@ func BenchmarkRPCProgress(b *testing.B) {
 }
 
 func benchmarkRpc(b *testing.B, action client.InvocationHandler, callArgs wamp.List, verify func(*wamp.Result)) {
-	server, err := connectClient()
+	cfg := client.Config{
+		Realm:           testRealm,
+		ResponseTimeout: clientResponseTimeout,
+	}
+	server, err := connectClientCfgErr(cfg)
 	if err != nil {
 		panic("Failed to connect client: " + err.Error())
 	}
@@ -151,7 +159,7 @@ func benchmarkRpc(b *testing.B, action client.InvocationHandler, callArgs wamp.L
 		panic("Failed to register procedure: " + err.Error())
 	}
 
-	client, err := connectClient()
+	client, err := connectClientCfgErr(cfg)
 	if err != nil {
 		panic("Failed to connect client: " + err.Error())
 	}

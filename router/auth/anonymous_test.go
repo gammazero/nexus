@@ -1,13 +1,15 @@
-package auth
+package auth_test
 
 import (
 	"testing"
 
+	"github.com/gammazero/nexus/v3/router/auth"
 	"github.com/gammazero/nexus/v3/wamp"
+	"github.com/stretchr/testify/require"
 )
 
 func TestAnonAuth(t *testing.T) {
-	anonAuth := AnonymousAuth{
+	anonAuth := auth.AnonymousAuth{
 		AuthRole: "guest",
 	}
 
@@ -15,21 +17,12 @@ func TestAnonAuth(t *testing.T) {
 		"authid":      "someone",
 		"authmethods": []string{"anonymous"}}
 	welcome, err := anonAuth.Authenticate(wamp.ID(101), details, nil)
-	if err != nil {
-		t.Fatal("authenticate failed: ", err.Error())
-	}
+	require.NoError(t, err)
 
-	if welcome == nil {
-		t.Fatal("received nil welcome msg")
-	}
-	if welcome.MessageType() != wamp.WELCOME {
-		t.Fatal("expected WELCOME message, got: ", welcome.MessageType())
-	}
-
-	if s, _ := wamp.AsString(welcome.Details["authmethod"]); s != "anonymous" {
-		t.Fatal("invalid authmethod in welcome details")
-	}
-	if s, _ := wamp.AsString(welcome.Details["authrole"]); s != "guest" {
-		t.Fatal("incorrect authrole in welcome details")
-	}
+	require.NotNil(t, welcome, "received nil welcome msg")
+	require.Equal(t, wamp.WELCOME, welcome.MessageType())
+	s, _ := wamp.AsString(welcome.Details["authmethod"])
+	require.Equal(t, "anonymous", s, "invalid authmethod in welcome details")
+	s, _ = wamp.AsString(welcome.Details["authrole"])
+	require.Equal(t, "guest", s, "incorrect authrole in welcome details")
 }

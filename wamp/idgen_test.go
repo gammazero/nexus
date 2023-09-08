@@ -3,6 +3,8 @@ package wamp
 import (
 	"errors"
 	"testing"
+
+	"github.com/stretchr/testify/require"
 )
 
 func TestIDGen(t *testing.T) {
@@ -10,26 +12,23 @@ func TestIDGen(t *testing.T) {
 	id2 := GlobalID()
 	id3 := GlobalID()
 
-	if id1 == id2 || id1 == id3 || id2 == id3 {
-		t.Fatal("Globals should not be equal")
-	}
+	errMsg := "Globals should not be equal"
+	require.NotEqual(t, id1, id2, errMsg)
+	require.NotEqual(t, id1, id3, errMsg)
+	require.NotEqual(t, id2, id3, errMsg)
 
 	idgen := new(IDGen)
 	id1 = idgen.Next()
-	if id1 != 1 {
-		t.Fatal("Sequential IDs should start at 1")
-	}
+	require.Equal(t, ID(1), id1, "Sequential IDs should start at 1")
 	id2 = idgen.Next()
 	id3 = idgen.Next()
-	if id2 != 2 || id3 != 3 {
-		t.Fatal("IDs are not sequential")
-	}
+	errMsg = "IDs are not sequential"
+	require.Equal(t, ID(2), id2, errMsg)
+	require.Equal(t, ID(3), id3, errMsg)
 
 	idgen.next = int64(1) << 53
 	id1 = idgen.Next()
-	if id1 != 1 {
-		t.Fatal("Sequential IDs should wrap at 1 << 53")
-	}
+	require.Equal(t, ID(1), id1, "Sequential IDs should wrap at 1 << 53")
 }
 
 func TestSyncIDGen(t *testing.T) {
@@ -57,8 +56,6 @@ func TestSyncIDGen(t *testing.T) {
 	close(start)
 	for g := 0; g < 4; g++ {
 		err := <-errs
-		if err != nil {
-			t.Fatal(err.Error())
-		}
+		require.NoError(t, err)
 	}
 }

@@ -2,14 +2,13 @@ package aat_test
 
 import (
 	"context"
-	"errors"
 	"fmt"
 	"testing"
 	"time"
 
-	"github.com/fortytw2/leaktest"
 	"github.com/gammazero/nexus/v3/client"
 	"github.com/gammazero/nexus/v3/wamp"
+	"github.com/stretchr/testify/require"
 )
 
 const (
@@ -18,17 +17,13 @@ const (
 )
 
 func TestRPCProgressiveCallResults(t *testing.T) {
-	defer leaktest.Check(t)()
+	checkGoLeaks(t)
 	// Connect callee session.
-	callee, err := connectClient()
-	if err != nil {
-		t.Fatal("Failed to connect client:", err)
-	}
+	callee := connectClient(t)
 
 	// Check for feature support in router.
-	if !callee.HasFeature(wamp.RoleDealer, wamp.FeatureProgCallResults) {
-		t.Error("Dealer does not support", wamp.FeatureProgCallResults)
-	}
+	has := callee.HasFeature(wamp.RoleDealer, wamp.FeatureProgCallResults)
+	require.Truef(t, has, "Dealer does not support %s", wamp.FeatureProgCallResults)
 
 	// Handler sends progressive results.
 	handler := func(ctx context.Context, inv *wamp.Invocation) client.InvokeResult {
@@ -58,15 +53,11 @@ func TestRPCProgressiveCallResults(t *testing.T) {
 	}
 
 	// Register procedure
-	if err = callee.Register(progProc, handler, nil); err != nil {
-		t.Fatal("Failed to register procedure:", err)
-	}
+	err := callee.Register(progProc, handler, nil)
+	require.NoError(t, err)
 
 	// Connect caller session.
-	caller, err := connectClient()
-	if err != nil {
-		t.Fatal("Failed to connect client:", err)
-	}
+	caller := connectClient(t)
 
 	progCount := 0
 	progHandler := func(result *wamp.Result) {
@@ -81,45 +72,23 @@ func TestRPCProgressiveCallResults(t *testing.T) {
 	callArgs := wamp.List{1, 2, 3, 4, 5, 6, 7, 8, 9, 10}
 	ctx := context.Background()
 	result, err := caller.Call(ctx, progProc, nil, callArgs, nil, progHandler)
-	if err != nil {
-		t.Fatal("Failed to call procedure:", err)
-	}
+	require.NoError(t, err)
 	sum, ok := wamp.AsInt64(result.Arguments[0])
-	if !ok {
-		t.Fatal("Could not convert result to int64")
-	}
-	if sum != 55 {
-		t.Fatal("Wrong result:", sum)
-	}
-	if progCount != 3 {
-		t.Fatal("Expected progCount == 3")
-	}
+	require.True(t, ok, "Could not convert result to int64")
+	require.Equal(t, int64(55), sum)
+	require.Equal(t, 3, progCount)
 
 	// Test unregister.
-	if err = callee.Unregister(progProc); err != nil {
-		t.Fatal("Failed to unregister procedure:", err)
-	}
-
-	err = caller.Close()
-	if err != nil {
-		t.Fatal("Failed to disconnect client:", err)
-	}
-
-	err = callee.Close()
-	if err != nil {
-		t.Fatal("Failed to disconnect client:", err)
-	}
+	err = callee.Unregister(progProc)
+	require.NoError(t, err)
 }
 
 // Test that killing the caller, while in the middle of receiving progressive
 // results, is handled correctly by both the closed caller and the callee.
 func TestRPCProgressiveCallInterrupt(t *testing.T) {
-	defer leaktest.Check(t)()
+	checkGoLeaks(t)
 	// Connect callee session.
-	callee, err := connectClient()
-	if err != nil {
-		t.Fatal("Failed to connect client:", err)
-	}
+	callee := connectClient(t)
 
 	callerKiller := make(chan struct{})
 	callerClosed := make(chan struct{})
@@ -186,15 +155,11 @@ func TestRPCProgressiveCallInterrupt(t *testing.T) {
 	}
 
 	// Register procedure
-	if err = callee.Register(progProc, handler, nil); err != nil {
-		t.Fatal("Failed to register procedure:", err)
-	}
+	err := callee.Register(progProc, handler, nil)
+	require.NoError(t, err)
 
 	// Connect caller session.
-	caller, err := connectClient()
-	if err != nil {
-		t.Fatal("Failed to connect client:", err)
-	}
+	caller := connectClient(t)
 
 	progHandler := func(result *wamp.Result) {
 		arg := result.Arguments[0].(string)
@@ -217,44 +182,28 @@ func TestRPCProgressiveCallInterrupt(t *testing.T) {
 	<-callerKiller
 
 	err = caller.Close()
-	if err != nil {
-		t.Error("Failed to disconnect client:", err)
-	}
+	require.NoError(t, err)
 
 	err = <-recvProgErr
-	if !errors.Is(err, client.ErrNotConn) {
-		t.Errorf("unexpected error returned fom CallProgress: %s", err)
-	}
+	require.ErrorIs(t, err, client.ErrNotConn, "unexpected error from CallProgress")
 	<-caller.Done()
 	close(callerClosed)
 
 	select {
 	case <-sentFinal:
-		t.Error("Callee should not have finished sending progressive results")
+		require.Fail(t, "Callee should not have finished sending progressive results")
 	default:
 	}
 
 	<-sentFinal
 
-	if sendProgErr != nil {
-		t.Error(sendProgErr)
-	}
-
-	err = callee.Close()
-	if err != nil {
-		t.Error("Failed to disconnect client:", err)
-	}
+	require.Nil(t, sendProgErr)
 }
 
 func TestProgressStress(t *testing.T) {
-	defer leaktest.Check(t)()
-
+	checkGoLeaks(t)
 	// Connect callee session.
-	callee, err := connectClient()
-	if err != nil {
-		t.Fatal("Failed to connect client:", err)
-	}
-	defer callee.Close()
+	callee := connectClient(t)
 
 	// Total amount of data that is sent as progressive results.
 	const dataLen = 8192
@@ -306,16 +255,11 @@ func TestProgressStress(t *testing.T) {
 	}
 
 	// Register procedure.
-	if err = callee.Register(chunkProc, handler, nil); err != nil {
-		t.Fatal("Failed to register procedure:", err)
-	}
+	err := callee.Register(chunkProc, handler, nil)
+	require.NoError(t, err)
 
 	// Connect caller session.
-	caller, err := connectClient()
-	if err != nil {
-		t.Fatal("Failed to connect client:", err)
-	}
-	defer caller.Close()
+	caller := connectClient(t)
 
 	// The progress handler accumulates the chunks of data as they arrive.
 	var recvLen int
@@ -345,25 +289,18 @@ func TestProgressStress(t *testing.T) {
 	for i := 16; i <= 256; i += 16 {
 		// Call the example procedure, specifying the size of chunks to send as
 		// progressive results.
-		result, err := caller.Call(
-			ctx, chunkProc, nil, wamp.List{i}, nil, progHandler)
-		if err != nil {
-			t.Fatal(err)
-		}
+		result, err := caller.Call(ctx, chunkProc, nil, wamp.List{i}, nil, progHandler)
+		require.NoError(t, err)
 
 		// As a final result, the callee returns the total length the data.
 		totalLen, _ := wamp.AsInt64(result.Arguments[0])
 
-		if sendCount != recvCount {
-			t.Error("Caller received", recvCount, "chunks, expected", sendCount)
-		}
+		require.Equalf(t, recvCount, sendCount, "Caller received %d chunks, expected %d", recvCount, sendCount)
+
 		// Check if lenth received is correct
-		if recvLen != dataLen {
-			t.Error("Caller received wrong amount of data")
-		}
-		if int(totalLen) != dataLen {
-			t.Error("Length sent by callee is wrong")
-		}
+		require.Equal(t, dataLen, recvLen, "Caller received wrong amount of data")
+		require.Equal(t, dataLen, int(totalLen), "Length sent by callee is wrong")
+
 		sendCount = 0
 		recvCount = 0
 		recvLen = 0
@@ -374,12 +311,9 @@ func TestProgressStress(t *testing.T) {
 // receiving progressive results, is handled correctly by the dealer, callee
 // and the caller.
 func TestRPCProgressiveCallTimeout(t *testing.T) {
-	defer leaktest.Check(t)()
+	checkGoLeaks(t)
 	// Connect callee session.
-	callee, err := connectClient()
-	if err != nil {
-		t.Fatal("Failed to connect client:", err)
-	}
+	callee := connectClient(t)
 
 	gotProgRsp := make(chan struct{})
 	releaseCallee := make(chan struct{})
@@ -419,15 +353,11 @@ func TestRPCProgressiveCallTimeout(t *testing.T) {
 	}
 
 	// Register procedure
-	if err = callee.Register(progProc, handler, nil); err != nil {
-		t.Fatal("Failed to register procedure:", err)
-	}
+	err := callee.Register(progProc, handler, nil)
+	require.NoError(t, err)
 
 	// Connect caller session.
-	caller, err := connectClient()
-	if err != nil {
-		t.Fatal("Failed to connect client:", err)
-	}
+	caller := connectClient(t)
 
 	progHandler := func(result *wamp.Result) {
 		arg := result.Arguments[0].(string)
@@ -451,34 +381,16 @@ func TestRPCProgressiveCallTimeout(t *testing.T) {
 	<-gotProgRsp
 
 	err = <-recvProgErr
-	if err == nil {
-		t.Fatal("expected error from CallProgress")
-	}
-	rpce, ok := err.(client.RPCError)
-	if !ok {
-		t.Fatal("error should be RPCError type")
-	}
-	if rpce.Err.Error != wamp.ErrCanceled {
-		t.Errorf("unexpected error returned from CallProgress: %v", rpce)
-	}
+	require.Error(t, err, "expected error from CallProgress")
+	var rpce client.RPCError
+	require.ErrorAs(t, err, &rpce, "error should be RPCError type")
+	require.Equal(t, wamp.ErrCanceled, rpce.Err.Error)
 	close(releaseCallee)
 
 	select {
 	case err = <-sendProgErr:
-		if err != client.ErrCallerNoProg {
-			t.Error("unexpected callee error:", err)
-		}
+		require.ErrorIs(t, err, client.ErrCallerNoProg)
 	case <-time.After(5 * time.Second):
-		t.Fatal("Callee should have finished sending progressive results")
-	}
-
-	err = callee.Close()
-	if err != nil {
-		t.Error("Failed to disconnect client:", err)
-	}
-
-	err = caller.Close()
-	if err != nil {
-		t.Error("Failed to disconnect client:", err)
+		require.FailNow(t, "Callee should have finished sending progressive results")
 	}
 }

@@ -48,6 +48,7 @@ type realm struct {
 	metaIDGen *wamp.IDGen
 
 	actionChan chan func()
+	stopped    chan struct{}
 
 	// Used by close() to wait for sessions to exit.
 	waitHandlers sync.WaitGroup
@@ -93,6 +94,7 @@ func newRealm(config *RealmConfig, broker *broker, dealer *dealer, logger stdlog
 		clients:     map[wamp.ID]*wamp.Session{},
 		testaments:  map[wamp.ID]testamentBucket{},
 		actionChan:  make(chan func()),
+		stopped:     make(chan struct{}),
 		metaIDGen:   new(wamp.IDGen),
 		metaDone:    make(chan struct{}),
 		metaProcMap: make(map[wamp.ID]func(*wamp.Invocation) wamp.Message, 9),
@@ -134,16 +136,19 @@ func newRealm(config *RealmConfig, broker *broker, dealer *dealer, logger stdlog
 		}
 	}
 
+	r.setupMetaProcedures()
+
+	go r.metaProcedureHandler()
+	go r.run()
+
 	return r, nil
 }
 
-// waitReady waits for the realm to be fully initialized and running.
-func (r *realm) waitReady() {
-	ch := make(chan struct{})
-	r.actionChan <- func() {
-		close(ch)
+func (r *realm) run() {
+	for action := range r.actionChan {
+		action()
 	}
-	<-ch
+	close(r.stopped)
 }
 
 // close performs an orderly shutdown of the realm.
@@ -177,10 +182,6 @@ func (r *realm) close() {
 	}
 	r.closed = true
 
-	// Make sure that realm is fully initialized, by checking that it is
-	// running, before closing.
-	r.waitReady()
-
 	// Kick all clients off.  Sending shutdownGoodbye causes client message
 	// handlers to exit without sending meta events.
 	ch := make(chan struct{})
@@ -207,18 +208,16 @@ func (r *realm) close() {
 	// than can submit request to the broker and dealer, so now that these are
 	// finished there can be no more messages to broker and dealer.
 
-	// No new messages, so safe to close dealer and broker.  Stop broker and
-	// dealer, so they can be GC'd, and then so can this realm.
+	// No new messages, so safe to close dealer and broker.
 	r.dealer.close()
 	r.broker.close()
 
 	// Finally close realm's action channel.
 	close(r.actionChan)
+	<-r.stopped
 }
 
-// run must be called to start the Realm.
-// It blocks so should be executed in a separate goroutine
-func (r *realm) run() {
+func (r *realm) setupMetaProcedures() {
 	// Create a local client for publishing meta events.
 	r.createMetaSession()
 
@@ -255,12 +254,6 @@ func (r *realm) run() {
 	// Register to handle testament meta procedures.
 	r.registerMetaProcedure(wamp.MetaProcSessionAddTestament, r.testamentAdd)
 	r.registerMetaProcedure(wamp.MetaProcSessionFlushTestaments, r.testamentFlush)
-
-	go r.metaProcedureHandler()
-
-	for action := range r.actionChan {
-		action()
-	}
 }
 
 // createMetaSession creates and starts a session that runs in this realm, and
@@ -291,7 +284,6 @@ func (r *realm) createMetaSession() {
 // Note: onJoin() is called from handleSession, not handleInboundMessages, so
 // that it is not called for the meta client.
 func (r *realm) onJoin(sess *wamp.Session) {
-	r.waitHandlers.Add(1)
 	sync := make(chan struct{})
 	r.actionChan <- func() {
 		r.clients[sess.ID] = sess
@@ -349,8 +341,6 @@ func (r *realm) onLeave(sess *wamp.Session, shutdown, killAll bool) {
 	}
 	<-sync
 
-	defer r.waitHandlers.Done()
-
 	if shutdown || killAll {
 		return
 	}
@@ -394,6 +384,8 @@ func (r *realm) handleSession(sess *wamp.Session) error {
 		return err
 	}
 
+	r.waitHandlers.Add(1)
+
 	// Ensure session is capable of receiving exit signal before releasing lock
 	r.onJoin(sess)
 	r.closeLock.Unlock()
@@ -413,6 +405,7 @@ func (r *realm) handleSession(sess *wamp.Session) error {
 		}
 		r.onLeave(sess, shutdown, killAll)
 		sess.Close()
+		r.waitHandlers.Done()
 	}()
 
 	return nil
