@@ -237,6 +237,9 @@ func (w *websocketPeer) Close() {
 	// wr channel in case there are incoming messages during close.
 	w.cancelSender()
 	<-w.writerDone
+	close(w.wr)
+	for range w.wr {
+	}
 
 	closeMsg := websocket.FormatCloseMessage(websocket.CloseNormalClosure,
 		"goodbye")
