@@ -145,7 +145,7 @@ func (r *router) AttachClient(client wamp.Peer, transportDetails wamp.Dict) erro
 			abortMsg.Details[wamp.OptMessage] = abortErr.Error()
 			r.log.Println("Aborting client connection:", abortErr)
 		}
-		client.Send(&abortMsg) // Blocking OK; this is session goroutine.
+		client.Send() <- &abortMsg // Blocking OK; this is session goroutine.
 		client.Close()
 	}
 
@@ -282,7 +282,7 @@ func (r *router) AttachClient(client wamp.Peer, transportDetails wamp.Dict) erro
 		return err
 	}
 
-	client.Send(welcome) // Blocking OK; this is session goroutine.
+	client.Send() <- welcome // Blocking OK; this is session goroutine.
 	if r.debug {
 		r.log.Println("Finished attaching session:", sid)
 	}

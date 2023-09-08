@@ -1,8 +1,6 @@
 package transport
 
 import (
-	"context"
-
 	"github.com/gammazero/nexus/v3/wamp"
 )
 
@@ -53,30 +51,9 @@ func (p *localPeer) IsLocal() bool { return true }
 // Recv returns the channel this peer reads incoming messages from.
 func (p *localPeer) Recv() <-chan wamp.Message { return p.rd }
 
-// TrySend writes a message to the peer's outbound message channel.
-func (p *localPeer) TrySend(msg wamp.Message) error {
-	return wamp.TrySend(p.wr, msg)
-}
-
-func (p *localPeer) SendCtx(ctx context.Context, msg wamp.Message) error {
-	return wamp.SendCtx(ctx, p.wr, msg)
-}
-
-// Send writes a message to the peer's outbound message channel.
-// Typically called by clients, since it is OK for the router to block a client
-// since this will not block other clients.
-func (p *localPeer) Send(msg wamp.Message) error {
-	p.wr <- msg
-	return nil
-}
+// Send returns the peer's outbound message channel.
+func (p *localPeer) Send() chan<- wamp.Message { return p.wr }
 
 // Close closes the outgoing channel, waking any readers waiting on data from
 // this peer.
 func (p *localPeer) Close() { close(p.wr) }
-
-// DEPRECATED
-// IsLocal returns true is the wamp.Peer is a localPeer.  These do not need
-// authentication since they are part of the same process.
-func IsLocal(p wamp.Peer) bool {
-	return p.IsLocal()
-}

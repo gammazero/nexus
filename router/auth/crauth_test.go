@@ -94,10 +94,10 @@ func cliRsp(p wamp.Peer) {
 			continue
 		}
 		signature, authDetails := clientAuthFunc(ch)
-		p.Send(&wamp.Authenticate{
+		p.Send() <- &wamp.Authenticate{
 			Signature: signature,
 			Extra:     authDetails,
-		})
+		}
 	}
 }
 

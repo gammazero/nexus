@@ -313,11 +313,11 @@ func (c *Client) Subscribe(topic string, fn EventHandler, options wamp.Dict) err
 	}
 	id := c.idGen.Next()
 	c.expectReply(id)
-	c.sess.Send(&wamp.Subscribe{
+	c.sess.Send() <- &wamp.Subscribe{
 		Request: id,
 		Options: options,
 		Topic:   wamp.URI(topic),
-	})
+	}
 
 	// Wait to receive SUBSCRIBED message.
 	msg, err := c.waitForReply(id)
@@ -384,10 +384,10 @@ func (c *Client) Unsubscribe(topic string) error {
 
 	id := c.idGen.Next()
 	c.expectReply(id)
-	c.sess.Send(&wamp.Unsubscribe{
+	c.sess.Send() <- &wamp.Unsubscribe{
 		Request:      id,
 		Subscription: subID,
-	})
+	}
 
 	// Wait to receive UNSUBSCRIBED message.
 	msg, err := c.waitForReply(id)
@@ -509,7 +509,7 @@ func (c *Client) Publish(topic string, options wamp.Dict, args wamp.List, kwargs
 		message.ArgumentsKw = kwargs
 	}
 
-	c.sess.Send(message)
+	c.sess.Send() <- message
 
 	if !pubAck {
 		return nil
@@ -573,11 +573,11 @@ func (c *Client) Register(procedure string, fn InvocationHandler, options wamp.D
 	if options == nil {
 		options = wamp.Dict{}
 	}
-	c.sess.Send(&wamp.Register{
+	c.sess.Send() <- &wamp.Register{
 		Request:   id,
 		Options:   options,
 		Procedure: wamp.URI(procedure),
-	})
+	}
 
 	// Wait to receive REGISTERED message.
 	msg, err := c.waitForReply(id)
@@ -636,10 +636,10 @@ func (c *Client) Unregister(procedure string) error {
 
 	id := c.idGen.Next()
 	c.expectReply(id)
-	c.sess.Send(&wamp.Unregister{
+	c.sess.Send() <- &wamp.Unregister{
 		Request:      id,
 		Registration: procID,
-	})
+	}
 
 	// Wait to receive UNREGISTERED message.
 	msg, err := c.waitForReply(id)
@@ -769,7 +769,7 @@ func (c *Client) Call(ctx context.Context, procedure string, options wamp.Dict, 
 		return nil, err
 	}
 
-	c.sess.Send(message)
+	c.sess.Send() <- message
 
 	// Wait to receive RESULT message.
 	msg, err := c.waitForReplyWithCancel(ctx, id, procedure, progChan)
@@ -791,7 +791,7 @@ func (c *Client) Call(ctx context.Context, procedure string, options wamp.Dict, 
 
 		if err != nil {
 			if abortMsg != nil {
-				c.sess.Peer.Send(abortMsg)
+				c.sess.Peer.Send() <- abortMsg
 				c.sess.Peer.Close()
 			}
 
@@ -868,7 +868,7 @@ func (c *Client) CallProgressive(ctx context.Context, procedure string, sendProg
 		return nil, err
 	}
 
-	c.sess.Send(message)
+	c.sess.Send() <- message
 
 	callInProgress, _ := options[wamp.OptProgress].(bool)
 
@@ -880,10 +880,10 @@ func (c *Client) CallProgressive(ctx context.Context, procedure string, sendProg
 				options, args, kwargs, err = sendProg(ctx)
 
 				if err != nil {
-					c.sess.Send(&wamp.Cancel{
+					c.sess.Send() <- &wamp.Cancel{
 						Request: id,
 						Options: wamp.SetOption(nil, wamp.OptMode, wamp.CancelModeKillNoWait),
-					})
+					}
 					return
 				}
 
@@ -902,14 +902,14 @@ func (c *Client) CallProgressive(ctx context.Context, procedure string, sendProg
 				}
 
 				if err := c.prepareCallPayloadMessage(message, options, args, kwargs); err != nil {
-					c.sess.Send(&wamp.Cancel{
+					c.sess.Send() <- &wamp.Cancel{
 						Request: id,
 						Options: wamp.SetOption(nil, wamp.OptMode, wamp.CancelModeKillNoWait),
-					})
+					}
 					return
 				}
 
-				c.sess.Send(message)
+				c.sess.Send() <- message
 			}
 		}()
 	}
@@ -935,7 +935,7 @@ func (c *Client) CallProgressive(ctx context.Context, procedure string, sendProg
 
 		if err != nil {
 			if abortMsg != nil {
-				c.sess.Peer.Send(abortMsg)
+				c.sess.Peer.Send() <- abortMsg
 				c.sess.Peer.Close()
 			}
 
@@ -1018,11 +1018,14 @@ func (c *Client) Close() error {
 		sendCtx, cancel := context.WithTimeout(context.Background(), 2*c.responseTimeout)
 		defer cancel()
 
-		var stopped bool
-		if c.sess.SendCtx(sendCtx, &wamp.Goodbye{
+		gmMsg := &wamp.Goodbye{
 			Details: wamp.Dict{},
 			Reason:  wamp.CloseRealm,
-		}) == nil {
+		}
+
+		var stopped bool
+		select {
+		case c.sess.Send() <- gmMsg:
 			// The router should respond with a GOODBYE message, which causes
 			// run() to exit.  Wait for run() to exit, but only wait for
 			// whatever time remains on the context.
@@ -1031,6 +1034,7 @@ func (c *Client) Close() error {
 				stopped = true
 			case <-sendCtx.Done():
 			}
+		case <-sendCtx.Done():
 		}
 
 		if !stopped {
@@ -1085,12 +1089,15 @@ func (c *Client) SendProgress(ctx context.Context, args wamp.List, kwArgs wamp.D
 		// Caller is not accepting progressive results or call canceled.
 		return ErrCallerNoProg
 	}
-	if c.sess.SendCtx(ctx, &wamp.Yield{
+	yieldMsg := &wamp.Yield{
 		Request:     req,
 		Options:     wamp.Dict{wamp.OptProgress: true},
 		Arguments:   args,
 		ArgumentsKw: kwArgs,
-	}) != nil {
+	}
+	select {
+	case c.sess.Send() <- yieldMsg:
+	case <-ctx.Done():
 		select {
 		case <-c.Done():
 			return ErrNotConn
@@ -1131,7 +1138,7 @@ func joinRealm(peer wamp.Peer, cfg Config) (*wamp.Welcome, error) {
 		details[helloAuthmethods] = authmethods
 	}
 
-	peer.Send(&wamp.Hello{Realm: wamp.URI(cfg.Realm), Details: details})
+	peer.Send() <- &wamp.Hello{Realm: wamp.URI(cfg.Realm), Details: details}
 	msg, err := wamp.RecvTimeout(peer, cfg.ResponseTimeout)
 	if err != nil {
 		return nil, err
@@ -1167,14 +1174,14 @@ func handleCRAuth(peer wamp.Peer, challenge *wamp.Challenge, authHandlers map[st
 		// know how to deal with.  In response to a CHALLENGE message, the
 		// Client MUST send an AUTHENTICATE message.  So, send empty
 		// AUTHENTICATE since client does not know what to put in it.
-		peer.Send(&wamp.Authenticate{})
+		peer.Send() <- &wamp.Authenticate{}
 	} else {
 		// Create signature and send AUTHENTICATE.
 		signature, authDetails := authFunc(challenge)
-		peer.Send(&wamp.Authenticate{
+		peer.Send() <- &wamp.Authenticate{
 			Signature: signature,
 			Extra:     authDetails,
-		})
+		}
 	}
 	msg, err := wamp.RecvTimeout(peer, rspTimeout)
 	if err != nil {
@@ -1352,10 +1359,10 @@ CollectResults:
 			c.log.Printf("Call to %q canceled by caller (mode=%s): %s",
 				procedure, c.cancelMode, err)
 		}
-		c.sess.Send(&wamp.Cancel{
+		c.sess.Send() <- &wamp.Cancel{
 			Request: id,
 			Options: wamp.SetOption(nil, wamp.OptMode, c.cancelMode),
-		})
+		}
 		// Wait for the ERROR from the dealer.
 		timer := time.NewTimer(c.responseTimeout)
 	waitCancel:
@@ -1531,13 +1538,13 @@ func (c *Client) runHandleInvocation(msg *wamp.Invocation) {
 		// as ErrNoSuchProcedure, since the dealer has a procedure registered.
 		// It is reported as ErrInvalidArgument to denote that the client has a
 		// problem with the registration ID argument.
-		c.sess.Send(&wamp.Error{
+		c.sess.Send() <- &wamp.Error{
 			Type:      wamp.INVOCATION,
 			Request:   reqID,
 			Details:   wamp.Dict{},
 			Error:     wamp.ErrInvalidArgument,
 			Arguments: wamp.List{errMsg},
-		})
+		}
 		c.log.Print(errMsg)
 		return
 	}
@@ -1547,13 +1554,13 @@ func (c *Client) runHandleInvocation(msg *wamp.Invocation) {
 	if pptScheme, _ := msg.Details[wamp.OptPPTScheme].(string); pptScheme != "" {
 
 		if !isPPTSchemeValid(pptScheme) {
-			c.sess.Send(&wamp.Error{
+			c.sess.Send() <- &wamp.Error{
 				Type:      wamp.INVOCATION,
 				Request:   reqID,
 				Details:   wamp.Dict{},
 				Error:     wamp.ErrInvalidArgument,
 				Arguments: wamp.List{ErrPPTSchemeInvalid.Error()},
-			})
+			}
 			c.log.Printf("cannot process invocation with invalid ppt schema %q: %v", pptScheme, ErrPPTSchemeInvalid)
 			return
 		}
@@ -1571,13 +1578,13 @@ func (c *Client) runHandleInvocation(msg *wamp.Invocation) {
 		}
 
 		if err != nil {
-			c.sess.Send(&wamp.Error{
+			c.sess.Send() <- &wamp.Error{
 				Type:      wamp.INVOCATION,
 				Request:   reqID,
 				Details:   wamp.Dict{},
 				Error:     wamp.ErrInvalidArgument,
 				Arguments: wamp.List{err.Error()},
-			})
+			}
 			c.log.Printf("cannot unpack invocation message: %v", err)
 			return
 		}
@@ -1707,14 +1714,18 @@ func (c *Client) runHandleInvocation(msg *wamp.Invocation) {
 			}
 
 			if result.Err != "" {
-				c.sess.SendCtx(c.ctx, &wamp.Error{
+				errMsg := &wamp.Error{
 					Type:        wamp.INVOCATION,
 					Request:     reqID,
 					Details:     wamp.Dict{},
 					Arguments:   result.Args,
 					ArgumentsKw: result.Kwargs,
 					Error:       result.Err,
-				})
+				}
+				select {
+				case c.sess.Send() <- errMsg:
+				case <-c.ctx.Done():
+				}
 				return
 			}
 
@@ -1742,13 +1753,13 @@ func (c *Client) runHandleInvocation(msg *wamp.Invocation) {
 							wamp.OptMessage: ErrPPTNotSupportedByPeer.Error(),
 						},
 					}
-					c.sess.Peer.Send(&abortMsg)
+					c.sess.Peer.Send() <- &abortMsg
 					c.sess.Peer.Close()
 					return
 				}
 
 				if !isPPTSchemeValid(pptScheme) {
-					c.sess.SendCtx(c.ctx, &wamp.Error{
+					errMsg := &wamp.Error{
 						Type:    wamp.INVOCATION,
 						Request: reqID,
 						Details: wamp.Dict{
@@ -1757,7 +1768,11 @@ func (c *Client) runHandleInvocation(msg *wamp.Invocation) {
 						Arguments:   result.Args,
 						ArgumentsKw: result.Kwargs,
 						Error:       wamp.ErrInvalidArgument,
-					})
+					}
+					select {
+					case c.sess.Send() <- errMsg:
+					case <-c.ctx.Done():
+					}
 					return
 				}
 
@@ -1773,7 +1788,7 @@ func (c *Client) runHandleInvocation(msg *wamp.Invocation) {
 				}
 
 				if err != nil {
-					c.sess.SendCtx(c.ctx, &wamp.Error{
+					errMsg := &wamp.Error{
 						Type:    wamp.INVOCATION,
 						Request: reqID,
 						Details: wamp.Dict{
@@ -1782,7 +1797,11 @@ func (c *Client) runHandleInvocation(msg *wamp.Invocation) {
 						Arguments:   result.Args,
 						ArgumentsKw: result.Kwargs,
 						Error:       wamp.ErrInvalidArgument,
-					})
+					}
+					select {
+					case c.sess.Send() <- errMsg:
+					case <-c.ctx.Done():
+					}
 					return
 				}
 
@@ -1793,7 +1812,10 @@ func (c *Client) runHandleInvocation(msg *wamp.Invocation) {
 				message.ArgumentsKw = result.Kwargs
 			}
 
-			c.sess.SendCtx(c.ctx, message)
+			select {
+			case c.sess.Send() <- message:
+			case <-c.ctx.Done():
+			}
 		}()
 	}
 }

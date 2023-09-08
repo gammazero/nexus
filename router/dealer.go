@@ -234,7 +234,7 @@ func (d *dealer) register(callee *wamp.Session, msg *wamp.Register) {
 	}
 	<-done
 	for _, pub := range metaPubs {
-		d.metaPeer.Send(pub)
+		d.metaPeer.Send() <- pub
 	}
 }
 
@@ -251,7 +251,7 @@ func (d *dealer) unregister(callee *wamp.Session, msg *wamp.Unregister) {
 	}
 	<-done
 	for _, pub := range metaPubs {
-		d.metaPeer.Send(pub)
+		d.metaPeer.Send() <- pub
 	}
 
 }
@@ -390,7 +390,7 @@ func (d *dealer) removeSession(sess *wamp.Session) {
 	}
 	<-done
 	for _, pub := range metaPubs {
-		d.metaPeer.Send(pub)
+		d.metaPeer.Send() <- pub
 	}
 }
 
@@ -657,9 +657,8 @@ func (d *dealer) syncCall(caller *wamp.Session, msg *wamp.Call) {
 		abortMsg.Details = wamp.Dict{}
 		abortMsg.Details[wamp.OptMessage] = "Peer is trying to use Progressive Call Invocations while it was not " +
 			"announced during HELLO handshake"
-		_ = caller.TrySend(&abortMsg)
+		d.trySend(caller, &abortMsg)
 		caller.Close()
-
 		return
 	}
 
@@ -761,9 +760,8 @@ func (d *dealer) syncCall(caller *wamp.Session, msg *wamp.Call) {
 			abortMsg.Details = wamp.Dict{}
 			abortMsg.Details[wamp.OptMessage] = "Peer is trying to use Payload PassThru Mode while it was not " +
 				"announced during HELLO handshake"
-			_ = caller.TrySend(&abortMsg)
+			d.trySend(caller, &abortMsg)
 			caller.Close()
-
 			return
 		}
 
@@ -835,13 +833,16 @@ func (d *dealer) syncCall(caller *wamp.Session, msg *wamp.Call) {
 
 	// Send INVOCATION to the endpoint that has registered the requested
 	// procedure.
-	if !d.trySend(callee, &wamp.Invocation{
+	invMsg := &wamp.Invocation{
 		Request:      invocationID,
 		Registration: reg.id,
 		Details:      details,
 		Arguments:    msg.Arguments,
 		ArgumentsKw:  msg.ArgumentsKw,
-	}) {
+	}
+	select {
+	case callee.Send() <- invMsg:
+	default:
 		d.syncError(&wamp.Error{
 			Type:      wamp.INVOCATION,
 			Request:   invocationID,
@@ -929,10 +930,12 @@ func (d *dealer) syncCancel(caller *wamp.Session, msg *wamp.Cancel, mode string,
 			d.log.Println("Callee", invk.callee, "does not support call canceling")
 		} else {
 			// Send INTERRUPT message to callee.
-			if d.trySend(invk.callee, &wamp.Interrupt{
+			intrMsg := &wamp.Interrupt{
 				Request: invocationID,
 				Options: wamp.Dict{wamp.OptReason: reason, wamp.OptMode: mode},
-			}) {
+			}
+			select {
+			case invk.callee.Send() <- intrMsg:
 				d.log.Println("Dealer sent INTERRUPT to cancel invocation",
 					invocationID, "for call", msg.Request, "mode:", mode)
 
@@ -942,6 +945,7 @@ func (d *dealer) syncCancel(caller *wamp.Session, msg *wamp.Cancel, mode string,
 				if mode == wamp.CancelModeKill {
 					return
 				}
+			default:
 			}
 		}
 	}
@@ -983,12 +987,15 @@ func (d *dealer) syncYield(callee *wamp.Session, msg *wamp.Yield, progress, canR
 			// callee's progressive call results feature would have been
 			// disabled at registration time if the callee did not support call
 			// canceling.
-			if d.trySend(callee, &wamp.Interrupt{
+			intrMsg := &wamp.Interrupt{
 				Request: msg.Request,
 				Options: wamp.Dict{wamp.OptMode: wamp.CancelModeKillNoWait},
-			}) {
+			}
+			select {
+			case callee.Send() <- intrMsg:
 				d.log.Println("Dealer sent INTERRUPT to cancel progressive",
 					"results for request", msg.Request, "to callee", callee)
+			default:
 			}
 		} else {
 			// WAMP does not allow sending INTERRUPT in response to normal or
@@ -1061,9 +1068,8 @@ func (d *dealer) syncYield(callee *wamp.Session, msg *wamp.Yield, progress, canR
 			abortMsg := wamp.Abort{Reason: wamp.ErrProtocolViolation}
 			abortMsg.Details = wamp.Dict{}
 			abortMsg.Details[wamp.OptMessage] = ErrPPTNotSupportedByPeer.Error()
-			_ = callee.TrySend(&abortMsg)
+			d.trySend(callee, &abortMsg)
 			callee.Close()
-
 			return false
 		}
 
@@ -1104,13 +1110,14 @@ func (d *dealer) syncYield(callee *wamp.Session, msg *wamp.Yield, progress, canR
 		Arguments:   msg.Arguments,
 		ArgumentsKw: msg.ArgumentsKw,
 	}
-	err := caller.TrySend(res)
-	if err != nil {
+	select {
+	case caller.Send() <- res:
+	default:
 		if canRetry {
 			keepInvocation = true
 			return true
 		}
-		d.log.Printf("!!! Dropped %s to caller %s: %s", res.MessageType(), caller, err)
+		d.log.Printf("!!! Dropped %s to caller %s: blocked", res.MessageType(), caller)
 		d.syncCancel(caller, &wamp.Cancel{Request: callID.request},
 			wamp.CancelModeKillNoWait, wamp.ErrCanceled, nil)
 	}
@@ -1487,12 +1494,12 @@ func (d *dealer) regCountCallees(msg *wamp.Invocation) wamp.Message {
 	}
 }
 
-func (d *dealer) trySend(sess *wamp.Session, msg wamp.Message) bool {
-	if err := sess.TrySend(msg); err != nil {
-		d.log.Printf("!!! Dropped %s to session %s: %s", msg.MessageType(), sess, err)
-		return false
+func (d *dealer) trySend(sess *wamp.Session, msg wamp.Message) {
+	select {
+	case sess.Send() <- msg:
+	default:
+		d.log.Printf("!!! Dropped %s to session %s: blocked", msg.MessageType(), sess)
 	}
-	return true
 }
 
 // discloseCaller adds caller identity information to INVOCATION.Details.

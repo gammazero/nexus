@@ -1,7 +1,7 @@
 package transport
 
 import (
-	"runtime"
+	"errors"
 	"testing"
 	"time"
 
@@ -12,14 +12,16 @@ import (
 func TestSendRecv(t *testing.T) {
 	c, r := LinkedPeers()
 
-	go c.Send(&wamp.Hello{})
+	go func() {
+		c.Send() <- &wamp.Hello{}
+	}()
 	select {
 	case <-r.Recv():
 	case <-time.After(time.Second):
 		require.FailNow(t, "Router peer did not receive msg")
 	}
 
-	r.Send(&wamp.Welcome{})
+	r.Send() <- &wamp.Welcome{}
 	select {
 	case <-c.Recv():
 	default:
@@ -41,12 +43,19 @@ func TestDropOnBlockedClient(t *testing.T) {
 
 	// Check that r -> c drops when full
 	for i := 0; i < qsize; i++ {
-		r.TrySend(&wamp.Publish{})
+		select {
+		case r.Send() <- &wamp.Publish{}:
+		default:
+		}
 	}
 	done := make(chan struct{})
 	var err error
 	go func() {
-		err = r.TrySend(&wamp.Publish{})
+		select {
+		case r.Send() <- &wamp.Publish{}:
+		default:
+			err = errors.New("blocked")
+		}
 		close(done)
 	}()
 	select {
@@ -63,7 +72,7 @@ func TestBlockOnBlockedRouter(t *testing.T) {
 	done := make(chan struct{})
 	go func() {
 		for i := 0; i < cap(r.Recv())+1; i++ {
-			c.Send(&wamp.Publish{})
+			c.Send() <- &wamp.Publish{}
 		}
 		close(done)
 	}()
@@ -82,7 +91,7 @@ func BenchmarkClientToRouter(b *testing.B) {
 	b.ResetTimer()
 	go func() {
 		for i := 0; i < b.N; i++ {
-			c.Send(&wamp.Hello{})
+			c.Send() <- &wamp.Hello{}
 		}
 	}()
 	for i := 0; i < b.N; i++ {
@@ -96,11 +105,7 @@ func BenchmarkRouterToClient(b *testing.B) {
 	b.ResetTimer()
 	go func() {
 		for i := 0; i < b.N; i++ {
-			err := r.Send(&wamp.Hello{})
-			for err != nil {
-				runtime.Gosched()
-				err = r.Send(&wamp.Hello{})
-			}
+			r.Send() <- &wamp.Hello{}
 		}
 	}()
 	for i := 0; i < b.N; i++ {

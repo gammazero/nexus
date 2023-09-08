@@ -223,17 +223,7 @@ func NewWebsocketPeer(conn WebsocketConnection, serializer serialize.Serializer,
 
 func (w *websocketPeer) Recv() <-chan wamp.Message { return w.rd }
 
-func (w *websocketPeer) TrySend(msg wamp.Message) error {
-	return wamp.TrySend(w.wr, msg)
-}
-
-func (w *websocketPeer) SendCtx(ctx context.Context, msg wamp.Message) error {
-	return wamp.SendCtx(ctx, w.wr, msg)
-}
-
-func (w *websocketPeer) Send(msg wamp.Message) error {
-	return wamp.SendCtx(w.ctxSender, w.wr, msg)
-}
+func (w *websocketPeer) Send() chan<- wamp.Message { return w.wr }
 
 func (w *websocketPeer) IsLocal() bool { return false }
 

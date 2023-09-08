@@ -91,8 +91,9 @@ func testClientInRealm(t *testing.T, r Router, realm wamp.URI) *wamp.Session {
 	details := clientRoles
 	details["authid"] = "user1"
 	details["xyzzy"] = "plugh"
-	//go client.Send(&wamp.Hello{Realm: realm, Details: clientRoles})
-	go client.Send(&wamp.Hello{Realm: realm, Details: details})
+	go func() {
+		client.Send() <- &wamp.Hello{Realm: realm, Details: details}
+	}()
 	err := r.Attach(server)
 	require.NoError(t, err)
 
@@ -117,7 +118,7 @@ func TestHandshake(t *testing.T) {
 	r := newTestRouter(t)
 
 	cli := testClient(t, r)
-	cli.Send(&wamp.Goodbye{})
+	cli.Send() <- &wamp.Goodbye{}
 	msg, err := wamp.RecvTimeout(cli, time.Second)
 	require.NoError(t, err, "no goodbye message after sending goodbye")
 	_, ok := msg.(*wamp.Goodbye)
@@ -128,7 +129,9 @@ func TestHandshakeBadRealm(t *testing.T) {
 	checkGoLeaks(t)
 	r := newTestRouter(t)
 	client, server := transport.LinkedPeers()
-	go client.Send(&wamp.Hello{Realm: "does.not.exist"})
+	go func() {
+		client.Send() <- &wamp.Hello{Realm: "does.not.exist"}
+	}()
 	err := r.Attach(server)
 	require.Error(t, err)
 
@@ -145,7 +148,7 @@ func TestProtocolViolation(t *testing.T) {
 	cli := testClient(t, r)
 
 	// Send HELLO message after session established.
-	cli.Send(&wamp.Hello{Realm: testRealm, Details: clientRoles})
+	cli.Send() <- &wamp.Hello{Realm: testRealm, Details: clientRoles}
 	msg, err := wamp.RecvTimeout(cli, time.Second)
 	require.NoError(t, err, "timed out waiting for ABORT")
 	abort, ok := msg.(*wamp.Abort)
@@ -156,7 +159,9 @@ func TestProtocolViolation(t *testing.T) {
 	client, server := transport.LinkedPeers()
 	// Run as goroutine since Send will block until message read by router, if
 	// client uses unbuffered channel.
-	go client.Send(&wamp.Subscribe{Request: wamp.GlobalID(), Topic: wamp.URI("some.uri")})
+	go func() {
+		client.Send() <- &wamp.Subscribe{Request: wamp.GlobalID(), Topic: wamp.URI("some.uri")}
+	}()
 	err = r.Attach(server)
 	require.Error(t, err)
 
@@ -174,7 +179,7 @@ func TestRouterSubscribe(t *testing.T) {
 	sub := testClient(t, r)
 
 	subscribeID := wamp.GlobalID()
-	sub.Send(&wamp.Subscribe{Request: subscribeID, Topic: testTopic})
+	sub.Send() <- &wamp.Subscribe{Request: subscribeID, Topic: testTopic}
 	msg, err := wamp.RecvTimeout(sub, time.Second)
 	require.NoError(t, err, "Timed out waiting for SUBSCRIBED")
 	subMsg, ok := msg.(*wamp.Subscribed)
@@ -184,7 +189,7 @@ func TestRouterSubscribe(t *testing.T) {
 
 	pub := testClient(t, r)
 	pubID := wamp.GlobalID()
-	pub.Send(&wamp.Publish{Request: pubID, Topic: testTopic})
+	pub.Send() <- &wamp.Publish{Request: pubID, Topic: testTopic}
 
 	msg, err = wamp.RecvTimeout(sub, time.Second)
 	require.NoError(t, err, "Timed out waiting for EVENT")
@@ -199,10 +204,11 @@ func TestPublishAcknowledge(t *testing.T) {
 	client := testClient(t, r)
 
 	id := wamp.GlobalID()
-	client.Send(&wamp.Publish{
+	client.Send() <- &wamp.Publish{
 		Request: id,
 		Options: wamp.Dict{"acknowledge": true},
-		Topic:   "some.uri"})
+		Topic:   "some.uri",
+	}
 
 	msg, err := wamp.RecvTimeout(client, time.Second)
 	require.NoError(t, err, "sent acknowledge=true, timed out waiting for PUBLISHED")
@@ -216,10 +222,11 @@ func TestPublishFalseAcknowledge(t *testing.T) {
 	client := testClient(t, r)
 
 	id := wamp.GlobalID()
-	client.Send(&wamp.Publish{
+	client.Send() <- &wamp.Publish{
 		Request: id,
 		Options: wamp.Dict{"acknowledge": false},
-		Topic:   "some.uri"})
+		Topic:   "some.uri",
+	}
 
 	msg, err := wamp.RecvTimeout(client, 200*time.Millisecond)
 	if err == nil {
@@ -233,7 +240,7 @@ func TestPublishNoAcknowledge(t *testing.T) {
 	client := testClient(t, r)
 
 	id := wamp.GlobalID()
-	client.Send(&wamp.Publish{Request: id, Topic: "some.uri"})
+	client.Send() <- &wamp.Publish{Request: id, Topic: "some.uri"}
 	msg, err := wamp.RecvTimeout(client, 200*time.Millisecond)
 	if err == nil {
 		_, ok := msg.(*wamp.Published)
@@ -248,7 +255,7 @@ func TestRouterCall(t *testing.T) {
 
 	registerID := wamp.GlobalID()
 	// Register remote procedure
-	callee.Send(&wamp.Register{Request: registerID, Procedure: testProcedure})
+	callee.Send() <- &wamp.Register{Request: registerID, Procedure: testProcedure}
 
 	msg, err := wamp.RecvTimeout(callee, time.Second)
 	require.NoError(t, err, "Timed out waiting for REGISTERED")
@@ -260,7 +267,7 @@ func TestRouterCall(t *testing.T) {
 	caller := testClient(t, r)
 	callID := wamp.GlobalID()
 	// Call remote procedure
-	caller.Send(&wamp.Call{Request: callID, Procedure: testProcedure})
+	caller.Send() <- &wamp.Call{Request: callID, Procedure: testProcedure}
 
 	msg, err = wamp.RecvTimeout(callee, time.Second)
 	require.NoError(t, err, "Timed out waiting for INVOCATION")
@@ -270,7 +277,7 @@ func TestRouterCall(t *testing.T) {
 	invocationID := invocation.Request
 
 	// Returns result of remove procedure
-	callee.Send(&wamp.Yield{Request: invocationID})
+	callee.Send() <- &wamp.Yield{Request: invocationID}
 
 	msg, err = wamp.RecvTimeout(caller, time.Second)
 	require.NoError(t, err, "Timed out waiting for RESULT")
@@ -287,7 +294,7 @@ func TestSessionCountMetaProcedure(t *testing.T) {
 
 	// Call wamp.MetaProcSessionCount
 	req := &wamp.Call{Request: wamp.GlobalID(), Procedure: wamp.MetaProcSessionCount}
-	caller.Send(req)
+	caller.Send() <- req
 	msg, err := wamp.RecvTimeout(caller, time.Second)
 	require.NoError(t, err)
 	result, ok := msg.(*wamp.Result)
@@ -304,7 +311,7 @@ func TestSessionCountMetaProcedure(t *testing.T) {
 		Procedure: wamp.MetaProcSessionCount,
 		Arguments: wamp.List{"should-be-a-list"},
 	}
-	caller.Send(req)
+	caller.Send() <- req
 	msg, err = wamp.RecvTimeout(caller, time.Second)
 	require.NoError(t, err)
 	errResult, ok := msg.(*wamp.Error)
@@ -318,7 +325,7 @@ func TestSessionCountMetaProcedure(t *testing.T) {
 		Procedure: wamp.MetaProcSessionCount,
 		Arguments: wamp.List{filter},
 	}
-	caller.Send(req)
+	caller.Send() <- req
 	msg, err = wamp.RecvTimeout(caller, time.Second)
 	require.NoError(t, err)
 	result, ok = msg.(*wamp.Result)
@@ -335,7 +342,7 @@ func TestSessionCountMetaProcedure(t *testing.T) {
 		Procedure: wamp.MetaProcSessionCount,
 		Arguments: wamp.List{filter},
 	}
-	caller.Send(req)
+	caller.Send() <- req
 	msg, err = wamp.RecvTimeout(caller, time.Second)
 	require.NoError(t, err)
 	result, ok = msg.(*wamp.Result)
@@ -358,7 +365,7 @@ func TestListSessionMetaProcedures(t *testing.T) {
 		Request:   wamp.GlobalID(),
 		Procedure: wamp.MetaProcSessionList,
 	}
-	caller.Send(req)
+	caller.Send() <- req
 	msg, err := wamp.RecvTimeout(caller, time.Second)
 	require.NoError(t, err)
 	result, ok := msg.(*wamp.Result)
@@ -377,7 +384,7 @@ func TestListSessionMetaProcedures(t *testing.T) {
 		Procedure: wamp.MetaProcSessionList,
 		Arguments: wamp.List{filter},
 	}
-	caller.Send(req)
+	caller.Send() <- req
 	msg, err = wamp.RecvTimeout(caller, time.Second)
 	require.NoError(t, err)
 	result, ok = msg.(*wamp.Result)
@@ -399,11 +406,11 @@ func TestGetSessionMetaProcedures(t *testing.T) {
 
 	// Call session meta-procedure with bad session ID
 	callID := wamp.GlobalID()
-	caller.Send(&wamp.Call{
+	caller.Send() <- &wamp.Call{
 		Request:   callID,
 		Procedure: wamp.MetaProcSessionGet,
 		Arguments: wamp.List{wamp.ID(123456789)},
-	})
+	}
 	msg, err := wamp.RecvTimeout(caller, time.Second)
 	require.NoError(t, err)
 	errRsp, ok := msg.(*wamp.Error)
@@ -412,11 +419,11 @@ func TestGetSessionMetaProcedures(t *testing.T) {
 
 	// Call session meta-procedure to get session information.
 	callID = wamp.GlobalID()
-	caller.Send(&wamp.Call{
+	caller.Send() <- &wamp.Call{
 		Request:   callID,
 		Procedure: wamp.MetaProcSessionGet,
 		Arguments: wamp.List{sessID},
-	})
+	}
 	msg, err = wamp.RecvTimeout(caller, time.Second)
 	require.NoError(t, err)
 	result, ok := msg.(*wamp.Result)
@@ -436,7 +443,7 @@ func TestRegistrationMetaProcedures(t *testing.T) {
 
 	// ----- Test wamp.registration.list meta procedure -----
 	callID := wamp.GlobalID()
-	caller.Send(&wamp.Call{Request: callID, Procedure: wamp.MetaProcRegList})
+	caller.Send() <- &wamp.Call{Request: callID, Procedure: wamp.MetaProcRegList}
 	msg, err := wamp.RecvTimeout(caller, time.Second)
 	require.NoError(t, err, "Timed out waiting for RESULT")
 	result, ok := msg.(*wamp.Result)
@@ -456,7 +463,7 @@ func TestRegistrationMetaProcedures(t *testing.T) {
 	sessID := callee.ID
 	// Register remote procedure
 	registerID := wamp.GlobalID()
-	callee.Send(&wamp.Register{Request: registerID, Procedure: testProcedure})
+	callee.Send() <- &wamp.Register{Request: registerID, Procedure: testProcedure}
 
 	msg, err = wamp.RecvTimeout(callee, time.Second)
 	require.NoError(t, err, "Timed out waiting for REGISTERED")
@@ -466,18 +473,18 @@ func TestRegistrationMetaProcedures(t *testing.T) {
 	registrationID := registered.Registration
 
 	// Register remote procedure
-	callee.Send(&wamp.Register{
+	callee.Send() <- &wamp.Register{
 		Request:   wamp.GlobalID(),
 		Procedure: testProcedureWC,
 		Options:   wamp.Dict{"match": "wildcard"},
-	})
+	}
 	msg = <-callee.Recv()
 	_, ok = msg.(*wamp.Registered)
 	require.True(t, ok, "expected REGISTERED")
 
 	// Call session meta-procedure to get session count.
 	callID = wamp.GlobalID()
-	caller.Send(&wamp.Call{Request: callID, Procedure: wamp.MetaProcRegList})
+	caller.Send() <- &wamp.Call{Request: callID, Procedure: wamp.MetaProcRegList}
 	msg, err = wamp.RecvTimeout(caller, time.Second)
 	require.NoError(t, err, "Timed out waiting for RESULT")
 	result, ok = msg.(*wamp.Result)
@@ -505,11 +512,11 @@ func TestRegistrationMetaProcedures(t *testing.T) {
 
 	// ----- Test wamp.registration.lookup meta procedure -----
 	callID = wamp.GlobalID()
-	caller.Send(&wamp.Call{
+	caller.Send() <- &wamp.Call{
 		Request:   callID,
 		Procedure: wamp.MetaProcRegLookup,
 		Arguments: wamp.List{testProcedure},
-	})
+	}
 	msg, err = wamp.RecvTimeout(caller, time.Second)
 	require.NoError(t, err, "Timed out waiting for RESULT")
 	result, ok = msg.(*wamp.Result)
@@ -522,11 +529,11 @@ func TestRegistrationMetaProcedures(t *testing.T) {
 
 	// ----- Test wamp.registration.match meta procedure -----
 	callID = wamp.GlobalID()
-	caller.Send(&wamp.Call{
+	caller.Send() <- &wamp.Call{
 		Request:   callID,
 		Procedure: wamp.MetaProcRegMatch,
 		Arguments: wamp.List{testProcedure},
-	})
+	}
 	msg, err = wamp.RecvTimeout(caller, time.Second)
 	require.NoError(t, err, "Timed out waiting for RESULT")
 	result, ok = msg.(*wamp.Result)
@@ -539,11 +546,11 @@ func TestRegistrationMetaProcedures(t *testing.T) {
 
 	// ----- Test wamp.registration.get meta procedure -----
 	callID = wamp.GlobalID()
-	caller.Send(&wamp.Call{
+	caller.Send() <- &wamp.Call{
 		Request:   callID,
 		Procedure: wamp.MetaProcRegGet,
 		Arguments: wamp.List{registrationID},
-	})
+	}
 	msg, err = wamp.RecvTimeout(caller, time.Second)
 	require.NoError(t, err, "Timed out waiting for RESULT")
 	result, ok = msg.(*wamp.Result)
@@ -559,11 +566,11 @@ func TestRegistrationMetaProcedures(t *testing.T) {
 
 	// ----- Test wamp.registration.list_callees meta procedure -----
 	callID = wamp.GlobalID()
-	caller.Send(&wamp.Call{
+	caller.Send() <- &wamp.Call{
 		Request:   callID,
 		Procedure: wamp.MetaProcRegListCallees,
 		Arguments: wamp.List{registrationID},
-	})
+	}
 	msg, err = wamp.RecvTimeout(caller, time.Second)
 	require.NoError(t, err, "Timed out waiting for RESULT")
 	result, ok = msg.(*wamp.Result)
@@ -577,11 +584,11 @@ func TestRegistrationMetaProcedures(t *testing.T) {
 
 	// ----- Test wamp.registration.count_callees meta procedure -----
 	callID = wamp.GlobalID()
-	caller.Send(&wamp.Call{
+	caller.Send() <- &wamp.Call{
 		Request:   callID,
 		Procedure: wamp.MetaProcRegCountCallees,
 		Arguments: wamp.List{registrationID},
-	})
+	}
 	msg, err = wamp.RecvTimeout(caller, time.Second)
 	require.NoError(t, err, "Timed out waiting for RESULT")
 	result, ok = msg.(*wamp.Result)
@@ -600,7 +607,7 @@ func TestSubscriptionMetaProcedures(t *testing.T) {
 
 	// ----- Test wamp.subscription.list meta procedure -----
 	callID := wamp.GlobalID()
-	caller.Send(&wamp.Call{Request: callID, Procedure: wamp.MetaProcSubList})
+	caller.Send() <- &wamp.Call{Request: callID, Procedure: wamp.MetaProcSubList}
 	msg, err := wamp.RecvTimeout(caller, time.Second)
 	require.NoError(t, err, "Timed out waiting for RESULT")
 	result, ok := msg.(*wamp.Result)
@@ -620,7 +627,7 @@ func TestSubscriptionMetaProcedures(t *testing.T) {
 	sessID := subscriber.ID
 	// Subscribe to topic
 	reqID := wamp.GlobalID()
-	subscriber.Send(&wamp.Subscribe{Request: reqID, Topic: testTopic})
+	subscriber.Send() <- &wamp.Subscribe{Request: reqID, Topic: testTopic}
 	msg, err = wamp.RecvTimeout(subscriber, time.Second)
 	require.NoError(t, err, "Timed out waiting for SUBSCRIBED")
 	subscribed, ok := msg.(*wamp.Subscribed)
@@ -629,11 +636,11 @@ func TestSubscriptionMetaProcedures(t *testing.T) {
 	subscriptionID := subscribed.Subscription
 
 	// Subscriber to wildcard topic
-	subscriber.Send(&wamp.Subscribe{
+	subscriber.Send() <- &wamp.Subscribe{
 		Request: wamp.GlobalID(),
 		Topic:   testTopicWC,
 		Options: wamp.Dict{"match": "wildcard"},
-	})
+	}
 	msg = <-subscriber.Recv()
 	subscribed, ok = msg.(*wamp.Subscribed)
 	require.True(t, ok, "expected SUBSCRIBED")
@@ -641,7 +648,7 @@ func TestSubscriptionMetaProcedures(t *testing.T) {
 
 	// Call subscription meta-procedure to get subscriptions.
 	callID = wamp.GlobalID()
-	caller.Send(&wamp.Call{Request: callID, Procedure: wamp.MetaProcSubList})
+	caller.Send() <- &wamp.Call{Request: callID, Procedure: wamp.MetaProcSubList}
 	msg, err = wamp.RecvTimeout(caller, time.Second)
 	require.NoError(t, err, "Timed out waiting for RESULT")
 	result, ok = msg.(*wamp.Result)
@@ -669,11 +676,11 @@ func TestSubscriptionMetaProcedures(t *testing.T) {
 
 	// ----- Test wamp.subscription.lookup meta procedure -----
 	callID = wamp.GlobalID()
-	caller.Send(&wamp.Call{
+	caller.Send() <- &wamp.Call{
 		Request:   callID,
 		Procedure: wamp.MetaProcSubLookup,
 		Arguments: wamp.List{testTopic},
-	})
+	}
 	msg, err = wamp.RecvTimeout(caller, time.Second)
 	require.NoError(t, err, "Timed out waiting for RESULT")
 	result, ok = msg.(*wamp.Result)
@@ -686,11 +693,11 @@ func TestSubscriptionMetaProcedures(t *testing.T) {
 
 	// ----- Test wamp.subscription.match meta procedure -----
 	callID = wamp.GlobalID()
-	caller.Send(&wamp.Call{
+	caller.Send() <- &wamp.Call{
 		Request:   callID,
 		Procedure: wamp.MetaProcSubMatch,
 		Arguments: wamp.List{testTopic},
-	})
+	}
 	msg, err = wamp.RecvTimeout(caller, time.Second)
 	require.NoError(t, err, "Timed out waiting for RESULT")
 	result, ok = msg.(*wamp.Result)
@@ -705,11 +712,11 @@ func TestSubscriptionMetaProcedures(t *testing.T) {
 
 	// ----- Test wamp.subscription.get meta procedure -----
 	callID = wamp.GlobalID()
-	caller.Send(&wamp.Call{
+	caller.Send() <- &wamp.Call{
 		Request:   callID,
 		Procedure: wamp.MetaProcSubGet,
 		Arguments: wamp.List{subscriptionID},
-	})
+	}
 	msg, err = wamp.RecvTimeout(caller, time.Second)
 	require.NoError(t, err, "Timed out waiting for RESULT")
 	result, ok = msg.(*wamp.Result)
@@ -725,11 +732,11 @@ func TestSubscriptionMetaProcedures(t *testing.T) {
 
 	// ----- Test wamp.subscription.list_subscribers meta procedure -----
 	callID = wamp.GlobalID()
-	caller.Send(&wamp.Call{
+	caller.Send() <- &wamp.Call{
 		Request:   callID,
 		Procedure: wamp.MetaProcSubListSubscribers,
 		Arguments: wamp.List{subscriptionID},
-	})
+	}
 	msg, err = wamp.RecvTimeout(caller, time.Second)
 	require.NoError(t, err, "Timed out waiting for RESULT")
 	result, ok = msg.(*wamp.Result)
@@ -743,11 +750,11 @@ func TestSubscriptionMetaProcedures(t *testing.T) {
 
 	// ----- Test wamp.subscription.count_subscribers meta procedure -----
 	callID = wamp.GlobalID()
-	caller.Send(&wamp.Call{
+	caller.Send() <- &wamp.Call{
 		Request:   callID,
 		Procedure: wamp.MetaProcSubCountSubscribers,
 		Arguments: wamp.List{subscriptionID},
-	})
+	}
 	msg, err = wamp.RecvTimeout(caller, time.Second)
 	require.NoError(t, err, "Timed out waiting for RESULT")
 	result, ok = msg.(*wamp.Result)
@@ -772,7 +779,7 @@ func TestDynamicRealmChange(t *testing.T) {
 	require.NoError(t, err)
 
 	cli := testClientInRealm(t, dr, testRealm2)
-	cli.Send(&wamp.Goodbye{})
+	cli.Send() <- &wamp.Goodbye{}
 	msg, err := wamp.RecvTimeout(cli, time.Second)
 	require.NoError(t, err, "no goodbye message after sending goodbye")
 	_, ok := msg.(*wamp.Goodbye)

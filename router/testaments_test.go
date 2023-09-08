@@ -14,13 +14,13 @@ func TestSessionTestaments(t *testing.T) {
 
 	sub := testClient(t, r)
 	subscribeID := wamp.GlobalID()
-	sub.Send(&wamp.Subscribe{Request: subscribeID, Topic: "testament.test1"})
+	sub.Send() <- &wamp.Subscribe{Request: subscribeID, Topic: "testament.test1"}
 	msg, err := wamp.RecvTimeout(sub, time.Second)
 	require.NoError(t, err)
 	_, ok := msg.(*wamp.Subscribed)
 	require.True(t, ok, "expected RESULT")
 
-	sub.Send(&wamp.Subscribe{Request: subscribeID, Topic: "testament.test2"})
+	sub.Send() <- &wamp.Subscribe{Request: subscribeID, Topic: "testament.test2"}
 	msg, err = wamp.RecvTimeout(sub, time.Second)
 	require.NoError(t, err)
 	require.NotNil(t, msg)
@@ -29,7 +29,7 @@ func TestSessionTestaments(t *testing.T) {
 	caller2 := testClient(t, r)
 
 	callID := wamp.GlobalID()
-	caller1.Send(&wamp.Call{
+	caller1.Send() <- &wamp.Call{
 		Request:   callID,
 		Procedure: wamp.MetaProcSessionAddTestament,
 		Arguments: wamp.List{
@@ -37,7 +37,7 @@ func TestSessionTestaments(t *testing.T) {
 			wamp.List{"foo"},
 			wamp.Dict{},
 		},
-	})
+	}
 
 	msg, err = wamp.RecvTimeout(caller1, time.Second)
 	require.NoError(t, err)
@@ -45,7 +45,7 @@ func TestSessionTestaments(t *testing.T) {
 	require.True(t, ok, "expected RESULT")
 	require.Equal(t, callID, result.Request, "wrong result ID")
 
-	caller2.Send(&wamp.Call{
+	caller2.Send() <- &wamp.Call{
 		Request:   wamp.GlobalID(),
 		Procedure: wamp.MetaProcSessionAddTestament,
 		Arguments: wamp.List{
@@ -53,7 +53,7 @@ func TestSessionTestaments(t *testing.T) {
 			wamp.List{"foo"},
 			wamp.Dict{},
 		},
-	})
+	}
 
 	msg, err = wamp.RecvTimeout(caller2, time.Second)
 	require.NoError(t, err)
