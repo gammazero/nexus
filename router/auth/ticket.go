@@ -83,7 +83,7 @@ func (t *TicketAuthenticator) Authenticate(sid wamp.ID, details wamp.Dict, clien
 	select {
 	case client.Send() <- chalMsg:
 	default:
-		return nil, errors.New("Cannot send chllenge to client: blocked")
+		return nil, errors.New("Cannot send challenge to client: blocked")
 	}
 
 	// Read AUTHENTICATE response from client.
