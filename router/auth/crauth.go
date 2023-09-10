@@ -96,7 +96,7 @@ func (cr *CRAuthenticator) Authenticate(sid wamp.ID, details wamp.Dict, client w
 	select {
 	case client.Send() <- chalMsg:
 	default:
-		return nil, errors.New("cannot send to client: blocked")
+		return nil, errors.New("cannot send challenge to client: blocked")
 	}
 
 	// Read AUTHENTICATE response from client.
