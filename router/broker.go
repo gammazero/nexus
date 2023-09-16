@@ -208,7 +208,7 @@ func (b *broker) publish(pub *wamp.Session, msg *wamp.Publish) {
 			abortMsg := wamp.Abort{Reason: wamp.ErrProtocolViolation}
 			abortMsg.Details = wamp.Dict{}
 			abortMsg.Details[wamp.OptMessage] = ErrPPTNotSupportedByPeer.Error()
-			_ = pub.TrySend(&abortMsg)
+			b.trySend(pub, &abortMsg)
 			pub.Close()
 
 			return
@@ -737,12 +737,12 @@ func (b *broker) syncPubSubCreateMeta(topic wamp.URI, subSessID wamp.ID, sub *su
 	})
 }
 
-func (b *broker) trySend(sess *wamp.Session, msg wamp.Message) bool {
-	if err := sess.TrySend(msg); err != nil {
-		b.log.Printf("!!! Dropped %s to session %s: %s", msg.MessageType(), sess, err)
-		return false
+func (b *broker) trySend(sess *wamp.Session, msg wamp.Message) {
+	select {
+	case sess.Send() <- msg:
+	default:
+		b.log.Printf("!!! Dropped %s to session %s: blocked", msg.MessageType(), sess)
 	}
-	return true
 }
 
 func prepareEvent(pub *wamp.Session, msg *wamp.Publish, pubID wamp.ID, sub *subscription, sendTopic, disclose bool, eventDetails wamp.Dict, subscriber *wamp.Session) *wamp.Event { //nolint:lll

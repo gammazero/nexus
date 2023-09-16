@@ -72,14 +72,15 @@ func (cr *CryptoSignAuthenticator) Authenticate(sid wamp.ID, details wamp.Dict, 
 
 	extra := wamp.Dict{"challenge": hex.EncodeToString(challenge)}
 
-	// Challenge response needed.  Send CHALLENGE message to client.
-	err = client.Send(&wamp.Challenge{
+	chalMsg := &wamp.Challenge{
 		AuthMethod: cr.AuthMethod(),
 		Extra:      extra,
-	})
-
-	if err != nil {
-		return nil, err
+	}
+	// Challenge response needed.  Send CHALLENGE message to client.
+	select {
+	case client.Send() <- chalMsg:
+	default:
+		return nil, errors.New("cannot send challenge to client: blocked")
 	}
 
 	// Read AUTHENTICATE response from client.

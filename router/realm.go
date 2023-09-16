@@ -300,11 +300,11 @@ func (r *realm) onJoin(sess *wamp.Session) {
 	sess.Lock()
 	output := r.cleanSessionDetails(sess.Details)
 	sess.Unlock()
-	r.metaPeer.Send(&wamp.Publish{
+	r.metaPeer.Send() <- &wamp.Publish{
 		Request:   wamp.GlobalID(),
 		Topic:     wamp.MetaEventSessionOnJoin,
 		Arguments: wamp.List{output},
-	})
+	}
 }
 
 // onLeave is called when a non-meta session leaves this realm.  The session is
@@ -347,26 +347,26 @@ func (r *realm) onLeave(sess *wamp.Session, shutdown, killAll bool) {
 	if hasTstm {
 		sendTestaments := func(testaments []testament) {
 			for i := range testaments {
-				r.metaPeer.Send(&wamp.Publish{
+				r.metaPeer.Send() <- &wamp.Publish{
 					Request:     wamp.GlobalID(),
 					Topic:       testaments[i].topic,
 					Arguments:   testaments[i].args,
 					ArgumentsKw: testaments[i].kwargs,
 					Options:     testaments[i].options,
-				})
+				}
 			}
 		}
 		sendTestaments(testaments.detached)
 		sendTestaments(testaments.destroyed)
 	}
-	r.metaPeer.Send(&wamp.Publish{
+	r.metaPeer.Send() <- &wamp.Publish{
 		Request: wamp.GlobalID(),
 		Topic:   wamp.MetaEventSessionOnLeave,
 		Arguments: wamp.List{
 			sess.ID,
 			sess.Details["authid"],
 			sess.Details["authrole"]},
-	})
+	}
 }
 
 // HandleSession starts a session attached to this realm.
@@ -401,7 +401,10 @@ func (r *realm) handleSession(sess *wamp.Session) error {
 				Details: wamp.Dict{wamp.OptMessage: err.Error()},
 			}
 			r.log.Println("Aborting session", sess, ":", err)
-			sess.TrySend(&abortMsg)
+			select {
+			case sess.Send() <- &abortMsg:
+			default:
+			}
 		}
 		r.onLeave(sess, shutdown, killAll)
 		sess.Close()
@@ -435,7 +438,10 @@ func (r *realm) handleInboundMessages(sess *wamp.Session) (bool, bool, error) {
 				if r.debug {
 					r.log.Printf("Stop session %s: system shutdown", sess)
 				}
-				sess.TrySend(goodbye)
+				select {
+				case sess.Send() <- goodbye:
+				default:
+				}
 				return true, false, nil
 			}
 			if r.debug {
@@ -445,7 +451,10 @@ func (r *realm) handleInboundMessages(sess *wamp.Session) (bool, bool, error) {
 			if _, ok := goodbye.Details["all"]; ok {
 				killAll = true
 			}
-			sess.TrySend(goodbye)
+			select {
+			case sess.Send() <- goodbye:
+			default:
+			}
 			return false, killAll, nil
 		}
 
@@ -489,10 +498,14 @@ func (r *realm) handleInboundMessages(sess *wamp.Session) (bool, bool, error) {
 
 		case *wamp.Goodbye:
 			// Handle client leaving realm.
-			sess.TrySend(&wamp.Goodbye{
+			gmMsg := &wamp.Goodbye{
 				Reason:  wamp.ErrGoodbyeAndOut,
 				Details: wamp.Dict{},
-			})
+			}
+			select {
+			case sess.Send() <- gmMsg:
+			default:
+			}
 			if r.debug {
 				r.log.Println("GOODBYE from session", sess, "reason:",
 					msg.Reason)
@@ -567,8 +580,9 @@ func (r *realm) authzMessage(sess *wamp.Session, msg wamp.Message) bool {
 			r.log.Println("Client", sess, msg.MessageType(), "not authorized")
 		}
 		if !skipResponse {
-			err = sess.TrySend(errRsp)
-			if err != nil {
+			select {
+			case sess.Send() <- errRsp:
+			default:
 				r.log.Println("!!! client blocked, could not send authz error")
 			}
 		}
@@ -665,13 +679,13 @@ func (r *realm) getAuthenticator(methods []string) (auth auth.Authenticator, aut
 func (r *realm) registerMetaProcedure(procedure wamp.URI, f func(*wamp.Invocation) wamp.Message) {
 	// Register the meta procedure.  The "disclose_caller" option must be
 	// enabled for the testament API and the meta session API.
-	r.metaPeer.Send(&wamp.Register{
+	r.metaPeer.Send() <- &wamp.Register{
 		Request: r.metaIDGen.Next(),
 		Options: wamp.Dict{
 			"disclose_caller": true,
 		},
 		Procedure: procedure,
-	})
+	}
 	msg := <-r.metaPeer.Recv()
 	if msg == nil {
 		// This would only happen if the meta client was closed before or
@@ -708,12 +722,12 @@ func (r *realm) metaProcedureHandler() {
 		case *wamp.Invocation:
 			metaProcHandler, ok := r.metaProcMap[msg.Registration]
 			if !ok {
-				r.metaPeer.Send(&wamp.Error{
+				r.metaPeer.Send() <- &wamp.Error{
 					Type:    msg.MessageType(),
 					Request: msg.Request,
 					Details: wamp.Dict{},
 					Error:   wamp.ErrNoSuchProcedure,
-				})
+				}
 				continue
 			}
 			rsp = metaProcHandler(msg)
@@ -725,7 +739,7 @@ func (r *realm) metaProcedureHandler() {
 		default:
 			r.log.Println("Meta procedure received unexpected", msg.MessageType())
 		}
-		r.metaPeer.Send(rsp)
+		r.metaPeer.Send() <- rsp
 	}
 }
 

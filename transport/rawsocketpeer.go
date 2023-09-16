@@ -173,17 +173,7 @@ func newRawSocketPeer(conn net.Conn, serializer serialize.Serializer, logger std
 
 func (rs *rawSocketPeer) Recv() <-chan wamp.Message { return rs.rd }
 
-func (rs *rawSocketPeer) TrySend(msg wamp.Message) error {
-	return wamp.TrySend(rs.wr, msg)
-}
-
-func (rs *rawSocketPeer) SendCtx(ctx context.Context, msg wamp.Message) error {
-	return wamp.SendCtx(ctx, rs.wr, msg)
-}
-
-func (rs *rawSocketPeer) Send(msg wamp.Message) error {
-	return wamp.SendCtx(rs.ctxSender, rs.wr, msg)
-}
+func (rs *rawSocketPeer) Send() chan<- wamp.Message { return rs.wr }
 
 func (rs *rawSocketPeer) IsLocal() bool { return false }
 
@@ -197,6 +187,9 @@ func (rs *rawSocketPeer) Close() {
 	// wr channel in case there are incoming messages during close.
 	rs.cancelSender()
 	<-rs.writerDone
+	close(rs.wr)
+	for range rs.wr {
+	}
 
 	// Tell recvHandler to close.
 	close(rs.closed)

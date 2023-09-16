@@ -20,11 +20,12 @@ func TestSessionKill(t *testing.T) {
 	message := "this is a test"
 
 	// Request that client-3 be killed.
-	cli1.Send(&wamp.Call{
+	cli1.Send() <- &wamp.Call{
 		Request:     wamp.GlobalID(),
 		Procedure:   wamp.MetaProcSessionKill,
 		Arguments:   wamp.List{cli3.ID},
-		ArgumentsKw: wamp.Dict{"reason": reason, "message": message}})
+		ArgumentsKw: wamp.Dict{"reason": reason, "message": message},
+	}
 
 	msg, err := wamp.RecvTimeout(cli1, time.Second)
 	require.NoError(t, err)
@@ -45,11 +46,12 @@ func TestSessionKill(t *testing.T) {
 	require.Error(t, err, "Expected timeout")
 
 	// Test that killing self gets error.
-	cli1.Send(&wamp.Call{
+	cli1.Send() <- &wamp.Call{
 		Request:     wamp.GlobalID(),
 		Procedure:   wamp.MetaProcSessionKill,
 		Arguments:   wamp.List{cli1.ID},
-		ArgumentsKw: nil})
+		ArgumentsKw: nil,
+	}
 
 	msg, err = wamp.RecvTimeout(cli1, time.Second)
 	require.NoError(t, err)
@@ -69,10 +71,11 @@ func TestSessionKillAll(t *testing.T) {
 	reason := wamp.URI("foo.bar.baz")
 	message := "this is a test"
 
-	cli1.Send(&wamp.Call{
+	cli1.Send() <- &wamp.Call{
 		Request:     wamp.GlobalID(),
 		Procedure:   wamp.MetaProcSessionKillAll,
-		ArgumentsKw: wamp.Dict{"reason": reason, "message": message}})
+		ArgumentsKw: wamp.Dict{"reason": reason, "message": message},
+	}
 
 	msg, err := wamp.RecvTimeout(cli1, time.Second)
 	require.NoError(t, err)
@@ -112,11 +115,12 @@ func TestSessionKillByAuthid(t *testing.T) {
 
 	// All clients have the same authid, so killing by authid should kill all
 	// except the requesting client.
-	cli1.Send(&wamp.Call{
+	cli1.Send() <- &wamp.Call{
 		Request:     wamp.GlobalID(),
 		Procedure:   wamp.MetaProcSessionKillByAuthid,
 		Arguments:   wamp.List{cli1.Details["authid"]},
-		ArgumentsKw: wamp.Dict{"reason": reason, "message": message}})
+		ArgumentsKw: wamp.Dict{"reason": reason, "message": message},
+	}
 
 	msg, err := wamp.RecvTimeout(cli1, time.Second)
 	require.NoError(t, err)
@@ -156,11 +160,11 @@ func TestSessionModifyDetails(t *testing.T) {
 	// Call session meta-procedure to get session information.
 	callID := wamp.GlobalID()
 	delta := wamp.Dict{"xyzzy": nil, "pi": 3.14, "authid": "bob"}
-	caller.Send(&wamp.Call{
+	caller.Send() <- &wamp.Call{
 		Request:   callID,
 		Procedure: wamp.MetaProcSessionModifyDetails,
 		Arguments: wamp.List{caller.ID, delta},
-	})
+	}
 	msg, err := wamp.RecvTimeout(caller, time.Second)
 	require.NoError(t, err)
 	result, ok := msg.(*wamp.Result)
@@ -169,11 +173,11 @@ func TestSessionModifyDetails(t *testing.T) {
 
 	// Call session meta-procedure to get session information.
 	callID = wamp.GlobalID()
-	caller.Send(&wamp.Call{
+	caller.Send() <- &wamp.Call{
 		Request:   callID,
 		Procedure: wamp.MetaProcSessionGet,
 		Arguments: wamp.List{sessID},
-	})
+	}
 	msg, err = wamp.RecvTimeout(caller, time.Second)
 	require.NoError(t, err)
 	result, ok = msg.(*wamp.Result)

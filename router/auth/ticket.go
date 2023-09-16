@@ -74,14 +74,16 @@ func (t *TicketAuthenticator) Authenticate(sid wamp.ID, details wamp.Dict, clien
 		ticket = nil
 	}
 
-	// Challenge Extra map is empty since the ticket challenge only asks for a
-	// ticket (using authmethod) and provides no additional challenge info.
-	err = client.Send(&wamp.Challenge{
+	chalMsg := &wamp.Challenge{
 		AuthMethod: t.AuthMethod(),
 		Extra:      wamp.Dict{},
-	})
-	if err != nil {
-		return nil, err
+	}
+	// Challenge Extra map is empty since the ticket challenge only asks for a
+	// ticket (using authmethod) and provides no additional challenge info.
+	select {
+	case client.Send() <- chalMsg:
+	default:
+		return nil, errors.New("Cannot send challenge to client: blocked")
 	}
 
 	// Read AUTHENTICATE response from client.

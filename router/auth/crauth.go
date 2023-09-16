@@ -89,12 +89,14 @@ func (cr *CRAuthenticator) Authenticate(sid wamp.ID, details wamp.Dict, client w
 	}
 
 	// Challenge response needed.  Send CHALLENGE message to client.
-	err = client.Send(&wamp.Challenge{
+	chalMsg := &wamp.Challenge{
 		AuthMethod: cr.AuthMethod(),
 		Extra:      extra,
-	})
-	if err != nil {
-		return nil, err
+	}
+	select {
+	case client.Send() <- chalMsg:
+	default:
+		return nil, errors.New("cannot send challenge to client: blocked")
 	}
 
 	// Read AUTHENTICATE response from client.

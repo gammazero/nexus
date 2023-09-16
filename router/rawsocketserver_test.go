@@ -27,7 +27,7 @@ func TestRSHandshakeJSON(t *testing.T) {
 	require.NoError(t, err)
 	defer client.Close()
 
-	client.Send(&wamp.Hello{Realm: testRealm, Details: clientRoles})
+	client.Send() <- &wamp.Hello{Realm: testRealm, Details: clientRoles}
 	msg, ok := <-client.Recv()
 	require.True(t, ok, "recv chan closed")
 
@@ -50,7 +50,7 @@ func TestRSHandshakeMsgpack(t *testing.T) {
 	require.NoError(t, err)
 	defer client.Close()
 
-	client.Send(&wamp.Hello{Realm: testRealm, Details: clientRoles})
+	client.Send() <- &wamp.Hello{Realm: testRealm, Details: clientRoles}
 	msg, ok := <-client.Recv()
 	require.True(t, ok, "Receive buffer closed")
 
