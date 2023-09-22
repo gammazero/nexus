@@ -574,6 +574,9 @@ func TestProgressiveCallResults(t *testing.T) {
 
 	// Handler sends progressive results.
 	handler := func(ctx context.Context, inv *wamp.Invocation) InvokeResult {
+		// Creating another child context to check that progressive results
+		// work as expected even with another child context passed.
+		ctx = context.WithValue(ctx, "Some-key", true)
 		senderr := callee.SendProgress(ctx, wamp.List{"Alpha"}, nil)
 		if senderr != nil {
 			fmt.Println("Error sending Alpha progress:", senderr)
