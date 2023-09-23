@@ -32,6 +32,8 @@ const (
 var E2eeSerializers = map[string]serialize.Serialization{"cbor": CBOR}
 var PPTSerializers = map[string]serialize.Serialization{"json": JSON, "msgpack": MSGPACK, "cbor": CBOR}
 
+type invocationIDCtxKey struct{}
+
 type clientInvocation struct {
 	registration wamp.ID
 	request      wamp.ID
@@ -53,7 +55,7 @@ type Client struct {
 	invHandlersCtxs   map[clientInvocation]context.Context
 	nameProcID        map[string]wamp.ID
 	invHandlerKill    map[wamp.ID]context.CancelFunc
-	progGate          map[context.Context]wamp.ID
+	progGate          map[wamp.ID]struct{}
 
 	activeInvHandlers sync.WaitGroup
 
@@ -249,7 +251,7 @@ func NewClient(p wamp.Peer, cfg Config) (*Client, error) {
 		invHandlersCtxs:   map[clientInvocation]context.Context{},
 		nameProcID:        map[string]wamp.ID{},
 		invHandlerKill:    map[wamp.ID]context.CancelFunc{},
-		progGate:          map[context.Context]wamp.ID{},
+		progGate:          map[wamp.ID]struct{}{},
 
 		log:        cfg.Logger,
 		debug:      cfg.Debug,
@@ -1067,16 +1069,26 @@ func (c *Client) RouterGoodbye() *wamp.Goodbye {
 // SendProgress is used by a Callee client to return progressive RPC results.
 //
 // IMPORTANT: The context passed into SendProgress MUST be the same context
-// that was passed into the invocation handler.  This context is responsible
-// for associating progressive results with the call in progress.
+// that was received by the invocation handler or a child context created
+// from it. This context is responsible for associating progressive results
+// with the call in progress.
 func (c *Client) SendProgress(ctx context.Context, args wamp.List, kwArgs wamp.Dict) error {
-	// Lookup the request ID using ctx.  If there is no request ID, this means
+	// Lookup the request ID using ctx. While we store request ID in the context
+	// and can use it directly, we still store it in the progGate map to have full
+	// control over the in-progress calls on our side and prevent possible client errors
+	// like issuing a progressive result after the call was finished.
+	// If there is no request ID in progGate map, it means
 	// that the caller is not accepting progressive results, or that the
 	// invocation handler has been closed because the call was canceled.
 	var req wamp.ID
 	var ok bool
+	req, ok = ctx.Value(invocationIDCtxKey{}).(wamp.ID)
+	if !ok {
+		return ErrCallerNoProg
+	}
+
 	c.sess.Lock()
-	req, ok = c.progGate[ctx]
+	_, ok = c.progGate[req]
 	c.sess.Unlock()
 
 	if !ok {
@@ -1618,7 +1630,8 @@ func (c *Client) runHandleInvocation(msg *wamp.Invocation) {
 		// If caller is accepting progressive results, create map entry to allow
 		// progress to be sent.
 		if progResOK {
-			c.progGate[ctx] = reqID
+			c.progGate[reqID] = struct{}{}
+			ctx = context.WithValue(ctx, invocationIDCtxKey{}, reqID)
 		}
 	} else if timeout > 0 {
 		// If client provides a timeout option with every progressive call
@@ -1666,7 +1679,7 @@ func (c *Client) runHandleInvocation(msg *wamp.Invocation) {
 			// Remove the kill switch when done processing invocation.
 			defer func() {
 				c.sess.Lock()
-				delete(c.progGate, ctx)
+				delete(c.progGate, reqID)
 				delete(c.invHandlerKill, reqID)
 				c.sess.Unlock()
 				c.activeInvHandlers.Done()
