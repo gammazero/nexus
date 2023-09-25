@@ -85,6 +85,12 @@ type WebsocketServer struct {
 	// Details.transport.auth.request|*http.Request making it available to
 	// authenticator and authorizer logic.
 	EnableRequestCapture bool
+	// TrackingCookieSameSiteAttribute defines which SameSite attribute will be assigned to
+	// the next auth cookie if EnableTrackingCookie is true
+	TrackingCookieSameSiteAttribute http.SameSite
+	// TrackingCookieSecureAttribute defines whether the TrackingCookie should be marked as
+	// secure and thus only sent over encrypted connections.
+	TrackingCookieSecureAttribute bool
 
 	// KeepAlive configures a websocket "ping/pong" heartbeat when set to a
 	// non-zero value.  KeepAlive is the interval between websocket "pings".
@@ -305,8 +311,10 @@ func (s *WebsocketServer) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		if err == nil {
 			// Create next auth cookie with 20 byte random value.
 			nextCookie = &http.Cookie{
-				Name:  cookieName,
-				Value: base64.URLEncoding.EncodeToString(b),
+				Name:     cookieName,
+				Value:    base64.URLEncoding.EncodeToString(b),
+				Secure:   s.TrackingCookieSecureAttribute,
+				SameSite: s.TrackingCookieSameSiteAttribute,
 			}
 			http.SetCookie(w, nextCookie)
 			authDict["nextcookie"] = nextCookie
