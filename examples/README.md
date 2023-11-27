@@ -13,8 +13,8 @@ The simple examples can be run from the `examples` directory by running:
 
 ## Example Server and Clients
 
-The project Wiki provides a walk-through of [client](https://github.com/gammazero/nexus/wiki/Client-Library) and
-[server](https://github.com/gammazero/nexus/wiki/Router-Library) example code.
+The project Wiki provides a walk-through of [client](https://github.com/dtegapp/nexus/wiki/Client-Library) and
+[server](https://github.com/dtegapp/nexus/wiki/Router-Library) example code.
 
 The example server, in the `server` directory, runs a websocket (with and without TLS), tcp raw socket
 (with and without TLS), and Unix raw socket transport at the same time.  This allows different clients to

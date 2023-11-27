@@ -5,7 +5,7 @@ VERSION = $(shell git describe --tags)
 all: nexusd
 
 nexusd: ../wamp/*.go ../wamp/crsign/*.go ../router/*.go ../router/auth/*.go ../transport/*.go ../transport/serialize/*.go ./*.go
-	@go build -ldflags="-X 'github.com/gammazero/nexus/v3/router.Version=${VERSION}'"
+	@go build -ldflags="-X 'github.com/dtegapp/nexus/v3/router.Version=${VERSION}'"
 	@echo "===> built $@"
 
 install: nexusd

@@ -7,7 +7,7 @@ import (
 	"fmt"
 	"time"
 
-	"github.com/gammazero/nexus/v3/wamp"
+	"github.com/dtegapp/nexus/v3/wamp"
 	"golang.org/x/crypto/nacl/sign"
 )
 

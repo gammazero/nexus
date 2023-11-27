@@ -4,7 +4,7 @@
 
 [![Build Status](https://travis-ci.org/gammazero/nexus.svg)](https://travis-ci.org/gammazero/nexus)
 [![License](https://img.shields.io/badge/License-MIT-blue.svg)](LICENSE)
-[![GoDoc](https://godoc.org/github.com/gammazero/nexus?status.svg)](https://godoc.org/github.com/gammazero/nexus)
+[![GoDoc](https://godoc.org/github.com/dtegapp/nexus?status.svg)](https://godoc.org/github.com/dtegapp/nexus)
 
 **nexus** is a [WAMP](http://wamp-proto.org/) v2 router library, client library, and a router service, that implements
 most of the features defined in the WAMP-protocol advanced profile.  The nexus project is written in
@@ -13,10 +13,10 @@ functionality.  The router and client interoperate with other WAMP implementatio
 
 ## Documentation
 
-See the [**nexus project Wiki**](https://github.com/gammazero/nexus/wiki) for documentation, examples, and
+See the [**nexus project Wiki**](https://github.com/dtegapp/nexus/wiki) for documentation, examples, and
 operational details.
 
-[![GoDoc](https://godoc.org/github.com/gammazero/nexus?status.svg)](https://godoc.org/github.com/gammazero/nexus) for
+[![GoDoc](https://godoc.org/github.com/dtegapp/nexus?status.svg)](https://godoc.org/github.com/dtegapp/nexus) for
 API documentation.
 
 ## What is WAMP and nexus
@@ -45,8 +45,8 @@ and routed RPC messaging.
 ### Install nexusd router service from source
 
 ```
-go get -d github.com/gammazero/nexus/nexusd
-cd ${GOPATH}/src/github.com/gammazero/nexus/nexusd
+go get -d github.com/dtegapp/nexus/nexusd
+cd ${GOPATH}/src/github.com/dtegapp/nexus/nexusd
 make install
 ```
 
@@ -57,7 +57,7 @@ more configurability.
 ### Create configuration file and run nexusd service
 
 ```
-cp ${GOPATH}/src/github.com/gammazero/nexus/nexusd/etc/nexus.json ./
+cp ${GOPATH}/src/github.com/dtegapp/nexus/nexusd/etc/nexus.json ./
 vi nexus.json
 nexusd -c nexus.json
 ```
@@ -77,8 +77,8 @@ the appropriate packages.  Version v3 is the only currently supported version.
 
 ```go
 import (
-	"github.com/gammazero/nexus/v3/client"
-	"github.com/gammazero/nexus/v3/wamp"
+	"github.com/dtegapp/nexus/v3/client"
+	"github.com/dtegapp/nexus/v3/wamp"
 )
 ```
 
@@ -107,39 +107,39 @@ an unprivileged user.
 ## Examples
 
 Look at the examples to see how to create simple clients and servers.  Follow the
-[README.md](https://github.com/gammazero/nexus/blob/v3/examples/README.md) in the `nexus/examples` directory.
+[README.md](https://github.com/dtegapp/nexus/blob/v3/examples/README.md) in the `nexus/examples` directory.
 Examples of using advanced profile features are also available in the
-[wiki documentation](https://github.com/gammazero/nexus/wiki).
+[wiki documentation](https://github.com/dtegapp/nexus/wiki).
 
-https://github.com/gammazero/nexus/tree/v3/examples
+https://github.com/dtegapp/nexus/tree/v3/examples
 
 The examples include interoperability examples to demonstrate nexus working with different WAMP implementations.
 Each of these has its own README.md that describes how to set up the environment and run the examples.
 
-https://github.com/gammazero/nexus/tree/v3/examples/interop
+https://github.com/dtegapp/nexus/tree/v3/examples/interop
 
 The nexusd service is also an example stand-alone WAMP router.  All the router options are configurable in nexusd
 using a configuration file, and one is provided in the `nexusd/etc/` directory.  This can be used as starting point
 to write your own WAMP router service.
 
-https://github.com/gammazero/nexus/tree/v3/nexusd
+https://github.com/dtegapp/nexus/tree/v3/nexusd
 
 ## Contributing
 
-Please read the [Contributing](https://github.com/gammazero/nexus/blob/v3/CONTRIBUTING.md#contributing-to-nexus)
+Please read the [Contributing](https://github.com/dtegapp/nexus/blob/v3/CONTRIBUTING.md#contributing-to-nexus)
 guide if you are interested in becoming a contributor to this project.
 
 Please report any problems, or request changes and new functionality by opening
-an [issue](https://github.com/gammazero/nexus/issues).
+an [issue](https://github.com/dtegapp/nexus/issues).
 
 ## Nexus Features
 
 - **Concurrent Asynchronous I/O** Nexus supports large numbers of clients concurrently sending and receiving messages,
   and never blocks on I/O, even if a client becomes unresponsive.  See
-  [Router Concurrency](https://github.com/gammazero/nexus/wiki/Router-Concurrency) and
-  [Client Concurrency](https://github.com/gammazero/nexus/wiki/Client-Concurrency) for details.
+  [Router Concurrency](https://github.com/dtegapp/nexus/wiki/Router-Concurrency) and
+  [Client Concurrency](https://github.com/dtegapp/nexus/wiki/Client-Concurrency) for details.
 - **WAMP Advanced Profile Features**  This project implements most of the advanced profile features in WAMP v2.
-  See [current feature support](https://github.com/gammazero/nexus#advanced-profile-feature-support) provided by nexus.
+  See [current feature support](https://github.com/dtegapp/nexus#advanced-profile-feature-support) provided by nexus.
   Nexus also offers extended functionality for retrieving session information and for message filtering, giving clients
   more ability to decide where to send messages.
 - **Flexibility** Multiple transports and serialization options are supported, and more are being developed to maximize
@@ -210,6 +210,6 @@ The currently maintained version of this module is 3.x.  Earlier major versions 
 
 ## Extended Functionality
 
-Nexus provides [extended functionality](https://github.com/gammazero/nexus/wiki/Extended-Functionality) around
+Nexus provides [extended functionality](https://github.com/dtegapp/nexus/wiki/Extended-Functionality) around
 subscriber black/white listing and in the information available via the session meta API.  This enhances the
 ability of clients to make decisions about message recipients.

@@ -1,6 +1,6 @@
 package router
 
-import "github.com/gammazero/nexus/v3/wamp"
+import "github.com/dtegapp/nexus/v3/wamp"
 
 func pptOptionsToDetails(options wamp.Dict, details wamp.Dict) {
 	details[wamp.OptPPTScheme] = options[wamp.OptPPTScheme].(string)

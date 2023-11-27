@@ -2,7 +2,7 @@ FROM docker.io/library/golang:latest AS build-image
 
 ARG BUILD_VERSION="latest"
 
-RUN go install github.com/gammazero/nexus/v3/nexusd@${BUILD_VERSION}
+RUN go install github.com/dtegapp/nexus/v3/nexusd@${BUILD_VERSION}
 
 FROM docker.io/library/busybox:latest AS release-image
 

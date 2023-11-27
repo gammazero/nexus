@@ -1,8 +1,8 @@
 package router
 
 import (
-	"github.com/gammazero/nexus/v3/router/auth"
-	"github.com/gammazero/nexus/v3/wamp"
+	"github.com/dtegapp/nexus/v3/router/auth"
+	"github.com/dtegapp/nexus/v3/wamp"
 )
 
 // Config configures the router with realms, and optionally a template for

@@ -6,8 +6,8 @@ import (
 	"math/rand"
 	"testing"
 
-	"github.com/gammazero/nexus/v3/client"
-	"github.com/gammazero/nexus/v3/wamp"
+	"github.com/dtegapp/nexus/v3/client"
+	"github.com/dtegapp/nexus/v3/wamp"
 )
 
 func BenchmarkRpcIntegerList(b *testing.B) {

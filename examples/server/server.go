@@ -14,9 +14,9 @@ import (
 	"path"
 	"time"
 
-	"github.com/gammazero/nexus/v3/client"
-	"github.com/gammazero/nexus/v3/router"
-	"github.com/gammazero/nexus/v3/wamp"
+	"github.com/dtegapp/nexus/v3/client"
+	"github.com/dtegapp/nexus/v3/router"
+	"github.com/dtegapp/nexus/v3/wamp"
 )
 
 const (

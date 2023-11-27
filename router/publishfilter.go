@@ -3,7 +3,7 @@ package router
 import (
 	"strings"
 
-	"github.com/gammazero/nexus/v3/wamp"
+	"github.com/dtegapp/nexus/v3/wamp"
 )
 
 // PublishFilter is an interface to check whether a publication should be sent

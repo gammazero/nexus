@@ -5,7 +5,7 @@ import (
 	"encoding/base64"
 	"testing"
 
-	"github.com/gammazero/nexus/v3/wamp"
+	"github.com/dtegapp/nexus/v3/wamp"
 	"github.com/stretchr/testify/require"
 	"golang.org/x/crypto/pbkdf2"
 )

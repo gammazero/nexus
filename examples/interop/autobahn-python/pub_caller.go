@@ -13,8 +13,8 @@ import (
 	"os"
 	"time"
 
-	"github.com/gammazero/nexus/v3/client"
-	"github.com/gammazero/nexus/v3/wamp"
+	"github.com/dtegapp/nexus/v3/client"
+	"github.com/dtegapp/nexus/v3/wamp"
 )
 
 const (

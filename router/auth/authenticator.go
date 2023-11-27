@@ -11,7 +11,7 @@ package auth
 import (
 	"time"
 
-	"github.com/gammazero/nexus/v3/wamp"
+	"github.com/dtegapp/nexus/v3/wamp"
 )
 
 const defaultCRAuthTimeout = time.Minute

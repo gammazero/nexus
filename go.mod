@@ -1,4 +1,4 @@
-module github.com/gammazero/nexus/v3
+module github.com/dtegapp/nexus/v3
 
 go 1.20
 

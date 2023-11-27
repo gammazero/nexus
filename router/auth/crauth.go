@@ -7,8 +7,8 @@ import (
 	"fmt"
 	"time"
 
-	"github.com/gammazero/nexus/v3/wamp"
-	"github.com/gammazero/nexus/v3/wamp/crsign"
+	"github.com/dtegapp/nexus/v3/wamp"
+	"github.com/dtegapp/nexus/v3/wamp/crsign"
 )
 
 // CRAuthenticator is a challenge-response authenticator.

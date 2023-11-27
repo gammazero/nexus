@@ -9,8 +9,8 @@ import (
 	"os"
 	"path"
 
-	"github.com/gammazero/nexus/v3/transport"
-	"github.com/gammazero/nexus/v3/wamp"
+	"github.com/dtegapp/nexus/v3/transport"
+	"github.com/dtegapp/nexus/v3/wamp"
 )
 
 // ConnectNet creates a new client connected a WAMP router over a websocket,
