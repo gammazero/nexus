@@ -2,7 +2,7 @@
 
 # WAMP v2 router library, client library and router service
 
-[![Build Status](https://travis-ci.org/gammazero/nexus.svg)](https://travis-ci.org/gammazero/nexus)
+[![Build Status](https://travis-ci.org/dtegapp/nexus.svg)](https://travis-ci.org/dtegapp/nexus)
 [![License](https://img.shields.io/badge/License-MIT-blue.svg)](LICENSE)
 [![GoDoc](https://godoc.org/github.com/dtegapp/nexus?status.svg)](https://godoc.org/github.com/dtegapp/nexus)
 
@@ -51,7 +51,7 @@ make install
 ```
 
 Run `nexusd -help` to see usage information.  Although `nexusd` can be run using only command line flags,
-a [configuration file](https://raw.githubusercontent.com/gammazero/nexus/v3/nexusd/etc/nexus.json) offers much
+a [configuration file](https://raw.githubusercontent.com/dtegapp/nexus/v3/nexusd/etc/nexus.json) offers much
 more configurability.
 
 ### Create configuration file and run nexusd service
@@ -65,7 +65,7 @@ nexusd -c nexus.json
 ### Install examples to run and test with
 
 ```
-git clone git@github.com:gammazero/nexus.git
+git clone git@github.com:dtegapp/nexus.git
 cd nexus/examples
 ```
 
@@ -87,16 +87,16 @@ import (
 Pull the nexusd container image built with the latest code version and run the container:
 
 ```
-docker pull ghcr.io/gammazero/nexusd:latest
-docker run ghcr.io/gammazero/nexusd:latest
+docker pull ghcr.io/dtegapp/nexusd:latest
+docker run ghcr.io/dtegapp/nexusd:latest
 ```
 
 Now it just works. By default, the router accepts connections on port `8080` and allows anonymous communication with
 clients using `realm1`. You can change the values or get help by passing options to the container process:
 
 ```
-docker run ghcr.io/gammazero/nexusd:latest --ws 0.0.0.0:8888 --realm autobahn
-docker run ghcr.io/gammazero/nexusd:latest --help
+docker run ghcr.io/dtegapp/nexusd:latest --ws 0.0.0.0:8888 --realm autobahn
+docker run ghcr.io/dtegapp/nexusd:latest --help
 ```
 
 Alternatively, you can mount the nexusd configuration file to the container, and get a more customizable and secure

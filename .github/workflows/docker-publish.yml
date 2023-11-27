@@ -26,7 +26,7 @@ env:
 jobs:
   build:
     runs-on: ubuntu-latest
-    if: (github.repository == 'gammazero/nexus')
+    if: (github.repository == 'dtegapp/nexus')
     permissions:
       contents: read
       packages: write
