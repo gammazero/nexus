@@ -879,7 +879,7 @@ func (c *Client) CallProgressive(ctx context.Context, procedure string, sendProg
 		// start pulling next chunks of input data from the client
 		go func() {
 			for callInProgress {
-				options, args, kwargs, err = sendProg(ctx)
+				cliOptions, args, kwargs, err := sendProg(ctx)
 
 				if err != nil {
 					c.sess.Send() <- &wamp.Cancel{
@@ -889,13 +889,17 @@ func (c *Client) CallProgressive(ctx context.Context, procedure string, sendProg
 					return
 				}
 
-				if options == nil {
-					options = wamp.Dict{}
+				if cliOptions == nil {
+					cliOptions = wamp.Dict{}
 				}
 
-				callInProgress, _ = options[wamp.OptProgress].(bool)
-
+				options = wamp.Dict{}
 				options[wamp.OptReceiveProgress] = receiveProgress
+				// In subsequent progressive calls we only need and allow `OptProgress` option
+				// from the business side. All other options should be removed from the CALL message.
+				options[wamp.OptProgress] = cliOptions[wamp.OptProgress].(bool)
+
+				callInProgress, _ = options[wamp.OptProgress].(bool)
 
 				message := &wamp.Call{
 					Request:   id,

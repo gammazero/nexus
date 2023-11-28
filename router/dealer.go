@@ -650,6 +650,8 @@ func (d *dealer) syncCall(caller *wamp.Session, msg *wamp.Call) {
 
 	storedInvocationID, ok := d.invocationByCall[callReqID]
 	isInProgress, _ := msg.Options[wamp.OptProgress].(bool)
+	details := wamp.Dict{}
+	details[wamp.OptProgress] = isInProgress
 
 	if isInProgress && !caller.HasFeature(wamp.RoleCaller, wamp.FeatureProgCallInvocations) {
 		// The Caller did not announce the progressive call invocations feature during the HELLO handshake.
@@ -707,30 +709,112 @@ func (d *dealer) syncCall(caller *wamp.Session, msg *wamp.Call) {
 		d.invocations[invocationID] = invk
 		d.invocationByCall[reqID] = invocationID
 
+		// Let's check if callee supports this feature
+		// A Callee that supports progressive call invocations, but does not support call canceling,
+		// shall be considered by the Dealer as not supporting progressive call invocations.
+		if isInProgress &&
+			(!callee.HasFeature(wamp.RoleCallee, wamp.FeatureProgCallInvocations) ||
+				!callee.HasFeature(wamp.RoleCallee, wamp.FeatureCallCanceling)) {
+			d.trySend(caller, &wamp.Error{
+				Type:    msg.MessageType(),
+				Request: msg.Request,
+				Details: wamp.Dict{},
+				Error:   wamp.ErrFeatureNotSupported,
+			})
+			return
+		}
+
+		// TODO: handle trust levels
+
+		// Check and handle Payload PassThru Mode
+		// @see https://wamp-proto.org/wamp_latest_ietf.html#name-payload-passthru-mode
+		if pptScheme, _ := invk.options[wamp.OptPPTScheme].(string); pptScheme != "" {
+
+			// Let's check: was ppt feature announced by caller?
+			if !caller.HasFeature(wamp.RoleCaller, wamp.FeaturePayloadPassthruMode) {
+				// It's protocol violation, so we need to abort connection
+				abortMsg := wamp.Abort{Reason: wamp.ErrProtocolViolation}
+				abortMsg.Details = wamp.Dict{}
+				abortMsg.Details[wamp.OptMessage] = "Peer is trying to use Payload PassThru Mode while it was not " +
+					"announced during HELLO handshake"
+				d.trySend(caller, &abortMsg)
+				caller.Close()
+				return
+			}
+
+			// Let's check if callee supports this feature
+			if !callee.HasFeature(wamp.RoleCallee, wamp.FeaturePayloadPassthruMode) {
+				d.trySend(caller, &wamp.Error{
+					Type:    msg.MessageType(),
+					Request: msg.Request,
+					Details: wamp.Dict{},
+					Error:   wamp.ErrFeatureNotSupported,
+				})
+				return
+			}
+
+			// Every side supports PPT feature
+			// Let's fill PPT options for callee
+			pptOptionsToDetails(invk.options, details)
+		}
+
+		// If the callee has requested disclosure of caller identity when the
+		// registration was created, and this was allowed by the dealer.
+		if reg.disclose {
+			if callee.ID == metaID {
+				details[wamp.RoleCaller] = caller.ID
+			}
+			discloseCaller(caller, details)
+		} else {
+			// A Caller MAY request the disclosure of its identity (its WAMP
+			// session ID) to endpoints of a routed call.  This is indicated by the
+			// "disclose_me" flag in the message options.
+			if opt, _ := invk.options[wamp.OptDiscloseMe].(bool); opt {
+				// Dealer MAY deny a Caller's request to disclose its identity.
+				if !d.allowDisclose {
+					// Do not continue a call when discloseMe was disallowed.
+					d.trySend(caller, &wamp.Error{
+						Type:    msg.MessageType(),
+						Request: msg.Request,
+						Details: wamp.Dict{},
+						Error:   wamp.ErrOptionDisallowedDiscloseMe,
+					})
+					return
+				}
+				if callee.HasFeature(wamp.RoleCallee, wamp.FeatureCallerIdent) {
+					discloseCaller(caller, details)
+				}
+			}
+		}
+
+		// A Caller indicates its willingness to receive progressive results by
+		// setting CALL.Options.receive_progress|bool := true
+		if opt, _ := invk.options[wamp.OptReceiveProgress].(bool); opt {
+			// If the Callee supports progressive calls, the Dealer will forward
+			// the Caller's willingness to receive progressive results by setting.
+			//
+			// The Callee must support call canceling, as this is necessary to stop
+			// progressive results if the caller session is closed during
+			// progressive result delivery.
+			if callee.HasFeature(wamp.RoleCallee, wamp.FeatureProgCallResults) &&
+				callee.HasFeature(wamp.RoleCallee, wamp.FeatureCallCanceling) {
+				details[wamp.OptReceiveProgress] = true
+			}
+		}
+
+		if reg.match != wamp.MatchExact {
+			// According to the spec, a router must provide the actual procedure to
+			// the client.
+			details[wamp.OptProcedure] = msg.Procedure
+		}
+
 	} else {
+		// It is an ongoing progressive call (not first one)
 		invk = d.invocations[storedInvocationID]
 		invk.inProgress = isInProgress
 		callee = invk.callee
 		invocationID = storedInvocationID
 	}
-
-	// Let's check if callee supports this feature
-	// A Callee that supports progressive call invocations, but does not support call canceling,
-	// shall be considered by the Dealer as not supporting progressive call invocations.
-	if isInProgress &&
-		(!callee.HasFeature(wamp.RoleCallee, wamp.FeatureProgCallInvocations) ||
-			!callee.HasFeature(wamp.RoleCallee, wamp.FeatureCallCanceling)) {
-		d.trySend(caller, &wamp.Error{
-			Type:    msg.MessageType(),
-			Request: msg.Request,
-			Details: wamp.Dict{},
-			Error:   wamp.ErrFeatureNotSupported,
-		})
-		return
-	}
-
-	details := wamp.Dict{}
-	details[wamp.OptProgress] = isInProgress
 
 	// A Caller might want to issue a call providing a timeout for the call to
 	// finish.
@@ -741,94 +825,12 @@ func (d *dealer) syncCall(caller *wamp.Session, msg *wamp.Call) {
 	if timeout > 0 {
 		// Check that callee supports call_timeout.
 		if callee.HasFeature(wamp.RoleCallee, wamp.FeatureCallTimeout) {
-			details[wamp.OptTimeout] = timeout
+			if !ok { // Propagate the option only during first progressive call
+				details[wamp.OptTimeout] = timeout
+			}
 		} else {
 			timeout = 0
 		}
-	}
-
-	// TODO: handle trust levels
-
-	// Check and handle Payload PassThru Mode
-	// @see https://wamp-proto.org/wamp_latest_ietf.html#name-payload-passthru-mode
-	if pptScheme, _ := invk.options[wamp.OptPPTScheme].(string); pptScheme != "" {
-
-		// Let's check: was ppt feature announced by caller?
-		if !caller.HasFeature(wamp.RoleCaller, wamp.FeaturePayloadPassthruMode) {
-			// It's protocol violation, so we need to abort connection
-			abortMsg := wamp.Abort{Reason: wamp.ErrProtocolViolation}
-			abortMsg.Details = wamp.Dict{}
-			abortMsg.Details[wamp.OptMessage] = "Peer is trying to use Payload PassThru Mode while it was not " +
-				"announced during HELLO handshake"
-			d.trySend(caller, &abortMsg)
-			caller.Close()
-			return
-		}
-
-		// Let's check if callee supports this feature
-		if !callee.HasFeature(wamp.RoleCallee, wamp.FeaturePayloadPassthruMode) {
-			d.trySend(caller, &wamp.Error{
-				Type:    msg.MessageType(),
-				Request: msg.Request,
-				Details: wamp.Dict{},
-				Error:   wamp.ErrFeatureNotSupported,
-			})
-			return
-		}
-
-		// Every side supports PPT feature
-		// Let's fill PPT options for callee
-		pptOptionsToDetails(invk.options, details)
-	}
-
-	// If the callee has requested disclosure of caller identity when the
-	// registration was created, and this was allowed by the dealer.
-	if reg.disclose {
-		if callee.ID == metaID {
-			details[wamp.RoleCaller] = caller.ID
-		}
-		discloseCaller(caller, details)
-	} else {
-		// A Caller MAY request the disclosure of its identity (its WAMP
-		// session ID) to endpoints of a routed call.  This is indicated by the
-		// "disclose_me" flag in the message options.
-		if opt, _ := invk.options[wamp.OptDiscloseMe].(bool); opt {
-			// Dealer MAY deny a Caller's request to disclose its identity.
-			if !d.allowDisclose {
-				// Do not continue a call when discloseMe was disallowed.
-				d.trySend(caller, &wamp.Error{
-					Type:    msg.MessageType(),
-					Request: msg.Request,
-					Details: wamp.Dict{},
-					Error:   wamp.ErrOptionDisallowedDiscloseMe,
-				})
-				return
-			}
-			if callee.HasFeature(wamp.RoleCallee, wamp.FeatureCallerIdent) {
-				discloseCaller(caller, details)
-			}
-		}
-	}
-
-	// A Caller indicates its willingness to receive progressive results by
-	// setting CALL.Options.receive_progress|bool := true
-	if opt, _ := invk.options[wamp.OptReceiveProgress].(bool); opt {
-		// If the Callee supports progressive calls, the Dealer will forward
-		// the Caller's willingness to receive progressive results by setting.
-		//
-		// The Callee must support call canceling, as this is necessary to stop
-		// progressive results if the caller session is closed during
-		// progressive result delivery.
-		if callee.HasFeature(wamp.RoleCallee, wamp.FeatureProgCallResults) &&
-			callee.HasFeature(wamp.RoleCallee, wamp.FeatureCallCanceling) {
-			details[wamp.OptReceiveProgress] = true
-		}
-	}
-
-	if reg.match != wamp.MatchExact {
-		// According to the spec, a router must provide the actual procedure to
-		// the client.
-		details[wamp.OptProcedure] = msg.Procedure
 	}
 
 	// Send INVOCATION to the endpoint that has registered the requested
