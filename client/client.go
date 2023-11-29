@@ -1637,16 +1637,6 @@ func (c *Client) runHandleInvocation(msg *wamp.Invocation) {
 			c.progGate[reqID] = struct{}{}
 			ctx = context.WithValue(ctx, invocationIDCtxKey{}, reqID)
 		}
-	} else if timeout > 0 {
-		// If client provides a timeout option with every progressive call
-		// then context with time out is updated with every invocation
-		// what means that timeout deadline is pushed forward.
-		// The caller specified a timeout, in milliseconds.
-		ctx, cancel = context.WithTimeout(context.Background(),
-			time.Millisecond*time.Duration(timeout))
-		// Let's update ctx and cancel for ongoing invocation
-		c.invHandlersCtxs[cliInvocation] = ctx
-		c.invHandlerKill[reqID] = cancel
 	}
 
 	c.sess.Unlock()
