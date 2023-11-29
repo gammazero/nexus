@@ -867,6 +867,13 @@ func (d *dealer) syncCall(caller *wamp.Session, msg *wamp.Call) {
 		return
 	}
 
+	// If the Callee does not support Call Timeouts, a Dealer supporting this feature MUST
+	// start a timeout timer upon receiving a CALL message with a timeout option. The message
+	// flow for call timeouts is identical to Call Canceling, except that there is no
+	// CANCEL message that originates from the Caller. The cancellation mode is implicitly
+	// killnowait if the Callee supports call cancellation, otherwise the cancellation mode is skip.
+	//
+	// The error message that is returned to the Caller MUST use wamp.error.timeout as the reason URI.
 	if timeout > 0 {
 		// Timer removed if context canceled, call cancelled if timeout.
 		var timerCtx context.Context
@@ -886,7 +893,7 @@ func (d *dealer) syncCall(caller *wamp.Session, msg *wamp.Call) {
 			d.actionChan <- func() {
 				errArgs := wamp.List{"call timeout"}
 				d.syncCancel(caller, &wamp.Cancel{Request: msg.Request},
-					wamp.CancelModeKillNoWait, wamp.ErrCanceled, errArgs)
+					wamp.CancelModeKillNoWait, wamp.ErrTimeout, errArgs)
 			}
 		}()
 	}

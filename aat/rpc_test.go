@@ -215,7 +215,7 @@ func TestRPCTimeoutCall(t *testing.T) {
 		require.Error(t, err)
 		var rpcErr client.RPCError
 		require.ErrorAs(t, err, &rpcErr)
-		require.Equal(t, wamp.ErrCanceled, rpcErr.Err.Error)
+		require.Equal(t, wamp.ErrTimeout, rpcErr.Err.Error)
 	case <-time.After(2 * time.Second):
 		require.FailNow(t, "call should have been canceled")
 	}
@@ -229,7 +229,7 @@ func TestRPCTimeoutCall(t *testing.T) {
 
 	var rpcError client.RPCError
 	require.ErrorAs(t, err, &rpcError)
-	require.Equal(t, wamp.ErrCanceled, rpcError.Err.Error)
+	require.Equal(t, wamp.ErrTimeout, rpcError.Err.Error)
 
 	err = callee.Unregister(procName)
 	require.NoError(t, err)

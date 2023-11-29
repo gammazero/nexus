@@ -384,7 +384,7 @@ func TestRPCProgressiveCallTimeout(t *testing.T) {
 	require.Error(t, err, "expected error from CallProgress")
 	var rpce client.RPCError
 	require.ErrorAs(t, err, &rpce, "error should be RPCError type")
-	require.Equal(t, wamp.ErrCanceled, rpce.Err.Error)
+	require.Equal(t, wamp.ErrTimeout, rpce.Err.Error)
 	close(releaseCallee)
 
 	select {

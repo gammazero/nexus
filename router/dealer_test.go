@@ -300,7 +300,7 @@ func TestCallTimeoutOnRouter(t *testing.T) {
 	// Check that caller receives the ERROR message.
 	rslt, ok := rsp.(*wamp.Error)
 	require.True(t, ok, "expected ERROR")
-	require.Equal(t, wamp.ErrCanceled, rslt.Error)
+	require.Equal(t, wamp.ErrTimeout, rslt.Error)
 	require.NotZero(t, len(rslt.Arguments), "expected response argument")
 	s, _ := wamp.AsString(rslt.Arguments[0])
 	require.Equal(t, "call timeout", s, "Did not get error message from caller")

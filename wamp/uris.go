@@ -86,6 +86,9 @@ const (
 	// A Dealer or Callee canceled a call previously issued.
 	ErrCanceled = URI("wamp.error.canceled")
 
+	// A Dealer canceled a call due to time out
+	ErrTimeout = URI("wamp.error.timeout")
+
 	// A Peer requested an interaction with an option that was disallowed by
 	// the Router.
 	ErrOptionNotAllowed = URI("wamp.error.option_not_allowed")

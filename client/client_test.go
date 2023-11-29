@@ -904,7 +904,7 @@ func TestTimeoutRemoteProcedureCall(t *testing.T) {
 	case err = <-errChan:
 		var rpcError RPCError
 		require.ErrorAs(t, err, &rpcError)
-		require.Equal(t, wamp.ErrCanceled, rpcError.Err.Error)
+		require.Equal(t, wamp.ErrTimeout, rpcError.Err.Error)
 	case <-time.After(2 * time.Second):
 		require.FailNow(t, "call should have been canceled")
 	}
