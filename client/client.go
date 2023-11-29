@@ -1687,7 +1687,7 @@ func (c *Client) runHandleInvocation(msg *wamp.Invocation) {
 				case result = <-resChan:
 					// If the handler returns InvocationCanceled, this means the
 					// handler canceled the call.
-					if result.Err == wamp.ErrCanceled {
+					if result.Err == wamp.ErrCanceled || result.Err == wamp.ErrTimeout {
 						c.log.Println("INVOCATION", reqID, "canceled by callee")
 						isProcessing = false
 						break

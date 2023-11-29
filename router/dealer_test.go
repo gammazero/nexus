@@ -288,14 +288,79 @@ func TestCallTimeoutOnRouter(t *testing.T) {
 
 	// Test that callee received an INVOCATION message.
 	rsp = <-callee.Recv()
-	_, ok = rsp.(*wamp.Invocation)
+	invk, ok := rsp.(*wamp.Invocation)
 	require.True(t, ok, "expected INVOCATION")
+	_, ok = invk.Details[wamp.OptTimeout]
+	require.False(t, ok, "Invocation should not include timeout option")
 
 	select {
 	case <-time.After(time.Duration(callTimeout*2) * time.Millisecond):
 		require.FailNow(t, "caller not received error message")
 	case rsp = <-caller.Recv():
 	}
+
+	// Check that caller receives the ERROR message.
+	rslt, ok := rsp.(*wamp.Error)
+	require.True(t, ok, "expected ERROR")
+	require.Equal(t, wamp.ErrTimeout, rslt.Error)
+	require.NotZero(t, len(rslt.Arguments), "expected response argument")
+	s, _ := wamp.AsString(rslt.Arguments[0])
+	require.Equal(t, "call timeout", s, "Did not get error message from caller")
+}
+
+func TestCallTimeoutOnClient(t *testing.T) {
+	dealer, metaClient := newTestDealer(t)
+
+	callTimeout := 800
+
+	calleeRoles := wamp.Dict{
+		"roles": wamp.Dict{
+			"callee": wamp.Dict{
+				"features": wamp.Dict{
+					"call_canceling": true,
+					"call_timeout":   true,
+				},
+			},
+		},
+	}
+
+	// Register a procedure.
+	callee := newTestPeer()
+	calleeSess := wamp.NewSession(callee, 0, nil, calleeRoles)
+	dealer.register(calleeSess,
+		&wamp.Register{Request: 123, Options: wamp.Dict{wamp.OptForwardTimeout: true}, Procedure: testProcedure})
+	rsp := <-callee.Recv()
+	_, ok := rsp.(*wamp.Registered)
+	require.True(t, ok, "did not receive REGISTERED response")
+
+	checkMetaReg(t, metaClient, calleeSess.ID)
+
+	caller := newTestPeer()
+	callerSession := wamp.NewSession(caller, 0, nil, nil)
+
+	// Test calling valid procedure
+	dealer.call(callerSession,
+		&wamp.Call{Request: 125, Options: wamp.Dict{wamp.OptTimeout: callTimeout}, Procedure: testProcedure})
+
+	// Test that callee received an INVOCATION message.
+	// Test that callee received an INVOCATION message.
+	rsp = <-callee.Recv()
+	invk, ok := rsp.(*wamp.Invocation)
+	require.True(t, ok, "expected INVOCATION")
+	timeOutOpt, ok := invk.Details[wamp.OptTimeout]
+	require.True(t, ok, "Invocation should include timeout option")
+	require.Equal(t, int64(callTimeout), timeOutOpt)
+
+	errMsg := &wamp.Error{
+		Type:      wamp.INVOCATION,
+		Request:   invk.Request,
+		Details:   wamp.Dict{},
+		Error:     wamp.ErrTimeout,
+		Arguments: wamp.List{"call timeout"},
+	}
+	dealer.error(errMsg)
+
+	rsp = <-caller.Recv()
 
 	// Check that caller receives the ERROR message.
 	rslt, ok := rsp.(*wamp.Error)
