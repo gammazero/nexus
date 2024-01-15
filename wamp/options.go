@@ -22,6 +22,7 @@ const (
 	OptPPTCipher       = "ppt_cipher"
 	OptPPTKeyId        = "ppt_keyid"
 	OptSticky          = "sticky"
+	OptForwardTimeout  = "forward_timeout"
 
 	// Values for URI matching mode.
 	MatchExact    = "exact"

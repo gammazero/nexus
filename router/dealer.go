@@ -40,13 +40,14 @@ var dealerRole = wamp.Dict{
 
 // remoteProcedure tracks in-progress remote procedure call
 type registration struct {
-	id         wamp.ID  // registration ID
-	procedure  wamp.URI // procedure this registration is for
-	created    string   // when registration was created
-	match      string   // how procedure uri is matched to registration
-	policy     string   // how callee is selected if shared registration
-	disclose   bool     // callee requests disclosure of caller identity
-	nextCallee int      // choose callee for round-robin invocation.
+	id             wamp.ID  // registration ID
+	procedure      wamp.URI // procedure this registration is for
+	created        string   // when registration was created
+	match          string   // how procedure uri is matched to registration
+	policy         string   // how callee is selected if shared registration
+	disclose       bool     // callee requests disclosure of caller identity
+	forwardTimeout bool     // callee requests to handle the timeout logic
+	nextCallee     int      // choose callee for round-robin invocation.
 
 	// Multiple sessions can register as callees depending on invocation policy
 	// resulting in multiple procedures for the same registration ID.
@@ -192,7 +193,7 @@ func (d *dealer) register(callee *wamp.Session, msg *wamp.Register) {
 	wampURI := strings.HasPrefix(string(msg.Procedure), "wamp.")
 
 	// Disallow registration of procedures starting with "wamp." by sessions
-	// other then the meta session.
+	// other than the meta session.
 	if wampURI && callee.ID != metaID {
 		errMsg := fmt.Sprintf("register for restricted procedure URI %v",
 			msg.Procedure)
@@ -226,10 +227,11 @@ func (d *dealer) register(callee *wamp.Session, msg *wamp.Register) {
 	}
 
 	invoke, _ := wamp.AsString(msg.Options[wamp.OptInvoke])
+	forwardTimeout, _ := msg.Options[wamp.OptForwardTimeout].(bool)
 	var metaPubs []*wamp.Publish
 	done := make(chan struct{})
 	d.actionChan <- func() {
-		metaPubs = d.syncRegister(callee, msg, match, invoke, disclose, wampURI)
+		metaPubs = d.syncRegister(callee, msg, match, invoke, disclose, forwardTimeout, wampURI)
 		close(done)
 	}
 	<-done
@@ -410,7 +412,7 @@ func (d *dealer) run() {
 	close(d.stopped)
 }
 
-func (d *dealer) syncRegister(callee *wamp.Session, msg *wamp.Register, match, invokePolicy string, disclose, wampURI bool) []*wamp.Publish { //nolint:lll
+func (d *dealer) syncRegister(callee *wamp.Session, msg *wamp.Register, match, invokePolicy string, disclose, forwardTimeout, wampURI bool) []*wamp.Publish { //nolint:lll
 	var metaPubs []*wamp.Publish
 	var reg *registration
 	switch match {
@@ -430,13 +432,14 @@ func (d *dealer) syncRegister(callee *wamp.Session, msg *wamp.Register, match, i
 		regID = d.idGen.Next()
 		created = wamp.NowISO8601()
 		reg = &registration{
-			id:        regID,
-			procedure: msg.Procedure,
-			created:   created,
-			match:     match,
-			policy:    invokePolicy,
-			disclose:  disclose,
-			callees:   []*wamp.Session{callee},
+			id:             regID,
+			procedure:      msg.Procedure,
+			created:        created,
+			match:          match,
+			policy:         invokePolicy,
+			disclose:       disclose,
+			forwardTimeout: forwardTimeout,
+			callees:        []*wamp.Session{callee},
 		}
 		d.registrations[regID] = reg
 		switch match {
@@ -470,7 +473,7 @@ func (d *dealer) syncRegister(callee *wamp.Session, msg *wamp.Register, match, i
 		// invocation policy allows another.
 
 		// Found an existing registration that has an invocation strategy that
-		// only allows a single callee on a the given registration.
+		// only allows a single callee on the given registration.
 		if reg.policy == "" || reg.policy == wamp.InvokeSingle {
 			d.log.Println("REGISTER for already registered procedure",
 				msg.Procedure, "from callee", callee)
@@ -642,6 +645,7 @@ func (d *dealer) syncCall(caller *wamp.Session, msg *wamp.Call) {
 	var callee *wamp.Session
 	var invocationID wamp.ID
 	var invk *invocation
+	var timeout int64
 
 	callReqID := requestID{
 		session: caller.ID,
@@ -821,15 +825,23 @@ func (d *dealer) syncCall(caller *wamp.Session, msg *wamp.Call) {
 	//
 	// A timeout allows to automatically cancel a call after a specified time
 	// either at the Callee or at the Dealer.
-	timeout, _ := wamp.AsInt64(invk.options[wamp.OptTimeout])
-	if timeout > 0 {
-		// Check that callee supports call_timeout.
-		if callee.HasFeature(wamp.RoleCallee, wamp.FeatureCallTimeout) {
+	//
+	// Callees wanting to handle the timeout logic MAY specify this intention via
+	// the REGISTER.Options.forward_timeout|boolean option. The Dealer, upon receiving
+	// a CALL with the timeout option set, checks if the matching RPC registration had
+	// the forward_timeout option set, then accordingly either forwards the timeout value
+	// or handles the timeout logic locally without forwarding the timeout value.
+	callerTimeout, _ := wamp.AsInt64(invk.options[wamp.OptTimeout])
+	if callerTimeout > 0 {
+		// Check that callee supports call_timeout and requested forward_timeout -
+		// if YES then propagate timeout value and handling to the callee side
+		if callee.HasFeature(wamp.RoleCallee, wamp.FeatureCallTimeout) && reg.forwardTimeout {
 			if !ok { // Propagate the option only during first progressive call
-				details[wamp.OptTimeout] = timeout
+				details[wamp.OptTimeout] = callerTimeout
 			}
 		} else {
-			timeout = 0
+			// Callee doesn't support timeouts so let's handle it on the dealer's side
+			timeout = callerTimeout
 		}
 	}
 
@@ -855,7 +867,14 @@ func (d *dealer) syncCall(caller *wamp.Session, msg *wamp.Call) {
 		return
 	}
 
-	if timeout != 0 {
+	// If the Callee does not support Call Timeouts, a Dealer supporting this feature MUST
+	// start a timeout timer upon receiving a CALL message with a timeout option. The message
+	// flow for call timeouts is identical to Call Canceling, except that there is no
+	// CANCEL message that originates from the Caller. The cancellation mode is implicitly
+	// killnowait if the Callee supports call cancellation, otherwise the cancellation mode is skip.
+	//
+	// The error message that is returned to the Caller MUST use wamp.error.timeout as the reason URI.
+	if timeout > 0 {
 		// Timer removed if context canceled, call cancelled if timeout.
 		var timerCtx context.Context
 		timerCtx, invk.timerCancel = context.WithTimeout(context.Background(),
@@ -874,7 +893,7 @@ func (d *dealer) syncCall(caller *wamp.Session, msg *wamp.Call) {
 			d.actionChan <- func() {
 				errArgs := wamp.List{"call timeout"}
 				d.syncCancel(caller, &wamp.Cancel{Request: msg.Request},
-					wamp.CancelModeKillNoWait, wamp.ErrCanceled, errArgs)
+					wamp.CancelModeKillNoWait, wamp.ErrTimeout, errArgs)
 			}
 		}()
 	}
