@@ -879,7 +879,7 @@ func (c *Client) CallProgressive(ctx context.Context, procedure string, sendProg
 		// start pulling next chunks of input data from the client
 		go func() {
 			for callInProgress {
-				options, args, kwargs, err = sendProg(ctx)
+				cliOptions, args, kwargs, err := sendProg(ctx)
 
 				if err != nil {
 					c.sess.Send() <- &wamp.Cancel{
@@ -889,13 +889,17 @@ func (c *Client) CallProgressive(ctx context.Context, procedure string, sendProg
 					return
 				}
 
-				if options == nil {
-					options = wamp.Dict{}
+				if cliOptions == nil {
+					cliOptions = wamp.Dict{}
 				}
 
-				callInProgress, _ = options[wamp.OptProgress].(bool)
-
+				options = wamp.Dict{}
 				options[wamp.OptReceiveProgress] = receiveProgress
+				// In subsequent progressive calls we only need and allow `OptProgress` option
+				// from the business side. All other options should be removed from the CALL message.
+				options[wamp.OptProgress] = cliOptions[wamp.OptProgress].(bool)
+
+				callInProgress, _ = options[wamp.OptProgress].(bool)
 
 				message := &wamp.Call{
 					Request:   id,
@@ -1633,16 +1637,6 @@ func (c *Client) runHandleInvocation(msg *wamp.Invocation) {
 			c.progGate[reqID] = struct{}{}
 			ctx = context.WithValue(ctx, invocationIDCtxKey{}, reqID)
 		}
-	} else if timeout > 0 {
-		// If client provides a timeout option with every progressive call
-		// then context with time out is updated with every invocation
-		// what means that timeout deadline is pushed forward.
-		// The caller specified a timeout, in milliseconds.
-		ctx, cancel = context.WithTimeout(context.Background(),
-			time.Millisecond*time.Duration(timeout))
-		// Let's update ctx and cancel for ongoing invocation
-		c.invHandlersCtxs[cliInvocation] = ctx
-		c.invHandlerKill[reqID] = cancel
 	}
 
 	c.sess.Unlock()
