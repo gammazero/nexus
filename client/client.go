@@ -1692,10 +1692,14 @@ func (c *Client) runHandleInvocation(msg *wamp.Invocation) {
 						isProcessing = false
 						break
 					} else if result.Err == wamp.InternalProgressiveOmitResult {
-						c.log.Println("Call in progress, nothing to YIELD, skipping")
+						if c.debug {
+							c.log.Println("Call in progress, nothing to YIELD, skipping")
+						}
 						break
 					} else {
-						c.log.Println("Received final result")
+						if c.debug {
+							c.log.Println("Received final result")
+						}
 						isProcessing = false
 						break
 					}
