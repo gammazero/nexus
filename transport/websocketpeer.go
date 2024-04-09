@@ -234,6 +234,12 @@ func (w *websocketPeer) IsLocal() bool { return false }
 //
 // *** Do not call Send after calling Close. ***
 func (w *websocketPeer) Close() {
+	select {
+	case <-w.closed:
+		return
+	default:
+	}
+
 	// Tell sendHandler to exit and discard any queued messages.  Do not close
 	// wr channel in case there are incoming messages during close.
 	w.cancelSender()
