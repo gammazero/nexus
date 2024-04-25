@@ -1,8 +1,9 @@
 module github.com/gammazero/nexus/v3
 
-go 1.20
+go 1.21
 
 require (
+	github.com/gammazero/deque v0.2.1
 	github.com/gorilla/websocket v1.5.0
 	github.com/stretchr/testify v1.8.4
 	github.com/ugorji/go/codec v1.2.11

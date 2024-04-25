@@ -472,21 +472,20 @@ func (r *realm) handleInboundMessages(sess *wamp.Session) (bool, bool, error) {
 		switch msg := msg.(type) {
 		case *wamp.Publish:
 			r.broker.publish(sess, msg)
-		case *wamp.Subscribe:
-			r.broker.subscribe(sess, msg)
-		case *wamp.Unsubscribe:
-			r.broker.unsubscribe(sess, msg)
-
-		case *wamp.Register:
-			r.dealer.register(sess, msg)
-		case *wamp.Unregister:
-			r.dealer.unregister(sess, msg)
-		case *wamp.Call:
-			r.dealer.call(sess, msg)
 		case *wamp.Yield:
 			r.dealer.yield(sess, msg)
+		case *wamp.Call:
+			r.dealer.call(sess, msg)
 		case *wamp.Cancel:
 			r.dealer.cancel(sess, msg)
+		case *wamp.Subscribe:
+			r.broker.subscribe(sess, msg)
+		case *wamp.Register:
+			r.dealer.register(sess, msg)
+		case *wamp.Unsubscribe:
+			r.broker.unsubscribe(sess, msg)
+		case *wamp.Unregister:
+			r.dealer.unregister(sess, msg)
 
 		case *wamp.Error:
 			// An INVOCATION error is the only type of ERROR message the
