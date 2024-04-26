@@ -71,12 +71,12 @@ func (s *Session) HasFeature(role, feature string) bool {
 // by calling EndRecv.
 func (s *Session) RecvDone() <-chan struct{} {
 	s.mu.Lock()
+	defer s.mu.Unlock()
+
 	if s.done == nil {
 		s.done = make(chan struct{})
 	}
-	d := s.done
-	s.mu.Unlock()
-	return d
+	return s.done
 }
 
 // If RecvDone is not yet closed, Goodbye returns nil.
@@ -84,9 +84,8 @@ func (s *Session) RecvDone() <-chan struct{} {
 // when RecvEnd was called.
 func (s *Session) Goodbye() *Goodbye {
 	s.mu.Lock()
-	g := s.goodbye
-	s.mu.Unlock()
-	return g
+	defer s.mu.Unlock()
+	return s.goodbye
 }
 
 // EndRecv tells the session to signal messages handlers to stop receiving
@@ -96,8 +95,9 @@ func (s *Session) Goodbye() *Goodbye {
 // with exiting the message handler for other reasons.
 func (s *Session) EndRecv(goodbye *Goodbye) bool {
 	s.mu.Lock()
+	defer s.mu.Unlock()
+
 	if s.goodbye != nil {
-		s.mu.Unlock()
 		return false // already ended
 	}
 
@@ -112,7 +112,6 @@ func (s *Session) EndRecv(goodbye *Goodbye) bool {
 	}
 	close(s.done)
 
-	s.mu.Unlock()
 	return true
 }
 

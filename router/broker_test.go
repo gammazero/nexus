@@ -699,48 +699,48 @@ func TestEventHistory(t *testing.T) {
 	topic := wamp.URI("nexus.test.exact.topic")
 	subscription := broker.topicSubscription[topic]
 	subEvents := broker.eventHistoryStore[subscription].entries
-	require.Equalf(t, 3, len(subEvents), "Store for topic %s should hold 3 records", topic)
-	require.Truef(t, broker.eventHistoryStore[subscription].isLimitReached, "Limit for the store for topic %s should be reached", topic)
-	require.Equalf(t, "nexus.test.exact.topic", subEvents[0].event.ArgumentsKw["topic"], "Event store for topic %s holds invalid event", topic)
-	require.Equalf(t, 25509, subEvents[0].event.Arguments[0], "Event store for topic %s holds invalid event", topic)
-	require.Equalf(t, "nexus.test.exact.topic", subEvents[1].event.ArgumentsKw["topic"], "Event store for topic %s holds invalid event", topic)
-	require.Equalf(t, 25513, subEvents[1].event.Arguments[0], "Event store for topic %s holds invalid event", topic)
-	require.Equalf(t, "nexus.test.exact.topic", subEvents[2].event.ArgumentsKw["topic"], "Event store for topic %s holds invalid event", topic)
-	require.Equalf(t, 25517, subEvents[2].event.Arguments[0], "Event store for topic %s holds invalid event", topic)
+	require.Equalf(t, 3, subEvents.Len(), "Store for topic %s should hold 3 records", topic)
+	require.Truef(t, broker.eventHistoryStore[subscription].atLimit(), "Limit for the store for topic %s should be reached", topic)
+	require.Equalf(t, "nexus.test.exact.topic", subEvents.At(0).event.ArgumentsKw["topic"], "Event store for topic %s holds invalid event", topic)
+	require.Equalf(t, 25509, subEvents.At(0).event.Arguments[0], "Event store for topic %s holds invalid event", topic)
+	require.Equalf(t, "nexus.test.exact.topic", subEvents.At(1).event.ArgumentsKw["topic"], "Event store for topic %s holds invalid event", topic)
+	require.Equalf(t, 25513, subEvents.At(1).event.Arguments[0], "Event store for topic %s holds invalid event", topic)
+	require.Equalf(t, "nexus.test.exact.topic", subEvents.At(2).event.ArgumentsKw["topic"], "Event store for topic %s holds invalid event", topic)
+	require.Equalf(t, 25517, subEvents.At(2).event.Arguments[0], "Event store for topic %s holds invalid event", topic)
 
 	topic = wamp.URI("nexus.test")
 	subscription = broker.pfxTopicSubscription[topic]
 	subEvents = broker.eventHistoryStore[subscription].entries
-	require.Equalf(t, 4, len(subEvents), "Store for topic %s should hold 3 records", topic)
-	require.Truef(t, broker.eventHistoryStore[subscription].isLimitReached, "Limit for the store for topic %s should be reached", topic)
-	require.Equalf(t, "nexus.test.exact.topic", subEvents[0].event.ArgumentsKw["topic"], "Event store for topic %s holds invalid event", topic)
-	require.Equalf(t, 25517, subEvents[0].event.Arguments[0], "Event store for topic %s holds invalid event", topic)
-	require.Equalf(t, "nexus.test.prefix.catch", subEvents[1].event.ArgumentsKw["topic"], "Event store for topic %s holds invalid event", topic)
-	require.Equalf(t, 25518, subEvents[1].event.Arguments[0], "Event store for topic %s holds invalid event", topic)
-	require.Equalf(t, "nexus.test.wildcard.topic", subEvents[2].event.ArgumentsKw["topic"], "Event store for topic %s holds invalid event", topic)
-	require.Equalf(t, 25519, subEvents[2].event.Arguments[0], "Event store for topic %s holds invalid event", topic)
-	require.Equalf(t, "nexus.test.wildcard.miss", subEvents[3].event.ArgumentsKw["topic"], "Event store for topic %s holds invalid event", topic)
-	require.Equalf(t, 25520, subEvents[3].event.Arguments[0], "Event store for topic %s holds invalid event", topic)
+	require.Equalf(t, 4, subEvents.Len(), "Store for topic %s should hold 3 records", topic)
+	require.Truef(t, broker.eventHistoryStore[subscription].atLimit(), "Limit for the store for topic %s should be reached", topic)
+	require.Equalf(t, "nexus.test.exact.topic", subEvents.At(0).event.ArgumentsKw["topic"], "Event store for topic %s holds invalid event", topic)
+	require.Equalf(t, 25517, subEvents.At(0).event.Arguments[0], "Event store for topic %s holds invalid event", topic)
+	require.Equalf(t, "nexus.test.prefix.catch", subEvents.At(1).event.ArgumentsKw["topic"], "Event store for topic %s holds invalid event", topic)
+	require.Equalf(t, 25518, subEvents.At(1).event.Arguments[0], "Event store for topic %s holds invalid event", topic)
+	require.Equalf(t, "nexus.test.wildcard.topic", subEvents.At(2).event.ArgumentsKw["topic"], "Event store for topic %s holds invalid event", topic)
+	require.Equalf(t, 25519, subEvents.At(2).event.Arguments[0], "Event store for topic %s holds invalid event", topic)
+	require.Equalf(t, "nexus.test.wildcard.miss", subEvents.At(3).event.ArgumentsKw["topic"], "Event store for topic %s holds invalid event", topic)
+	require.Equalf(t, 25520, subEvents.At(3).event.Arguments[0], "Event store for topic %s holds invalid event", topic)
 
 	topic = wamp.URI("nexus.test..topic")
 	subscription = broker.wcTopicSubscription[topic]
 	subEvents = broker.eventHistoryStore[subscription].entries
-	require.Equalf(t, 4, len(subEvents), "Store for topic %s should hold 3 records", topic)
-	require.Truef(t, broker.eventHistoryStore[subscription].isLimitReached, "Limit for the store for topic %s should be reached", topic)
-	require.Equalf(t, "nexus.test.exact.topic", subEvents[0].event.ArgumentsKw["topic"], "Event store for topic %s holds invalid event", topic)
-	require.Equalf(t, 25513, subEvents[0].event.Arguments[0], "Event store for topic %s holds invalid event", topic)
-	require.Equalf(t, "nexus.test.wildcard.topic", subEvents[1].event.ArgumentsKw["topic"], "Event store for topic %s holds invalid event", topic)
-	require.Equalf(t, 25515, subEvents[1].event.Arguments[0], "Event store for topic %s holds invalid event", topic)
-	require.Equalf(t, "nexus.test.exact.topic", subEvents[2].event.ArgumentsKw["topic"], "Event store for topic %s holds invalid event", topic)
-	require.Equalf(t, 25517, subEvents[2].event.Arguments[0], "Event store for topic %s holds invalid event", topic)
-	require.Equalf(t, "nexus.test.wildcard.topic", subEvents[3].event.ArgumentsKw["topic"], "Event store for topic %s holds invalid event", topic)
-	require.Equalf(t, 25519, subEvents[3].event.Arguments[0], "Event store for topic %s holds invalid event", topic)
+	require.Equalf(t, 4, subEvents.Len(), "Store for topic %s should hold 3 records", topic)
+	require.Truef(t, broker.eventHistoryStore[subscription].atLimit(), "Limit for the store for topic %s should be reached", topic)
+	require.Equalf(t, "nexus.test.exact.topic", subEvents.At(0).event.ArgumentsKw["topic"], "Event store for topic %s holds invalid event", topic)
+	require.Equalf(t, 25513, subEvents.At(0).event.Arguments[0], "Event store for topic %s holds invalid event", topic)
+	require.Equalf(t, "nexus.test.wildcard.topic", subEvents.At(1).event.ArgumentsKw["topic"], "Event store for topic %s holds invalid event", topic)
+	require.Equalf(t, 25515, subEvents.At(1).event.Arguments[0], "Event store for topic %s holds invalid event", topic)
+	require.Equalf(t, "nexus.test.exact.topic", subEvents.At(2).event.ArgumentsKw["topic"], "Event store for topic %s holds invalid event", topic)
+	require.Equalf(t, 25517, subEvents.At(2).event.Arguments[0], "Event store for topic %s holds invalid event", topic)
+	require.Equalf(t, "nexus.test.wildcard.topic", subEvents.At(3).event.ArgumentsKw["topic"], "Event store for topic %s holds invalid event", topic)
+	require.Equalf(t, 25519, subEvents.At(3).event.Arguments[0], "Event store for topic %s holds invalid event", topic)
 
 	topic = wamp.URI("nexus")
 	subscription = broker.pfxTopicSubscription[topic]
 	subEvents = broker.eventHistoryStore[subscription].entries
-	require.Equalf(t, 20, len(subEvents), "Store for topic %s should hold 20 records", topic)
-	require.Falsef(t, broker.eventHistoryStore[subscription].isLimitReached, "Limit for the store for topic %s should not be reached", topic)
+	require.Equalf(t, 20, subEvents.Len(), "Store for topic %s should hold 20 records", topic)
+	require.Falsef(t, broker.eventHistoryStore[subscription].atLimit(), "Limit for the store for topic %s should not be reached", topic)
 
 	//Now let's test Event History MetaRPCs
 	topic = wamp.URI("nexus.test.exact.topic")
@@ -885,7 +885,7 @@ func TestEventHistory(t *testing.T) {
 	// Let's test filtering based on publication ID
 	topic = wamp.URI("nexus")
 	subscription = broker.pfxTopicSubscription[topic]
-	pubId := broker.eventHistoryStore[subscription].entries[4].event.Publication
+	pubId := broker.eventHistoryStore[subscription].entries.At(4).event.Publication
 	inv = wamp.Invocation{
 		Request:      wamp.ID(reqId),
 		Registration: 0,

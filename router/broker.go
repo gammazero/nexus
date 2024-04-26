@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"time"
 
+	"github.com/gammazero/deque"
 	"github.com/gammazero/nexus/v3/stdlog"
 	"github.com/gammazero/nexus/v3/wamp"
 )
@@ -52,10 +53,13 @@ type historyEntry struct {
 }
 
 type historyStore struct {
-	entries        []historyEntry
-	matchPolicy    string
-	limit          int
-	isLimitReached bool
+	entries     deque.Deque[historyEntry]
+	matchPolicy string
+	limit       int
+}
+
+func (h *historyStore) atLimit() bool {
+	return h.entries.Len() >= h.limit
 }
 
 type broker struct {
@@ -149,10 +153,8 @@ func (b *broker) PreInitEventHistoryTopics(evntCfgs []*TopicEventHistoryConfig) 
 		sub, _ := b.syncInitSubscription(topicCfg.Topic, topicCfg.MatchPolicy, nil)
 
 		b.eventHistoryStore[sub] = &historyStore{
-			entries:        []historyEntry{},
-			matchPolicy:    topicCfg.MatchPolicy,
-			limit:          topicCfg.Limit,
-			isLimitReached: false,
+			matchPolicy: topicCfg.MatchPolicy,
+			limit:       topicCfg.Limit,
 		}
 
 	}
@@ -383,12 +385,8 @@ func newSubscription(id wamp.ID, subscriber *wamp.Session, topic wamp.URI, match
 }
 
 func (b *broker) syncSaveEvent(eventStore *historyStore, pub *wamp.Publish, event *wamp.Event) {
-
-	if eventStore.isLimitReached {
-		eventStore.entries = eventStore.entries[1:]
-	} else if len(eventStore.entries) >= eventStore.limit {
-		eventStore.isLimitReached = true
-		eventStore.entries = eventStore.entries[1:]
+	if eventStore.atLimit() {
+		eventStore.entries.PopFront()
 	}
 
 	item := historyEntry{
@@ -403,7 +401,7 @@ func (b *broker) syncSaveEvent(eventStore *historyStore, pub *wamp.Publish, even
 		},
 	}
 
-	eventStore.entries = append(eventStore.entries, item)
+	eventStore.entries.PushBack(item)
 }
 
 func (b *broker) syncInitSubscription(topic wamp.URI, match string, subscriber *wamp.Session) (sub *subscription, existingSub bool) {
@@ -1138,7 +1136,7 @@ func (b *broker) subEventHistory(msg *wamp.Invocation) wamp.Message {
 
 	fromPubOp, ok := msg.ArgumentsKw["from_publication"]
 	if ok {
-		fromPub = fromPubOp.(wamp.ID)
+		fromPub, ok = fromPubOp.(wamp.ID)
 		if !ok || fromPub < 1 {
 			return &wamp.Error{
 				Type:    msg.MessageType(),
@@ -1152,7 +1150,7 @@ func (b *broker) subEventHistory(msg *wamp.Invocation) wamp.Message {
 
 	afterPubOp, ok := msg.ArgumentsKw["after_publication"]
 	if ok {
-		afterPub = afterPubOp.(wamp.ID)
+		afterPub, ok = afterPubOp.(wamp.ID)
 		if !ok || afterPub < 1 {
 			return &wamp.Error{
 				Type:    msg.MessageType(),
@@ -1165,7 +1163,7 @@ func (b *broker) subEventHistory(msg *wamp.Invocation) wamp.Message {
 
 	beforePubOp, ok := msg.ArgumentsKw["before_publication"]
 	if ok {
-		beforePub = beforePubOp.(wamp.ID)
+		beforePub, ok = beforePubOp.(wamp.ID)
 		if !ok || beforePub < 1 {
 			return &wamp.Error{
 				Type:    msg.MessageType(),
@@ -1178,7 +1176,7 @@ func (b *broker) subEventHistory(msg *wamp.Invocation) wamp.Message {
 
 	untilPubOp, ok := msg.ArgumentsKw["until_publication"]
 	if ok {
-		untilPub = untilPubOp.(wamp.ID)
+		untilPub, ok = untilPubOp.(wamp.ID)
 		if !ok || untilPub < 1 {
 			return &wamp.Error{
 				Type:    msg.MessageType(),
@@ -1189,19 +1187,20 @@ func (b *broker) subEventHistory(msg *wamp.Invocation) wamp.Message {
 		}
 	}
 
-	ch := make(chan struct{})
+	done := make(chan struct{})
 	b.actionChan <- func() {
+		defer close(done)
+
 		var filteredEvents []storedEvent
 
 		if subscription, ok := b.subscriptions[subId]; ok {
 			if storeItem, ok := b.eventHistoryStore[subscription]; ok {
-				isLimitReached = storeItem.isLimitReached
+				isLimitReached = storeItem.atLimit()
 
-				fromPubReached := false
-				afterPubReached := false
-				untilPubReached := false
+				var untilPubReached bool
 
-				for _, entry := range storeItem.entries {
+				for i := 0; i < storeItem.entries.Len(); i++ {
+					entry := storeItem.entries.At(i)
 					if !fromDate.IsZero() && entry.event.timestamp.Before(fromDate) {
 						continue
 					}
@@ -1214,20 +1213,17 @@ func (b *broker) subEventHistory(msg *wamp.Invocation) wamp.Message {
 					if !untilDate.IsZero() && entry.event.timestamp.After(untilDate) {
 						continue
 					}
-					if fromPub > 0 && !fromPubReached {
+					if fromPub != 0 {
 						if entry.event.Publication != fromPub {
 							continue
-						} else {
-							fromPubReached = true
 						}
+						fromPub = 0
 					}
-					if afterPub > 0 && !afterPubReached {
-						if entry.event.Publication != afterPub {
-							continue
-						} else {
-							afterPubReached = true
-							continue
+					if afterPub != 0 {
+						if entry.event.Publication == afterPub {
+							afterPub = 0
 						}
+						continue
 					}
 					if beforePub > 0 && entry.event.Publication == beforePub {
 						break
@@ -1270,9 +1266,8 @@ func (b *broker) subEventHistory(msg *wamp.Invocation) wamp.Message {
 		}
 
 		events, _ = wamp.AsList(filteredEvents)
-		close(ch)
 	}
-	<-ch
+	<-done
 
 	return &wamp.Yield{
 		Request:     msg.Request,
