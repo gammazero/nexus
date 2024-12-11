@@ -8,7 +8,7 @@ require (
 	github.com/stretchr/testify v1.8.4
 	github.com/ugorji/go/codec v1.2.11
 	go.uber.org/goleak v1.2.1
-	golang.org/x/crypto v0.17.0
+	golang.org/x/crypto v0.31.0
 )
 
 require (
