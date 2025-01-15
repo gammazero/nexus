@@ -152,6 +152,7 @@ func (r *router) AttachClient(client wamp.Peer, transportDetails wamp.Dict) erro
 	// Receive HELLO message from the client.
 	msg, err := wamp.RecvTimeout(client, helloTimeout)
 	if err != nil {
+		client.Close()
 		return errors.New("did not receive HELLO: " + err.Error())
 	}
 	if r.debug {
