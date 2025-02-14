@@ -26,7 +26,7 @@ func TestIDGen(t *testing.T) {
 	require.Equal(t, ID(2), id2, errMsg)
 	require.Equal(t, ID(3), id3, errMsg)
 
-	idgen.next = int64(1) << 53
+	idgen.next = uint64(1) << 53
 	id1 = idgen.Next()
 	require.Equal(t, ID(1), id1, "Sequential IDs should wrap at 1 << 53")
 }
