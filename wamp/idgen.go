@@ -6,7 +6,7 @@ import (
 	"time"
 )
 
-const maxID int64 = 1 << 53
+const MaxID uint64 = 1 << 53
 
 func init() {
 	rand.Seed(time.Now().UnixNano())
@@ -14,7 +14,7 @@ func init() {
 
 // NewID generates a random WAMP ID.
 func GlobalID() ID {
-	return ID(rand.Int63n(maxID)) //nolint:gosec
+	return ID(rand.Int63n(int64(MaxID))) //nolint:gosec
 }
 
 // IDGen is generator for WAMP request IDs.  Create with new(IDGen).
@@ -29,13 +29,13 @@ func GlobalID() ID {
 //
 // See https://github.com/wamp-proto/wamp-proto/blob/master/spec/basic.md#ids
 type IDGen struct {
-	next int64
+	next uint64
 }
 
 // Next returns next ID.
 func (g *IDGen) Next() ID {
 	g.next++
-	if g.next > maxID {
+	if g.next > MaxID {
 		g.next = 1
 	}
 	return ID(g.next)

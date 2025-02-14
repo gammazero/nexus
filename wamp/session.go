@@ -5,6 +5,11 @@ import (
 	"sync"
 )
 
+// IDs that are at most deltaID away from lastRecvID are considered new
+const deltaID = ID(500)
+const rollLowID = deltaID / 2
+const rollHighID = ID(MaxID) - rollLowID
+
 // Session is an active WAMP session.  It associates a session ID and details
 // with a connected Peer, which is the remote side of the session.  So, if the
 // session owned by the router, then the Peer is the connected client.
@@ -15,6 +20,10 @@ type Session struct {
 	ID ID
 	// Details about session.
 	Details Dict
+	IdGen   *SyncIDGen
+	// Greatest value of Dealer's end of Session Scope ID
+	// Use IsNewRecvID() and UpdateLastRecvID() for comparison/update.
+	lastRecvID ID
 
 	// Roles and features supported by peer.
 	roles map[string]map[string]struct{}
@@ -36,6 +45,7 @@ func NewSession(peer Peer, id ID, details Dict, greetDetails Dict) *Session {
 		Peer:    peer,
 		ID:      id,
 		Details: details,
+		IdGen:   new(SyncIDGen),
 	}
 	s.setRoles(greetDetails)
 	return s
@@ -160,4 +170,54 @@ func (s *Session) setRoles(details Dict) {
 		roleMap[role] = featMap
 	}
 	s.roles = roleMap
+}
+
+// UpdateLastRecvID updates the Session's lastRecvID with IDs coming from the
+// other end. Returns true if this is a new ID.
+// This is our only way to track the session-based request IDs to determine if
+// we're responding to a new request.
+func (s *Session) UpdateLastRecvID(id ID) bool {
+	s.Lock()
+	defer s.Unlock()
+	return s.UpdateLastRecvIDCallerHasSessionLock(id)
+}
+
+// UpdateLastRecvIDCallerHasSessionLock works just like UpdateLastRecvID if you
+// already have a session lock.
+func (s *Session) UpdateLastRecvIDCallerHasSessionLock(id ID) bool {
+	if s.IsNewRecvID(id) {
+		s.lastRecvID = id
+		return true
+	}
+	return false
+}
+
+// IsNewRecvID returns true if the ID is considered new.
+// It is recommended to only call this function when you have the Session.Lock.
+func (s *Session) IsNewRecvID(id ID) bool {
+	// It would be really nice if we could trust that when lastRecvID is
+	// MaxID the next ID would be 1, but it's completely possible for a
+	// Dealer to skip IDs if there were internal errors or if it incorrectly
+	// uses Dealer scoped IDs instead of Session scoped (*cough* Nexus).
+	// In order to maximize compatability, we allow ID rollover/wraparound
+	// when we're close to the max ID value (rollHighID) and the new ID is close
+	// to 1 (rollLowID).
+
+	last := s.lastRecvID
+
+	// Equal
+	if id == last {
+		return false
+	}
+	// Rollover / wraparound
+	if last > rollHighID && id < rollLowID {
+		return true
+	}
+	// Can only advance at most deltaID
+	// This is specifically to prevent jumping right back into the
+	// rollHighID range after a rollover/wraparound, but't's  it's good genearl
+	if id > last && (id-last) < deltaID {
+		return true
+	}
+	return false
 }
