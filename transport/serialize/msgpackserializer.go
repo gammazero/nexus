@@ -44,7 +44,7 @@ func (s *MessagePackSerializer) Deserialize(data []byte) (wamp.Message, error) {
 		return nil, errors.New("invalid message")
 	}
 
-	typ, ok := v[0].(int64)
+	typ, ok := wamp.AsInt64(v[0])
 	if !ok {
 		return nil, errors.New("unsupported message format")
 	}
