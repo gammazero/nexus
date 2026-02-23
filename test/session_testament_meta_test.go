@@ -1,4 +1,4 @@
-package aat_test
+package test
 
 import (
 	"context"
@@ -6,9 +6,8 @@ import (
 	"testing"
 	"time"
 
-	"github.com/stretchr/testify/require"
-
 	"github.com/gammazero/nexus/v3/wamp"
+	"github.com/stretchr/testify/require"
 )
 
 const (

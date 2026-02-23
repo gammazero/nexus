@@ -1,4 +1,4 @@
-package aat_test
+package test
 
 import (
 	"fmt"

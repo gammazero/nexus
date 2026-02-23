@@ -9,27 +9,23 @@ vet:
 
 test:
 	go build ./examples/...
-	go test -race ./wamp/...
-	go test -race ./transport/...
-	go test -race ./router/...
-	go test -race ./client/...
-	go test -race ./aat/...
-	go test -race ./aat -scheme=ws
-	go test -race ./aat -scheme=unix
-	go test ./aat -scheme=ws -serialize=msgpack
-	go test ./aat -scheme=tcp -serialize=msgpack
-	go test ./aat -scheme=ws -serialize=cbor -compress
-	go test ./aat -scheme=tcp -serialize=cbor
-	go test ./aat -scheme=wss
-	go test ./aat -scheme=tcps
+	go test -race ./...
+	go test -race ./test -scheme=ws
+	go test -race ./test -scheme=unix
+	go test ./test -scheme=ws -serialize=msgpack
+	go test ./test -scheme=tcp -serialize=msgpack
+	go test ./test -scheme=ws -serialize=cbor -compress
+	go test ./test -scheme=tcp -serialize=cbor
+	go test ./test -scheme=wss
+	go test ./test -scheme=tcps
 
 benchmark:
-	go test ./aat -run=XXX -bench=.
-	go test ./aat -run=XXX -bench=. -scheme=ws
-	go test ./aat -run=XXX -bench=. -scheme=wss
-	go test ./aat -run=XXX -bench=. -scheme=tcp
-	go test ./aat -run=XXX -bench=. -scheme=tcps
-	go test ./aat -run=XXX -bench=. -scheme=ws -compress
+	go test ./test -run=XXX -bench=.
+	go test ./test -run=XXX -bench=. -scheme=ws
+	go test ./test -run=XXX -bench=. -scheme=wss
+	go test ./test -run=XXX -bench=. -scheme=tcp
+	go test ./test -run=XXX -bench=. -scheme=tcps
+	go test ./test -run=XXX -bench=. -scheme=ws -compress
 
 service: $(SERVICE_DIR)/nexusd
 
