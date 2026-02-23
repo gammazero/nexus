@@ -2,6 +2,7 @@ package router
 
 import (
 	"fmt"
+	"maps"
 	"time"
 
 	"github.com/gammazero/deque"
@@ -774,21 +775,17 @@ func prepareEvent(pub *wamp.Session, msg *wamp.Publish, pubID wamp.ID, sub *subs
 		// carries a copy of the respective structure, even if
 		// it's empty
 		if event.Details != nil {
-			options := make(map[string]interface{}, len(event.Details))
-			for k, v := range event.Details {
-				options[k] = v
-			}
+			options := make(map[string]any, len(event.Details))
+			maps.Copy(options, event.Details)
 			event.Details = options
 		}
 		if msg.Arguments != nil {
-			event.Arguments = make([]interface{}, len(msg.Arguments))
+			event.Arguments = make([]any, len(msg.Arguments))
 			copy(event.Arguments, msg.Arguments)
 		}
 		if msg.ArgumentsKw != nil {
-			argsKw := make(map[string]interface{}, len(msg.ArgumentsKw))
-			for k, v := range msg.ArgumentsKw {
-				argsKw[k] = v
-			}
+			argsKw := make(map[string]any, len(msg.ArgumentsKw))
+			maps.Copy(argsKw, msg.ArgumentsKw)
 			event.ArgumentsKw = argsKw
 		}
 	}
@@ -1258,10 +1255,7 @@ func (b *broker) subEventHistory(msg *wamp.Invocation) wamp.Message {
 		}
 
 		if limit > 0 {
-			start := len(filteredEvents) - limit
-			if start < 0 {
-				start = 0
-			}
+			start := max(len(filteredEvents)-limit, 0)
 			filteredEvents = filteredEvents[start:]
 		}
 

@@ -49,7 +49,7 @@ func benchPubSub(subCount int, b *testing.B) {
 	// Start workers, and have them all wait on a channel before completing.
 	for i := 0; i < b.N; i++ {
 		allDone.Add(recvCount)
-		for j := 0; j < benchMsgCount; j++ {
+		for range benchMsgCount {
 			// Publish an event to topic.
 			err = publisher.Publish(testTopic, nil, args, nil)
 			if err != nil {

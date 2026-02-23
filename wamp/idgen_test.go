@@ -38,7 +38,7 @@ func TestSyncIDGen(t *testing.T) {
 	f := func() {
 		var i, prev ID
 		<-start
-		for j := 0; j < 100000; j++ {
+		for range 100000 {
 			i = idgen.Next()
 			if i <= prev {
 				errs <- errors.New("Bad sequential ID")
@@ -54,7 +54,7 @@ func TestSyncIDGen(t *testing.T) {
 	go f()
 	go f()
 	close(start)
-	for g := 0; g < 4; g++ {
+	for range 4 {
 		err := <-errs
 		require.NoError(t, err)
 	}

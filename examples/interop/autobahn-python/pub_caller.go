@@ -47,7 +47,7 @@ func main() {
 
 func publishEvents(publisher *client.Client) {
 	// Publish events to topic
-	for i := 0; i < 5; i++ {
+	for i := range 5 {
 		msg := fmt.Sprintf("Testing %d", i)
 		err := publisher.Publish(topic, nil, wamp.List{msg}, nil)
 		if err != nil {

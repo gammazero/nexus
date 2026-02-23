@@ -3,7 +3,7 @@ package wamp
 import "reflect"
 
 // AsString is an extended type assertion for string.
-func AsString(v interface{}) (string, bool) {
+func AsString(v any) (string, bool) {
 	switch v := v.(type) {
 	case string:
 		return v, true
@@ -16,7 +16,7 @@ func AsString(v interface{}) (string, bool) {
 }
 
 // AsID is an extended type assertion for ID.
-func AsID(v interface{}) (ID, bool) {
+func AsID(v any) (ID, bool) {
 	if i64, ok := AsInt64(v); ok {
 		return ID(i64), true
 	}
@@ -24,7 +24,7 @@ func AsID(v interface{}) (ID, bool) {
 }
 
 // AsURI is an extended type assertion for URI.
-func AsURI(v interface{}) (URI, bool) {
+func AsURI(v any) (URI, bool) {
 	switch v := v.(type) {
 	case URI:
 		return v, true
@@ -37,7 +37,7 @@ func AsURI(v interface{}) (URI, bool) {
 }
 
 // AsInt64 is an extended type assertion for int64.
-func AsInt64(v interface{}) (int64, bool) {
+func AsInt64(v any) (int64, bool) {
 	switch v := v.(type) {
 	case int64:
 		return v, true
@@ -62,7 +62,7 @@ func AsInt64(v interface{}) (int64, bool) {
 }
 
 // AsFloat64 is an extended type assertion for float64.
-func AsFloat64(v interface{}) (float64, bool) {
+func AsFloat64(v any) (float64, bool) {
 	switch v := v.(type) {
 	case float64:
 		return v, true
@@ -87,13 +87,13 @@ func AsFloat64(v interface{}) (float64, bool) {
 }
 
 // AsBool is an extended type assertion for bool.
-func AsBool(v interface{}) (bool, bool) {
+func AsBool(v any) (bool, bool) {
 	b, ok := v.(bool)
 	return b, ok
 }
 
 // AsDict is an extended type assertion for Dict.
-func AsDict(v interface{}) (Dict, bool) {
+func AsDict(v any) (Dict, bool) {
 	if v == nil {
 		return nil, true
 	}
@@ -102,11 +102,11 @@ func AsDict(v interface{}) (Dict, bool) {
 }
 
 // AsList is an extended type assertion for List.
-func AsList(v interface{}) (List, bool) {
+func AsList(v any) (List, bool) {
 	switch v := v.(type) {
 	case List:
 		return v, true
-	case []interface{}:
+	case []any:
 		return List(v), true
 	case nil:
 		return nil, true

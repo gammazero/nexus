@@ -9,13 +9,13 @@ package stdlog
 // to use any logging package desired.
 type StdLog interface {
 	// Print logs a message.  Arguments are handled in the manner of fmt.Print.
-	Print(v ...interface{})
+	Print(v ...any)
 
 	// Println logs a message.  Arguments are handled in the manner of
 	// fmt.Println.
-	Println(v ...interface{})
+	Println(v ...any)
 
 	// Printf logs a message.  Arguments are handled in the manner of
 	// fmt.Printf.
-	Printf(format string, v ...interface{})
+	Printf(format string, v ...any)
 }

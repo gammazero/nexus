@@ -21,7 +21,7 @@ func TestAsList(t *testing.T) {
 		shouldFailMsg = "Should fail converting to List"
 	)
 	list := List{numConv, uriConv, strConv, bytesConv}
-	ilist := []interface{}{interface{}(numConv), uriConv, strConv, bytesConv}
+	ilist := []any{any(numConv), uriConv, strConv, bytesConv}
 
 	l, ok := AsList(ilist)
 	require.True(t, ok, failMsg)
@@ -51,11 +51,11 @@ func TestAsDict(t *testing.T) {
 	)
 	dict := Dict{"num": numConv, "uri": uriConv, "str": strConv, "bytes": bytesConv}
 
-	d, ok := AsDict(interface{}(dict))
+	d, ok := AsDict(any(dict))
 	require.True(t, ok, failMsg)
 	require.NotZero(t, len(d), failMsg)
 
-	d, ok = AsDict(interface{}(numConv))
+	d, ok = AsDict(any(numConv))
 	require.False(t, ok, shouldFailMsg)
 	require.Nil(t, d, shouldFailMsg)
 

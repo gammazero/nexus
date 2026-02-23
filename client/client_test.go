@@ -1047,7 +1047,7 @@ func newNetTestCalleeWithConfig(t *testing.T, routerURL string, clientConfig *Co
 		return InvokeResult{Kwargs: wamp.Dict{"success": true}}
 	}
 
-	for ii := 0; ii < 40; ii++ {
+	for ii := range 40 {
 		procedureName := fmt.Sprintf("sleep_%d", ii)
 		if err = cl.Register(procedureName, sleep, nil); err != nil {
 			// Expect to get kill before we get through the list of register functions
@@ -1374,7 +1374,7 @@ func TestEventContentSafety(t *testing.T) {
 	err = pub.Publish(testTopic, nil, wamp.List{"Hello"}, wamp.Dict{"prop": "value"})
 	require.NoError(t, err)
 
-	for i := 0; i < 2; i++ {
+	for range 2 {
 		select {
 		case err = <-errChan:
 			require.NoError(t, err)

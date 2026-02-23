@@ -12,7 +12,7 @@ import (
 //
 // This is used for initial conversion of hello details.  The original dict is
 // not mutated.
-func NormalizeDict(v interface{}) Dict {
+func NormalizeDict(v any) Dict {
 	val := reflect.ValueOf(v)
 	if val.Kind() != reflect.Map {
 		return nil
@@ -32,7 +32,7 @@ func NormalizeDict(v interface{}) Dict {
 			// convert the slice to a List type.
 			if cv.Kind() == reflect.Interface && cv.Elem().Kind() == reflect.Slice {
 				cv = cv.Elem()
-				listType := reflect.TypeOf(List{})
+				listType := reflect.TypeFor[List]()
 				if cv.Type().ConvertibleTo(listType) {
 					cv = cv.Convert(listType)
 				}
@@ -79,7 +79,7 @@ func DictChild(dict Dict, key string) Dict {
 // For example, the path []string{"roles","callee","features","call_timeout"}
 // returns  the value of the call_timeout feature as interface{}.  An error
 // is returned if the value is not present.
-func DictValue(dict Dict, path []string) (interface{}, error) {
+func DictValue(dict Dict, path []string) (any, error) {
 	for i := range path[:len(path)-1] {
 		dict = DictChild(dict, path[i])
 		if dict == nil {
@@ -117,7 +117,7 @@ func DictFlag(dict Dict, path []string) (bool, error) {
 }
 
 // SetOption sets a single option name-value pair in message options dict.
-func SetOption(dict Dict, name string, value interface{}) Dict {
+func SetOption(dict Dict, name string, value any) Dict {
 	if dict == nil {
 		dict = Dict{}
 	}

@@ -3,6 +3,8 @@ package router
 import (
 	"errors"
 	"fmt"
+	"maps"
+	"slices"
 	"strconv"
 	"sync"
 
@@ -779,11 +781,8 @@ func (r *realm) sessionCount(msg *wamp.Invocation) wamp.Message {
 				sess.Lock()
 				authrole, _ := wamp.AsString(sess.Details["authrole"])
 				sess.Unlock()
-				for j := range filter {
-					if filter[j] == authrole {
-						nclients++
-						break
-					}
+				if slices.Contains(filter, authrole) {
+					nclients++
 				}
 			}
 			retChan <- nclients
@@ -839,11 +838,8 @@ func (r *realm) sessionList(msg *wamp.Invocation) wamp.Message {
 				sess.Lock()
 				authrole, _ := wamp.AsString(sess.Details["authrole"])
 				sess.Unlock()
-				for j := range filter {
-					if filter[j] == authrole {
-						ids = append(ids, sid)
-						break
-					}
+				if slices.Contains(filter, authrole) {
+					ids = append(ids, sid)
 				}
 			}
 			retChan <- ids
@@ -1177,9 +1173,7 @@ func (r *realm) cleanSessionDetails(details wamp.Dict) wamp.Dict {
 	// If a copy was not previously needed, it is now.
 	if !r.metaStrict {
 		clean = make(wamp.Dict, len(details))
-		for k, v := range details {
-			clean[k] = v
-		}
+		maps.Copy(clean, details)
 	}
 
 	// If details.transport.auth exists, then provide version of transport

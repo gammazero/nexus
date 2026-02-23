@@ -3,6 +3,7 @@ package router
 import (
 	"log"
 	"os"
+	"slices"
 	"testing"
 	"time"
 
@@ -503,11 +504,8 @@ func TestRegistrationMetaProcedures(t *testing.T) {
 	require.Equal(t, len(wildcardPrev)+1, len(wildcard), "expected additional wildcard match")
 
 	var found bool
-	for i := range exact {
-		if exact[i] == registrationID {
-			found = true
-			break
-		}
+	if slices.Contains(exact, registrationID) {
+		found = true
 	}
 	require.True(t, found, "missing expected registration ID")
 
@@ -667,11 +665,8 @@ func TestSubscriptionMetaProcedures(t *testing.T) {
 	require.Equal(t, len(wildcardPrev)+1, len(wildcard), "expected additional wildcard match")
 
 	var found bool
-	for i := range exact {
-		if exact[i] == subscriptionID {
-			found = true
-			break
-		}
+	if slices.Contains(exact, subscriptionID) {
+		found = true
 	}
 	require.True(t, found, "missing expected subscription ID")
 

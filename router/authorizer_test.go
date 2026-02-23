@@ -166,7 +166,7 @@ func TestAuthorizerRace(t *testing.T) {
 
 	done := make(chan struct{})
 	go func() {
-		for i := 0; i < 100; i++ {
+		for i := range 100 {
 			pub.Send() <- &wamp.Publish{
 				Request: wamp.ID(i),
 				Topic:   topic,
@@ -177,7 +177,7 @@ func TestAuthorizerRace(t *testing.T) {
 	}()
 
 	go func() {
-		for i := 0; i < 100; i++ {
+		for i := range 100 {
 			cli.Send() <- &wamp.Call{
 				Request:   wamp.ID(100 + i),
 				Procedure: wamp.MetaProcSessionGet,
@@ -194,7 +194,7 @@ func TestAuthorizerRace(t *testing.T) {
 		done <- struct{}{}
 	}()
 
-	for i := 0; i < 100; i++ {
+	for i := range 100 {
 		sub.Send() <- &wamp.Publish{
 			Request: wamp.ID(500 + i),
 			Topic:   topic,

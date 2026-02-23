@@ -442,7 +442,7 @@ func serverHandshake(conn net.Conn, logger stdlog.StdLog, recvLimit, outQueueSiz
 // byte representation of this value.
 func fitRecvLimit(recvLimit int) byte {
 	if recvLimit > 0 {
-		for b := byte(0); b < 0xf; b++ {
+		for b := range byte(0xf) {
 			if byteToLength(b) >= recvLimit {
 				return b
 			}

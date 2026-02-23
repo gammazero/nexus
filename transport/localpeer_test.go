@@ -43,7 +43,7 @@ func TestDropOnBlockedClient(t *testing.T) {
 	_, r := LinkedPeersQSize(qsize)
 
 	// Check that r -> c drops when full
-	for i := 0; i < qsize; i++ {
+	for range qsize {
 		select {
 		case r.Send() <- &wamp.Publish{}:
 		default:
