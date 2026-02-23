@@ -3,12 +3,12 @@ package router
 import (
 	"fmt"
 	"testing"
+	"testing/synctest"
 	"time"
-
-	"github.com/stretchr/testify/require"
 
 	"github.com/gammazero/nexus/v3/transport"
 	"github.com/gammazero/nexus/v3/wamp"
+	"github.com/stretchr/testify/require"
 )
 
 func newTestDealer(t *testing.T) (*dealer, wamp.Peer) {
@@ -499,57 +499,60 @@ func TestCancelCallModeKillNoWait(t *testing.T) {
 }
 
 func TestCancelCallModeSkip(t *testing.T) {
-	dealer, metaClient := newTestDealer(t)
+	synctest.Test(t, func(t *testing.T) {
+		dealer, metaClient := newTestDealer(t)
 
-	// Register a procedure.
-	callee := newTestPeer()
-	calleeRoles := wamp.Dict{
-		"roles": wamp.Dict{
-			"callee": wamp.Dict{
-				"features": wamp.Dict{
-					"call_canceling": true,
+		// Register a procedure.
+		callee := newTestPeer()
+		calleeRoles := wamp.Dict{
+			"roles": wamp.Dict{
+				"callee": wamp.Dict{
+					"features": wamp.Dict{
+						"call_canceling": true,
+					},
 				},
 			},
-		},
-	}
+		}
 
-	calleeSess := wamp.NewSession(callee, 0, nil, calleeRoles)
-	dealer.register(calleeSess,
-		&wamp.Register{Request: 123, Procedure: testProcedure})
-	rsp := <-callee.Recv()
-	_, ok := rsp.(*wamp.Registered)
-	require.True(t, ok, "did not receive REGISTERED response")
+		calleeSess := wamp.NewSession(callee, 0, nil, calleeRoles)
+		dealer.register(calleeSess,
+			&wamp.Register{Request: 123, Procedure: testProcedure})
+		rsp := <-callee.Recv()
+		_, ok := rsp.(*wamp.Registered)
+		require.True(t, ok, "did not receive REGISTERED response")
 
-	checkMetaReg(t, metaClient, calleeSess.ID)
+		checkMetaReg(t, metaClient, calleeSess.ID)
 
-	caller := newTestPeer()
-	callerSession := wamp.NewSession(caller, 0, nil, nil)
+		caller := newTestPeer()
+		callerSession := wamp.NewSession(caller, 0, nil, nil)
 
-	// Test calling valid procedure
-	dealer.call(callerSession,
-		&wamp.Call{Request: 125, Procedure: testProcedure})
+		// Test calling valid procedure
+		dealer.call(callerSession,
+			&wamp.Call{Request: 125, Procedure: testProcedure})
 
-	// Test that callee received an INVOCATION message.
-	rsp = <-callee.Recv()
-	_, ok = rsp.(*wamp.Invocation)
-	require.True(t, ok, "expected INVOCATION")
+		// Test that callee received an INVOCATION message.
+		rsp = <-callee.Recv()
+		_, ok = rsp.(*wamp.Invocation)
+		require.True(t, ok, "expected INVOCATION")
 
-	// Test caller cancelling call. mode=kill
-	opts := wamp.SetOption(nil, "mode", "skip")
-	dealer.cancel(callerSession, &wamp.Cancel{Request: 125, Options: opts})
+		// Test caller cancelling call. mode=kill
+		opts := wamp.SetOption(nil, "mode", "skip")
+		dealer.cancel(callerSession, &wamp.Cancel{Request: 125, Options: opts})
 
-	// callee should NOT receive an INTERRUPT request
-	select {
-	case <-time.After(200 * time.Millisecond):
-	case <-callee.Recv():
-		require.FailNow(t, "callee received unexpected message")
-	}
+		// callee should NOT receive an INTERRUPT request
+		synctest.Wait()
+		select {
+		case <-time.After(200 * time.Millisecond):
+		case <-callee.Recv():
+			require.FailNow(t, "callee received unexpected message")
+		}
 
-	// Check that caller receives the ERROR message.
-	rsp = <-caller.Recv()
-	rslt, ok := rsp.(*wamp.Error)
-	require.True(t, ok, "expected ERROR")
-	require.Equal(t, wamp.ErrCanceled, rslt.Error)
+		// Check that caller receives the ERROR message.
+		rsp = <-caller.Recv()
+		rslt, ok := rsp.(*wamp.Error)
+		require.True(t, ok, "expected ERROR")
+		require.Equal(t, wamp.ErrCanceled, rslt.Error)
+	})
 }
 
 func TestSharedRegistrationRoundRobin(t *testing.T) {
@@ -1069,44 +1072,47 @@ func TestCallerIdentification(t *testing.T) {
 }
 
 func TestWrongYielder(t *testing.T) {
-	dealer := newDealer(logger, false, true, debug)
-	t.Cleanup(func() {
-		dealer.close()
+	synctest.Test(t, func(t *testing.T) {
+		dealer := newDealer(logger, false, true, debug)
+		t.Cleanup(func() {
+			dealer.close()
+		})
+
+		// Register a procedure.
+		callee := newTestPeer()
+		calleeSess := wamp.NewSession(callee, 7777, nil, nil)
+		dealer.register(calleeSess,
+			&wamp.Register{Request: 4321, Procedure: testProcedure})
+		rsp := <-callee.Recv()
+		_, ok := rsp.(*wamp.Registered)
+		require.True(t, ok, "did not receive REGISTERED response")
+
+		// Create caller
+		caller := newTestPeer()
+		callerSession := wamp.NewSession(caller, 0, nil, nil)
+
+		// Create imposter callee
+		badCallee := newTestPeer()
+		badCalleeSess := wamp.NewSession(badCallee, 1313, nil, nil)
+
+		// Call the procedure
+		dealer.call(callerSession,
+			&wamp.Call{Request: 4322, Procedure: testProcedure})
+
+		// Test that callee received an INVOCATION message.
+		rsp = <-callee.Recv()
+		inv, ok := rsp.(*wamp.Invocation)
+		require.True(t, ok, "expected INVOCATION")
+
+		// Imposter callee responds with a YIELD message
+		dealer.yield(badCalleeSess, &wamp.Yield{Request: inv.Request})
+
+		// Check that caller did not received a RESULT message.
+		synctest.Wait()
+		select {
+		case <-caller.Recv():
+			require.FailNow(t, "Caller received response from imposter callee")
+		case <-time.After(200 * time.Millisecond):
+		}
 	})
-
-	// Register a procedure.
-	callee := newTestPeer()
-	calleeSess := wamp.NewSession(callee, 7777, nil, nil)
-	dealer.register(calleeSess,
-		&wamp.Register{Request: 4321, Procedure: testProcedure})
-	rsp := <-callee.Recv()
-	_, ok := rsp.(*wamp.Registered)
-	require.True(t, ok, "did not receive REGISTERED response")
-
-	// Create caller
-	caller := newTestPeer()
-	callerSession := wamp.NewSession(caller, 0, nil, nil)
-
-	// Create imposter callee
-	badCallee := newTestPeer()
-	badCalleeSess := wamp.NewSession(badCallee, 1313, nil, nil)
-
-	// Call the procedure
-	dealer.call(callerSession,
-		&wamp.Call{Request: 4322, Procedure: testProcedure})
-
-	// Test that callee received an INVOCATION message.
-	rsp = <-callee.Recv()
-	inv, ok := rsp.(*wamp.Invocation)
-	require.True(t, ok, "expected INVOCATION")
-
-	// Imposter callee responds with a YIELD message
-	dealer.yield(badCalleeSess, &wamp.Yield{Request: inv.Request})
-
-	// Check that caller did not received a RESULT message.
-	select {
-	case <-caller.Recv():
-		require.FailNow(t, "Caller received response from imposter callee")
-	case <-time.After(200 * time.Millisecond):
-	}
 }

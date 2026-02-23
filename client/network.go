@@ -54,8 +54,10 @@ func ConnectNet(ctx context.Context, routerURL string, cfg Config) (*Client, err
 		routerURL = u.String()
 		fallthrough
 	case "ws", "wss":
+		fmt.Println("---> here 1")
 		p, err = transport.ConnectWebsocketPeer(ctx, routerURL,
 			cfg.Serialization, cfg.TlsCfg, cfg.Logger, &cfg.WsCfg)
+		fmt.Println("---> here 2")
 	case "tcps", "tcp4s", "tcp6s":
 		u.Scheme = u.Scheme[:len(u.Scheme)-1]
 		if cfg.TlsCfg == nil {

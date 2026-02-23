@@ -2,11 +2,11 @@ package router
 
 import (
 	"testing"
+	"testing/synctest"
 	"time"
 
-	"github.com/stretchr/testify/require"
-
 	"github.com/gammazero/nexus/v3/wamp"
+	"github.com/stretchr/testify/require"
 )
 
 type testPeer struct {
@@ -443,157 +443,161 @@ func TestWildcardPatternBasedSubscription(t *testing.T) {
 	require.Equal(t, testTopic, topic, "wrong topic received")
 }
 
-func TestSubscriberBlackWhiteListing(t *testing.T) {
-	broker := newTestBroker(t, nil)
-	subscriber := newTestPeer()
-	details := wamp.Dict{
-		"authid":   "jdoe",
-		"authrole": "admin",
-	}
-	sess := wamp.NewSession(subscriber, wamp.GlobalID(), details, nil)
-	testTopic := wamp.URI("nexus.test.topic")
+func TestSubscriberDenyAllowListing(t *testing.T) {
+	synctest.Test(t, func(t *testing.T) {
+		broker := newTestBroker(t, nil)
+		subscriber := newTestPeer()
+		details := wamp.Dict{
+			"authid":   "jdoe",
+			"authrole": "admin",
+		}
+		sess := wamp.NewSession(subscriber, wamp.GlobalID(), details, nil)
+		testTopic := wamp.URI("nexus.test.topic")
 
-	broker.subscribe(sess, &wamp.Subscribe{Request: 123, Topic: testTopic})
+		broker.subscribe(sess, &wamp.Subscribe{Request: 123, Topic: testTopic})
 
-	// Test that subscriber received SUBSCRIBED message
-	rsp := <-sess.Recv()
-	_, ok := rsp.(*wamp.Subscribed)
-	require.True(t, ok, "expected SUBSCRIBED")
+		// Test that subscriber received SUBSCRIBED message
+		rsp := <-sess.Recv()
+		_, ok := rsp.(*wamp.Subscribed)
+		require.True(t, ok, "expected SUBSCRIBED")
 
-	publisher := newTestPeer()
+		publisher := newTestPeer()
 
-	details = wamp.Dict{
-		"roles": wamp.Dict{
-			"publisher": wamp.Dict{
-				"features": wamp.Dict{
-					"subscriber_blackwhite_listing": true,
+		details = wamp.Dict{
+			"roles": wamp.Dict{
+				"publisher": wamp.Dict{
+					"features": wamp.Dict{
+						"subscriber_blackwhite_listing": true,
+					},
 				},
 			},
-		},
-	}
-	pubSess := wamp.NewSession(publisher, 0, details, nil)
+		}
+		pubSess := wamp.NewSession(publisher, 0, details, nil)
 
-	// Test whilelist
-	broker.publish(pubSess, &wamp.Publish{
-		Request: 124,
-		Topic:   testTopic,
-		Options: wamp.Dict{"eligible": wamp.List{sess.ID}},
-	})
-	_, err := wamp.RecvTimeout(sess, time.Second)
-	require.NoError(t, err, "not allowed by whitelist")
+		// Test allow-list
+		broker.publish(pubSess, &wamp.Publish{
+			Request: 124,
+			Topic:   testTopic,
+			Options: wamp.Dict{"eligible": wamp.List{sess.ID}},
+		})
+		_, err := wamp.RecvTimeout(sess, time.Second)
+		require.NoError(t, err, "not allowed by whitelist")
 
-	// Test whitelist authrole
-	broker.publish(pubSess, &wamp.Publish{
-		Request: 125,
-		Topic:   testTopic,
-		Options: wamp.Dict{"eligible_authrole": wamp.List{"admin"}},
-	})
-	_, err = wamp.RecvTimeout(sess, time.Second)
-	require.NoError(t, err, "not allowed by authrole whitelist")
+		// Test allow-list authrole
+		broker.publish(pubSess, &wamp.Publish{
+			Request: 125,
+			Topic:   testTopic,
+			Options: wamp.Dict{"eligible_authrole": wamp.List{"admin"}},
+		})
+		_, err = wamp.RecvTimeout(sess, time.Second)
+		require.NoError(t, err, "not allowed by authrole whitelist")
 
-	// Test whitelist authid
-	broker.publish(pubSess, &wamp.Publish{
-		Request: 126,
-		Topic:   testTopic,
-		Options: wamp.Dict{"eligible_authid": wamp.List{"jdoe"}},
-	})
-	_, err = wamp.RecvTimeout(sess, time.Second)
-	require.NoError(t, err, "not allowed by authid whitelist")
+		// Test allow-list authid
+		broker.publish(pubSess, &wamp.Publish{
+			Request: 126,
+			Topic:   testTopic,
+			Options: wamp.Dict{"eligible_authid": wamp.List{"jdoe"}},
+		})
+		_, err = wamp.RecvTimeout(sess, time.Second)
+		require.NoError(t, err, "not allowed by authid whitelist")
 
-	// Test blacklist.
-	broker.publish(pubSess, &wamp.Publish{
-		Request: 127,
-		Topic:   testTopic,
-		Options: wamp.Dict{"exclude": wamp.List{sess.ID}},
-	})
-	_, err = wamp.RecvTimeout(sess, time.Second)
-	require.Error(t, err, "not excluded by blacklist")
+		// Test deny-list.
+		broker.publish(pubSess, &wamp.Publish{
+			Request: 127,
+			Topic:   testTopic,
+			Options: wamp.Dict{"exclude": wamp.List{sess.ID}},
+		})
+		_, err = wamp.RecvTimeout(sess, time.Second)
+		require.Error(t, err, "not excluded by blacklist")
 
-	// Test blacklist authrole
-	broker.publish(pubSess, &wamp.Publish{
-		Request: 128,
-		Topic:   testTopic,
-		Options: wamp.Dict{"exclude_authrole": wamp.List{"admin"}},
-	})
-	_, err = wamp.RecvTimeout(sess, time.Second)
-	require.Error(t, err, "not excluded by authrole blacklist")
+		// Test deny-list authrole
+		broker.publish(pubSess, &wamp.Publish{
+			Request: 128,
+			Topic:   testTopic,
+			Options: wamp.Dict{"exclude_authrole": wamp.List{"admin"}},
+		})
+		_, err = wamp.RecvTimeout(sess, time.Second)
+		require.Error(t, err, "not excluded by authrole blacklist")
 
-	// Test blacklist authid
-	broker.publish(pubSess, &wamp.Publish{
-		Request: 129,
-		Topic:   testTopic,
-		Options: wamp.Dict{"exclude_authid": wamp.List{"jdoe"}},
-	})
-	_, err = wamp.RecvTimeout(sess, time.Second)
-	require.Error(t, err, "not excluded by authid blacklist")
+		// Test deny-list authid
+		broker.publish(pubSess, &wamp.Publish{
+			Request: 129,
+			Topic:   testTopic,
+			Options: wamp.Dict{"exclude_authid": wamp.List{"jdoe"}},
+		})
+		_, err = wamp.RecvTimeout(sess, time.Second)
+		require.Error(t, err, "not excluded by authid blacklist")
 
-	// Test that blacklist takes precedence over whitelist.
-	broker.publish(pubSess, &wamp.Publish{
-		Request: 126,
-		Topic:   testTopic,
-		Options: wamp.Dict{"eligible_authid": []string{"jdoe"},
-			"exclude_authid": []string{"jdoe"}},
+		// Test that deny-list takes precedence over allow-list.
+		broker.publish(pubSess, &wamp.Publish{
+			Request: 126,
+			Topic:   testTopic,
+			Options: wamp.Dict{"eligible_authid": []string{"jdoe"},
+				"exclude_authid": []string{"jdoe"}},
+		})
+		_, err = wamp.RecvTimeout(sess, time.Second)
+		require.Error(t, err, "should have been excluded by deny-list")
 	})
-	_, err = wamp.RecvTimeout(sess, time.Second)
-	require.Error(t, err, "should have been excluded by blacklist")
 }
 
 func TestPublisherExclusion(t *testing.T) {
-	broker := newTestBroker(t, nil)
-	subscriber := newTestPeer()
-	sess := wamp.NewSession(subscriber, 0, nil, nil)
-	testTopic := wamp.URI("nexus.test.topic")
+	synctest.Test(t, func(t *testing.T) {
+		broker := newTestBroker(t, nil)
+		subscriber := newTestPeer()
+		sess := wamp.NewSession(subscriber, 0, nil, nil)
+		testTopic := wamp.URI("nexus.test.topic")
 
-	broker.subscribe(sess, &wamp.Subscribe{Request: 123, Topic: testTopic})
+		broker.subscribe(sess, &wamp.Subscribe{Request: 123, Topic: testTopic})
 
-	// Test that subscriber received SUBSCRIBED message
-	rsp, err := wamp.RecvTimeout(sess, time.Second)
-	require.NoError(t, err, "subscribe session did not get response to SUBSCRIBE")
-	_, ok := rsp.(*wamp.Subscribed)
-	require.True(t, ok, "expected SUBSCRIBED")
+		// Test that subscriber received SUBSCRIBED message
+		rsp, err := wamp.RecvTimeout(sess, time.Second)
+		require.NoError(t, err, "subscribe session did not get response to SUBSCRIBE")
+		_, ok := rsp.(*wamp.Subscribed)
+		require.True(t, ok, "expected SUBSCRIBED")
 
-	publisher := newTestPeer()
+		publisher := newTestPeer()
 
-	details := wamp.Dict{
-		"roles": wamp.Dict{
-			"publisher": wamp.Dict{
-				"features": wamp.Dict{
-					"publisher_exclusion": true,
+		details := wamp.Dict{
+			"roles": wamp.Dict{
+				"publisher": wamp.Dict{
+					"features": wamp.Dict{
+						"publisher_exclusion": true,
+					},
 				},
 			},
-		},
-	}
-	pubSess := wamp.NewSession(publisher, 0, nil, details)
+		}
+		pubSess := wamp.NewSession(publisher, 0, nil, details)
 
-	// Subscribe the publish session also.
-	broker.subscribe(pubSess, &wamp.Subscribe{Request: 123, Topic: testTopic})
-	// Test that pub session received SUBSCRIBED message
-	rsp, err = wamp.RecvTimeout(pubSess, time.Second)
-	require.NoError(t, err, "publish session did not get response to SUBSCRIBE")
-	_, ok = rsp.(*wamp.Subscribed)
-	require.True(t, ok, "expected SUBSCRIBED")
+		// Subscribe the publish session also.
+		broker.subscribe(pubSess, &wamp.Subscribe{Request: 123, Topic: testTopic})
+		// Test that pub session received SUBSCRIBED message
+		rsp, err = wamp.RecvTimeout(pubSess, time.Second)
+		require.NoError(t, err, "publish session did not get response to SUBSCRIBE")
+		_, ok = rsp.(*wamp.Subscribed)
+		require.True(t, ok, "expected SUBSCRIBED")
 
-	// Publish message with exclud_me = false.
-	broker.publish(pubSess, &wamp.Publish{
-		Request: 124,
-		Topic:   testTopic,
-		Options: wamp.Dict{"exclude_me": false},
+		// Publish message with exclud_me = false.
+		broker.publish(pubSess, &wamp.Publish{
+			Request: 124,
+			Topic:   testTopic,
+			Options: wamp.Dict{"exclude_me": false},
+		})
+		_, err = wamp.RecvTimeout(sess, time.Second)
+		require.NoError(t, err, "subscriber did not receive event")
+		_, err = wamp.RecvTimeout(pubSess, time.Second)
+		require.NoError(t, err, "pub session should have received event")
+
+		// Publish message with exclud_me = true.
+		broker.publish(pubSess, &wamp.Publish{
+			Request: 124,
+			Topic:   testTopic,
+			Options: wamp.Dict{"exclude_me": true},
+		})
+		_, err = wamp.RecvTimeout(sess, time.Second)
+		require.NoError(t, err, "subscriber did not receive event")
+		_, err = wamp.RecvTimeout(pubSess, time.Second)
+		require.Error(t, err, "pub session should NOT have received event")
 	})
-	_, err = wamp.RecvTimeout(sess, time.Second)
-	require.NoError(t, err, "subscriber did not receive event")
-	_, err = wamp.RecvTimeout(pubSess, time.Second)
-	require.NoError(t, err, "pub session should have received event")
-
-	// Publish message with exclud_me = true.
-	broker.publish(pubSess, &wamp.Publish{
-		Request: 124,
-		Topic:   testTopic,
-		Options: wamp.Dict{"exclude_me": true},
-	})
-	_, err = wamp.RecvTimeout(sess, time.Second)
-	require.NoError(t, err, "subscriber did not receive event")
-	_, err = wamp.RecvTimeout(pubSess, time.Second)
-	require.Error(t, err, "pub session should NOT have received event")
 }
 
 func TestPublisherIdentification(t *testing.T) {

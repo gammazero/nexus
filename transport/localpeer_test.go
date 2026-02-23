@@ -3,11 +3,11 @@ package transport
 import (
 	"errors"
 	"testing"
+	"testing/synctest"
 	"time"
 
-	"github.com/stretchr/testify/require"
-
 	"github.com/gammazero/nexus/v3/wamp"
+	"github.com/stretchr/testify/require"
 )
 
 func TestSendRecv(t *testing.T) {
@@ -68,22 +68,25 @@ func TestDropOnBlockedClient(t *testing.T) {
 }
 
 func TestBlockOnBlockedRouter(t *testing.T) {
-	c, r := LinkedPeers()
+	synctest.Test(t, func(t *testing.T) {
+		c, r := LinkedPeers()
 
-	done := make(chan struct{})
-	go func() {
-		for i := 0; i < cap(r.Recv())+1; i++ {
-			c.Send() <- &wamp.Publish{}
+		done := make(chan struct{})
+		go func() {
+			for i := 0; i < cap(r.Recv())+1; i++ {
+				c.Send() <- &wamp.Publish{}
+			}
+			close(done)
+		}()
+		synctest.Wait()
+		select {
+		case <-done:
+			require.FailNow(t, "Expected send to be blocked")
+		case <-time.After(time.Second):
 		}
-		close(done)
-	}()
-	select {
-	case <-done:
-		require.FailNow(t, "Expected send to be blocked")
-	case <-time.After(time.Second):
-	}
-	<-r.Recv()
-	<-done
+		<-r.Recv()
+		<-done
+	})
 }
 
 func BenchmarkClientToRouter(b *testing.B) {

@@ -10,11 +10,10 @@ import (
 	"sync/atomic"
 	"time"
 
-	"github.com/gorilla/websocket"
-
 	"github.com/gammazero/nexus/v3/stdlog"
 	"github.com/gammazero/nexus/v3/transport/serialize"
 	"github.com/gammazero/nexus/v3/wamp"
+	"github.com/gorilla/websocket"
 )
 
 // DialFunc is an alternate Dial function for the websocket dialer.
