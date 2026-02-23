@@ -1,14 +1,14 @@
 module github.com/gammazero/nexus/v3
 
-go 1.21
+go 1.25
 
 require (
-	github.com/gammazero/deque v0.2.1
-	github.com/gorilla/websocket v1.5.0
-	github.com/stretchr/testify v1.8.4
-	github.com/ugorji/go/codec v1.2.11
-	go.uber.org/goleak v1.2.1
-	golang.org/x/crypto v0.17.0
+	github.com/gammazero/deque v1.2.1
+	github.com/gorilla/websocket v1.5.3
+	github.com/stretchr/testify v1.11.1
+	github.com/ugorji/go/codec v1.3.1
+	go.uber.org/goleak v1.3.0
+	golang.org/x/crypto v0.48.0
 )
 
 require (
