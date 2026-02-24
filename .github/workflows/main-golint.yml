@@ -9,19 +9,9 @@ concurrency:
 jobs:
   build:
     name: Check, Lint and Build
-
-    runs-on: ${{ matrix.os }}
-    strategy:
-      matrix:
-        os: [ubuntu-latest, macos-latest]
-
-    env:
-      GO111MODULE: on
-
+    runs-on: [ubuntu-latest, macos-latest]
     steps:
       - uses: actions/checkout@v5
-        with:
-          fetch-depth: 0
 
       - name: Setup go
         uses: actions/setup-go@v6
@@ -46,22 +36,16 @@ jobs:
           git fetch origin ${{ env.GIT_BASE_REF }}:${{ env.GIT_BASE_REF }}
         if: github.base_ref != ''
 
-      - name: Pull in all Go dependencies
-        run: |
-          go mod vendor
-
       - name: golangci-lint
         uses: golangci/golangci-lint-action@v9
         with:
           # version of golangci-lint to use in form of v1.2 or v1.2.3 or `latest`
-          version: latest
+          version: 2.6
           # show only new issues
           args: --new-from-rev=${{ env.GIT_BASE_REF }}
           # skip all additional steps
           skip-cache: true
           skip-save-cache: true
-          # XXX: does no work with working-directory
-          # only-new-issues: true
 
       - name: Check that code is formatted via go fmt tool
         run: |
