@@ -58,8 +58,8 @@ jobs:
           # show only new issues
           args: --new-from-rev=${{ env.GIT_BASE_REF }}
           # skip all additional steps
-          skip-pkg-cache: true
-          skip-build-cache: true
+          skip--cache: true
+          skip-save-cache: true
           # XXX: does no work with working-directory
           # only-new-issues: true
 
