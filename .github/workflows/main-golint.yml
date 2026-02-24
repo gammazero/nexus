@@ -19,12 +19,12 @@ jobs:
       GO111MODULE: on
 
     steps:
-      - uses: actions/checkout@v3
+      - uses: actions/checkout@v5
         with:
           fetch-depth: 0
 
       - name: Setup go
-        uses: actions/setup-go@v3
+        uses: actions/setup-go@v6
         with:
           go-version-file: 'go.mod'
           cache: true
@@ -51,7 +51,7 @@ jobs:
           go mod vendor
 
       - name: golangci-lint
-        uses: golangci/golangci-lint-action@v3
+        uses: golangci/golangci-lint-action@v9
         with:
           # version of golangci-lint to use in form of v1.2 or v1.2.3 or `latest`
           version: latest
