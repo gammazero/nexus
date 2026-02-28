@@ -1016,12 +1016,13 @@ func (rpce RPCError) Error() string {
 
 // Close causes the client to leave the realm it has joined, and closes the
 // connection to the router.
-func (c *Client) Close() {
+//
+// Always returns nil error, for backward compatibility.
+func (c *Client) Close() error {
 	c.sess.Lock()
 	if c.closed {
 		c.sess.Unlock()
-		c.log.Println("client already closed")
-		return
+		return nil
 	}
 	c.closed = true
 	c.sess.Unlock()
@@ -1061,6 +1062,8 @@ func (c *Client) Close() {
 	// When for any running invocation handlers to finish.
 	c.activeInvHandlers.Wait()
 	c.sess.Close()
+
+	return nil
 }
 
 // RouterGoodbye returns the GOODBYE message received from the router, if one

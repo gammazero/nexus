@@ -46,6 +46,7 @@ linters:
         path: test/
       - linters:
           - gosec
+          - errcheck
         path: examples/ 
     paths:
       - third_party$
