@@ -6,9 +6,10 @@ import (
 	"testing"
 	"time"
 
+	"github.com/stretchr/testify/require"
+
 	"github.com/gammazero/nexus/v3/client"
 	"github.com/gammazero/nexus/v3/wamp"
-	"github.com/stretchr/testify/require"
 )
 
 const (
@@ -105,8 +106,7 @@ func TestMetaEventOnLeave(t *testing.T) {
 	sid := sess.ID()
 
 	// Disconnect client to generate wamp.session.on_leave event.
-	err = sess.Close()
-	require.NoError(t, err)
+	sess.Close()
 
 	// Make sure the event was received.
 	var eventArgs wamp.List
@@ -178,8 +178,7 @@ func TestMetaProcSessionCount(t *testing.T) {
 	require.True(t, ok, "Could not convert result to int64")
 	require.Equal(t, firstCount+1, count, "Session count should one more the previous")
 
-	err = sess.Close()
-	require.NoError(t, err)
+	sess.Close()
 	// Wait for router to register client leaving.
 	select {
 	case <-onLeaveEvents:
@@ -240,8 +239,7 @@ func TestMetaProcSessionList(t *testing.T) {
 
 	sid := sess.ID()
 
-	err = sess.Close()
-	require.NoError(t, err)
+	sess.Close()
 	// Wait for router to register client leaving.
 	<-eventChan
 
@@ -304,13 +302,12 @@ func TestMetaProcSessionGet(t *testing.T) {
 
 	sid := sess.ID()
 
-	err = sess.Close()
-	require.NoError(t, err)
+	sess.Close()
 	// Wait for router to register client leaving.
 	<-eventChan
 
 	// Call meta procedure to get session list.
-	result, err = caller.Call(ctx, metaGet, nil, wamp.List{sid}, nil, nil)
+	_, err = caller.Call(ctx, metaGet, nil, wamp.List{sid}, nil, nil)
 	require.Error(t, err)
 
 	var rpcErr client.RPCError

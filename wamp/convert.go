@@ -18,7 +18,9 @@ func AsString(v any) (string, bool) {
 // AsID is an extended type assertion for ID.
 func AsID(v any) (ID, bool) {
 	if i64, ok := AsInt64(v); ok {
-		return ID(i64), true
+		if i64 > 0 && i64 <= maxID { // if valid ID
+			return ID(i64), true
+		}
 	}
 	return ID(0), false
 }
@@ -42,15 +44,18 @@ func AsInt64(v any) (int64, bool) {
 	case int64:
 		return v, true
 	case ID:
-		return int64(v), true
+		i := uint64(v)
+		if i <= maxID { // if valid ID
+			return int64(i), true
+		}
 	case uint64:
-		return int64(v), true
+		return int64(v), true //nolint:gosec // G115 ok, nunber can wrap
 	case int:
 		return int64(v), true
 	case int32:
 		return int64(v), true
 	case uint:
-		return int64(v), true
+		return int64(v), true //nolint:gosec // G115 ok, nunber can wrap
 	case uint32:
 		return int64(v), true
 	case float64:

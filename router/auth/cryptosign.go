@@ -137,6 +137,7 @@ func (cr *CryptoSignAuthenticator) verifySignature(signature string, publicKey [
 	return verify, nil
 }
 
+/*
 func (cr *CryptoSignAuthenticator) extractChannelBinding(details wamp.Dict) []byte {
 	if details != nil {
 		authextra, ok := wamp.AsDict(details["authextra"])
@@ -154,6 +155,7 @@ func (cr *CryptoSignAuthenticator) extractChannelBinding(details wamp.Dict) []by
 
 	return nil
 }
+*/
 
 func (cr *CryptoSignAuthenticator) computeChallenge(channelBinding []byte) ([]byte, error) {
 	challenge := make([]byte, 32)

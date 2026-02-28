@@ -55,7 +55,9 @@ func (s *RawSocketServer) ListenAndServe(network, address string) (io.Closer, er
 func (s *RawSocketServer) ListenAndServeTLS(network, address string, tlscfg *tls.Config, certFile, keyFile string) (io.Closer, error) { //nolint:lll
 	var hasCert bool
 	if tlscfg == nil {
-		tlscfg = &tls.Config{}
+		tlscfg = &tls.Config{
+			MinVersion: tls.VersionTLS12,
+		}
 	} else if len(tlscfg.Certificates) > 0 || tlscfg.GetCertificate != nil {
 		hasCert = true
 	}
@@ -84,7 +86,7 @@ func (s *RawSocketServer) requestHandler(l net.Listener) {
 		conn, err := l.Accept()
 		if err != nil {
 			// Error normal when listener closed, do not log.
-			l.Close()
+			_ = l.Close()
 			return
 		}
 		if tcpConn, ok := conn.(*net.TCPConn); ok {

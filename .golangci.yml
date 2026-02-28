@@ -14,7 +14,7 @@ linters:
     - durationcheck
     - errcheck
     - errorlint
-    - gochecknoglobals
+    #- gochecknoglobals
     - goconst
     - gosec
     - govet
@@ -41,6 +41,12 @@ linters:
       - linters:
           - testpackage
         path: export.*_test\.go
+      - linters:
+          - testpackage
+        path: test/
+      - linters:
+          - gosec
+        path: examples/ 
     paths:
       - third_party$
       - builtin$

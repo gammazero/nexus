@@ -31,19 +31,19 @@ type Serialization int
 type Serializer interface {
 	Serialize(wamp.Message) ([]byte, error)
 	Deserialize([]byte) (wamp.Message, error)
-	SerializeDataItem(item interface{}) ([]byte, error)
-	DeserializeDataItem([]byte, interface{}) error
+	SerializeDataItem(item any) ([]byte, error)
+	DeserializeDataItem([]byte, any) error
 }
 
-// listToMessage takes a list of values from a WAMP message and populates the
+// listToMsg takes a list of values from a WAMP message and populates the
 // fields of a message type.
-func listToMsg(msgType wamp.MessageType, vlist []interface{}) (wamp.Message, error) {
+func listToMsg(msgType wamp.MessageType, vlist []any) (wamp.Message, error) {
 	msg := wamp.NewMessage(msgType)
 	if msg == nil {
 		return nil, errors.New("unsupported message type")
 	}
 	val := reflect.ValueOf(msg)
-	if val.Kind() == reflect.Ptr {
+	if val.Kind() == reflect.Pointer {
 		val = val.Elem()
 	}
 	// Iterate each field of the target message and populate the field with
@@ -55,7 +55,7 @@ func listToMsg(msgType wamp.MessageType, vlist []interface{}) (wamp.Message, err
 		}
 		// Get the value of the item in list.
 		arg := reflect.ValueOf(vlist[i+1])
-		if arg.Kind() == reflect.Ptr {
+		if arg.Kind() == reflect.Pointer {
 			arg = arg.Elem()
 		}
 		// Try to assign the item to the message field.
@@ -156,9 +156,9 @@ func assignSlice(dst reflect.Value, src reflect.Value) error {
 
 // msgToList converts a message to a list of interface{}. Trailing empty values
 // are not appended to the list.
-func msgToList(msg wamp.Message) []interface{} {
+func msgToList(msg wamp.Message) []any {
 	val := reflect.ValueOf(msg)
-	if val.Kind() == reflect.Ptr {
+	if val.Kind() == reflect.Pointer {
 		val = val.Elem()
 	}
 
@@ -173,7 +173,7 @@ func msgToList(msg wamp.Message) []interface{} {
 	}
 
 	// Encode the remaining message elements.
-	ret := make([]interface{}, last+2)
+	ret := make([]any, last+2)
 	ret[0] = int(msg.MessageType())
 	for i := 0; i <= last; i++ {
 		ret[i+1] = val.Field(i).Interface()

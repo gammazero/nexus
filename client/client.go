@@ -29,8 +29,19 @@ const (
 	MqttPPTScheme = "mqtt"
 )
 
-var E2eeSerializers = map[string]serialize.Serialization{"cbor": CBOR}
-var PPTSerializers = map[string]serialize.Serialization{"json": JSON, "msgpack": MSGPACK, "cbor": CBOR}
+const (
+	// Time client will wait for expected router response if not specified.
+	defaultResponseTimeout = 5 * time.Second
+)
+
+var E2eeSerializers = map[string]serialize.Serialization{ //nolint:gochecknoglobals
+	"cbor": CBOR,
+}
+var PPTSerializers = map[string]serialize.Serialization{ //nolint:gochecknoglobals
+	"json":    JSON,
+	"msgpack": MSGPACK,
+	"cbor":    CBOR,
+}
 
 type invocationIDCtxKey struct{}
 
@@ -45,7 +56,6 @@ type Client struct {
 
 	responseTimeout time.Duration
 	awaitingReply   map[wamp.ID]chan wamp.Message
-	authHandlers    map[string]AuthFunc
 
 	eventHandlers map[wamp.ID]EventHandler
 	topicSubID    map[string]wamp.ID
@@ -82,7 +92,7 @@ type InvokeResult struct {
 
 // InvocationCanceled is returned from an InvocationHandler to indicate that
 // the invocation was canceled.
-var InvocationCanceled = InvokeResult{Err: wamp.ErrCanceled}
+var InvocationCanceled = InvokeResult{Err: wamp.ErrCanceled} //nolint:gochecknoglobals
 
 // Helpers for PPT/E2EE
 
@@ -415,19 +425,19 @@ func (c *Client) Unsubscribe(topic string) error {
 //
 //	options["acknowledge"] = true
 //
-// To request subscriber blacklisting by subscriber, authid, or authrole, set:
+// To request subscriber deny-listing by subscriber, authid, or authrole, set:
 //
 //	options["exclude"] = [subscriberID, ...]
 //	options["exclude_authid"] = ["authid", ..]
 //	options["exclude_authrole"] = ["authrole", ..]
 //
-// To request subscriber whitelisting by subscriber, authid, or authrole, set:
+// To request subscriber allow-listing by subscriber, authid, or authrole, set:
 //
 //	options["eligible"] = [subscriberID, ...]
 //	options["eligible_authid"] = ["authid", ..]
 //	options["eligible_authrole"] = ["authrole", ..]
 //
-// When connecting to a nexus router, blacklisting and whitelisting can be used
+// When connecting to a nexus router, deny-listing and allow-listing can be used
 // with any attribute assigned to the subscriber session, by setting:
 //
 //	options["exclude_xxx"] = [val1, val2, ..]
@@ -440,7 +450,7 @@ func (c *Client) Unsubscribe(topic string) error {
 // HELLO message.
 //
 // To receive a published event, the subscriber session must not have any
-// values that appear in a blacklist, and must have a value from each
+// values that appear in a deny-list, and must have a value from each
 // whitelist.
 //
 // To request that this publisher's identity is disclosed to subscribers, set:
@@ -664,31 +674,32 @@ func (c *Client) Unregister(procedure string) error {
 // handle progressive results while Call is waiting for a final response.
 type ProgressHandler func(*wamp.Result)
 
-// SendProgressiveData is a callback function for feeding a progressive call data.
-// This function is called by the client to retrieve payload from business side.
-// The returned options indicate whether the data chunk returned by the callback is final,
-// in which case the wamp.OptProgress option is false or unset, or intermediate with more
-// data to come, in which case wamp.OptProgress option must be set to true.
+// SendProgressiveData is a callback function for feeding a progressive call
+// data. This function is called by the client to retrieve payload from
+// business side. The returned options indicate whether the data chunk returned
+// by the callback is final, in which case the wamp.OptProgress option is false
+// or unset, or intermediate with more data to come, in which case
+// wamp.OptProgress option must be set to true.
 type SendProgressiveData func(ctx context.Context) (options wamp.Dict, args wamp.List, kwargs wamp.Dict, err error)
 
 // Call calls the procedure corresponding to the given URI.
 //
 // If an ERROR message is received from the router, the error value returned
 // can be type asserted to RPCError to provide access to the returned ERROR
-// message.  This may be necessary for the client application to process error
+// message. This may be necessary for the client application to process error
 // data from the RPC invocation.
 //
 // # Call Canceling
 //
 // The provided Context allows the caller to cancel a call, or to set a
-// deadline that cancels the call when the deadline expires.  There is no
-// separate Cancel() API to do this.  If the call is canceled before a result
-// is received, then a CANCEL message is sent to the router to cancel the call
-// according to the specified mode.  The client's cancel mode can be set using
+// deadline that cancels the call when the deadline expires. There is no
+// separate Cancel() API to do this. If the call is canceled before a result is
+// received, then a CANCEL message is sent to the router to cancel the call
+// according to the specified mode. The client's cancel mode can be set using
 // SetCallCancelMode().
 //
 // If the context is canceled or times out, then error returned will not be a
-// RPCError.  This allows the caller to distinguish between cancellation
+// RPCError. This allows the caller to distinguish between cancellation
 // initiated by the client (by canceling context), and cancellation initialed
 // elsewhere.
 //
@@ -697,11 +708,11 @@ type SendProgressiveData func(ctx context.Context) (options wamp.Dict, args wamp
 // If a timeout is provided in the options, and the callee supports call
 // timeout, then the timeout value is passed to the callee so that the
 // invocation can be canceled by the callee if the timeout is reached before a
-// response is returned.  This is the behavior implemented by the nexus client
+// response is returned. This is the behavior implemented by the nexus client
 // in the callee role.
 //
 // The nexus router also supports automatic call cancellation by the router,
-// after the timeout specified in the call options.  This way, the router will
+// after the timeout specified in the call options. This way, the router will
 // automatically cancel the call even if the callee does not support it.
 //
 // To request automatic call timeout, by the router and callee, specify a
@@ -722,7 +733,7 @@ type SendProgressiveData func(ctx context.Context) (options wamp.Dict, args wamp
 //
 // A caller indicates its willingness to receive progressive results by
 // supplying a ProgressHandler function to handle progressive results that are
-// returned before the final result.  Call returns when the final result is
+// returned before the final result. Call returns when the final result is
 // returned by the callee. The progress handler is guaranteed not to be called
 // after Call returns.
 //
@@ -742,8 +753,8 @@ func (c *Client) Call(ctx context.Context, procedure string, options wamp.Dict, 
 	}
 
 	// If caller is willing to receive progressive results, create a channel to
-	// receive these on.  Then, start a goroutine to receive progressive
-	// results and call the callback for each.
+	// receive these on. Then, start a goroutine to receive progressive results
+	// and call the callback for each.
 	var progChan chan *wamp.Result
 	var progDone chan struct{}
 	if progcb != nil {
@@ -789,12 +800,11 @@ func (c *Client) Call(ctx context.Context, procedure string, options wamp.Dict, 
 
 	switch msg := msg.(type) {
 	case *wamp.Result:
-		err, abortMsg := c.prepareCallResultMessage(msg)
-
+		abortMsg, err := c.prepareCallResultMessage(msg)
 		if err != nil {
 			if abortMsg != nil {
-				c.sess.Peer.Send() <- abortMsg
-				c.sess.Peer.Close()
+				c.sess.Send() <- abortMsg
+				c.sess.Close()
 			}
 
 			return nil, err
@@ -811,10 +821,10 @@ func (c *Client) Call(ctx context.Context, procedure string, options wamp.Dict, 
 // CallProgressive makes a progressive call to the procedure corresponding to
 // the given URI.
 //
-// This method prepares for making a call, the payload itself (even first one) is received
-// through calling the sendProg SendProgressiveData callback.
-// See the documentation of SendProgressiveData for more details about feeding the data
-// to a progressive call.
+// This method prepares for making a call, the payload itself (even first one)
+// is received through calling the sendProg SendProgressiveData callback. See
+// the documentation of SendProgressiveData for more details about feeding the
+// data to a progressive call.
 //
 // progcb ProgressHandler is the same as in Call method.
 // @see more info in Call method
@@ -936,13 +946,11 @@ func (c *Client) CallProgressive(ctx context.Context, procedure string, sendProg
 
 	switch msg := msg.(type) {
 	case *wamp.Result:
-
-		err, abortMsg := c.prepareCallResultMessage(msg)
-
+		abortMsg, err := c.prepareCallResultMessage(msg)
 		if err != nil {
 			if abortMsg != nil {
-				c.sess.Peer.Send() <- abortMsg
-				c.sess.Peer.Close()
+				c.sess.Send() <- abortMsg
+				c.sess.Close()
 			}
 
 			return nil, err
@@ -1008,11 +1016,12 @@ func (rpce RPCError) Error() string {
 
 // Close causes the client to leave the realm it has joined, and closes the
 // connection to the router.
-func (c *Client) Close() error {
+func (c *Client) Close() {
 	c.sess.Lock()
 	if c.closed {
 		c.sess.Unlock()
-		return ErrAlreadyClosed
+		c.log.Println("client already closed")
+		return
 	}
 	c.closed = true
 	c.sess.Unlock()
@@ -1052,8 +1061,6 @@ func (c *Client) Close() error {
 	// When for any running invocation handlers to finish.
 	c.activeInvHandlers.Wait()
 	c.sess.Close()
-
-	return nil
 }
 
 // RouterGoodbye returns the GOODBYE message received from the router, if one
@@ -1145,11 +1152,9 @@ func joinRealm(peer wamp.Peer, cfg Config) (*wamp.Welcome, error) {
 		details[helloRoles] = clientRoles
 	}
 	if len(cfg.AuthHandlers) > 0 {
-		authmethods := make(wamp.List, len(cfg.AuthHandlers))
-		var i int
+		authmethods := make(wamp.List, 0, len(cfg.AuthHandlers))
 		for am := range cfg.AuthHandlers {
-			authmethods[i] = am
-			i++
+			authmethods = append(authmethods, am)
 		}
 		details[helloAuthmethods] = authmethods
 	}
@@ -1164,8 +1169,7 @@ func joinRealm(peer wamp.Peer, cfg Config) (*wamp.Welcome, error) {
 	if len(cfg.AuthHandlers) > 0 {
 		// See if router sent CHALLENGE in response to client HELLO.
 		if challenge, ok := msg.(*wamp.Challenge); ok {
-			msg, err = handleCRAuth(peer, challenge, cfg.AuthHandlers,
-				cfg.ResponseTimeout)
+			msg, err = handleCRAuth(peer, challenge, cfg.AuthHandlers, cfg.ResponseTimeout)
 			if err != nil {
 				return nil, err
 			}
@@ -1235,8 +1239,7 @@ func wampErrorString(werr *wamp.Error) string {
 	}
 	if len(werr.ArgumentsKw) != 0 {
 		// Append ": k1=v1, k2=v2, ..., kN=vN"
-		kws := make([]string, len(werr.ArgumentsKw))
-		var i int
+		kws := make([]string, 0, len(werr.ArgumentsKw))
 		for k, v := range werr.ArgumentsKw {
 			ks, ok := wamp.AsString(k)
 			if !ok {
@@ -1246,8 +1249,7 @@ func wampErrorString(werr *wamp.Error) string {
 			if !ok {
 				vs = fmt.Sprint(v)
 			}
-			kws[i] = fmt.Sprint(ks, "=", vs)
-			i++
+			kws = append(kws, fmt.Sprint(ks, "=", vs))
 		}
 		e += fmt.Sprintf(": %s", strings.Join(kws, ", "))
 	}
@@ -1257,9 +1259,6 @@ func wampErrorString(werr *wamp.Error) string {
 // unexpectedMsgError creates an error with information about the unexpected
 // message that was received from the router.
 func unexpectedMsgError(msg wamp.Message, expected wamp.MessageType) error {
-	s := fmt.Sprint("received unexpected ", msg.MessageType(),
-		" message when expecting ", expected)
-
 	var details wamp.Dict
 	var reason string
 	switch m := msg.(type) {
@@ -1275,14 +1274,13 @@ func unexpectedMsgError(msg wamp.Message, expected wamp.MessageType) error {
 		extra = append(extra, reason)
 	}
 	if len(details) != 0 {
-		ds := make([]string, len(details))
-		var i int
+		ds := make([]string, 0, len(details))
 		for k, v := range details {
-			ds[i] = fmt.Sprintf("%s=%v", k, v)
-			i++
+			ds = append(ds, fmt.Sprintf("%s=%v", k, v))
 		}
 		extra = append(extra, strings.Join(ds, " "))
 	}
+	s := fmt.Sprint("received unexpected ", msg.MessageType(), " message when expecting ", expected)
 	if len(extra) != 0 {
 		s = fmt.Sprint(s, ": ", strings.Join(extra, " "))
 	}
@@ -1687,21 +1685,19 @@ func (c *Client) runHandleInvocation(msg *wamp.Invocation) {
 				case result = <-resChan:
 					// If the handler returns InvocationCanceled, this means the
 					// handler canceled the call.
-					if result.Err == wamp.ErrCanceled || result.Err == wamp.ErrTimeout {
+					switch result.Err {
+					case wamp.ErrCanceled, wamp.ErrTimeout:
 						c.log.Println("INVOCATION", reqID, "canceled by callee")
 						isProcessing = false
-						break
-					} else if result.Err == wamp.InternalProgressiveOmitResult {
+					case wamp.InternalProgressiveOmitResult:
 						if c.debug {
 							c.log.Println("Call in progress, nothing to YIELD, skipping")
 						}
-						break
-					} else {
+					default:
 						if c.debug {
 							c.log.Println("Received final result")
 						}
 						isProcessing = false
-						break
 					}
 				case <-c.Done():
 					c.log.Print("Client stopping, invocation handler canceled")
@@ -1720,7 +1716,6 @@ func (c *Client) runHandleInvocation(msg *wamp.Invocation) {
 					}
 					c.log.Println("INVOCATION", reqID, "canceled by", reason)
 					isProcessing = false
-					break
 				}
 			}
 
@@ -1764,8 +1759,8 @@ func (c *Client) runHandleInvocation(msg *wamp.Invocation) {
 							wamp.OptMessage: ErrPPTNotSupportedByPeer.Error(),
 						},
 					}
-					c.sess.Peer.Send() <- &abortMsg
-					c.sess.Peer.Close()
+					c.sess.Send() <- &abortMsg
+					c.sess.Close()
 					return
 				}
 
@@ -1907,7 +1902,7 @@ func (c *Client) prepareCallPayloadMessage(msg *wamp.Call, options wamp.Dict, ar
 	return nil
 }
 
-func (c *Client) prepareCallResultMessage(msg *wamp.Result) (error, *wamp.Abort) {
+func (c *Client) prepareCallResultMessage(msg *wamp.Result) (*wamp.Abort, error) {
 	// Check and handle Payload PassThru Mode
 	// @see https://wamp-proto.org/wamp_latest_ietf.html#name-payload-passthru-mode
 	if pptScheme, _ := msg.Details[wamp.OptPPTScheme].(string); pptScheme != "" {
@@ -1921,11 +1916,11 @@ func (c *Client) prepareCallResultMessage(msg *wamp.Result) (error, *wamp.Abort)
 					wamp.OptMessage: ErrPPTNotSupportedByPeer.Error(),
 				},
 			}
-			return fmt.Errorf("cannot process unexpected passthrough result: %w", ErrPPTNotSupportedByRouter), &abortMsg
+			return &abortMsg, fmt.Errorf("cannot process unexpected passthrough result: %w", ErrPPTNotSupportedByRouter)
 		}
 
 		if !isPPTSchemeValid(pptScheme) {
-			return fmt.Errorf("cannot process result with invalid ppt scheme %q: %w", pptScheme, ErrPPTSchemeInvalid), nil
+			return nil, fmt.Errorf("cannot process result with invalid ppt scheme %q: %w", pptScheme, ErrPPTSchemeInvalid)
 		}
 
 		var args wamp.List
@@ -1941,7 +1936,7 @@ func (c *Client) prepareCallResultMessage(msg *wamp.Result) (error, *wamp.Abort)
 		}
 
 		if err != nil {
-			return err, nil
+			return nil, err
 		}
 
 		msg.Arguments = args

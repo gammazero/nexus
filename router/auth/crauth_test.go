@@ -157,7 +157,7 @@ func TestTicketAuth(t *testing.T) {
 
 	// Test with bad ticket.
 	details["authid"] = "jdoe"
-	welcome, err = ticketAuth.Authenticate(sid, details, rp)
+	_, err = ticketAuth.Authenticate(sid, details, rp)
 	require.Error(t, err, "expected error with bad ticket")
 
 	// Supply the previous tracking cookie in transport.auth.  This will
@@ -211,11 +211,11 @@ func TestCRAuth(t *testing.T) {
 
 	// Test with bad ticket.
 	details["authid"] = "jdoe"
-	welcome, err = crAuth.Authenticate(sid, details, rp)
+	_, err = crAuth.Authenticate(sid, details, rp)
 	require.Error(t, err, "expected error with bad key")
 
 	authDict["cookie"] = &http.Cookie{Name: "nexus-wamp-cookie", Value: "a1b2c3"}
 	authDict["nextcookie"] = &http.Cookie{Name: "nexus-wamp-cookie", Value: "xyz123"}
-	welcome, err = crAuth.Authenticate(sid, details, rp)
+	_, err = crAuth.Authenticate(sid, details, rp)
 	require.NoError(t, err, "challenge failed")
 }

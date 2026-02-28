@@ -85,13 +85,17 @@ func main() {
 		logger = log.New(os.Stdout, "", log.LstdFlags)
 	} else {
 		// Open the file to log to and set up logger.
-		f, err := os.OpenFile(conf.LogPath, os.O_RDWR|os.O_CREATE|os.O_APPEND,
-			0644)
+		f, err := os.OpenFile(conf.LogPath, os.O_RDWR|os.O_CREATE|os.O_APPEND, 0600)
 		if err != nil {
 			fmt.Fprintln(os.Stderr, err)
 			os.Exit(1)
 		}
-		defer f.Close()
+		defer func() {
+			if err := f.Close(); err != nil {
+				fmt.Fprintln(os.Stderr, "error closing log file:", err)
+			}
+		}()
+
 		logger = log.New(f, "", log.LstdFlags)
 	}
 
@@ -225,7 +229,9 @@ func main() {
 
 	logger.Print("Shutting down router...")
 	for i := range closers {
-		closers[i].Close()
+		if err := closers[i].Close(); err != nil {
+			logger.Println("error when closing:", err)
+		}
 	}
 	r.Close()
 	close(exitChan)

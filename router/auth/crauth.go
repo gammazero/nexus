@@ -145,7 +145,7 @@ func (cr *CRAuthenticator) makeChallengeStr(session wamp.ID, authid, authrole st
 		"{ \"nonce\":\"%s\", \"authprovider\":\"%s\", \"authid\":\"%s\", \"timestamp\":\"%s\","+
 			" \"authrole\":\"%s\", \"authmethod\":\"%s\", \"session\":%d }",
 		nonce, cr.keyStore.Provider(), authid, wamp.NowISO8601(), authrole,
-		cr.AuthMethod(), int(session)), nil
+		cr.AuthMethod(), session), nil
 }
 
 // nonce generates 16 random bytes as a base64 encoded string.

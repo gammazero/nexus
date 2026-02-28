@@ -6,8 +6,9 @@ import (
 	"testing"
 	"time"
 
-	"github.com/gammazero/nexus/v3/wamp"
 	"github.com/stretchr/testify/require"
+
+	"github.com/gammazero/nexus/v3/wamp"
 )
 
 const (

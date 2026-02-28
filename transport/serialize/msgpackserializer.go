@@ -9,7 +9,7 @@ import (
 	"github.com/gammazero/nexus/v3/wamp"
 )
 
-var mh *codec.MsgpackHandle
+var mh *codec.MsgpackHandle //nolint:gochecknoglobals
 
 func init() {
 	mh = new(codec.MsgpackHandle)
@@ -18,8 +18,11 @@ func init() {
 }
 
 // MsgpackRegisterExtension registers a custom type for special serialization.
-func MsgpackRegisterExtension(t reflect.Type, ext byte, encode func(reflect.Value) ([]byte, error), decode func(reflect.Value, []byte) error) error { //nolint:lll
-	return mh.AddExt(t, ext, encode, decode)
+func MsgpackRegisterExtension(rt reflect.Type, ext byte, encode func(reflect.Value) ([]byte, error), decode func(reflect.Value, []byte) error) error { //nolint:lll
+	if encode == nil || decode == nil {
+		return mh.SetBytesExt(rt, uint64(ext), nil)
+	}
+	return mh.SetBytesExt(rt, uint64(ext), bytesExtWrapper{encode, decode})
 }
 
 // MessagePackSerializer is an implementation of Serializer that handles
@@ -61,4 +64,24 @@ func (s *MessagePackSerializer) SerializeDataItem(item interface{}) ([]byte, err
 // DeserializeDataItem decodes a json payload into an object/structure.
 func (s *MessagePackSerializer) DeserializeDataItem(data []byte, v interface{}) error {
 	return codec.NewDecoderBytes(data, mh).Decode(&v)
+}
+
+type bytesExtWrapper struct {
+	encFn func(reflect.Value) ([]byte, error)
+	decFn func(reflect.Value, []byte) error
+}
+
+func (x bytesExtWrapper) WriteExt(v interface{}) []byte {
+	bs, err := x.encFn(reflect.ValueOf(v))
+	if err != nil {
+		panic(err)
+	}
+	return bs
+}
+
+func (x bytesExtWrapper) ReadExt(v interface{}, bs []byte) {
+	err := x.decFn(reflect.ValueOf(v), bs)
+	if err != nil {
+		panic(err)
+	}
 }

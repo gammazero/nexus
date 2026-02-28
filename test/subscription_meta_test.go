@@ -262,7 +262,7 @@ func TestMetaProcSubGet(t *testing.T) {
 	cancel()
 	ctx, cancel = context.WithTimeout(context.Background(), time.Second)
 	defer cancel()
-	result, err = caller.Call(ctx, metaSubGet, nil, wamp.List{subID}, nil, nil)
+	_, err = caller.Call(ctx, metaSubGet, nil, wamp.List{subID}, nil, nil)
 	require.Error(t, err)
 	var rpcErr client.RPCError
 	require.ErrorAs(t, err, &rpcErr)

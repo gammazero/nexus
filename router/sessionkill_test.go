@@ -1,12 +1,13 @@
-package router
+package router //nolint:testpackage
 
 import (
 	"testing"
 	"testing/synctest"
 	"time"
 
-	"github.com/gammazero/nexus/v3/wamp"
 	"github.com/stretchr/testify/require"
+
+	"github.com/gammazero/nexus/v3/wamp"
 )
 
 func TestSessionKill(t *testing.T) {

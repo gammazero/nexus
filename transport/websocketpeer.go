@@ -10,10 +10,11 @@ import (
 	"sync/atomic"
 	"time"
 
+	"github.com/gorilla/websocket"
+
 	"github.com/gammazero/nexus/v3/stdlog"
 	"github.com/gammazero/nexus/v3/transport/serialize"
 	"github.com/gammazero/nexus/v3/wamp"
-	"github.com/gorilla/websocket"
 )
 
 // DialFunc is an alternate Dial function for the websocket dialer.
@@ -247,17 +248,15 @@ func (w *websocketPeer) Close() {
 	for range w.wr {
 	}
 
-	closeMsg := websocket.FormatCloseMessage(websocket.CloseNormalClosure,
-		"goodbye")
+	closeMsg := websocket.FormatCloseMessage(websocket.CloseNormalClosure, "goodbye")
 
 	// Tell recvHandler to close.
 	close(w.closed)
 
 	// Ignore errors since websocket may have been closed by other side first
 	// in response to a goodbye message.
-	w.conn.WriteControl(websocket.CloseMessage, closeMsg,
-		time.Now().Add(ctrlTimeout))
-	w.conn.Close()
+	_ = w.conn.WriteControl(websocket.CloseMessage, closeMsg, time.Now().Add(ctrlTimeout))
+	_ = w.conn.Close()
 
 	// Wait for the recvHandler goroutine to exit.
 	<-w.recvDone
@@ -350,7 +349,7 @@ recvLoop:
 			// If missed 2 responses, close websocket.
 			if atomic.LoadInt32(&pendingPongs) >= 2 {
 				w.log.Print("peer not responging to pings, closing websocket")
-				w.conn.Close()
+				_ = w.conn.Close()
 				return
 			}
 			// Send websocket ping.
@@ -377,7 +376,7 @@ func (w *websocketPeer) recvHandler() {
 	// When done, close read channel to cause router to remove session if not
 	// already removed.
 	defer close(w.rd)
-	defer w.conn.Close()
+	defer w.conn.Close() //nolint:errcheck
 	for {
 		msgType, b, err := w.conn.ReadMessage()
 		if err != nil {

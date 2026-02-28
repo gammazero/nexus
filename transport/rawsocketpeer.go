@@ -50,17 +50,16 @@ const (
 )
 
 // ConnectRawSocketPeer creates a new rawSocketPeer with the specified config,
-// and connects it, to the WAMP router at the specified address.  If a non-nil
-// tlsConfig is given, then TLS is used to secure the connection.
-// Docuemntation of tls.Config is here:
-// https://golang.org/pkg/crypto/tls/#Config
+// and connects it, to the WAMP router at the specified address. If a non-nil
+// tlsConfig is given, then TLS is used to secure the connection. Docuemntation
+// of tls.Config is here: https://golang.org/pkg/crypto/tls/#Config
 //
-// The provided Context must be non-nil.  If the context expires before the
-// connection is complete, an error is returned.  Once successfully connected,
+// The provided Context must be non-nil. If the context expires before the
+// connection is complete, an error is returned. Once successfully connected,
 // any expiration of the context will not affect the connection.
 //
 // If recvLimit is > 0, then the client will not receive messages with size
-// larger than the nearest power of 2 greater than or equal to recvLimit.  If
+// larger than the nearest power of 2 greater than or equal to recvLimit. If
 // recvLimit is <= 0, then the default of 16M is used.
 func ConnectRawSocketPeer(ctx context.Context, network, addr string, serialization serialize.Serialization, tlsConfig *tls.Config, logger stdlog.StdLog, recvLimit int) (wamp.Peer, error) { //nolint:lll
 	err := checkNetworkType(network)
@@ -104,11 +103,11 @@ func ConnectRawSocketPeer(ctx context.Context, network, addr string, serializati
 		select {
 		case err = <-errChannel:
 			if err != nil {
-				conn.Close()
+				_ = conn.Close()
 				return nil, err
 			}
 		case <-ctx.Done():
-			conn.Close()
+			_ = conn.Close()
 			return nil, ctx.Err()
 		}
 		conn = tlsConn
@@ -116,7 +115,7 @@ func ConnectRawSocketPeer(ctx context.Context, network, addr string, serializati
 
 	peer, err := clientHandshake(conn, logger, protocol, recvLimit)
 	if err != nil {
-		conn.Close()
+		_ = conn.Close()
 		return nil, err
 	}
 	return peer, nil
@@ -125,19 +124,19 @@ func ConnectRawSocketPeer(ctx context.Context, network, addr string, serializati
 // AcceptRawSocket handles the client handshake and returns a rawSocketPeer.
 //
 // If recvLimit is > 0, then the client will not receive messages with size
-// larger than the nearest power of 2 greater than or equal to recvLimit.  If
+// larger than the nearest power of 2 greater than or equal to recvLimit. If
 // recvLimit is <= 0, then the default of 16M is used.
 func AcceptRawSocket(conn net.Conn, logger stdlog.StdLog, recvLimit, outQueueSize int) (wamp.Peer, error) {
 	peer, err := serverHandshake(conn, logger, recvLimit, outQueueSize)
 	if err != nil {
-		conn.Close()
+		_ = conn.Close()
 		return nil, err
 	}
 	return peer, nil
 }
 
 // newRawSocketPeer creates a rawsocket peer from an existing socket
-// connection.  This is used by clients connecting to the WAMP router, and by
+// connection. This is used by clients connecting to the WAMP router, and by
 // servers to handle connections from clients.
 func newRawSocketPeer(conn net.Conn, serializer serialize.Serializer, logger stdlog.StdLog, sendLimit, recvLimit, outQueueSize int) *rawSocketPeer { //nolint:lll
 	rs := &rawSocketPeer{
@@ -150,14 +149,14 @@ func newRawSocketPeer(conn net.Conn, serializer serialize.Serializer, logger std
 		writerDone: make(chan struct{}),
 
 		// The router will read from this channel and immediately dispatch the
-		// message to the broker or dealer.  Therefore this channel can be
+		// message to the broker or dealer. Therefore this channel can be
 		// unbuffered.
 		rd: make(chan wamp.Message),
 
-		// The channel for messages being written to the socket should be
-		// large enough to prevent blocking while waiting for a slow socket
-		// to send messages.  For this reason it may be necessary for these
-		// messages to be put into an outbound queue that can grow.
+		// The channel for messages being written to the socket should be large
+		// enough to prevent blocking while waiting for a slow socket to send
+		// messages. For this reason it may be necessary for these messages to
+		// be put into an outbound queue that can grow.
 		wr: make(chan wamp.Message, outQueueSize),
 
 		log: logger,
@@ -177,13 +176,12 @@ func (rs *rawSocketPeer) Send() chan<- wamp.Message { return rs.wr }
 
 func (rs *rawSocketPeer) IsLocal() bool { return false }
 
-// Close closes the rawsocket peer.  This closes the local send channel, and
-// sends a close control message to the socket to tell the other side to
-// close.
+// Close closes the rawsocket peer. This closes the local send channel, and
+// sends a close control message to the socket to tell the other side to close.
 //
 // *** Do not call Send after calling Close. ***
 func (rs *rawSocketPeer) Close() {
-	// Tell sendHandler to exit, and discard any queued messages.  Do not close
+	// Tell sendHandler to exit, and discard any queued messages. Do not close
 	// wr channel in case there are incoming messages during close.
 	rs.cancelSender()
 	<-rs.writerDone
@@ -196,7 +194,7 @@ func (rs *rawSocketPeer) Close() {
 
 	// Ignore errors since socket may have been closed by other side first in
 	// response to a goodbye message.
-	rs.conn.Close()
+	_ = rs.conn.Close()
 }
 
 // sendHandler pulls messages from the write channel, and pushes them to the
@@ -256,14 +254,14 @@ MsgLoop:
 				// Peer was closed explicitly. sendHandler should have already
 				// been told to exit.
 			default:
-				// Peer received control message to close.  Cause sendHandler
-				// to exit without closing the write channel (in case writes
-				// still happening) and discard any queued messages.
+				// Peer received control message to close. Cause sendHandler to
+				// exit without closing the write channel (in case writes still
+				// happening) and discard any queued messages.
 				rs.cancelSender()
 				<-rs.writerDone
 
 				// Close socket connection.
-				rs.conn.Close()
+				_ = rs.conn.Close()
 			}
 			return
 		}
@@ -271,7 +269,7 @@ MsgLoop:
 		length := bytesToInt(header[1:])
 		if length > rs.recvLimit {
 			rs.log.Print("Received message that exceeded size limit, closing")
-			rs.conn.Close()
+			_ = rs.conn.Close()
 			break
 		}
 
@@ -282,7 +280,7 @@ MsgLoop:
 			_, err = io.ReadFull(rs.conn, buf)
 			if err != nil {
 				rs.log.Println("Error reading message:", err)
-				rs.conn.Close()
+				_ = rs.conn.Close()
 				return
 			}
 			msg, err = rs.serializer.Deserialize(buf)
@@ -295,12 +293,12 @@ MsgLoop:
 			header[0] = 0x02
 			if _, err = rs.conn.Write(header[:]); err != nil {
 				rs.log.Println("Error writing header responding to PING:", err)
-				rs.conn.Close()
+				_ = rs.conn.Close()
 				return
 			}
 			if _, err = io.CopyN(rs.conn, rs.conn, int64(length)); err != nil {
 				rs.log.Println("Error responding to PING:", err)
-				rs.conn.Close()
+				_ = rs.conn.Close()
 				return
 			}
 			continue MsgLoop
@@ -308,7 +306,7 @@ MsgLoop:
 			_, err = io.CopyN(io.Discard, rs.conn, int64(length))
 			if err != nil {
 				rs.log.Println("Error reading PONG:", err)
-				rs.conn.Close()
+				_ = rs.conn.Close()
 				return
 			}
 			continue MsgLoop
@@ -405,7 +403,7 @@ func serverHandshake(conn net.Conn, logger stdlog.StdLog, recvLimit, outQueueSiz
 		return nil, errors.New("not a rawsocket handshake")
 	}
 	if buf[2] != 0 || buf[3] != 0 {
-		conn.Write([]byte{magic, byte(0x3 << 4), 0, 0})
+		_, _ = conn.Write([]byte{magic, byte(0x3 << 4), 0, 0})
 		return nil, errors.New("use of reserved bits (unsupported feature)")
 	}
 
@@ -421,7 +419,7 @@ func serverHandshake(conn net.Conn, logger stdlog.StdLog, recvLimit, outQueueSiz
 	case rawsocketCBOR:
 		serializer = &serialize.CBORSerializer{}
 	default:
-		conn.Write([]byte{magic, byte(0x1 << 4), 0, 0})
+		_, _ = conn.Write([]byte{magic, byte(0x1 << 4), 0, 0})
 		return nil, errors.New("serializer unsupported")
 	}
 
@@ -438,7 +436,7 @@ func serverHandshake(conn net.Conn, logger stdlog.StdLog, recvLimit, outQueueSiz
 }
 
 // fitRecvLimit finds the power of 2 that is greater than or equal to the
-// specified receive limit.  This value is returned as the RawSocket transport
+// specified receive limit. This value is returned as the RawSocket transport
 // byte representation of this value.
 func fitRecvLimit(recvLimit int) byte {
 	if recvLimit > 0 {
@@ -467,7 +465,7 @@ func bytesToInt(b []byte) int {
 		n |= uint(b[i]) << shift
 		shift += 8
 	}
-	return int(n)
+	return int(n) //nolint:gosec // if uint bigger than in, let int be negative.
 }
 
 // byteToLength returns the value corresponding to a RawSocket length byte.

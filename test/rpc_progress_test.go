@@ -6,9 +6,10 @@ import (
 	"testing"
 	"time"
 
+	"github.com/stretchr/testify/require"
+
 	"github.com/gammazero/nexus/v3/client"
 	"github.com/gammazero/nexus/v3/wamp"
-	"github.com/stretchr/testify/require"
 )
 
 const (
@@ -181,8 +182,7 @@ func TestRPCProgressiveCallInterrupt(t *testing.T) {
 	// Wait for progressive results to start being returned, then kill caller.
 	<-callerKiller
 
-	err = caller.Close()
-	require.NoError(t, err)
+	caller.Close()
 
 	err = <-recvProgErr
 	require.ErrorIs(t, err, client.ErrNotConn, "unexpected error from CallProgress")

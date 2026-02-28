@@ -42,8 +42,8 @@ func VerifySignature(sig, chal string, key []byte) bool {
 
 // Default parameters for PBKDF2.  These are used if not present in CHALLENGE.
 const (
-	defaultIters  = 1000
-	defaultKeyLen = 32
+	DefaultIters  = 1000
+	DefaultKeyLen = 32
 )
 
 // RespondChallenge is used by clients to sign the challenge string contained
@@ -90,10 +90,10 @@ func RespondChallenge(secret string, c *wamp.Challenge, h func() hash.Hash) stri
 	keylen, _ := wamp.AsInt64(c.Extra["keylen"])
 
 	if iters == 0 {
-		iters = defaultIters
+		iters = DefaultIters
 	}
 	if keylen == 0 {
-		keylen = defaultKeyLen
+		keylen = DefaultKeyLen
 	}
 	if h == nil {
 		h = sha256.New

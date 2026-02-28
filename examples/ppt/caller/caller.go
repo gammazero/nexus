@@ -2,13 +2,12 @@ package main
 
 import (
 	"context"
-	"github.com/gammazero/nexus/v3/client"
-	"github.com/gammazero/nexus/v3/transport/serialize"
 	"log"
 	"math/rand"
 	"os"
-	"time"
 
+	"github.com/gammazero/nexus/v3/client"
+	"github.com/gammazero/nexus/v3/transport/serialize"
 	"github.com/gammazero/nexus/v3/wamp"
 )
 
@@ -20,7 +19,6 @@ const (
 )
 
 func main() {
-	rand.Seed(time.Now().UnixNano())
 	logger := log.New(os.Stderr, "CALLER> ", 0)
 
 	var serialization serialize.Serialization
@@ -53,8 +51,8 @@ func main() {
 
 	logger.Println("Connected to", routerUrl, "using", serializationStr, "serialization")
 
-	// Test calling the "sum" procedure with args 1..10.  Requires
-	// external rpc client to be running.
+	// Test calling the "sum" procedure with args 1..10. Requires external rpc
+	// client to be running.
 	ctx := context.Background()
 	logger.Println("Calling remote procedure to sum numbers with x_custom ppt scheme and cbor payload serializer")
 	callArgs := wamp.List{rand.Intn(100), rand.Intn(100)}

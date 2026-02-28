@@ -10,7 +10,7 @@ import (
 	"github.com/gammazero/nexus/v3/wamp"
 )
 
-var jh *codec.JsonHandle
+var jh *codec.JsonHandle //nolint:gochecknoglobals
 
 func init() {
 	jh = &codec.JsonHandle{}
@@ -41,10 +41,11 @@ func (s *JSONSerializer) Deserialize(data []byte) (wamp.Message, error) {
 
 	// json deserializer gives us an uint64 instead of an int64, whyever it
 	// doesn't matter here, because valid values are only within an 8bit range.
-	typ, ok := v[0].(uint64)
+	utyp, ok := v[0].(uint64)
 	if !ok {
 		return nil, errors.New("unsupported message format")
 	}
+	typ := int(utyp) //nolint:gosec
 	return listToMsg(wamp.MessageType(typ), v)
 }
 

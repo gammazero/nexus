@@ -1,4 +1,4 @@
-package router
+package router //nolint:testpackage
 
 import (
 	"fmt"
@@ -6,9 +6,10 @@ import (
 	"testing/synctest"
 	"time"
 
+	"github.com/stretchr/testify/require"
+
 	"github.com/gammazero/nexus/v3/transport"
 	"github.com/gammazero/nexus/v3/wamp"
-	"github.com/stretchr/testify/require"
 )
 
 func newTestDealer(t *testing.T) (*dealer, wamp.Peer) {

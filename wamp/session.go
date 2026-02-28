@@ -24,10 +24,8 @@ type Session struct {
 	goodbye *Goodbye
 }
 
-var (
-	// NoGoodbye indicates that no Goodbye message was sent out
-	NoGoodbye = &Goodbye{}
-)
+// NoGoodbye indicates that no Goodbye message was sent out
+var NoGoodbye = &Goodbye{} //nolint:gochecknoglobals
 
 // NewSession creates a new session.  The greetDetails is the details from the
 // HELLO or WELCOME message, from which roles and features are extracted.

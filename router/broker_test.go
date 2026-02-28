@@ -1,12 +1,13 @@
-package router
+package router //nolint:testpackage
 
 import (
 	"testing"
 	"testing/synctest"
 	"time"
 
-	"github.com/gammazero/nexus/v3/wamp"
 	"github.com/stretchr/testify/require"
+
+	"github.com/gammazero/nexus/v3/wamp"
 )
 
 type testPeer struct {
@@ -670,7 +671,7 @@ func TestEventHistory(t *testing.T) {
 	topics := []wamp.URI{"nexus.test.exact.topic", "nexus.test.prefix.catch", "nexus.test.wildcard.topic", "nexus.test.wildcard.miss"}
 	reqId := 25501
 
-	// Let's publish all payloads to all topics to have a data to check
+	// Publish all payloads to all topics to have a data to check.
 	for i := 1; i <= 5; i++ {
 		for _, topic := range topics {
 
@@ -685,9 +686,8 @@ func TestEventHistory(t *testing.T) {
 		}
 	}
 
-	// and let's publish some events that should not be saved in event store
+	// Publish some events that should not be saved in event store.
 	for _, topic := range topics {
-
 		publication := wamp.Publish{
 			Request:     wamp.ID(reqId),
 			Topic:       topic,
@@ -699,7 +699,7 @@ func TestEventHistory(t *testing.T) {
 		reqId++
 	}
 
-	// Now let's examine what is stored in the Event Store
+	// Examine what is stored in the Event Store.
 	topic := wamp.URI("nexus.test.exact.topic")
 	subscription := broker.topicSubscription[topic]
 	subEvents := broker.eventHistoryStore[subscription].entries
@@ -746,7 +746,7 @@ func TestEventHistory(t *testing.T) {
 	require.Equalf(t, 20, subEvents.Len(), "Store for topic %s should hold 20 records", topic)
 	require.Falsef(t, broker.eventHistoryStore[subscription].atLimit(), "Limit for the store for topic %s should not be reached", topic)
 
-	//Now let's test Event History MetaRPCs
+	// Rest Event History MetaRPCs.
 	topic = wamp.URI("nexus.test.exact.topic")
 	subId := broker.topicSubscription[topic].id
 	inv := wamp.Invocation{

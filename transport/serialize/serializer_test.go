@@ -1,4 +1,4 @@
-package serialize
+package serialize_test
 
 import (
 	"encoding/base64"
@@ -9,10 +9,11 @@ import (
 
 	"github.com/stretchr/testify/require"
 
+	"github.com/gammazero/nexus/v3/transport/serialize"
 	"github.com/gammazero/nexus/v3/wamp"
 )
 
-var dataItem = []map[string]interface{}{{
+var dataItem = []map[string]any{{
 	"Arguments":   wamp.List{1, "2", true},
 	"ArgumentsKw": wamp.Dict{"prop1": 1, "prop2": "2", "prop3": true},
 }}
@@ -44,13 +45,13 @@ func detailRolesFeatures() wamp.Dict {
 	}
 }
 
-func compareDeserializedSerializedDataItem(t *testing.T, item interface{}) {
-	resA, ok := item.([]interface{})
+func compareDeserializedSerializedDataItem(t *testing.T, item any) {
+	resA, ok := item.([]any)
 	require.True(t, ok, "deserialization to array error")
-	resT, ok := resA[0].(map[string]interface{})
+	resT, ok := resA[0].(map[string]any)
 	require.True(t, ok, "deserialization to hash-table error")
 
-	arr, ok := resT["Arguments"].([]interface{})
+	arr, ok := resT["Arguments"].([]any)
 	require.True(t, ok, "Arguments property is missed")
 
 	switch arr[0].(type) {
@@ -68,7 +69,7 @@ func compareDeserializedSerializedDataItem(t *testing.T, item interface{}) {
 	b, _ := wamp.AsBool(arr[2])
 	require.True(t, b, "Arguments[2] expected true value")
 
-	mapV, ok := resT["ArgumentsKw"].(map[string]interface{})
+	mapV, ok := resT["ArgumentsKw"].(map[string]any)
 	require.True(t, ok, "ArgumentsKw property is missed")
 
 	val, ok := mapV["prop1"]
@@ -99,7 +100,7 @@ func TestJSONSerialize(t *testing.T) {
 	details := detailRolesFeatures()
 	hello := &wamp.Hello{Realm: "nexus.realm", Details: details}
 
-	s := &JSONSerializer{}
+	s := &serialize.JSONSerializer{}
 	b, err := s.Serialize(hello)
 	require.NoError(t, err)
 	require.NotZero(t, len(b), "no serialized data")
@@ -116,7 +117,7 @@ func TestJSONSerialize(t *testing.T) {
 }
 
 func TestJSONDeserialize(t *testing.T) {
-	s := &JSONSerializer{}
+	s := &serialize.JSONSerializer{}
 
 	data := `[1,"nexus.realm",{}]`
 	expect := &wamp.Hello{Realm: "nexus.realm", Details: wamp.Dict{}}
@@ -131,12 +132,12 @@ func TestJSONDeserialize(t *testing.T) {
 }
 
 func TestJSONSerializeDataItem(t *testing.T) {
-	s := &JSONSerializer{}
+	s := &serialize.JSONSerializer{}
 	b, err := s.SerializeDataItem(dataItem)
 	require.NoError(t, err)
 	require.NotZero(t, len(b), "no serialized data")
 
-	var res interface{}
+	var res any
 	err = s.DeserializeDataItem(b, &res)
 	require.NoError(t, err)
 
@@ -144,10 +145,10 @@ func TestJSONSerializeDataItem(t *testing.T) {
 }
 
 func TestJSONDeserializeDataItem(t *testing.T) {
-	s := &JSONSerializer{}
+	s := &serialize.JSONSerializer{}
 
 	data := `[{"Arguments":[1,"2",true],"ArgumentsKw":{"prop1":1,"prop2":"2","prop3":true}}]`
-	var msg interface{}
+	var msg any
 	err := s.DeserializeDataItem([]byte(data), &msg)
 	require.NoError(t, err)
 	compareDeserializedSerializedDataItem(t, msg)
@@ -163,10 +164,10 @@ func TestJSONDeserializeDataItem(t *testing.T) {
 		ArgumentsKw wamp.Dict
 	}{
 		{
-			Arguments: []interface{}{
+			Arguments: []any{
 				uint64(1), "2", true,
 			},
-			ArgumentsKw: map[string]interface{}{
+			ArgumentsKw: map[string]any{
 				"prop1": uint64(1), "prop2": "2", "prop3": true,
 			},
 		},
@@ -178,7 +179,7 @@ func TestCBORSerialize(t *testing.T) {
 	details := detailRolesFeatures()
 	hello := &wamp.Hello{Realm: "nexus.realm", Details: details}
 
-	s := &CBORSerializer{}
+	s := &serialize.CBORSerializer{}
 	b, err := s.Serialize(hello)
 	require.NoError(t, err)
 	require.NotZero(t, len(b), "no serialized data")
@@ -195,7 +196,7 @@ func TestCBORSerialize(t *testing.T) {
 }
 
 func TestCBORDeserialize(t *testing.T) {
-	s := &CBORSerializer{}
+	s := &serialize.CBORSerializer{}
 
 	// this is the CBOR representation of the message above
 	data := []byte{
@@ -215,19 +216,19 @@ func TestCBORDeserialize(t *testing.T) {
 }
 
 func TestCBORSerializeDataItem(t *testing.T) {
-	s := &CBORSerializer{}
+	s := &serialize.CBORSerializer{}
 	b, err := s.SerializeDataItem(dataItem)
 	require.NoError(t, err)
 	require.NotZero(t, len(b), "no serialized data")
 
-	var res interface{}
+	var res any
 	err = s.DeserializeDataItem(b, &res)
 	require.NoError(t, err)
 	compareDeserializedSerializedDataItem(t, res)
 }
 
 func TestCBORDeserializeDataItem(t *testing.T) {
-	s := &CBORSerializer{}
+	s := &serialize.CBORSerializer{}
 
 	// this is the CBOR representation of the message above
 	data := []byte{
@@ -237,7 +238,7 @@ func TestCBORDeserializeDataItem(t *testing.T) {
 		0x6F, 0x70, 0x31, 0x01, 0x65, 0x70, 0x72, 0x6F, 0x70, 0x32, 0x61,
 		0x32, 0x65, 0x70, 0x72, 0x6F, 0x70, 0x33, 0xf5,
 	}
-	var msg interface{}
+	var msg any
 	err := s.DeserializeDataItem(data, &msg)
 	require.NoError(t, err)
 	compareDeserializedSerializedDataItem(t, msg)
@@ -253,10 +254,10 @@ func TestCBORDeserializeDataItem(t *testing.T) {
 		ArgumentsKw wamp.Dict
 	}{
 		{
-			Arguments: []interface{}{
+			Arguments: []any{
 				uint64(1), "2", true,
 			},
-			ArgumentsKw: map[string]interface{}{
+			ArgumentsKw: map[string]any{
 				"prop1": uint64(1), "prop2": "2", "prop3": true,
 			},
 		},
@@ -267,7 +268,7 @@ func TestCBORDeserializeDataItem(t *testing.T) {
 func TestMessagePackSerialize(t *testing.T) {
 	hello := &wamp.Hello{Realm: "nexus.realm", Details: detailRolesFeatures()}
 
-	s := &MessagePackSerializer{}
+	s := &serialize.MessagePackSerializer{}
 	b, err := s.Serialize(hello)
 	require.NoError(t, err)
 	require.NotZero(t, len(b), "no serialized data")
@@ -283,7 +284,7 @@ func TestMessagePackSerialize(t *testing.T) {
 }
 
 func TestMessagePackDeserialize(t *testing.T) {
-	s := &MessagePackSerializer{}
+	s := &serialize.MessagePackSerializer{}
 
 	data := []byte{0x93, 0x01, 0xab, 0x6e, 0x65, 0x78, 0x75, 0x73, 0x2e, 0x72, 0x65, 0x61, 0x6c, 0x6d, 0x80}
 	expect := &wamp.Hello{Realm: "nexus.realm", Details: wamp.Dict{}}
@@ -298,18 +299,18 @@ func TestMessagePackDeserialize(t *testing.T) {
 }
 
 func TestMessagePackSerializeDataItem(t *testing.T) {
-	s := &MessagePackSerializer{}
+	s := &serialize.MessagePackSerializer{}
 	b, err := s.SerializeDataItem(dataItem)
 	require.NoError(t, err)
 	require.NotZero(t, len(b), "no serialized data")
-	var res interface{}
+	var res any
 	err = s.DeserializeDataItem(b, &res)
 	require.NoError(t, err)
 	compareDeserializedSerializedDataItem(t, res)
 }
 
 func TestMessagePackDeserializeDataItem(t *testing.T) {
-	s := &MessagePackSerializer{}
+	s := &serialize.MessagePackSerializer{}
 
 	data := []byte{
 		0x91, 0x82, 0xA9, 0x41, 0x72, 0x67, 0x75, 0x6D, 0x65, 0x6E,
@@ -319,7 +320,7 @@ func TestMessagePackDeserializeDataItem(t *testing.T) {
 		0x6F, 0x70, 0x32, 0xA1, 0x32, 0xA5, 0x70, 0x72, 0x6F, 0x70,
 		0x33, 0xC3,
 	}
-	var msg interface{}
+	var msg any
 	err := s.DeserializeDataItem(data, &msg)
 	require.NoError(t, err)
 	compareDeserializedSerializedDataItem(t, msg)
@@ -335,10 +336,10 @@ func TestMessagePackDeserializeDataItem(t *testing.T) {
 		ArgumentsKw wamp.Dict
 	}{
 		{
-			Arguments: []interface{}{
+			Arguments: []any{
 				int64(1), "2", true,
 			},
-			ArgumentsKw: map[string]interface{}{
+			ArgumentsKw: map[string]any{
 				"prop1": int64(1), "prop2": "2", "prop3": true,
 			},
 		},
@@ -350,13 +351,13 @@ func TestBinaryDataJSON(t *testing.T) {
 	orig := []byte("hellowamp")
 
 	// Calls the customer encoder: BinaryData.MarshalJSON()
-	bin, err := json.Marshal(BinaryData(orig))
+	bin, err := json.Marshal(serialize.BinaryData(orig))
 	require.NoError(t, err)
 
 	expect := fmt.Sprintf(`"\u0000%s"`, base64.StdEncoding.EncodeToString(orig))
 	require.Equal(t, []byte(expect), bin)
 
-	var b BinaryData
+	var b serialize.BinaryData
 	// Calls the customer decoder: BinaryData.UnmarshalJSON()
 	err = json.Unmarshal(bin, &b)
 	require.NoError(t, err)
@@ -373,18 +374,18 @@ func TestMsgpackExtensions(t *testing.T) {
 		return nil
 	}
 
-	err := MsgpackRegisterExtension(reflect.TypeOf(BinaryData{}), 42, encode, decode)
+	err := serialize.MsgpackRegisterExtension(reflect.TypeFor[serialize.BinaryData](), 42, encode, decode)
 	require.NoError(t, err)
 
 	orig := []byte("hellowamp")
 	msg := &wamp.Welcome{
 		ID: wamp.ID(123),
 		Details: wamp.Dict{
-			"extra": BinaryData(orig),
+			"extra": serialize.BinaryData(orig),
 		},
 	}
 
-	ser := MessagePackSerializer{}
+	ser := serialize.MessagePackSerializer{}
 	// Calls the customer encoder: BinaryData.MarshalJSON()
 	bin, err := ser.Serialize(msg)
 	require.NoError(t, err)
@@ -399,7 +400,7 @@ func TestMsgpackExtensions(t *testing.T) {
 	require.True(t, ok, "msg.Details[extra] missing")
 	v2, ok := m1.Details["extra"]
 	require.True(t, ok, "m1.Details[extra] missing")
-	vs1 := string(v1.(BinaryData))
+	vs1 := string(v1.(serialize.BinaryData))
 	vs2, _ := wamp.AsString(v2)
 	require.Equal(t, vs2, vs1)
 
@@ -411,30 +412,8 @@ func TestMsgpackExtensions(t *testing.T) {
 	//}
 }
 
-func TestAssignSlice(t *testing.T) {
-	const msgType = wamp.PUBLISH
-
-	pubArgs := []string{"hello", "nexus", "wamp", "router"}
-
-	// Deserializing a slice into a message.
-	elems := wamp.List{msgType, 123, wamp.Dict{},
-		"some.valid.topic", pubArgs}
-	msg, err := listToMsg(msgType, elems)
-	require.NoError(t, err)
-
-	// Check that message is a Publish message.
-	pubMsg, ok := msg.(*wamp.Publish)
-	require.True(t, ok, "got incorrect message type")
-
-	// Check arguments.
-	require.Equal(t, len(pubArgs), len(pubMsg.Arguments), "wrong number of message arguments")
-	for i := 0; i < len(pubArgs); i++ {
-		require.Equalf(t, pubArgs[i], pubMsg.Arguments[i], "argument %d has wrong value", i)
-	}
-}
-
 func TestMsgpackDeserializeFail(t *testing.T) {
-	ser := MessagePackSerializer{}
+	ser := serialize.MessagePackSerializer{}
 	_, err := ser.Deserialize(nil)
 	require.Error(t, err)
 	_, err = ser.Deserialize([]byte{144}) // pass in a serialized empty array
@@ -443,45 +422,9 @@ func TestMsgpackDeserializeFail(t *testing.T) {
 	require.Error(t, err)
 }
 
-func TestMsgToList(t *testing.T) {
-	testMsgToList := func(args wamp.List, kwArgs wamp.Dict, omit int, message string) error {
-		msg := &wamp.Event{Subscription: 0, Publication: 0, Details: nil, Arguments: args, ArgumentsKw: kwArgs}
-		numField := reflect.ValueOf(msg).Elem().NumField() + 1 // +1 for type
-		expect := numField - omit
-		list := msgToList(msg)
-		if len(list) != expect {
-			return fmt.Errorf(
-				"Wrong number of fields: got %d, expected %d, for %s",
-				len(list), expect, message)
-		}
-		return nil
-	}
-
-	err := testMsgToList(nil, nil, 2, "nil args, nil kwArgs")
-	require.NoError(t, err)
-
-	err = testMsgToList(wamp.List{}, make(wamp.Dict), 2, "empty args, empty kwArgs")
-	require.NoError(t, err)
-
-	err = testMsgToList(wamp.List{1}, nil, 1, "non-empty args, nil kwArgs")
-	require.NoError(t, err)
-
-	err = testMsgToList(nil, wamp.Dict{"a": nil}, 0, "nil args, non-empty kwArgs")
-	require.NoError(t, err)
-
-	err = testMsgToList(wamp.List{1}, make(wamp.Dict), 1, "non-empty args, empty kwArgs")
-	require.NoError(t, err)
-
-	err = testMsgToList(wamp.List{}, wamp.Dict{"a": nil}, 0, "empty args, non-empty kwArgs")
-	require.NoError(t, err)
-
-	err = testMsgToList(wamp.List{1}, wamp.Dict{"a": nil}, 0, "test message one")
-	require.NoError(t, err)
-}
-
 func TestMsgPackToJSON(t *testing.T) {
 	arg := "this is a test"
-	arg2 := map[string]interface{}{
+	arg2 := map[string]any{
 		"hello": "world",
 	}
 	pub := &wamp.Publish{
@@ -489,7 +432,7 @@ func TestMsgPackToJSON(t *testing.T) {
 		Topic:     "msgpack.to.json",
 		Arguments: wamp.List{arg, arg2},
 	}
-	ms := &MessagePackSerializer{}
+	ms := &serialize.MessagePackSerializer{}
 	b, err := ms.Serialize(pub)
 	require.NoError(t, err)
 	require.NotZero(t, len(b), "no serialized data")
@@ -503,7 +446,7 @@ func TestMsgPackToJSON(t *testing.T) {
 		Arguments:    p2.Arguments,
 	}
 
-	js := &JSONSerializer{}
+	js := &serialize.JSONSerializer{}
 	b, err = js.Serialize(event)
 	require.NoError(t, err)
 	require.NotZero(t, len(b), "no serialized data")
@@ -517,7 +460,7 @@ func TestMsgPackToJSON(t *testing.T) {
 	require.Equal(t, 2, len(e2.Arguments), "JSON deserialization error: wrong number of arguments")
 	a, _ := wamp.AsString(e2.Arguments[0])
 	require.Equal(t, arg, a, "JSON deserialize error: did not get argument")
-	arr, ok := e2.Arguments[1].(map[string]interface{})
+	arr, ok := e2.Arguments[1].(map[string]any)
 	require.True(t, ok)
 	require.Equal(t, arg2, arr)
 }
@@ -532,7 +475,7 @@ func TestMessagePackBytesString(t *testing.T) {
 		Arguments:   wamp.List{msgBytes, msgString},
 		ArgumentsKw: wamp.Dict{},
 	}
-	s := &MessagePackSerializer{}
+	s := &serialize.MessagePackSerializer{}
 	b, err := s.Serialize(call)
 	require.NoError(t, err)
 	require.NotZero(t, len(b), "no serialized data")
@@ -564,19 +507,19 @@ func BenchmarkSerialize(b *testing.B) {
 	}
 
 	b.Run("JSON", func(b *testing.B) {
-		benchmarkSerialize(b, &JSONSerializer{}, call)
+		benchmarkSerialize(b, &serialize.JSONSerializer{}, call)
 	})
 
 	b.Run("MSGPACK", func(b *testing.B) {
-		benchmarkSerialize(b, &MessagePackSerializer{}, call)
+		benchmarkSerialize(b, &serialize.MessagePackSerializer{}, call)
 	})
 
 	b.Run("CBOR", func(b *testing.B) {
-		benchmarkSerialize(b, &CBORSerializer{}, call)
+		benchmarkSerialize(b, &serialize.CBORSerializer{}, call)
 	})
 }
 
-func benchmarkSerialize(b *testing.B, s Serializer, msg wamp.Message) {
+func benchmarkSerialize(b *testing.B, s serialize.Serializer, msg wamp.Message) {
 	b.ResetTimer()
 	for i := 0; i < b.N; i++ {
 		data, err := s.Serialize(msg)

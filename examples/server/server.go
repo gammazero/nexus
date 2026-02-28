@@ -89,7 +89,7 @@ func main() {
 	if err != nil {
 		log.Fatal(err)
 	}
-	defer wsCloser.Close()
+	defer wsCloser.Close() //nolint:errcheck
 	log.Printf("Websocket server listening on ws://%s/", wsAddr)
 
 	// Run TCP rawsocket server.
@@ -98,16 +98,19 @@ func main() {
 	if err != nil {
 		log.Fatal(err)
 	}
-	defer tcpCloser.Close()
+	defer tcpCloser.Close() //nolint:errcheck
 	log.Printf("RawSocket TCP server listening on tcp://%s/", tcpAddr)
 
 	// Run unix rawsocket server.
-	os.Remove(unixAddr)
+	err = os.Remove(unixAddr)
+	if err != nil {
+		log.Fatal(err)
+	}
 	unixCloser, err := rss.ListenAndServe("unix", unixAddr)
 	if err != nil {
 		log.Fatal(err)
 	}
-	defer unixCloser.Close()
+	defer unixCloser.Close() //nolint:errcheck
 	log.Printf("RawSocket unix server listening on unix://%s", unixAddr)
 
 	// ---- Start TLS servers ----
@@ -127,7 +130,7 @@ func main() {
 	if err != nil {
 		log.Fatal(err)
 	}
-	defer wsTlsCloser.Close()
+	defer wsTlsCloser.Close() //nolint:errcheck
 	log.Printf("TLS Websocket server listening on wss://%s/", wsAddrTLS)
 
 	// Run TLS TCP rawsocket server.
@@ -136,7 +139,7 @@ func main() {
 	if err != nil {
 		log.Fatal(err)
 	}
-	defer tcpTlsCloser.Close()
+	defer tcpTlsCloser.Close() //nolint:errcheck
 	log.Printf("TLS RawSocket TCP server listening on tcps://%s/", tcpAddrTLS)
 
 	// Wait for SIGINT (CTRL-c), then close servers and exit.
@@ -166,7 +169,7 @@ func createLocalCallee(nxr router.Router, realm string) (*client.Client, error) 
 	// Register procedure "time"
 	const timeProc = "worldtime"
 	if err = callee.Register(timeProc, worldTime, nil); err != nil {
-		return nil, fmt.Errorf("Failed to register %q: %s", timeProc, err)
+		return nil, fmt.Errorf("failed to register %q: %w", timeProc, err)
 	}
 	log.Printf("Registered procedure %q with router", timeProc)
 

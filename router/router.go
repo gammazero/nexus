@@ -21,7 +21,7 @@ import (
 
 const helloTimeout = 5 * time.Second
 
-var Version string
+var Version string //nolint:gochecknoglobals
 
 // A Router handles new Peers and routes requests to the requested Realm.
 type Router interface {

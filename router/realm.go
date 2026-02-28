@@ -17,6 +17,11 @@ import (
 // Special ID for meta session.
 const metaID = wamp.ID(1)
 
+const (
+	destroyedScope = "destroyed"
+	detachedScope  = "detached"
+)
+
 type testament struct {
 	topic   wamp.URI
 	args    wamp.List
@@ -76,7 +81,7 @@ type realm struct {
 }
 
 var (
-	shutdownGoodbye = &wamp.Goodbye{
+	shutdownGoodbye = &wamp.Goodbye{ //nolint:gochecknoglobals
 		Reason:  wamp.ErrSystemShutdown,
 		Details: wamp.Dict{},
 	}
@@ -274,7 +279,12 @@ func (r *realm) createMetaSession() {
 	r.metaSess = wamp.NewSession(rtr, metaID, wamp.Dict{"authrole": "trusted"}, nil)
 
 	// Run the handler for messages from the meta session.
-	go r.handleInboundMessages(r.metaSess)
+	go func() {
+		_, _, err := r.handleInboundMessages(r.metaSess)
+		if err != nil {
+			r.log.Println("meta session handler shuld never return error, got: %s", err)
+		}
+	}()
 	if r.debug {
 		r.log.Println("Started meta-session", r.metaSess)
 	}
@@ -526,7 +536,7 @@ func (r *realm) handleInboundMessages(sess *wamp.Session) (bool, bool, error) {
 func (r *realm) authzMessage(sess *wamp.Session, msg wamp.Message) bool {
 	// If the client is local, then do not check authorization, unless
 	// requested in config.
-	if sess.Peer.IsLocal() && !r.localAuthz {
+	if sess.IsLocal() && !r.localAuthz {
 		return true
 	}
 
@@ -600,7 +610,7 @@ func (r *realm) authClient(sid wamp.ID, client wamp.Peer, details wamp.Dict) (*w
 		// Create welcome details for local client.
 		authid, _ := wamp.AsString(details["authid"])
 		if authid == "" {
-			authid = strconv.FormatInt(int64(wamp.GlobalID()), 16)
+			authid = strconv.FormatUint(uint64(wamp.GlobalID()), 16)
 		}
 		details = wamp.Dict{
 			"authid":       authid,
@@ -1065,9 +1075,9 @@ func (r *realm) testamentAdd(msg *wamp.Invocation) wamp.Message {
 	}
 	scope, ok := wamp.AsString(msg.ArgumentsKw["scope"])
 	if !ok || scope == "" {
-		scope = "destroyed"
+		scope = destroyedScope
 	}
-	if scope != "destroyed" && scope != "detached" {
+	if scope != destroyedScope && scope != detachedScope {
 		return makeError(msg.Request, wamp.ErrInvalidArgument)
 	}
 	if r.debug {
@@ -1084,7 +1094,7 @@ func (r *realm) testamentAdd(msg *wamp.Invocation) wamp.Message {
 			options: options,
 			topic:   topic,
 		}
-		if scope == "destroyed" {
+		if scope == destroyedScope {
 			testaments.destroyed = append(testaments.destroyed, t)
 		} else {
 			testaments.detached = append(testaments.detached, t)
@@ -1103,9 +1113,9 @@ func (r *realm) testamentFlush(msg *wamp.Invocation) wamp.Message {
 	}
 	scope, ok := wamp.AsString(msg.ArgumentsKw["scope"])
 	if !ok || scope == "" {
-		scope = "destroyed"
+		scope = destroyedScope
 	}
-	if scope != "destroyed" && scope != "detached" {
+	if scope != destroyedScope && scope != detachedScope {
 		return makeError(msg.Request, wamp.ErrInvalidArgument)
 	}
 	if r.debug {
@@ -1117,7 +1127,7 @@ func (r *realm) testamentFlush(msg *wamp.Invocation) wamp.Message {
 		if !ok {
 			return
 		}
-		if scope == "destroyed" {
+		if scope == destroyedScope {
 			testaments.destroyed = nil
 		} else {
 			testaments.detached = nil
@@ -1138,8 +1148,7 @@ func (r *realm) cleanSessionDetails(details wamp.Dict) wamp.Dict {
 	var clean wamp.Dict
 	// If in strict mode, only include allowed values.
 	if r.metaStrict {
-		stdItems := []string{"session", "authid", "authrole", "authmethod",
-			"authprovider", "transport"}
+		stdItems := []string{"session", "authid", "authrole", "authmethod", "authprovider", "transport"}
 
 		clean = make(wamp.Dict, len(stdItems)+len(r.metaIncDetails))
 		// Copy standard details.

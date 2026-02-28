@@ -15,7 +15,7 @@ const (
 )
 
 // Role information for this broker.
-var brokerRole = wamp.Dict{
+var brokerRole = wamp.Dict{ //nolint:gochecknoglobals
 	"features": wamp.Dict{
 		wamp.FeaturePatternSub:           true,
 		wamp.FeaturePubExclusion:         true,
@@ -37,8 +37,8 @@ type subscription struct {
 	subscribers map[*wamp.Session]struct{}
 }
 
-// storedEvent is a wrapper around wamp event message with timestamp
-// to be used in event history
+// storedEvent is a wrapper around wamp event message with timestamp to be used
+// in event history
 type storedEvent struct {
 	timestamp    time.Time
 	Subscription wamp.ID
@@ -110,7 +110,7 @@ func newBroker(logger stdlog.StdLog, strictURI, allowDisclose, debug bool, publi
 		sessionSubIDSet: map[*wamp.Session]map[wamp.ID]struct{}{},
 
 		// The action handler should be nearly always runable, since it is the
-		// critical section that does the only routing.  So, and unbuffered
+		// critical section that does the only routing. So, and unbuffered
 		// channel is appropriate.
 		actionChan: make(chan func()),
 		stopped:    make(chan struct{}),
@@ -125,8 +125,8 @@ func newBroker(logger stdlog.StdLog, strictURI, allowDisclose, debug bool, publi
 		filterFactory: publishFilter,
 	}
 	err := b.PreInitEventHistoryTopics(evntCfgs)
-	// if broker fails initialize event history store we just log it,
-	// the broker itself will continue to operate but without event history store
+	// if broker fails initialize event history store we just log it, the
+	// broker itself will continue to operate but without event history store
 	if err != nil {
 		return nil, configError{Err: err}
 	}
@@ -134,13 +134,14 @@ func newBroker(logger stdlog.StdLog, strictURI, allowDisclose, debug bool, publi
 	return b, nil
 }
 
-// role returns the role information for the "broker" role.  The data returned
+// role returns the role information for the "broker" role. The data returned
 // is suitable for use as broker role info in a WELCOME message.
 func (b *broker) role() wamp.Dict {
 	return brokerRole
 }
 
-// PreInitEventHistoryTopics initializes storage for event history enabled topics.
+// PreInitEventHistoryTopics initializes storage for event history enabled
+// topics.
 func (b *broker) PreInitEventHistoryTopics(evntCfgs []*TopicEventHistoryConfig) error {
 	for _, topicCfg := range evntCfgs {
 		if !topicCfg.Topic.ValidURI(b.strictURI, topicCfg.MatchPolicy) {
@@ -178,7 +179,7 @@ func (b *broker) publish(pub *wamp.Session, msg *wamp.Publish) {
 	// Send a publish error only when pubAck is set.
 	pubAck, _ := msg.Options[wamp.OptAcknowledge].(bool)
 
-	// Validate URI.  For PUBLISH, must be valid URI (either strict or loose),
+	// Validate URI. For PUBLISH, must be valid URI (either strict or loose),
 	// and all URI components must be non-empty.
 
 	if !msg.Topic.ValidURI(b.strictURI, "") {
@@ -201,13 +202,13 @@ func (b *broker) publish(pub *wamp.Session, msg *wamp.Publish) {
 
 	details := wamp.Dict{}
 
-	// Check and handle Payload PassThru Mode
+	// Check and handle Payload PassThru Mode.
 	// @see https://wamp-proto.org/wamp_latest_ietf.html#name-payload-passthru-mode
 	if pptScheme, _ := msg.Options[wamp.OptPPTScheme].(string); pptScheme != "" {
 
 		// Let's check: was ppt feature announced by publisher?
 		if !pub.HasFeature(wamp.RolePublisher, wamp.FeaturePayloadPassthruMode) {
-			// It's protocol violation, so we need to abort connection
+			// It's protocol violation, so we need to abort connection.
 			abortMsg := wamp.Abort{Reason: wamp.ErrProtocolViolation}
 			abortMsg.Details = wamp.Dict{}
 			abortMsg.Details[wamp.OptMessage] = ErrPPTNotSupportedByPeer.Error()
@@ -217,8 +218,7 @@ func (b *broker) publish(pub *wamp.Session, msg *wamp.Publish) {
 			return
 		}
 
-		// Every side supports PPT feature
-		// Let's fill PPT options for callee
+		// Every side supports PPT feature. Fill PPT options for callee.
 		pptOptionsToDetails(msg.Options, details)
 	}
 
@@ -229,16 +229,16 @@ func (b *broker) publish(pub *wamp.Session, msg *wamp.Publish) {
 				"option but did not announce support for",
 				wamp.FeaturePubExclusion)
 			// Do not return error here, even though published did not announce
-			// for publisher_exclusion.  Assume that publisher supports it
-			// since specify option that requires it.
+			// for publisher_exclusion. Assume that publisher supports it since
+			// specify option that requires it.
 		}
 		excludePub = exclude
 	}
 
-	// A Broker may also (automatically) disclose the identity of a
-	// publisher even without the publisher having explicitly requested to
-	// do so when the Broker configuration (for the publication topic) is
-	// set up to do so.  TODO: Currently no broker config for this.
+	// A Broker may also (automatically) disclose the identity of a publisher
+	// even without the publisher having explicitly requested to do so when the
+	// Broker configuration (for the publication topic) is set up to do so.
+	// TODO: Currently no broker config for this.
 	var disclose bool
 	if opt, _ := msg.Options[wamp.OptDiscloseMe].(bool); opt {
 		// Broker MAY deny a publisher's request to disclose its identity.
@@ -251,8 +251,8 @@ func (b *broker) publish(pub *wamp.Session, msg *wamp.Publish) {
 					Error:   wamp.ErrOptionDisallowedDiscloseMe,
 				})
 			}
-			// When the publisher requested disclosure, but it isn't
-			// allowed, don't continue to publish the message.
+			// When the publisher requested disclosure, but it isn't allowed,
+			// don't continue to publish the message.
 			return
 		}
 		disclose = true
@@ -279,14 +279,14 @@ func (b *broker) publish(pub *wamp.Session, msg *wamp.Publish) {
 // containing the existing Subscription|id.
 //
 // By default, Subscribers subscribe to topics with exact matching policy. A
-// Subscriber might want to subscribe to topics based on a pattern.  If the
+// Subscriber might want to subscribe to topics based on a pattern. If the
 // Broker and the Subscriber support pattern-based subscriptions, this matching
 // can happen by prefix-matching policy or wildcard-matching policy.
 func (b *broker) subscribe(sub *wamp.Session, msg *wamp.Subscribe) {
 	if sub == nil || msg == nil {
 		panic("broker.Subscribe with nil session or message")
 	}
-	// Validate topic URI.  For SUBSCRIBE, must be valid URI (either strict or
+	// Validate topic URI. For SUBSCRIBE, must be valid URI (either strict or
 	// loose), and all URI components must be non-empty for normal
 	// subscriptions, may be empty for wildcard subscriptions and must be
 	// non-empty for all but the last component for prefix subscriptions.
@@ -320,9 +320,9 @@ func (b *broker) unsubscribe(sub *wamp.Session, msg *wamp.Unsubscribe) {
 	}
 }
 
-// removeSession removes all subscriptions of the subscriber.  This is called
+// removeSession removes all subscriptions of the subscriber. This is called
 // when a client leaves the realm by sending a GOODBYE message or by
-// disconnecting from the router.  If there are any subscriptions for this
+// disconnecting from the router. If there are any subscriptions for this
 // session a wamp.subscription.on_delete meta event is published for each.
 func (b *broker) removeSession(sess *wamp.Session) {
 	if sess == nil {
@@ -469,7 +469,7 @@ func (b *broker) syncSubscribe(subscriber *wamp.Session, msg *wamp.Subscribe, ma
 	b.trySend(subscriber, &wamp.Subscribed{Request: msg.Request, Subscription: sub.id})
 
 	if !existingSub {
-		b.syncPubSubCreateMeta(msg.Topic, subscriber.ID, sub)
+		b.syncPubSubCreateMeta(subscriber.ID, sub)
 	}
 
 	// Publish WAMP on_subscribe meta event.
@@ -555,7 +555,7 @@ func (b *broker) syncRemoveSession(subscriber *wamp.Session) {
 	delete(b.sessionSubIDSet, subscriber)
 
 	// For each subscription ID, lookup the subscription and remove the
-	// subscriber from the subscription.  If there are no more subscribers on
+	// subscriber from the subscription. If there are no more subscribers on
 	// the subscription, then delete the subscription.
 	var sub *subscription
 	for subID := range subIDSet {
@@ -569,8 +569,8 @@ func (b *broker) syncRemoveSession(subscriber *wamp.Session) {
 		// If no more subscribers on this subscription.
 		if len(sub.subscribers) == 0 {
 			b.syncDelSubscription(sub)
-			// Fired when a subscription is deleted after the last
-			// session attached to it has been removed.
+			// Fired when a subscription is deleted after the last session
+			// attached to it has been removed.
 			b.syncPubSubMeta(wamp.MetaEventSubOnDelete, subscriber.ID, subID)
 		}
 	}
@@ -608,7 +608,7 @@ func (b *broker) syncPubEvent(pub *wamp.Session, msg *wamp.Publish, pubID wamp.I
 	if eventStore, ok := b.eventHistoryStore[sub]; ok {
 		// We should ignore publications that have exclude or eligible lists of session IDs
 		// As session ID is a runtime thing, it is impossible to check later: is history asker allowed to get
-		// this publication or not
+		// this publication or not.
 		// @see Security Aspects paragraph of Event History section in WAMP Spec
 		if _, ok := msg.Options["exclude"]; ok {
 			return
@@ -645,7 +645,7 @@ func (b *broker) syncPubMeta(metaTopic wamp.URI, sendMeta func(metaSub *subscrip
 // syncPubSubMeta publishes a subscription meta event when a subscription is
 // added, removed, or deleted.
 func (b *broker) syncPubSubMeta(metaTopic wamp.URI, subSessID, subID wamp.ID) {
-	pubID := wamp.GlobalID() // create here so that it is same for all events
+	pubID := wamp.GlobalID() // create here so that it is same for all events.
 	b.syncPubMeta(metaTopic, func(metaSub *subscription, sendTopic bool) {
 		makeEvent := func() *wamp.Event {
 			evt := &wamp.Event{
@@ -663,7 +663,7 @@ func (b *broker) syncPubSubMeta(metaTopic wamp.URI, subSessID, subID wamp.ID) {
 
 		for subscriber := range metaSub.subscribers {
 			// Do not send the meta event to the session that is causing the
-			// meta event to be generated.  This prevents useless events that
+			// meta event to be generated. This prevents useless events that
 			// could lead to race conditions on the client.
 			if subscriber.ID == subSessID {
 				continue
@@ -671,7 +671,7 @@ func (b *broker) syncPubSubMeta(metaTopic wamp.URI, subSessID, subID wamp.ID) {
 
 			// Need to send separate event message to each local subscriber,
 			// since local clients could modify contents.
-			if subscriber.Peer.IsLocal() {
+			if subscriber.IsLocal() {
 				b.trySend(subscriber, makeEvent())
 				continue
 			}
@@ -688,8 +688,8 @@ func (b *broker) syncPubSubMeta(metaTopic wamp.URI, subSessID, subID wamp.ID) {
 //
 // Fired when a subscription is created through a subscription request for a
 // topic which was previously without subscribers.
-func (b *broker) syncPubSubCreateMeta(topic wamp.URI, subSessID wamp.ID, sub *subscription) {
-	pubID := wamp.GlobalID() // create here so that it is same for all events
+func (b *broker) syncPubSubCreateMeta(subSessID wamp.ID, sub *subscription) {
+	pubID := wamp.GlobalID() // create here so that it is same for all events.
 	b.syncPubMeta(wamp.MetaEventSubOnCreate, func(metaSub *subscription, sendTopic bool) {
 		makeEvent := func() *wamp.Event {
 			evt := &wamp.Event{
@@ -715,7 +715,7 @@ func (b *broker) syncPubSubCreateMeta(topic wamp.URI, subSessID wamp.ID, sub *su
 
 		for subscriber := range metaSub.subscribers {
 			// Do not send the meta event to the session that is causing the
-			// meta event to be generated.  This prevents useless events that
+			// meta event to be generated. This prevents useless events that
 			// could lead to race conditions on the client.
 			if subscriber.ID == subSessID {
 				continue
@@ -723,7 +723,7 @@ func (b *broker) syncPubSubCreateMeta(topic wamp.URI, subSessID wamp.ID, sub *su
 
 			// Need to send separate event message to each locsl subscriber,
 			// since local clients could modify contents.
-			if subscriber.Peer.IsLocal() {
+			if subscriber.IsLocal() {
 				b.trySend(subscriber, makeEvent())
 				continue
 			}
@@ -757,9 +757,9 @@ func prepareEvent(pub *wamp.Session, msg *wamp.Publish, pubID wamp.ID, sub *subs
 		ArgumentsKw:  msg.ArgumentsKw,
 		Details:      details,
 	}
-	// If a subscription was established with a pattern-based matching
-	// policy, a Broker MUST supply the original PUBLISH.Topic as provided
-	// by the Publisher in EVENT.Details.topic|uri.
+	// If a subscription was established with a pattern-based matching policy,
+	// a Broker MUST supply the original PUBLISH.Topic as provided by the
+	// Publisher in EVENT.Details.topic|uri.
 	if sendTopic {
 		event.Details[detailTopic] = msg.Topic
 	}
@@ -767,13 +767,12 @@ func prepareEvent(pub *wamp.Session, msg *wamp.Publish, pubID wamp.ID, sub *subs
 		disclosePublisher(pub, event.Details)
 	}
 
-	// TODO: Handle publication trust levels
+	// TODO: Handle publication trust levels.
 
-	if subscriber != nil && subscriber.Peer.IsLocal() {
-		// the local handler may be lousy and may try to modify
-		// either of those fields, make sure that each event
-		// carries a copy of the respective structure, even if
-		// it's empty
+	if subscriber != nil && subscriber.IsLocal() {
+		// The local handler may be lousy and may try to modify either of those
+		// fields, make sure that each event carries a copy of the respective
+		// structure, even if it's empty.
 		if event.Details != nil {
 			options := make(map[string]any, len(event.Details))
 			maps.Copy(options, event.Details)
@@ -837,8 +836,8 @@ func (b *broker) subList(msg *wamp.Invocation) wamp.Message {
 	}
 }
 
-// subLookup obtains the subscription (if any) managing a topic, according
-// to some match policy.
+// subLookup obtains the subscription (if any) managing a topic, according to
+// some match policy.
 func (b *broker) subLookup(msg *wamp.Invocation) wamp.Message {
 	var subID wamp.ID
 	if len(msg.Arguments) != 0 {
@@ -1226,10 +1225,10 @@ func (b *broker) subEventHistory(msg *wamp.Invocation) wamp.Message {
 						break
 					}
 					if untilPub > 0 {
-						// We need to include specified event, but also
-						// we need to check it against remaining filters,
-						// so we rise up untilPubReached flag and break the
-						// cycle on next turn
+						// We need to include specified event, but also we need
+						// to check it against remaining filters, so we rise up
+						// untilPubReached flag and break the cycle on next
+						// turn
 						if untilPubReached {
 							break
 						}

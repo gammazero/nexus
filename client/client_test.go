@@ -1,4 +1,4 @@
-package client
+package client_test
 
 import (
 	"context"
@@ -13,12 +13,14 @@ import (
 	"testing/synctest"
 	"time"
 
+	"github.com/stretchr/testify/require"
+
+	"github.com/gammazero/nexus/v3/client"
 	"github.com/gammazero/nexus/v3/router"
 	"github.com/gammazero/nexus/v3/router/auth"
 	"github.com/gammazero/nexus/v3/stdlog"
 	"github.com/gammazero/nexus/v3/wamp"
 	"github.com/gammazero/nexus/v3/wamp/crsign"
-	"github.com/stretchr/testify/require"
 )
 
 const (
@@ -49,7 +51,7 @@ func getTestRouter(t *testing.T, realmConfig *router.RealmConfig) router.Router 
 	return r
 }
 
-func connectedTestClients(t *testing.T) (*Client, *Client, router.Router) {
+func connectedTestClients(t *testing.T) (*client.Client, *client.Client, router.Router) {
 	realmConfig := &router.RealmConfig{
 		URI:              wamp.URI(testRealm),
 		StrictURI:        true,
@@ -81,10 +83,10 @@ func newTestRealmConfig(realmName string, fns ...realmConfigMutator) *router.Rea
 	return realmConfig
 }
 
-type clientConfigMutator func(*Config)
+type clientConfigMutator func(*client.Config)
 
-func newTestClientConfig(realmName string, fns ...clientConfigMutator) *Config {
-	clientConfig := &Config{
+func newTestClientConfig(realmName string, fns ...clientConfigMutator) *client.Config {
+	clientConfig := &client.Config{
 		Realm:           realmName,
 		ResponseTimeout: 500 * time.Millisecond,
 		Logger:          logger,
@@ -96,8 +98,8 @@ func newTestClientConfig(realmName string, fns ...clientConfigMutator) *Config {
 	return clientConfig
 }
 
-func newTestClientWithConfig(t *testing.T, r router.Router, clientConfig *Config) *Client {
-	c, err := ConnectLocal(r, *clientConfig)
+func newTestClientWithConfig(t *testing.T, r router.Router, clientConfig *client.Config) *client.Client {
+	c, err := client.ConnectLocal(r, *clientConfig)
 	require.NoError(t, err, "failed to connect test clients")
 	t.Cleanup(func() {
 		c.Close()
@@ -105,7 +107,7 @@ func newTestClientWithConfig(t *testing.T, r router.Router, clientConfig *Config
 	return c
 }
 
-func newTestClient(t *testing.T, r router.Router) *Client {
+func newTestClient(t *testing.T, r router.Router) *client.Client {
 	return newTestClientWithConfig(t, r, newTestClientConfig(testRealm))
 }
 
@@ -115,22 +117,22 @@ func TestJoinRealm(t *testing.T) {
 		r := getTestRouter(t, realmConfig)
 
 		// Test that client can join realm.
-		client := newTestClient(t, r)
-		require.NotEqual(t, wamp.ID(0), client.ID(), "Expected non-0 client id")
+		cl := newTestClient(t, r)
+		require.NotEqual(t, wamp.ID(0), cl.ID(), "Expected non-0 client id")
 
-		realmInfo := client.RealmDetails()
+		realmInfo := cl.RealmDetails()
 		_, err := wamp.DictValue(realmInfo, []string{"roles", "broker"})
 		require.NoError(t, err, "Router missing broker role")
 		_, err = wamp.DictValue(realmInfo, []string{"roles", "dealer"})
 		require.NoError(t, err, "Router missing dealer role")
 
-		client.Close()
+		cl.Close()
 		r.Close()
-		require.Error(t, client.Close(), "No error from double Close()")
+		cl.Close() // make sure double-close is ok
 
 		// Test the Done is signaled.
 		select {
-		case <-client.Done():
+		case <-cl.Done():
 		case <-time.After(time.Millisecond):
 			require.FailNow(t, "Expected client done")
 		}
@@ -145,12 +147,12 @@ func TestJoinRealm(t *testing.T) {
 		}
 		r = getTestRouter(t, realmConfig)
 
-		cfg := Config{
+		cfg := client.Config{
 			Realm:           "nexus.testnoanon",
 			ResponseTimeout: 500 * time.Millisecond,
 			Logger:          logger,
 		}
-		_, err = ConnectLocal(r, cfg)
+		_, err = client.ConnectLocal(r, cfg)
 		require.Error(t, err, "expected error due to no anonymous authentication")
 	})
 }
@@ -168,19 +170,19 @@ func TestClientJoinRealmWithCRAuth(t *testing.T) {
 		}
 		r := getTestRouter(t, realmConfig)
 
-		cfg := Config{
+		cfg := client.Config{
 			Realm: "nexus.test.auth",
 			HelloDetails: wamp.Dict{
 				"authid": "jdoe",
 			},
-			AuthHandlers: map[string]AuthFunc{
+			AuthHandlers: map[string]client.AuthFunc{
 				"wampcra": clientAuthFunc,
 			},
 			Logger: logger,
 		}
-		client, err := ConnectLocal(r, cfg)
+		cl, err := client.ConnectLocal(r, cfg)
 		require.NoError(t, err)
-		client.Close()
+		cl.Close()
 	})
 }
 
@@ -389,8 +391,8 @@ func TestRemoteProcedureCall(t *testing.T) {
 		require.Error(t, err, "expected error unregistering invalid procedure")
 
 		// Test registering a valid procedure.
-		handler := func(ctx context.Context, inv *wamp.Invocation) InvokeResult {
-			return InvokeResult{Args: wamp.List{inv.Arguments[0].(int) * 37}}
+		handler := func(ctx context.Context, inv *wamp.Invocation) client.InvokeResult {
+			return client.InvokeResult{Args: wamp.List{inv.Arguments[0].(int) * 37}}
 		}
 		procName := "myproc"
 		err = callee.Register(procName, handler, nil)
@@ -404,7 +406,7 @@ func TestRemoteProcedureCall(t *testing.T) {
 
 		// Test calling the procedure.
 		callArgs := wamp.List{73}
-		ctx := context.Background()
+		ctx := t.Context()
 		result, err := caller.Call(ctx, procName, nil, callArgs, nil, nil)
 		require.NoError(t, err)
 		require.Equal(t, 2701, result.Arguments[0])
@@ -419,14 +421,14 @@ func TestRemoteProcedureCall(t *testing.T) {
 		require.Error(t, err, "expected error calling unregistered procedure")
 		require.Nil(t, result, "result should be nil on error")
 		require.ErrorContains(t, err, "wamp.error.no_such_procedure")
-		var rpcErr RPCError
+		var rpcErr client.RPCError
 		require.ErrorAs(t, err, &rpcErr)
 		require.Equal(t, wamp.ErrNoSuchProcedure, rpcErr.Err.Error, "Wrong error URI in RPC error")
 
 		// ***Testing PPT Mode****
 
 		// Test registering a valid procedure.
-		handler = func(ctx context.Context, inv *wamp.Invocation) InvokeResult {
+		handler = func(ctx context.Context, inv *wamp.Invocation) client.InvokeResult {
 			arg, _ := wamp.AsString(inv.Arguments[0])
 			require.Equal(t, "hello world", arg, "event missing or bad args")
 			kwarg, _ := wamp.AsString(inv.ArgumentsKw["prop"])
@@ -439,7 +441,7 @@ func TestRemoteProcedureCall(t *testing.T) {
 				wamp.OptPPTSerializer: inv.Details[wamp.OptPPTSerializer],
 			}
 
-			return InvokeResult{Args: resArgs, Kwargs: resKwargs, Options: options}
+			return client.InvokeResult{Args: resArgs, Kwargs: resKwargs, Options: options}
 		}
 		procName = "test.ppt"
 		err = callee.Register(procName, handler, nil)
@@ -452,8 +454,7 @@ func TestRemoteProcedureCall(t *testing.T) {
 		}
 		args := wamp.List{"hello world"}
 		kwargs := wamp.Dict{"prop": "hello world"}
-		ctx = context.Background()
-		result, err = caller.Call(ctx, procName, options, args, kwargs, nil)
+		_, err = caller.Call(ctx, procName, options, args, kwargs, nil)
 		require.Error(t, err, "Expected error calling procedure")
 
 		// Test calling the procedure with invalid PPT serializer
@@ -463,8 +464,7 @@ func TestRemoteProcedureCall(t *testing.T) {
 		}
 		args = wamp.List{"hello world"}
 		kwargs = wamp.Dict{"prop": "hello world"}
-		ctx = context.Background()
-		result, err = caller.Call(ctx, procName, options, args, kwargs, nil)
+		_, err = caller.Call(ctx, procName, options, args, kwargs, nil)
 		require.Error(t, err, "Expected error calling procedure")
 
 		// Test calling the procedure within custom ppt scheme and native serializer
@@ -474,7 +474,6 @@ func TestRemoteProcedureCall(t *testing.T) {
 		}
 		args = wamp.List{"hello world"}
 		kwargs = wamp.Dict{"prop": "hello world"}
-		ctx = context.Background()
 		result, err = caller.Call(ctx, procName, options, args, kwargs, nil)
 		require.NoError(t, err)
 		require.Equal(t, "goodbye world", result.Arguments[0])
@@ -487,7 +486,6 @@ func TestRemoteProcedureCall(t *testing.T) {
 		}
 		args = wamp.List{"hello world"}
 		kwargs = wamp.Dict{"prop": "hello world"}
-		ctx = context.Background()
 		result, err = caller.Call(ctx, procName, options, args, kwargs, nil)
 		require.NoError(t, err)
 		require.Equal(t, "goodbye world", result.Arguments[0])
@@ -500,7 +498,6 @@ func TestRemoteProcedureCall(t *testing.T) {
 		}
 		args = wamp.List{"hello world"}
 		kwargs = wamp.Dict{"prop": "hello world"}
-		ctx = context.Background()
 		result, err = caller.Call(ctx, procName, options, args, kwargs, nil)
 		require.NoError(t, err)
 		require.Equal(t, "goodbye world", result.Arguments[0])
@@ -513,21 +510,20 @@ func TestRemoteProcedureCall(t *testing.T) {
 		}
 		args = wamp.List{"hello world"}
 		kwargs = wamp.Dict{"prop": "hello world"}
-		ctx = context.Background()
 		result, err = caller.Call(ctx, procName, options, args, kwargs, nil)
 		require.NoError(t, err)
 		require.Equal(t, "goodbye world", result.Arguments[0])
 		require.Equal(t, "goodbye world", result.ArgumentsKw["prop"])
 
 		// Bad handler
-		handler = func(ctx context.Context, inv *wamp.Invocation) InvokeResult {
+		handler = func(ctx context.Context, inv *wamp.Invocation) client.InvokeResult {
 			resArgs := wamp.List{"goodbye world"}
 			resKwargs := wamp.Dict{"prop": "goodbye world"}
 			options := wamp.Dict{
 				wamp.OptPPTScheme: "invalid_scheme",
 			}
 
-			return InvokeResult{Args: resArgs, Kwargs: resKwargs, Options: options}
+			return client.InvokeResult{Args: resArgs, Kwargs: resKwargs, Options: options}
 		}
 		procName = "test.ppt.invoke.bad.scheme"
 		err = callee.Register(procName, handler, nil)
@@ -535,12 +531,11 @@ func TestRemoteProcedureCall(t *testing.T) {
 
 		// Test calling the procedure with invalid PPT Scheme in YIELD
 		args = wamp.List{"hello world"}
-		ctx = context.Background()
-		result, err = caller.Call(ctx, procName, nil, args, nil, nil)
+		_, err = caller.Call(ctx, procName, nil, args, nil, nil)
 		require.Error(t, err, "Expected error calling procedure")
 
 		// Bad handler
-		handler = func(ctx context.Context, inv *wamp.Invocation) InvokeResult {
+		handler = func(ctx context.Context, inv *wamp.Invocation) client.InvokeResult {
 			resArgs := wamp.List{"goodbye world"}
 			resKwargs := wamp.Dict{"prop": "goodbye world"}
 			options := wamp.Dict{
@@ -548,7 +543,7 @@ func TestRemoteProcedureCall(t *testing.T) {
 				wamp.OptPPTSerializer: "invalid_serializer",
 			}
 
-			return InvokeResult{Args: resArgs, Kwargs: resKwargs, Options: options}
+			return client.InvokeResult{Args: resArgs, Kwargs: resKwargs, Options: options}
 		}
 		procName = "test.ppt.invoke.bad.serializer"
 		err = callee.Register(procName, handler, nil)
@@ -556,8 +551,7 @@ func TestRemoteProcedureCall(t *testing.T) {
 
 		// Test calling the procedure with invalid PPT Scheme in YIELD
 		args = wamp.List{"hello world"}
-		ctx = context.Background()
-		result, err = caller.Call(ctx, procName, nil, args, nil, nil)
+		_, err = caller.Call(ctx, procName, nil, args, nil, nil)
 		require.Error(t, err, "Expected error calling procedure")
 	})
 }
@@ -567,28 +561,25 @@ func TestProgressiveCallResults(t *testing.T) {
 	callee, caller, _ := connectedTestClients(t)
 
 	// Handler sends progressive results.
-	handler := func(ctx context.Context, inv *wamp.Invocation) InvokeResult {
-		// Creating another child context to check that progressive results
-		// work as expected even with another child context passed.
-		ctx = context.WithValue(ctx, "Some-key", true)
+	handler := func(ctx context.Context, inv *wamp.Invocation) client.InvokeResult {
 		senderr := callee.SendProgress(ctx, wamp.List{"Alpha"}, nil)
 		if senderr != nil {
 			fmt.Println("Error sending Alpha progress:", senderr)
-			return InvokeResult{Err: "test.failed"}
+			return client.InvokeResult{Err: "test.failed"}
 		}
 		time.Sleep(500 * time.Millisecond)
 
 		senderr = callee.SendProgress(ctx, wamp.List{"Bravo"}, nil)
 		if senderr != nil {
 			fmt.Println("Error sending Bravo progress:", senderr)
-			return InvokeResult{Err: "test.failed"}
+			return client.InvokeResult{Err: "test.failed"}
 		}
 		time.Sleep(500 * time.Millisecond)
 
 		senderr = callee.SendProgress(ctx, wamp.List{"Charlie"}, nil)
 		if senderr != nil {
 			fmt.Println("Error sending Charlie progress:", senderr)
-			return InvokeResult{Err: "test.failed"}
+			return client.InvokeResult{Err: "test.failed"}
 		}
 		time.Sleep(500 * time.Millisecond)
 
@@ -599,7 +590,7 @@ func TestProgressiveCallResults(t *testing.T) {
 				sum += n
 			}
 		}
-		return InvokeResult{Args: wamp.List{sum}}
+		return client.InvokeResult{Args: wamp.List{sum}}
 	}
 
 	procName := "nexus.test.progproc"
@@ -618,8 +609,7 @@ func TestProgressiveCallResults(t *testing.T) {
 
 	// Test calling the procedure.
 	callArgs := wamp.List{1, 2, 3, 4, 5, 6, 7, 8, 9, 10}
-	ctx := context.Background()
-	result, err := caller.Call(ctx, procName, nil, callArgs, nil, progHandler)
+	result, err := caller.Call(t.Context(), procName, nil, callArgs, nil, progHandler)
 	require.NoError(t, err)
 	sum, ok := wamp.AsInt64(result.Arguments[0])
 	require.True(t, ok, "Could not convert result to int64")
@@ -638,7 +628,7 @@ func TestProgressiveCallInvocations(t *testing.T) {
 	var progressiveIncPayload []int
 	var mu sync.Mutex
 
-	invocationHandler := func(ctx context.Context, inv *wamp.Invocation) InvokeResult {
+	invocationHandler := func(ctx context.Context, inv *wamp.Invocation) client.InvokeResult {
 		mu.Lock()
 		progressiveIncPayload = append(progressiveIncPayload, inv.Arguments[0].(int))
 		mu.Unlock()
@@ -651,10 +641,10 @@ func TestProgressiveCallInvocations(t *testing.T) {
 					sum += n
 				}
 			}
-			return InvokeResult{Args: wamp.List{sum}}
+			return client.InvokeResult{Args: wamp.List{sum}}
 		}
 
-		return InvokeResult{Err: wamp.InternalProgressiveOmitResult}
+		return client.InvokeResult{Err: wamp.InternalProgressiveOmitResult}
 	}
 
 	procName := "nexus.test.progproc"
@@ -702,16 +692,15 @@ func TestProgressiveCallsAndResults(t *testing.T) {
 	callee, caller, _ := connectedTestClients(t)
 
 	// Handler sends progressive results.
-	invocationHandler := func(ctx context.Context, inv *wamp.Invocation) InvokeResult {
+	invocationHandler := func(ctx context.Context, inv *wamp.Invocation) client.InvokeResult {
 		if isInProgress, _ := inv.Details[wamp.OptProgress].(bool); !isInProgress {
-			return InvokeResult{Args: inv.Arguments}
+			return client.InvokeResult{Args: inv.Arguments}
 		}
 		senderr := callee.SendProgress(ctx, inv.Arguments, nil)
 		if senderr != nil {
-			callee.log.Println("Error sending progress:", senderr)
-			return InvokeResult{Err: "test.failed"}
+			return client.InvokeResult{Err: "test.failed"}
 		}
-		return InvokeResult{Err: wamp.InternalProgressiveOmitResult}
+		return client.InvokeResult{Err: wamp.InternalProgressiveOmitResult}
 	}
 
 	procName := "nexus.test.progproc"
@@ -775,9 +764,9 @@ func TestTimeoutCancelRemoteProcedureCall(t *testing.T) {
 		callee, caller, _ := connectedTestClients(t)
 
 		// Test registering a valid procedure.
-		handler := func(ctx context.Context, inv *wamp.Invocation) InvokeResult {
+		handler := func(ctx context.Context, inv *wamp.Invocation) client.InvokeResult {
 			<-ctx.Done() // handler will block forever until canceled.
-			return InvokeResult{Err: wamp.ErrCanceled}
+			return client.InvokeResult{Err: wamp.ErrCanceled}
 		}
 		procName := "myproc"
 		err := callee.Register(procName, handler, nil)
@@ -820,9 +809,9 @@ func TestCancelRemoteProcedureCall(t *testing.T) {
 	callee, caller, _ := connectedTestClients(t)
 
 	// Test registering a valid procedure.
-	handler := func(ctx context.Context, inv *wamp.Invocation) InvokeResult {
+	handler := func(ctx context.Context, inv *wamp.Invocation) client.InvokeResult {
 		<-ctx.Done() // handler will block forever until canceled.
-		return InvokeResult{Err: wamp.ErrCanceled}
+		return client.InvokeResult{Err: wamp.ErrCanceled}
 	}
 	procName := "myproc"
 	err := callee.Register(procName, handler, nil)
@@ -864,9 +853,9 @@ func TestTimeoutRemoteProcedureCall(t *testing.T) {
 		callee, caller, _ := connectedTestClients(t)
 
 		// Test registering a valid procedure.
-		handler := func(ctx context.Context, inv *wamp.Invocation) InvokeResult {
+		handler := func(ctx context.Context, inv *wamp.Invocation) client.InvokeResult {
 			<-ctx.Done() // handler will block forever until canceled.
-			return InvokeResult{Err: wamp.ErrCanceled}
+			return client.InvokeResult{Err: wamp.ErrCanceled}
 		}
 		procName := "myproc"
 		err := callee.Register(procName, handler, nil)
@@ -895,7 +884,7 @@ func TestTimeoutRemoteProcedureCall(t *testing.T) {
 		// Make sure the call is canceled.
 		select {
 		case err = <-errChan:
-			var rpcError RPCError
+			var rpcError client.RPCError
 			require.ErrorAs(t, err, &rpcError)
 			require.Equal(t, wamp.ErrTimeout, rpcError.Err.Error)
 		case <-time.After(2 * time.Second):
@@ -957,7 +946,7 @@ func TestConnectContext(t *testing.T) {
 		unixExpect = "dial unix /tmp/wamp.sock: operation was canceled"
 	)
 
-	cfg := Config{
+	cfg := client.Config{
 		Realm:           testRealm,
 		ResponseTimeout: 500 * time.Millisecond,
 		Logger:          logger,
@@ -965,27 +954,27 @@ func TestConnectContext(t *testing.T) {
 	}
 	ctx, cancel := context.WithCancel(context.Background())
 	cancel()
-	_, err := ConnectNet(ctx, "http://localhost:9999/ws", cfg)
+	_, err := client.ConnectNet(ctx, "http://localhost:9999/ws", cfg)
 	require.Error(t, err)
 	resStrMatch, _ := regexp.MatchString(expect, err.Error())
 	require.True(t, resStrMatch)
 
-	_, err = ConnectNet(ctx, "https://localhost:9999/ws", cfg)
+	_, err = client.ConnectNet(ctx, "https://localhost:9999/ws", cfg)
 	require.Error(t, err)
 	resStrMatch, _ = regexp.MatchString(expect, err.Error())
 	require.True(t, resStrMatch)
 
-	_, err = ConnectNet(ctx, "tcp://localhost:9999", cfg)
+	_, err = client.ConnectNet(ctx, "tcp://localhost:9999", cfg)
 	require.Error(t, err)
 	resStrMatch, _ = regexp.MatchString(expect, err.Error())
 	require.True(t, resStrMatch)
 
-	_, err = ConnectNet(ctx, "tcps://localhost:9999", cfg)
+	_, err = client.ConnectNet(ctx, "tcps://localhost:9999", cfg)
 	require.Error(t, err)
 	resStrMatch, _ = regexp.MatchString(expect, err.Error())
 	require.True(t, resStrMatch)
 
-	_, err = ConnectNet(ctx, "unix:///tmp/wamp.sock", cfg)
+	_, err = client.ConnectNet(ctx, "unix:///tmp/wamp.sock", cfg)
 	require.Error(t, err)
 	require.EqualError(t, err, unixExpect)
 }
@@ -1011,33 +1000,33 @@ func createTestServer(t *testing.T) (router.Router, io.Closer) {
 	return r, closer
 }
 
-func newNetTestClientConfig(realmName string, logger *log.Logger) *Config {
-	clientConfig := Config{
+func newNetTestClientConfig(realmName string, logger *log.Logger) *client.Config {
+	clientConfig := client.Config{
 		Realm:           realmName,
 		ResponseTimeout: 10 * time.Millisecond,
-		Serialization:   MSGPACK,
+		Serialization:   client.MSGPACK,
 		Logger:          logger,
 		Debug:           true,
 	}
 	return &clientConfig
 }
 
-func newNetTestCalleeWithConfig(t *testing.T, routerURL string, clientConfig *Config) *Client {
-	cl, err := ConnectNet(context.Background(), routerURL, *clientConfig)
+func newNetTestCalleeWithConfig(t *testing.T, routerURL string, clientConfig *client.Config) *client.Client {
+	cl, err := client.ConnectNet(context.Background(), routerURL, *clientConfig)
 	require.NoError(t, err)
 	t.Cleanup(func() {
 		cl.Close()
 	})
 
-	sleep := func(ctx context.Context, inv *wamp.Invocation) InvokeResult {
+	sleep := func(ctx context.Context, inv *wamp.Invocation) client.InvokeResult {
 		logger.Println("sleep rpc start")
 		select {
 		case <-ctx.Done():
-			return InvocationCanceled
+			return client.InvocationCanceled
 		case <-time.After(5 * time.Second):
 		}
 		logger.Println("sleep rpc done")
-		return InvokeResult{Kwargs: wamp.Dict{"success": true}}
+		return client.InvokeResult{Kwargs: wamp.Dict{"success": true}}
 	}
 
 	for ii := range 40 {
@@ -1052,7 +1041,7 @@ func newNetTestCalleeWithConfig(t *testing.T, routerURL string, clientConfig *Co
 	return cl
 }
 
-func newNetTestCallee(t *testing.T, routerURL string) *Client {
+func newNetTestCallee(t *testing.T, routerURL string) *client.Client {
 	return newNetTestCalleeWithConfig(
 		t,
 		routerURL,
@@ -1060,9 +1049,9 @@ func newNetTestCallee(t *testing.T, routerURL string) *Client {
 	)
 }
 
-func newNetTestKillerWithConfig(t *testing.T, routerURL string, clientConfig *Config) *Client {
+func newNetTestKillerWithConfig(t *testing.T, routerURL string, clientConfig *client.Config) *client.Client {
 	logger := clientConfig.Logger
-	cl, err := ConnectNet(context.Background(), routerURL, *clientConfig)
+	cl, err := client.ConnectNet(context.Background(), routerURL, *clientConfig)
 	require.NoError(t, err)
 	t.Cleanup(func() {
 		cl.Close()
@@ -1103,7 +1092,7 @@ func newNetTestKillerWithConfig(t *testing.T, routerURL string, clientConfig *Co
 	return cl
 }
 
-func newNetTestKiller(t *testing.T, routerURL string) *Client {
+func newNetTestKiller(t *testing.T, routerURL string) *client.Client {
 	return newNetTestKillerWithConfig(
 		t,
 		routerURL,
@@ -1137,10 +1126,10 @@ func TestInvocationHandlerMissedDone(t *testing.T) {
 		calledChan := make(chan struct{})
 
 		// Register procedure.
-		handler := func(ctx context.Context, inv *wamp.Invocation) InvokeResult {
+		handler := func(ctx context.Context, inv *wamp.Invocation) client.InvokeResult {
 			close(calledChan)
 			<-ctx.Done()
-			return InvokeResult{Args: wamp.List{inv.Arguments[0].(int) * 37}}
+			return client.InvokeResult{Args: wamp.List{inv.Arguments[0].(int) * 37}}
 		}
 		procName := "myproc"
 		err := callee.Register(procName, handler, nil)
@@ -1190,19 +1179,20 @@ func TestProgressDisconnect(t *testing.T) {
 
 	// Connect callee session.
 	calleeLog := log.New(os.Stderr, "CALLEE> ", log.Lmicroseconds)
-	cfg := Config{
+	cfg := client.Config{
 		Realm:           testRealm,
 		ResponseTimeout: 10 * time.Millisecond,
 		Logger:          calleeLog,
 		Debug:           true,
 	}
 
+	// TODO: is this necessary?
 	go func() {
 		time.Sleep(time.Second)
 		time.Sleep(time.Second)
 		time.Sleep(time.Second)
 	}()
-	callee, err := ConnectNet(t.Context(), testURL, cfg)
+	callee, err := client.ConnectNet(t.Context(), testURL, cfg)
 	require.NoError(t, err)
 	defer callee.Close()
 
@@ -1212,13 +1202,13 @@ func TestProgressDisconnect(t *testing.T) {
 	disconnected := make(chan struct{})
 
 	// Define invocation handler.
-	handler := func(ctx context.Context, inv *wamp.Invocation) InvokeResult {
+	handler := func(ctx context.Context, inv *wamp.Invocation) client.InvokeResult {
 		for {
 			// Send a chunk of data.
 			e := callee.SendProgress(ctx, wamp.List{"hello"}, nil)
 			if e != nil {
 				sendProgErr <- e
-				return InvocationCanceled
+				return client.InvocationCanceled
 			}
 			<-disconnected
 		}
@@ -1231,7 +1221,7 @@ func TestProgressDisconnect(t *testing.T) {
 
 	// Connect caller session.
 	cfg.Logger = log.New(os.Stderr, "CALLER> ", log.Lmicroseconds)
-	caller, err := ConnectNet(context.Background(), testURL, cfg)
+	caller, err := client.ConnectNet(context.Background(), testURL, cfg)
 	require.NoError(t, err)
 	defer caller.Close()
 
@@ -1256,12 +1246,12 @@ func TestProgressDisconnect(t *testing.T) {
 
 	// Check for expected error from caller.
 	err = <-progErr
-	require.ErrorIs(t, err, ErrNotConn)
+	require.ErrorIs(t, err, client.ErrNotConn)
 
 	// Check for expected error from callee.
 	err = <-sendProgErr
 	require.Error(t, err)
-	if !errors.Is(err, context.Canceled) && !errors.Is(err, ErrNotConn) {
+	if !errors.Is(err, context.Canceled) && !errors.Is(err, client.ErrNotConn) {
 		require.FailNowf(t, "wrong error from SendProgress: %s", err.Error())
 	}
 }

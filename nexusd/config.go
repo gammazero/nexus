@@ -57,7 +57,7 @@ type Config struct {
 }
 
 func LoadConfig(path string) *Config {
-	file, err := os.ReadFile(path)
+	file, err := os.ReadFile(path) //nolint:gosec // need to read file at path specified by user
 	if err != nil {
 		log.Fatal("Config File Missing. ", err)
 	}
@@ -69,10 +69,10 @@ func LoadConfig(path string) *Config {
 	}
 
 	if config.WebSocket.KeepAlive != 0 {
-		config.WebSocket.KeepAlive *= time.Second
+		config.WebSocket.KeepAlive *= time.Second // nolint:durationcheck
 	}
 	if config.RawSocket.TCPKeepAliveInterval != 0 {
-		config.RawSocket.TCPKeepAliveInterval *= time.Second
+		config.RawSocket.TCPKeepAliveInterval *= time.Second // nolint:durationcheck
 	}
 	return &config
 }

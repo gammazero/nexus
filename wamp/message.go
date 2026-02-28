@@ -1,7 +1,5 @@
-/*
-Package wamp defines all message types, data types, and reserved URI values
-defined by the WAMP specification.
-*/
+// Package wamp defines all message types, data types, and reserved URI values
+// defined by the WAMP specification.
 package wamp
 
 type MessageType int
@@ -52,7 +50,7 @@ const (
 	YIELD        MessageType = 70 //|      |      |      |      | Rx   | Tx   |
 )
 
-var mtStrings = map[MessageType]string{
+var mtStrings = map[MessageType]string{ //nolint:gochecknoglobals
 	HELLO:        "HELLO",
 	WELCOME:      "WELCOME",
 	ABORT:        "ABORT",

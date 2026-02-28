@@ -9,7 +9,7 @@ import (
 	"github.com/gammazero/nexus/v3/wamp"
 )
 
-var ch *codec.CborHandle
+var ch *codec.CborHandle //nolint:gochecknoglobals
 
 func init() {
 	ch = &codec.CborHandle{}
@@ -38,12 +38,13 @@ func (s *CBORSerializer) Deserialize(data []byte) (wamp.Message, error) {
 		return nil, errors.New("invalid message")
 	}
 
-	// cbor deserializer gives us an uint64 instead of an int64, whyever it
+	// cbor deserializer gives us a uint64 instead of an int64, whyever it
 	// doesn't matter here, because valid values are only within an 8bit range.
-	typ, ok := v[0].(uint64)
+	utyp, ok := v[0].(uint64)
 	if !ok {
 		return nil, errors.New("unsupported message format")
 	}
+	typ := int(utyp) //nolint:gosec
 	return listToMsg(wamp.MessageType(typ), v)
 }
 

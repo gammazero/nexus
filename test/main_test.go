@@ -14,14 +14,15 @@ import (
 	"testing"
 	"time"
 
+	"github.com/stretchr/testify/require"
+	"go.uber.org/goleak"
+
 	"github.com/gammazero/nexus/v3/client"
 	"github.com/gammazero/nexus/v3/router"
 	"github.com/gammazero/nexus/v3/router/auth"
 	"github.com/gammazero/nexus/v3/stdlog"
 	"github.com/gammazero/nexus/v3/transport/serialize"
 	"github.com/gammazero/nexus/v3/wamp"
-	"github.com/stretchr/testify/require"
-	"go.uber.org/goleak"
 )
 
 const (
@@ -363,8 +364,6 @@ func TestHandshake(t *testing.T) {
 
 	cli, err := connectClientCfgErr(cfg)
 	require.NoError(t, err, "Failed to connect client")
-	err = cli.Close()
-	require.NoError(t, err, "Failed to close client")
-	err = cli.Close()
-	require.Error(t, err, "Expected error if client already closed")
+	cli.Close()
+	cli.Close() // check that 2nd close ok
 }

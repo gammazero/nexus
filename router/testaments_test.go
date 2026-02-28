@@ -1,12 +1,13 @@
-package router
+package router //nolint:testpackage
 
 import (
 	"testing"
 	"testing/synctest"
 	"time"
 
-	"github.com/gammazero/nexus/v3/wamp"
 	"github.com/stretchr/testify/require"
+
+	"github.com/gammazero/nexus/v3/wamp"
 )
 
 func TestSessionTestaments(t *testing.T) {
@@ -58,7 +59,7 @@ func TestSessionTestaments(t *testing.T) {
 
 		msg, err = wamp.RecvTimeout(caller2, time.Second)
 		require.NoError(t, err)
-		result, ok = msg.(*wamp.Result)
+		_, ok = msg.(*wamp.Result)
 		require.True(t, ok, "expected RESULT")
 
 		caller1.Close()

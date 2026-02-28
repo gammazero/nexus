@@ -1,10 +1,11 @@
-package client
+package client_test
 
 import (
 	"context"
 	"log"
 	"time"
 
+	"github.com/gammazero/nexus/v3/client"
 	"github.com/gammazero/nexus/v3/router"
 	"github.com/gammazero/nexus/v3/wamp"
 )
@@ -25,7 +26,7 @@ func ExampleConnectLocal() {
 	}
 
 	// Configure and connect local client.
-	c, err := ConnectLocal(r, Config{Realm: "nexus.realm1"})
+	c, err := client.ConnectLocal(r, client.Config{Realm: "nexus.realm1"})
 	if err != nil {
 		log.Fatal(err)
 	}
@@ -35,7 +36,7 @@ func ExampleConnectLocal() {
 func ExampleConnectNet() {
 	// Configure and connect client.
 	ctx := context.Background()
-	c, err := ConnectNet(ctx, "unix:///tmp/app.sock", Config{Realm: "nexus.realm1"})
+	c, err := client.ConnectNet(ctx, "unix:///tmp/app.sock", client.Config{Realm: "nexus.realm1"})
 	if err != nil {
 		log.Fatal(err)
 	}
@@ -45,8 +46,8 @@ func ExampleConnectNet() {
 func ExampleClient_Call() {
 	// Configure and connect caller client.
 	ctx := context.Background()
-	cfg := Config{Realm: "nexus.realm1"}
-	caller, err := ConnectNet(ctx, "ws://localhost:8080/", cfg)
+	cfg := client.Config{Realm: "nexus.realm1"}
+	caller, err := client.ConnectNet(ctx, "ws://localhost:8080/", cfg)
 	if err != nil {
 		log.Fatal(err)
 	}
@@ -71,8 +72,8 @@ func ExampleClient_Call() {
 func ExampleClient_Call_progressive() {
 	// Configure and connect caller client.
 	ctx := context.Background()
-	cfg := Config{Realm: "nexus.realm1"}
-	caller, err := ConnectNet(ctx, "ws://localhost:8080/", cfg)
+	cfg := client.Config{Realm: "nexus.realm1"}
+	caller, err := client.ConnectNet(ctx, "ws://localhost:8080/", cfg)
 	if err != nil {
 		log.Fatal(err)
 	}
@@ -110,21 +111,21 @@ func ExampleClient_Call_progressive() {
 func ExampleClient_Register() {
 	// Configure and connect callee client.
 	ctx := context.Background()
-	cfg := Config{Realm: "nexus.realm1"}
-	callee, err := ConnectNet(ctx, "tcp://localhost:8080/", cfg)
+	cfg := client.Config{Realm: "nexus.realm1"}
+	callee, err := client.ConnectNet(ctx, "tcp://localhost:8080/", cfg)
 	if err != nil {
 		log.Fatal(err)
 	}
 	defer callee.Close()
 
 	// Define function that is called to perform remote procedure.
-	sum := func(ctx context.Context, inv *wamp.Invocation) InvokeResult {
+	sum := func(ctx context.Context, inv *wamp.Invocation) client.InvokeResult {
 		var sum int64
 		for _, arg := range inv.Arguments {
 			n, _ := wamp.AsInt64(arg)
 			sum += n
 		}
-		return InvokeResult{Args: wamp.List{sum}}
+		return client.InvokeResult{Args: wamp.List{sum}}
 	}
 
 	// Register procedure "sum"
@@ -139,15 +140,15 @@ func ExampleClient_Register() {
 func ExampleClient_Register_progressive() {
 	// Configure and connect callee client.
 	ctx := context.Background()
-	cfg := Config{Realm: "nexus.realm1"}
-	callee, err := ConnectNet(ctx, "tcp://localhost:8080/", cfg)
+	cfg := client.Config{Realm: "nexus.realm1"}
+	callee, err := client.ConnectNet(ctx, "tcp://localhost:8080/", cfg)
 	if err != nil {
 		log.Fatal(err)
 	}
 	defer callee.Close()
 
 	// Define function that is called to perform remote procedure.
-	sendData := func(ctx context.Context, inv *wamp.Invocation) InvokeResult {
+	sendData := func(ctx context.Context, inv *wamp.Invocation) client.InvokeResult {
 		// Get update interval from caller.
 		interval, _ := wamp.AsInt64(inv.Arguments[0])
 
@@ -159,11 +160,11 @@ func ExampleClient_Register_progressive() {
 			percentDone += 20
 			if e := callee.SendProgress(ctx, wamp.List{percentDone}, nil); e != nil {
 				// If send failed, return error saying the call is canceled.
-				return InvocationCanceled
+				return client.InvocationCanceled
 			}
 		}
 		// Send true as final result.
-		return InvokeResult{Args: wamp.List{true}}
+		return client.InvokeResult{Args: wamp.List{true}}
 	}
 
 	// Register example procedure.
@@ -178,15 +179,15 @@ func ExampleClient_Register_progressive() {
 func ExampleClient_SendProgress() {
 	// Configure and connect callee client.
 	ctx := context.Background()
-	cfg := Config{Realm: "nexus.realm1"}
-	callee, err := ConnectNet(ctx, "ws://localhost:8080/", cfg)
+	cfg := client.Config{Realm: "nexus.realm1"}
+	callee, err := client.ConnectNet(ctx, "ws://localhost:8080/", cfg)
 	if err != nil {
 		log.Fatal(err)
 	}
 	defer callee.Close()
 
 	// Define function that is called to perform remote procedure.
-	sendData := func(ctx context.Context, inv *wamp.Invocation) InvokeResult {
+	sendData := func(ctx context.Context, inv *wamp.Invocation) client.InvokeResult {
 		// Get update interval from caller.
 		interval, _ := wamp.AsInt64(inv.Arguments[0])
 
@@ -198,11 +199,11 @@ func ExampleClient_SendProgress() {
 			percentDone += 20
 			if e := callee.SendProgress(ctx, wamp.List{percentDone}, nil); e != nil {
 				// If send failed, return error saying the call is canceled.
-				return InvocationCanceled
+				return client.InvocationCanceled
 			}
 		}
 		// Send true as final result.
-		return InvokeResult{Args: wamp.List{true}}
+		return client.InvokeResult{Args: wamp.List{true}}
 	}
 
 	// Register example procedure.
@@ -223,8 +224,8 @@ func ExampleClient_Subscribe() {
 
 	// Configure and connect subscriber client.
 	ctx := context.Background()
-	cfg := Config{Realm: "nexus.realm1"}
-	subscriber, err := ConnectNet(ctx, "ws://localhost:8080/", cfg)
+	cfg := client.Config{Realm: "nexus.realm1"}
+	subscriber, err := client.ConnectNet(ctx, "ws://localhost:8080/", cfg)
 	if err != nil {
 		log.Fatal(err)
 	}

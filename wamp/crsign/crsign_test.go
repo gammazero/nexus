@@ -1,4 +1,4 @@
-package crsign
+package crsign_test
 
 import (
 	"crypto/sha256"
@@ -9,6 +9,7 @@ import (
 	"golang.org/x/crypto/pbkdf2"
 
 	"github.com/gammazero/nexus/v3/wamp"
+	"github.com/gammazero/nexus/v3/wamp/crsign"
 )
 
 var chStr = "{ \"nonce\":\"LHRTC9zeOIrt_9U3\", \"authprovider\":\"userdb\", \"authid\":\"peter\", " +
@@ -16,7 +17,7 @@ var chStr = "{ \"nonce\":\"LHRTC9zeOIrt_9U3\", \"authprovider\":\"userdb\", \"au
 	"\"session\":3251278072152162 }"
 
 func TestCRSign(t *testing.T) {
-	sig := SignChallenge(chStr, []byte("secret"))
+	sig := crsign.SignChallenge(chStr, []byte("secret"))
 	require.Equal(t, "NWktSrMd4ItBSAKYEwvu1bTY7G/sSyjKbz+pNP9c04A=", sig)
 }
 
@@ -27,7 +28,7 @@ func TestRespondChallenge(t *testing.T) {
 	// Compute derived key.  Normally this would normally be precomputed and
 	// the router would read it and the salting from from storage.
 	// Compute derived key.
-	dk := pbkdf2.Key([]byte(secret), salt, defaultIters, defaultKeyLen, sha256.New)
+	dk := pbkdf2.Key([]byte(secret), salt, crsign.DefaultIters, crsign.DefaultKeyLen, sha256.New)
 	// Get base64 bytes of derived key.
 	derivedKey := []byte(base64.StdEncoding.EncodeToString(dk))
 
@@ -35,8 +36,8 @@ func TestRespondChallenge(t *testing.T) {
 	// info that was used to create derived key.
 	extra := wamp.Dict{"challenge": chStr}
 	extra["salt"] = salt
-	extra["keylen"] = defaultKeyLen
-	extra["iterations"] = defaultIters
+	extra["keylen"] = crsign.DefaultKeyLen
+	extra["iterations"] = crsign.DefaultIters
 	chMsg := &wamp.Challenge{
 		AuthMethod: "wampcra",
 		Extra:      extra,
@@ -44,11 +45,11 @@ func TestRespondChallenge(t *testing.T) {
 
 	// Client computes derived key from password and salting info, then signes
 	// challenge using derived key.  Response gets sent back to router.
-	sigClient := RespondChallenge(secret, chMsg, nil)
+	sigClient := crsign.RespondChallenge(secret, chMsg, nil)
 
 	// Router computes its own signature for the challenge and compares it with
 	// the client's.Sign challenge using derived key.
-	sigServer := SignChallenge(chStr, derivedKey)
+	sigServer := crsign.SignChallenge(chStr, derivedKey)
 	require.Equal(t, sigClient, sigServer, "Client and server signatures do not match")
 
 	// Check that signature was what was expected.
