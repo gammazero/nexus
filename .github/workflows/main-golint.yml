@@ -73,7 +73,7 @@ jobs:
         uses: golangci/golangci-lint-action@v9
         with:
           # version of golangci-lint to use in form of v1.2 or v1.2.3 or `latest`
-          version: v2.6
+          version: latest
           # show only new issues
           args: --new-from-rev=${{ env.GIT_BASE_REF }}
           # skip all additional steps
