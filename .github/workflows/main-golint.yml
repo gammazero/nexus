@@ -1,11 +1,6 @@
 name: Main CI workflows
-on:
-  push:
-    branches:
-      - v3
-      - main
-      - master
-  pull_request:
+
+on: [push, pull_request]
 
 concurrency:
   group: '${{ github.workflow }} @ ${{ github.event.pull_request.head.label || github.head_ref || github.ref }}'
@@ -14,9 +9,19 @@ concurrency:
 jobs:
   build:
     name: Check, Lint and Build
-    runs-on: [ubuntu-latest, macos-latest]
+
+    runs-on: ${{ matrix.os }}
+    strategy:
+      matrix:
+        os: [ubuntu-latest, macos-latest]
+
+    env:
+      GO111MODULE: on
+
     steps:
       - uses: actions/checkout@v5
+        with:
+          fetch-depth: 0
 
       - name: Setup go
         uses: actions/setup-go@v6
@@ -40,6 +45,30 @@ jobs:
           git fetch origin ${{ env.GIT_BASE_REF }}:${{ env.GIT_BASE_REF }}
         if: github.base_ref != ''
 
+      - name: Check that code is formatted via go fmt tool
+        run: |
+          if [ "$(gofmt -s -l . | grep -v vendor | wc -l)" -gt 0 ]; then
+            exit 1;
+          fi
+
+      - name: Check that go modules are tidy
+        run: |
+          go mod tidy
+          if [[ -n $(git ls-files --other --exclude-standard --directory -- go.sum) ]]; then
+              echo "go.sum was added by go mod tidy"
+              exit 1
+          fi
+          git diff --exit-code -- go.sum go.mod
+
+      - name: gofmt
+        if: success() || failure() # run this step even if the previous one failed
+        run: |
+          out=$(gofmt -s -l .)
+          if [[ -n "$out" ]]; then
+            echo $out | tr " " "\n" | awk '{print "::error file=" $0 ",line=0,col=0::File " $0 " is not gofmt-ed."}'
+            exit 1
+          fi
+
       - name: golangci-lint
         uses: golangci/golangci-lint-action@v9
         with:
@@ -50,20 +79,6 @@ jobs:
           # skip all additional steps
           skip-cache: true
           skip-save-cache: true
-
-      - name: Check that code is formatted via go fmt tool
-        run: |
-          if [ "$(gofmt -s -l . | grep -v vendor | wc -l)" -gt 0 ]; then
-            exit 1;
-          fi
-
-      - name: Check that go modules are in synced state
-        run: |
-          go mod tidy -v
-          if [ -n "$(git status --porcelain go.mod go.sum)" ]; then
-            echo "Go modules are dirty or not in a good state. Please run go mod tidy"
-            exit 1;
-          fi
 
       - name: Run unit tests
         run: make test
