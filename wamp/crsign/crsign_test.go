@@ -25,8 +25,8 @@ func TestRespondChallenge(t *testing.T) {
 	salt := []byte("salt123")
 	secret := "password"
 
-	// Compute derived key. Normally this would normally be precomputed and the
-	// router would read it and the salting from storage. Compute derived key.
+	// Compute derived key. Normally this would be precomputed and the router
+	// would read it and the salting from storage. Compute derived key.
 	dk := pbkdf2.Key([]byte(secret), salt, crsign.DefaultIters, crsign.DefaultKeyLen, sha256.New)
 	// Get base64 bytes of derived key.
 	derivedKey := []byte(base64.StdEncoding.EncodeToString(dk))
