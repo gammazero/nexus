@@ -1,6 +1,6 @@
 # Crossbar Router Node Setup
 
-This directory contains a `Makefile` that automates installing and initializing a Crossbar router node.  This may be used for compatibility testing, to test that nexus clients operate correctly with a Crossbar WAMP router.
+This directory contains a `Makefile` that automates installing and initializing a Crossbar router node. This may be used for compatibility testing, to test that nexus clients operate correctly with a Crossbar WAMP router.
 
 To setup, configure, and run the Crossbar node:
 

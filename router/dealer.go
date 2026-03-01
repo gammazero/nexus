@@ -14,7 +14,7 @@ import (
 
 const (
 	// sendResultDeadline is the amount of time until the dealer gives up
-	// trying to send a RESULT to a blocked caller.  This is different that the
+	// trying to send a RESULT to a blocked caller. This is different that the
 	// CALL timeout which spedifies how long the callee may take to answer.
 	sendResultDeadline = time.Minute
 	// yieldRetryDelay is the initial delay before reprocessing a blocked yield.
@@ -156,7 +156,7 @@ func (d *dealer) setMetaPeer(metaPeer wamp.Peer) {
 	}
 }
 
-// role returns the role information for the "dealer" role.  The data returned
+// role returns the role information for the "dealer" role. The data returned
 // is suitable for use as broker role info in a WELCOME message.
 func (d *dealer) role() wamp.Dict {
 	return dealerRole

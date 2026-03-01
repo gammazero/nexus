@@ -77,7 +77,7 @@ func (cr *CryptoSignAuthenticator) Authenticate(sid wamp.ID, details wamp.Dict, 
 		AuthMethod: cr.AuthMethod(),
 		Extra:      extra,
 	}
-	// Challenge response needed.  Send CHALLENGE message to client.
+	// Challenge response needed. Send CHALLENGE message to client.
 	select {
 	case client.Send() <- chalMsg:
 	default:

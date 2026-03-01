@@ -1,7 +1,5 @@
-/*
-Package serialize provides a Serializer interface with implementations that
-encode and decode message data in various ways.
-*/
+// Package serialize provides a Serializer interface with implementations that
+// encode and decode message data in various ways.
 package serialize
 
 import (
@@ -87,9 +85,9 @@ func listToMsg(msgType wamp.MessageType, vlist []any) (wamp.Message, error) {
 			}
 			continue
 		}
-		// Should never happen since this means that our own message type has
-		// a type that is not a map or a slice.  This is a programming error,
-		// so panic.
+		// Should never happen since this means that our own message type has a
+		// type that is not a map or a slice. This is a programming error, so
+		// panic.
 		panic(fmt.Sprintf("internal message field %d not recognized", i+1))
 	}
 	return msg, nil
@@ -112,8 +110,8 @@ func convertType(val reflect.Value, typ reflect.Type) (reflect.Value, error) {
 	return val, nil
 }
 
-// assignMap takes the key-value pairs from src and copies them into dst.
-// Types are converted as needed.
+// assignMap takes the key-value pairs from src and copies them into dst. Types
+// are converted as needed.
 func assignMap(dst reflect.Value, src reflect.Value) error {
 	dstKeyType := dst.Type().Key()
 	dstValType := dst.Type().Elem()
@@ -139,7 +137,7 @@ func assignMap(dst reflect.Value, src reflect.Value) error {
 	return nil
 }
 
-// assignSlice takes the values from src and copies them into dst.  Types are
+// assignSlice takes the values from src and copies them into dst. Types are
 // converted as needed.
 func assignSlice(dst reflect.Value, src reflect.Value) error {
 	dst.Set(reflect.MakeSlice(dst.Type(), src.Len(), src.Len()))

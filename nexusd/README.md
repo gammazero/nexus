@@ -72,7 +72,7 @@ Annotated config file example:
             }
         ],
         "debug": true,
-        "mem_stats_log_sec": 0  // Interval in seconds for logging memory stats.  O to disable.
+        "mem_stats_log_sec": 0  // Interval in seconds for logging memory stats. 0 to disable.
 	                            // Logs Alloc, Mallocs, Frees, and NumGC.
     }
 }

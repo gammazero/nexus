@@ -90,7 +90,7 @@ func ExampleClient_Call_progressive() {
 	ctx, cancel := context.WithTimeout(context.Background(), time.Minute)
 	defer cancel()
 
-	// Call the example procedure "run.test".  The argument specifies how
+	// Call the example procedure "run.test". The argument specifies how
 	// frequently to send progress updates.
 	result, err := caller.Call(
 		ctx, "run.test", nil, wamp.List{time.Second * 2}, nil, progHandler)

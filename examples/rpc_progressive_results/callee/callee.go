@@ -62,7 +62,7 @@ func main() {
 	}
 }
 
-// sendData sends the body of data in chunks of the requested size.  The final
+// sendData sends the body of data in chunks of the requested size. The final
 // result message contains the sha256 hash of the data to allow the caller to
 // verify that all the data was correctly received.
 func sendData(ctx context.Context, callee *client.Client, args wamp.List) client.InvokeResult {

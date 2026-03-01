@@ -11,11 +11,11 @@ import (
 )
 
 // AuthFunc takes the CHALLENGE message and returns the signature string and
-// any WELCOME message details.  If the signature is accepted, the details are
+// any WELCOME message details. If the signature is accepted, the details are
 // used to populate the welcome message, as well as the session attributes.
 //
 // In response to a CHALLENGE message, the Client MUST send an AUTHENTICATE
-// message.  Therefore, AuthFunc does not return an error.  If an error is
+// message. Therefore, AuthFunc does not return an error. If an error is
 // encountered within AuthFunc, then an empty signature should be returned
 // since the client cannot give a valid signature response.
 //
@@ -29,42 +29,42 @@ type Config struct {
 	// Realm is the URI of the realm the client will join.
 	Realm string
 
-	// HelloDetails contains details about the client.  The client provides the
+	// HelloDetails contains details about the client. The client provides the
 	// roles, unless already supplied by the user.
 	HelloDetails wamp.Dict
 
-	// AuthHandlers is a map of authmethod to AuthFunc.  All authmethod keys
+	// AuthHandlers is a map of authmethod to AuthFunc. All authmethod keys
 	// from this map are automatically added to HelloDetails["authmethods"]
 	AuthHandlers map[string]AuthFunc
 
 	// Enable debug logging for client.
 	Debug bool
 
-	// Logger for client to use.  If not set, client logs to os.Stderr.
+	// Logger for client to use. If not set, client logs to os.Stderr.
 	Logger stdlog.StdLog
 
 	// ResponseTimeout specifies the amount of time that the client will block
-	// waiting for a response from the router.  A value of 0 uses the default.
+	// waiting for a response from the router. A value of 0 uses the default.
 	ResponseTimeout time.Duration
 
-	// Set to JSON or MSGPACK.  Default (zero-value) is JSON.
+	// Set to JSON or MSGPACK. Default (zero-value) is JSON.
 	Serialization serialize.Serialization
 
-	// Provide a tls.Config to connect the client using TLS.  The zero
-	// configuration specifies using defaults.  A nil tls.Config means do not
+	// Provide a tls.Config to connect the client using TLS. The zero
+	// configuration specifies using defaults. A nil tls.Config means do not
 	// use TLS.
 	TlsCfg *tls.Config
 
-	// For local clients only.  This configures the router-to-client queue size
+	// For local clients only. This configures the router-to-client queue size
 	// and is the maximum number of messages that are enqueued for the client
-	// to read.  If the client does not read messages, then additional messages
-	// from the router are dropped.  A value of zero specifies the default.
+	// to read. If the client does not read messages, then additional messages
+	// from the router are dropped. A value of zero specifies the default.
 	LocalQueueSize int
 
-	// Client receive limit for use with RawSocket transport.
-	// If recvLimit is > 0, then the client will not receive messages with size
-	// larger than the nearest power of 2 greater than or equal to recvLimit.
-	// If recvLimit is <= 0, then the default of 16M is used.
+	// Client receive limit for use with RawSocket transport. If recvLimit is >
+	// 0, then the client will not receive messages with size larger than the
+	// nearest power of 2 greater than or equal to recvLimit. If recvLimit is
+	// <= 0, then the default of 16M is used.
 	RecvLimit int
 
 	// Websocket transport configuration.

@@ -46,13 +46,13 @@ type protocol struct {
 // AllowOrigins() for details.
 type WebsocketServer struct {
 	// Upgrader specifies parameters for upgrading an HTTP connection to a
-	// websocket connection.  See:
+	// websocket connection. See:
 	// https://godoc.org/github.com/gorilla/websocket#Upgrader
 	Upgrader *websocket.Upgrader
 
-	// Serializer for text frames.  Defaults to JSONSerializer.
+	// Serializer for text frames. Defaults to JSONSerializer.
 	TextSerializer serialize.Serializer
-	// Serializer for binary frames.  Defaults to MessagePackSerializer.
+	// Serializer for binary frames. Defaults to MessagePackSerializer.
 	BinarySerializer serialize.Serializer
 
 	// EnableTrackingCookie tells the server to send a random-value cookie to

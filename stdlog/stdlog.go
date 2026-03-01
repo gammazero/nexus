@@ -1,21 +1,19 @@
-/*
-Package stdlog provides a minimal logging interface to allow nexus to use
-nearly any logging implementation.
-*/
+// Package stdlog provides a minimal logging interface to allow nexus to use
+// nearly any logging implementation.
 package stdlog
 
 // StdLog is a minimal interface implemented by nearly every logging package.
-// The nexus package uses this interface for all logging, which allows nexus
-// to use any logging package desired.
+// The nexus package uses this interface for all logging, which allows nexus to
+// use any logging package desired.
 type StdLog interface {
-	// Print logs a message.  Arguments are handled in the manner of fmt.Print.
+	// Print logs a message. Arguments are handled in the manner of fmt.Print.
 	Print(v ...any)
 
-	// Println logs a message.  Arguments are handled in the manner of
+	// Println logs a message. Arguments are handled in the manner of
 	// fmt.Println.
 	Println(v ...any)
 
-	// Printf logs a message.  Arguments are handled in the manner of
+	// Printf logs a message. Arguments are handled in the manner of
 	// fmt.Printf.
 	Printf(format string, v ...any)
 }

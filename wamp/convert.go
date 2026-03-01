@@ -127,8 +127,8 @@ func AsList(v any) (List, bool) {
 	return list, true
 }
 
-// ListToStrings converts a List to a slice of string.  Returns the string
-// slice and a boolean indicating if the conversion was successful.
+// ListToStrings converts a List to a slice of string. Returns the string slice
+// and a boolean indicating if the conversion was successful.
 func ListToStrings(list List) ([]string, bool) {
 	if len(list) == 0 {
 		return nil, true

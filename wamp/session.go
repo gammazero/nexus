@@ -5,8 +5,8 @@ import (
 	"sync"
 )
 
-// Session is an active WAMP session.  It associates a session ID and details
-// with a connected Peer, which is the remote side of the session.  So, if the
+// Session is an active WAMP session. It associates a session ID and details
+// with a connected Peer, which is the remote side of the session. So, if the
 // session owned by the router, then the Peer is the connected client.
 type Session struct {
 	// Interface for communicating with connected peer.
@@ -27,7 +27,7 @@ type Session struct {
 // NoGoodbye indicates that no Goodbye message was sent out
 var NoGoodbye = &Goodbye{} //nolint:gochecknoglobals
 
-// NewSession creates a new session.  The greetDetails is the details from the
+// NewSession creates a new session. The greetDetails is the details from the
 // HELLO or WELCOME message, from which roles and features are extracted.
 func NewSession(peer Peer, id ID, details Dict, greetDetails Dict) *Session {
 	s := &Session{
@@ -77,9 +77,9 @@ func (s *Session) RecvDone() <-chan struct{} {
 	return s.done
 }
 
-// If RecvDone is not yet closed, Goodbye returns nil.
-// If RecvDone is closed, Goodbye returns the GOODBYE message that was supplied
-// when RecvEnd was called.
+// If RecvDone is not yet closed, Goodbye returns nil. If RecvDone is closed,
+// Goodbye returns the GOODBYE message that was supplied when RecvEnd was
+// called.
 func (s *Session) Goodbye() *Goodbye {
 	s.mu.Lock()
 	defer s.mu.Unlock()
@@ -87,8 +87,8 @@ func (s *Session) Goodbye() *Goodbye {
 }
 
 // EndRecv tells the session to signal messages handlers to stop receiving
-// messages from this session.  An optional goodbye message may be provided for
-// the message handler to send to the peer.  It is the responsibility of the
+// messages from this session. An optional goodbye message may be provided for
+// the message handler to send to the peer. It is the responsibility of the
 // message handler to send the goodbye message, so that this can be coordinated
 // with exiting the message handler for other reasons.
 func (s *Session) EndRecv(goodbye *Goodbye) bool {

@@ -192,7 +192,7 @@ func TestSessionKillDeadlock(t *testing.T) {
 
 	localCli := connectClient(t)
 
-	// Subscribe to event.  Note this needs to be a buffered channel so that
+	// Subscribe to event. Note this needs to be a buffered channel so that
 	// event can be "handled" while the test is waiting for a response.
 	onUnregEvents := make(chan *wamp.Event, 1)
 	err = localCli.SubscribeChan(string(wamp.MetaEventRegOnUnregister), onUnregEvents, nil)

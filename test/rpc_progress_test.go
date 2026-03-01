@@ -99,7 +99,7 @@ func TestRPCProgressiveCallInterrupt(t *testing.T) {
 	var sendProgErr error
 	handler := func(ctx context.Context, inv *wamp.Invocation) client.InvokeResult {
 		defer close(sentFinal)
-		// Send a progressive result.  This should go through just fine.
+		// Send a progressive result. This should go through just fine.
 		e := callee.SendProgress(ctx, wamp.List{"Alpha"}, nil)
 		if e != nil {
 			t.Log("Error sending Alpha progress:", e)
@@ -120,7 +120,7 @@ func TestRPCProgressiveCallInterrupt(t *testing.T) {
 
 		// This second result will cause the dealer to respond with INTERRUPT
 		// if this client has not yet processed the INTERRUPT from the previous
-		// result.  If the result was sent to the dealer, then no error.
+		// result. If the result was sent to the dealer, then no error.
 		e = callee.SendProgress(ctx, wamp.List{"Charlie"}, nil)
 		if e != nil {
 			t.Log("Error sending progress:", e)
@@ -129,12 +129,12 @@ func TestRPCProgressiveCallInterrupt(t *testing.T) {
 		// Give time for this client to process INTERRUPTs.
 		//
 		// The client will process the first INTERRUPT and close the invocation
-		// handler.  The client will get the second INTERRUPT and see that the
+		// handler. The client will get the second INTERRUPT and see that the
 		// invocation no longer exists, and ignore the INTERRUPT.
 		time.Sleep(50 * time.Millisecond)
 
 		// This result will not be sent since the client has closed the
-		// invocation handler.  An error is returned saying "caller not
+		// invocation handler. An error is returned saying "caller not
 		// accepting progressive results".
 		e = callee.SendProgress(ctx, wamp.List{"Delta"}, nil)
 		if e != nil && e.Error() != "caller not accepting progressive results" {
@@ -269,10 +269,10 @@ func TestProgressStress(t *testing.T) {
 		recvLen += len(chunk)
 		recvCount++
 
-		// Simulate processing time.  This causes the callee to have to pause
+		// Simulate processing time. This causes the callee to have to pause
 		// and resend the RESULT, which happens when a callee generates results
-		// faster than the caller can process them.  The pause is long enough
-		// to ensure there are multiple retries.
+		// faster than the caller can process them. The pause is long enough to
+		// ensure there are multiple retries.
 		//
 		// Pause on the 13th RESULT of every third call.
 		if recvCount == 13 && result.Request%3 == 0 {
@@ -297,7 +297,7 @@ func TestProgressStress(t *testing.T) {
 
 		require.Equalf(t, recvCount, sendCount, "Caller received %d chunks, expected %d", recvCount, sendCount)
 
-		// Check if lenth received is correct
+		// Check if lenth received is correct.
 		require.Equal(t, dataLen, recvLen, "Caller received wrong amount of data")
 		require.Equal(t, dataLen, int(totalLen), "Length sent by callee is wrong")
 
@@ -321,7 +321,7 @@ func TestRPCProgressiveCallTimeout(t *testing.T) {
 
 	// Handler sends progressive results.
 	handler := func(ctx context.Context, inv *wamp.Invocation) client.InvokeResult {
-		// Send a progressive result.  This should go through just fine.
+		// Send a progressive result. This should go through just fine.
 		e := callee.SendProgress(ctx, wamp.List{"Alpha"}, nil)
 		if e != nil {
 			sendProgErr <- e

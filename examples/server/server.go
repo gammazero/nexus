@@ -1,7 +1,5 @@
-/*
-Example nexus WAMP router that handles websockets (with/out TLS), TCP
-rawsockets (with/out TLS), and unix rawsockets.
-*/
+// Example nexus WAMP router that handles websockets (with/out TLS), TCP
+// rawsockets (with/out TLS), and unix rawsockets.
 package main
 
 import (
@@ -150,7 +148,7 @@ func main() {
 }
 
 // createLocalCallee creates a local callee client that is embedded in this
-// server.  This client functions as a trusted client and does not require IPC
+// server. This client functions as a trusted client and does not require IPC
 // to communicate with the router.
 //
 // The purpose of this client is to demonstrate how to create a local client

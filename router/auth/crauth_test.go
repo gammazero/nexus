@@ -160,7 +160,7 @@ func TestTicketAuth(t *testing.T) {
 	_, err = ticketAuth.Authenticate(sid, details, rp)
 	require.Error(t, err, "expected error with bad ticket")
 
-	// Supply the previous tracking cookie in transport.auth.  This will
+	// Supply the previous tracking cookie in transport.auth. This will
 	// identify the previously authenticated client.
 	authDict["cookie"] = &http.Cookie{Name: "nexus-wamp-cookie", Value: "a1b2c3"}
 	authDict["nextcookie"] = &http.Cookie{Name: "nexus-wamp-cookie", Value: "xyz123"}

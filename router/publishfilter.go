@@ -23,9 +23,9 @@ type simplePublishFilter struct {
 	wlMap map[string][]string
 }
 
-// NewSimplePublishFilter gets any blacklists and whitelists included
-// in a PUBLISH message.  If there are no filters defined by the
-// PUBLISH message, then nil is returned.
+// NewSimplePublishFilter gets any blacklists and whitelists included in a
+// PUBLISH message. If there are no filters defined by the PUBLISH message,
+// then nil is returned.
 func NewSimplePublishFilter(msg *wamp.Publish) PublishFilter {
 	const (
 		blacklistPrefix = "exclude_"
@@ -92,9 +92,9 @@ func NewSimplePublishFilter(msg *wamp.Publish) PublishFilter {
 	return &simplePublishFilter{blIDs, wlIDs, blMap, wlMap}
 }
 
-// Allowed determines if a message is allowed to be published to a
-// subscriber, by looking at any blacklists and whitelists provided
-// with the publish message.
+// Allowed determines if a message is allowed to be published to a subscriber,
+// by looking at any blacklists and whitelists provided with the publish
+// message.
 //
 // To receive a published event, the subscriber session must not have any
 // values that appear in a blacklist, and must have a value from each

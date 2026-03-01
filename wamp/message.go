@@ -446,8 +446,8 @@ type Authenticate struct {
 func (msg *Authenticate) MessageType() MessageType { return AUTHENTICATE }
 
 // The CANCEL message is used with the Call Canceling advanced feature. A
-// Caller can cancel an issued call actively by sending a cancel message to
-// the Dealer.
+// Caller can cancel an issued call actively by sending a cancel message to the
+// Dealer.
 //
 // [CANCEL, CALL.Request|id, Options|dict]
 type Cancel struct {
@@ -469,8 +469,8 @@ type Interrupt struct {
 
 func (msg *Interrupt) MessageType() MessageType { return INTERRUPT }
 
-// IsGoodbyeAck checks if the message is an ack to end of session.  This is
-// used by transports to avoid logging an error if unable to send a goodbye
+// IsGoodbyeAck checks if the message is an ack to end of session. This is used
+// by transports to avoid logging an error if unable to send a goodbye
 // acknowledgment to a client, since the client may not have waited for the
 // acknowledgment.
 func IsGoodbyeAck(msg Message) bool {

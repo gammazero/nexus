@@ -1,11 +1,9 @@
-/*
-Package auth provides interfaces for implementing authentication logic that the
-WAMP router can use.
-
-In addition, in authentication and challenge-response authentication interface,
-this package provides default implementations for the following authentication
-methods: "wampcra", ticket", "anonymous".
-*/
+// Package auth provides interfaces for implementing authentication logic that
+// the WAMP router can use.
+//
+// In addition, in authentication and challenge-response authentication
+// interface, this package provides default implementations for the following
+// authentication methods: "wampcra", ticket", "anonymous".
 package auth
 
 import (
@@ -23,7 +21,7 @@ type Authenticator interface {
 	// successful, otherwise it returns an error.
 	//
 	// If the client is a websocket peer, and request capture is enabled, then
-	// the HTTP request is stored in details.  If cookie tracking is enabled,
+	// the HTTP request is stored in details. If cookie tracking is enabled,
 	// then the cookie from the request, and the next cookie to expect, are
 	// also stored in details.
 	//
@@ -47,7 +45,7 @@ type KeyStore interface {
 	// AuthKey returns the user's key appropriate for the specified authmethod.
 	AuthKey(authid, authmethod string) ([]byte, error)
 
-	// PasswordInfo returns salting info for the user's password.  This
+	// PasswordInfo returns salting info for the user's password. This
 	// information must be available when using keys computed with PBKDF2.
 	PasswordInfo(authid string) (salt string, keylen int, iterations int)
 
@@ -68,19 +66,19 @@ type BypassKeyStore interface {
 	KeyStore
 
 	// AlreadyAuth takes information about a HELLO request including transport
-	// details.  If the client is a websocket client, then information from the
+	// details. If the client is a websocket client, then information from the
 	// HTTP upgrade request, the tracking cookie ID from the request, and next
 	// tracking cookie ID (if enabled) are available in
 	// details.transport.auth|Dict.
 	//
 	// If the client is recognized and already authenticated, then AlreadyAuth
-	// returns true.  Otherwise, false is returned if not authenticated.
+	// returns true. Otherwise, false is returned if not authenticated.
 	AlreadyAuth(authid string, details wamp.Dict) bool
 
-	// OnWelcome is called when a client is successfully authenticated.  This
+	// OnWelcome is called when a client is successfully authenticated. This
 	// allows the KeyStore to update any information about the authenticated
 	// client, to modify the welcome message, and to store the next tracking
-	// cookie ID to expect from the client.  The request information and the
+	// cookie ID to expect from the client. The request information and the
 	// next cookie ID are available from in details.transport.auth|Dict.
 	OnWelcome(authid string, welcome *wamp.Welcome, details wamp.Dict) error
 }

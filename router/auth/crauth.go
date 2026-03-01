@@ -88,7 +88,7 @@ func (cr *CRAuthenticator) Authenticate(sid wamp.ID, details wamp.Dict, client w
 		extra["iterations"] = iters
 	}
 
-	// Challenge response needed.  Send CHALLENGE message to client.
+	// Challenge response needed. Send CHALLENGE message to client.
 	chalMsg := &wamp.Challenge{
 		AuthMethod: cr.AuthMethod(),
 		Extra:      extra,

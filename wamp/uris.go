@@ -28,7 +28,7 @@ const (
 
 	// A call failed, since the given argument types or values are not
 	// acceptable to the called procedure - in which case the Callee may throw
-	// this error.  Or a Router performing payload validation checked the
+	// this error. Or a Router performing payload validation checked the
 	// payload (args / kwargs) of a call, call result, call error or publish,
 	// and the payload did not conform - in which case the Router may throw
 	// this error.
@@ -60,8 +60,8 @@ const (
 
 	// A Dealer or Broker could not determine if the Peer is authorized to
 	// perform a join, call, register, publish or subscribe, since the
-	// authorization operation itself failed.  E.g. a custom authorizer ran
-	// into an error.
+	// authorization operation itself failed. E.g. a custom authorizer ran into
+	// an error.
 	ErrAuthorizationFailed = URI("wamp.error.authorization_failed")
 
 	// Something failed with the authentication itself, that is, authentication
@@ -73,7 +73,7 @@ const (
 	ErrNoSuchRealm = URI("wamp.error.no_such_realm")
 
 	// A Peer was to be authenticated under a Role that does not (or no longer)
-	// exists on the Router.  For example, the Peer was successfully
+	// exists on the Router. For example, the Peer was successfully
 	// authenticated, but the Role configured does not exists - hence there is
 	// some misconfiguration in the Router.
 	ErrNoSuchRole = URI("wamp.error.no_such_role")

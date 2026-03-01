@@ -6,15 +6,15 @@ import (
 
 const defaultRToCQueueSize = 64
 
-// LinkedPeers creates two connected peers.  Messages sent to one peer appear
-// in the Recv of the other.  This is used for connecting client sessions to
-// the router.
+// LinkedPeers creates two connected peers. Messages sent to one peer appear in
+// the Recv of the other. This is used for connecting client sessions to the
+// router.
 func LinkedPeers() (wamp.Peer, wamp.Peer) {
 	return LinkedPeersQSize(defaultRToCQueueSize)
 }
 
 // LinkedPeersQSize is the same as LinkedPeers with the ability to specify the
-// router-to-client queue size.  Specifying size 0 uses default size.
+// router-to-client queue size. Specifying size 0 uses default size.
 func LinkedPeersQSize(queueSize int) (wamp.Peer, wamp.Peer) {
 	if queueSize == 0 {
 		queueSize = defaultRToCQueueSize
@@ -22,7 +22,7 @@ func LinkedPeersQSize(queueSize int) (wamp.Peer, wamp.Peer) {
 
 	// The channel used for the router to send messages to the client should be
 	// large enough to prevent blocking while waiting for a slow client, as a
-	// client may block on I/O.  If the client does block, then the message
+	// client may block on I/O. If the client does block, then the message
 	// should be dropped.
 	rToC := make(chan wamp.Message, queueSize)
 

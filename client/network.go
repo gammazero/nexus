@@ -14,25 +14,24 @@ import (
 )
 
 // ConnectNet creates a new client connected a WAMP router over a websocket,
-// TCP socket, or unix socket.  The new client joins the realm specified in the
-// Config.  The context may be used to cancel or timeout connecting to a router.
+// TCP socket, or unix socket. The new client joins the realm specified in the
+// Config. The context may be used to cancel or timeout connecting to a router.
 //
 // For websocket clients, the routerURL has the form "ws://host:port/" or
-// "wss://host:port/", for websocket or websocket with TLS respectively.  The
+// "wss://host:port/", for websocket or websocket with TLS respectively. The
 // scheme "http" is interchangeable with "ws", and "https" is interchangeable
-// with "wss".  The host:port portion is the same as for a TCP client.
+// with "wss". The host:port portion is the same as for a TCP client.
 //
 // For TCP clients, the router URL has the form "tcp://host:port/" or
-// "tcps://host:port/", for TCP socket or TCP socket with TLS respectively.
-// The host must be a literal IP address, or a host name that can be resolved
-// to IP addresses.  The port must be a literal port number or a service name.
-// If the host is a literal IPv6 address it must be enclosed in square
-// brackets, as in "[2001:db8::1]:80".  For details, see:
-// https://golang.org/pkg/net/#Dial
+// "tcps://host:port/", for TCP socket or TCP socket with TLS respectively. The
+// host must be a literal IP address, or a host name that can be resolved to IP
+// addresses. The port must be a literal port number or a service name. If the
+// host is a literal IPv6 address it must be enclosed in square brackets, as in
+// "[2001:db8::1]:80". For details, see: https://golang.org/pkg/net/#Dial
 //
-// For Unix socket clients, the routerURL has the form "unix://path".  The path
+// For Unix socket clients, the routerURL has the form "unix://path". The path
 // portion specifies a path on the local file system where the Unix socket is
-// created.  TLS is not used for unix sockets.
+// created. TLS is not used for unix sockets.
 func ConnectNet(ctx context.Context, routerURL string, cfg Config) (*Client, error) {
 	if cfg.Logger == nil {
 		cfg.Logger = log.New(os.Stderr, "", 0)
