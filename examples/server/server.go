@@ -100,10 +100,7 @@ func main() {
 	log.Printf("RawSocket TCP server listening on tcp://%s/", tcpAddr)
 
 	// Run unix rawsocket server.
-	err = os.Remove(unixAddr)
-	if err != nil {
-		log.Fatal(err)
-	}
+	_ = os.Remove(unixAddr)
 	unixCloser, err := rss.ListenAndServe("unix", unixAddr)
 	if err != nil {
 		log.Fatal(err)
