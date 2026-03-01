@@ -282,7 +282,7 @@ func (r *realm) createMetaSession() {
 	go func() {
 		_, _, err := r.handleInboundMessages(r.metaSess)
 		if err != nil {
-			r.log.Printf("meta session handler should never return error, got: %s\n", err)
+			r.log.Println("meta session handler should never return error, got:", err)
 		}
 	}()
 	if r.debug {
