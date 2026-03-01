@@ -13,7 +13,7 @@ var ch *codec.CborHandle //nolint:gochecknoglobals
 
 func init() {
 	ch = &codec.CborHandle{}
-	ch.MapType = reflect.TypeOf(map[string]interface{}(nil))
+	ch.MapType = reflect.TypeOf(map[string]any(nil))
 }
 
 // CBORSerializer is an implementation of Serializer that handles
@@ -29,7 +29,7 @@ func (s *CBORSerializer) Serialize(msg wamp.Message) ([]byte, error) {
 
 // Deserialize decodes a cbor payload into a Message.
 func (s *CBORSerializer) Deserialize(data []byte) (wamp.Message, error) {
-	var v []interface{}
+	var v []any
 	err := codec.NewDecoderBytes(data, ch).Decode(&v)
 	if err != nil {
 		return nil, err
@@ -49,13 +49,13 @@ func (s *CBORSerializer) Deserialize(data []byte) (wamp.Message, error) {
 }
 
 // SerializeDataItem encodes any object/structure into a cbor payload.
-func (s *CBORSerializer) SerializeDataItem(item interface{}) ([]byte, error) {
+func (s *CBORSerializer) SerializeDataItem(item any) ([]byte, error) {
 	var b []byte
 	err := codec.NewEncoderBytes(&b, ch).Encode(item)
 	return b, err
 }
 
 // DeserializeDataItem decodes a json payload into an object/structure.
-func (s *CBORSerializer) DeserializeDataItem(data []byte, v interface{}) error {
+func (s *CBORSerializer) DeserializeDataItem(data []byte, v any) error {
 	return codec.NewDecoderBytes(data, ch).Decode(&v)
 }

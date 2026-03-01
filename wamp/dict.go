@@ -28,8 +28,8 @@ func NormalizeDict(v any) Dict {
 		cv := val.MapIndex(key)
 		newVal := NormalizeDict(cv.Interface())
 		if newVal == nil {
-			// If the value is interface{} representing []interface{}, then
-			// convert the slice to a List type.
+			// If the value is any representing []any, then convert the slice
+			// to a List type.
 			if cv.Kind() == reflect.Interface && cv.Elem().Kind() == reflect.Slice {
 				cv = cv.Elem()
 				listType := reflect.TypeFor[List]()
@@ -77,8 +77,8 @@ func DictChild(dict Dict, key string) Dict {
 //	DictValue(dict, strings.Split(path, "."))
 //
 // For example, the path []string{"roles","callee","features","call_timeout"}
-// returns the value of the call_timeout feature as interface{}. An error is
-// returned if the value is not present.
+// returns the value of the call_timeout feature as any. An error is returned
+// if the value is not present.
 func DictValue(dict Dict, path []string) (any, error) {
 	for i := range path[:len(path)-1] {
 		dict = DictChild(dict, path[i])

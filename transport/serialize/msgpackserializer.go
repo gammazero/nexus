@@ -14,7 +14,7 @@ var mh *codec.MsgpackHandle //nolint:gochecknoglobals
 func init() {
 	mh = new(codec.MsgpackHandle)
 	mh.WriteExt = true
-	mh.MapType = reflect.TypeOf(map[string]interface{}(nil))
+	mh.MapType = reflect.TypeOf(map[string]any(nil))
 }
 
 // MsgpackRegisterExtension registers a custom type for special serialization.
@@ -38,7 +38,7 @@ func (s *MessagePackSerializer) Serialize(msg wamp.Message) ([]byte, error) {
 
 // Deserialize decodes a msgpack payload into a Message.
 func (s *MessagePackSerializer) Deserialize(data []byte) (wamp.Message, error) {
-	var v []interface{}
+	var v []any
 	err := codec.NewDecoderBytes(data, mh).Decode(&v)
 	if err != nil {
 		return nil, err
@@ -55,14 +55,14 @@ func (s *MessagePackSerializer) Deserialize(data []byte) (wamp.Message, error) {
 }
 
 // SerializeDataItem encodes any object/structure into a msgpack payload.
-func (s *MessagePackSerializer) SerializeDataItem(item interface{}) ([]byte, error) {
+func (s *MessagePackSerializer) SerializeDataItem(item any) ([]byte, error) {
 	var b []byte
 	err := codec.NewEncoderBytes(&b, mh).Encode(item)
 	return b, err
 }
 
 // DeserializeDataItem decodes a json payload into an object/structure.
-func (s *MessagePackSerializer) DeserializeDataItem(data []byte, v interface{}) error {
+func (s *MessagePackSerializer) DeserializeDataItem(data []byte, v any) error {
 	return codec.NewDecoderBytes(data, mh).Decode(&v)
 }
 
@@ -71,7 +71,7 @@ type bytesExtWrapper struct {
 	decFn func(reflect.Value, []byte) error
 }
 
-func (x bytesExtWrapper) WriteExt(v interface{}) []byte {
+func (x bytesExtWrapper) WriteExt(v any) []byte {
 	bs, err := x.encFn(reflect.ValueOf(v))
 	if err != nil {
 		panic(err)
@@ -79,7 +79,7 @@ func (x bytesExtWrapper) WriteExt(v interface{}) []byte {
 	return bs
 }
 
-func (x bytesExtWrapper) ReadExt(v interface{}, bs []byte) {
+func (x bytesExtWrapper) ReadExt(v any, bs []byte) {
 	err := x.decFn(reflect.ValueOf(v), bs)
 	if err != nil {
 		panic(err)
