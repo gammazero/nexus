@@ -15,9 +15,9 @@ func TestListToMsg(t *testing.T) {
 
 	pubArgs := []string{"hello", "nexus", "wamp", "router"}
 
-	// Deserializing a slice into a message.
-	elems := wamp.List{msgType, 123, wamp.Dict{},
-		"some.valid.topic", pubArgs}
+	// Deserializing a slice into a message. Use uint64 for the message type
+	// to simulate what JSON/CBOR deserializers produce.
+	elems := wamp.List{uint64(msgType), 123, wamp.Dict{}, "some.valid.topic", pubArgs}
 	msg, err := listToMsg(msgType, elems)
 	require.NoError(t, err)
 
@@ -27,8 +27,8 @@ func TestListToMsg(t *testing.T) {
 
 	// Check arguments.
 	require.Equal(t, len(pubArgs), len(pubMsg.Arguments), "wrong number of message arguments")
-	for i := 0; i < len(pubArgs); i++ {
-		require.Equalf(t, pubArgs[i], pubMsg.Arguments[i], "argument %d has wrong value", i)
+	for i, pubArg := range pubArgs {
+		require.Equalf(t, pubArg, pubMsg.Arguments[i], "argument %d has wrong value", i)
 	}
 }
 

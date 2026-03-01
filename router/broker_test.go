@@ -746,7 +746,7 @@ func TestEventHistory(t *testing.T) {
 	require.Equalf(t, 20, subEvents.Len(), "Store for topic %s should hold 20 records", topic)
 	require.Falsef(t, broker.eventHistoryStore[subscription].atLimit(), "Limit for the store for topic %s should not be reached", topic)
 
-	// Rest Event History MetaRPCs.
+	// Test Event History MetaRPCs.
 	topic = wamp.URI("nexus.test.exact.topic")
 	subId := broker.topicSubscription[topic].id
 	inv := wamp.Invocation{

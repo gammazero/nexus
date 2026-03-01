@@ -12,6 +12,8 @@ import (
 	"github.com/gammazero/nexus/v3/wamp"
 )
 
+const supportsChannelBinding = false
+
 type CryptoSignAuthenticator struct {
 	keyStore KeyStore
 	timeout  time.Duration
@@ -65,8 +67,7 @@ func (cr *CryptoSignAuthenticator) Authenticate(sid wamp.ID, details wamp.Dict, 
 		return nil, errors.New("failed to retrieve key")
 	}
 
-	//channelBinding := cr.extractChannelBinding(details)
-	challenge, err := cr.computeChallenge(nil)
+	challenge, err := cr.computeChallenge(details)
 	if err != nil {
 		return nil, err
 	}
@@ -137,27 +138,31 @@ func (cr *CryptoSignAuthenticator) verifySignature(signature string, publicKey [
 	return verify, nil
 }
 
-/*
-func (cr *CryptoSignAuthenticator) extractChannelBinding(details wamp.Dict) []byte {
-	if details != nil {
-		authextra, ok := wamp.AsDict(details["authextra"])
-		if !ok {
-			return nil
-		}
-
-		_, ok = wamp.AsDict(authextra["channel_binding"])
-		if !ok {
-			return nil
-		}
-
-		// TODO: extract and convert channel binding
+func (cr *CryptoSignAuthenticator) extractChannelBinding(details wamp.Dict) []byte { //nolint:unparam // TODO needs to extract value
+	if details == nil {
+		return nil
 	}
 
+	authextra, ok := wamp.AsDict(details["authextra"])
+	if !ok {
+		return nil
+	}
+
+	_, ok = wamp.AsDict(authextra["channel_binding"])
+	if !ok {
+		return nil
+	}
+
+	// TODO: extract and convert channel binding
 	return nil
 }
-*/
 
-func (cr *CryptoSignAuthenticator) computeChallenge(channelBinding []byte) ([]byte, error) {
+func (cr *CryptoSignAuthenticator) computeChallenge(details wamp.Dict) ([]byte, error) {
+	var channelBinding []byte
+	if supportsChannelBinding {
+		channelBinding = cr.extractChannelBinding(details)
+	}
+
 	challenge := make([]byte, 32)
 	_, err := rand.Read(challenge)
 	if err != nil {
@@ -166,8 +171,8 @@ func (cr *CryptoSignAuthenticator) computeChallenge(channelBinding []byte) ([]by
 
 	signedMessage := make([]byte, 32)
 	if channelBinding != nil {
-		for index, v := range challenge {
-			signedMessage[index] = v ^ channelBinding[index]
+		for i, v := range challenge {
+			signedMessage[i] = v ^ channelBinding[i]
 		}
 	} else {
 		copy(signedMessage, challenge)
