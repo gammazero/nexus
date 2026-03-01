@@ -87,7 +87,7 @@ func sum(ctx context.Context, inv *wamp.Invocation) client.InvokeResult {
 	logger.Println("  Calculated sum", sum)
 
 	options := wamp.Dict{}
-	// Make a random choide to demonstrate different serializers.
+	// Make a random choice to demonstrate different serializers.
 	switch rand.Intn(3) {
 	case 0:
 		options = wamp.Dict{
