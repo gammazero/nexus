@@ -49,13 +49,13 @@ func AsInt64(v any) (int64, bool) {
 			return int64(i), true
 		}
 	case uint64:
-		return int64(v), true //nolint:gosec // G115 ok, nunber can wrap
+		return int64(v), true //nolint:gosec // G115 ok, number can wrap
 	case int:
 		return int64(v), true
 	case int32:
 		return int64(v), true
 	case uint:
-		return int64(v), true //nolint:gosec // G115 ok, nunber can wrap
+		return int64(v), true //nolint:gosec // G115 ok, number can wrap
 	case uint32:
 		return int64(v), true
 	case float64:
