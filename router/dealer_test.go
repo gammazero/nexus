@@ -956,7 +956,7 @@ func TestPatternBasedRegistration(t *testing.T) {
 	caller := newTestPeer()
 	callerSession := wamp.NewSession(caller, 0, nil, nil)
 
-	// Test calling valid procedure with full name. Widlcard should match.
+	// Test calling valid procedure with full name. Wildcard should match.
 	dealer.call(callerSession,
 		&wamp.Call{Request: 125, Procedure: testProcedure})
 
@@ -1057,7 +1057,7 @@ func TestCallerIdentification(t *testing.T) {
 	callerID := wamp.ID(11235813)
 	callerSession := wamp.NewSession(caller, callerID, nil, nil)
 
-	// Test calling valid procedure with full name. Widlcard should match.
+	// Test calling valid procedure with full name. Wildcard should match.
 	dealer.call(callerSession,
 		&wamp.Call{Request: 125, Procedure: testProcedure})
 

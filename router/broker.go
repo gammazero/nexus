@@ -721,7 +721,7 @@ func (b *broker) syncPubSubCreateMeta(subSessID wamp.ID, sub *subscription) {
 				continue
 			}
 
-			// Need to send separate event message to each locsl subscriber,
+			// Need to send separate event message to each local subscriber,
 			// since local clients could modify contents.
 			if subscriber.IsLocal() {
 				b.trySend(subscriber, makeEvent())

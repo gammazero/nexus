@@ -3,7 +3,7 @@
 //
 // In addition, in authentication and challenge-response authentication
 // interface, this package provides default implementations for the following
-// authentication methods: "wampcra", ticket", "anonymous".
+// authentication methods: "wampcra", "ticket", "anonymous".
 package auth
 
 import (

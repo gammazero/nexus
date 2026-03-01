@@ -188,7 +188,7 @@ func TestSessionModifyDetails(t *testing.T) {
 		result, ok = msg.(*wamp.Result)
 		require.True(t, ok, "expected RESULT")
 		require.Equal(t, callID, result.Request, "wrong result ID")
-		require.NotZero(t, len(result.Arguments), "missing expected arguemnt")
+		require.NotZero(t, len(result.Arguments), "missing expected argument")
 		details, ok := result.Arguments[0].(wamp.Dict)
 		require.True(t, ok, "expected dict type arg")
 		authid, _ := wamp.AsString(details["authid"])

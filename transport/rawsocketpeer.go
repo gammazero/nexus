@@ -51,7 +51,7 @@ const (
 
 // ConnectRawSocketPeer creates a new rawSocketPeer with the specified config,
 // and connects it, to the WAMP router at the specified address. If a non-nil
-// tlsConfig is given, then TLS is used to secure the connection. Docuemntation
+// tlsConfig is given, then TLS is used to secure the connection. Documentation
 // of tls.Config is here: https://golang.org/pkg/crypto/tls/#Config
 //
 // The provided Context must be non-nil. If the context expires before the

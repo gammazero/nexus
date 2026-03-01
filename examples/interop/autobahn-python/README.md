@@ -1,6 +1,6 @@
 # Autobahn Python Client Examples
 
-The Autobahn python client examples demonstrate basic WAMP functionality when running a non-nexus client against a nexus router. A nexus client is included to demonstrate interoperability when publishing events, and rpc with and withouth progressive results.
+The Autobahn python client examples demonstrate basic WAMP functionality when running a non-nexus client against a nexus router. A nexus client is included to demonstrate interoperability when publishing events, and rpc with and without progressive results.
 
 To run the Autobahn Python with nexus examples:
 

@@ -48,7 +48,7 @@ func NormalizeDict(v any) Dict {
 // Return the child dictionary for the given key, or nil if not present.
 //
 // If the child is not a Dict, an attempt is made to convert it. The dict is
-// not modified since features may be looked up cuncurrently for the same
+// not modified since features may be looked up concurrently for the same
 // session.
 func DictChild(dict Dict, key string) Dict {
 	iface, ok := dict[key]
@@ -58,8 +58,8 @@ func DictChild(dict Dict, key string) Dict {
 	}
 	child, ok := iface.(Dict)
 	if !ok {
-		// value is not in expected form; try to convert Session details are
-		// normalized whensession is attached, so this should not be necessary
+		// value is not in expected form; try to convert. Session details are
+		// normalized when session is attached, so this should not be necessary
 		// normally.
 		child = NormalizeDict(iface)
 		if child == nil {
