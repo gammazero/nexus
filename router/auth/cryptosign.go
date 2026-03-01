@@ -12,8 +12,6 @@ import (
 	"github.com/gammazero/nexus/v3/wamp"
 )
 
-const supportsChannelBinding = false
-
 type CryptoSignAuthenticator struct {
 	keyStore KeyStore
 	timeout  time.Duration
@@ -67,7 +65,9 @@ func (cr *CryptoSignAuthenticator) Authenticate(sid wamp.ID, details wamp.Dict, 
 		return nil, errors.New("failed to retrieve key")
 	}
 
-	challenge, err := cr.computeChallenge(details)
+	// TODO: pass channelBindling to computeChallenge when extractChannelBinding is available.
+	//channelBinding = cr.extractChannelBinding(details)
+	challenge, err := cr.computeChallenge(nil)
 	if err != nil {
 		return nil, err
 	}
@@ -138,31 +138,26 @@ func (cr *CryptoSignAuthenticator) verifySignature(signature string, publicKey [
 	return verify, nil
 }
 
-func (cr *CryptoSignAuthenticator) extractChannelBinding(details wamp.Dict) []byte { //nolint:unparam // TODO needs to extract value
+// TODO: Finish implementing extractChannelBinding.
+/*
+func (cr *CryptoSignAuthenticator) extractChannelBinding(details wamp.Dict) []byte {
 	if details == nil {
 		return nil
 	}
-
 	authextra, ok := wamp.AsDict(details["authextra"])
 	if !ok {
 		return nil
 	}
-
 	_, ok = wamp.AsDict(authextra["channel_binding"])
 	if !ok {
 		return nil
 	}
-
 	// TODO: extract and convert channel binding
 	return nil
 }
+*/
 
-func (cr *CryptoSignAuthenticator) computeChallenge(details wamp.Dict) ([]byte, error) {
-	var channelBinding []byte
-	if supportsChannelBinding {
-		channelBinding = cr.extractChannelBinding(details)
-	}
-
+func (cr *CryptoSignAuthenticator) computeChallenge(channelBinding []byte) ([]byte, error) {
 	challenge := make([]byte, 32)
 	_, err := rand.Read(challenge)
 	if err != nil {

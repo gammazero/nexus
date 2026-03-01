@@ -5,7 +5,6 @@ import (
 	"fmt"
 	"net/http"
 	"testing"
-	"testing/synctest"
 
 	"github.com/gorilla/websocket"
 	"github.com/stretchr/testify/require"
@@ -32,56 +31,52 @@ var (
 const wsAddr = "127.0.0.1:8000"
 
 func TestWSHandshakeJSON(t *testing.T) {
-	synctest.Test(t, func(t *testing.T) {
-		r, err := NewRouter(routerConfig, nil)
-		require.NoError(t, err)
-		defer r.Close()
+	r, err := NewRouter(routerConfig, nil)
+	require.NoError(t, err)
+	defer r.Close()
 
-		s := NewWebsocketServer(r)
-		s.Upgrader.EnableCompression = true
-		closer, err := s.ListenAndServe(wsAddr)
-		require.NoError(t, err)
-		defer closer.Close()
+	s := NewWebsocketServer(r)
+	s.Upgrader.EnableCompression = true
+	closer, err := s.ListenAndServe(wsAddr)
+	require.NoError(t, err)
+	defer closer.Close()
 
-		wsCfg := transport.WebsocketConfig{
-			EnableCompression: true,
-		}
-		client, err := transport.ConnectWebsocketPeer(
-			context.Background(), fmt.Sprintf("ws://%s/", wsAddr), serialize.JSON, nil, r.Logger(), &wsCfg)
-		require.NoError(t, err)
-		defer client.Close()
+	wsCfg := transport.WebsocketConfig{
+		EnableCompression: true,
+	}
+	client, err := transport.ConnectWebsocketPeer(
+		context.Background(), fmt.Sprintf("ws://%s/", wsAddr), serialize.JSON, nil, r.Logger(), &wsCfg)
+	require.NoError(t, err)
+	defer client.Close()
 
-		client.Send() <- &wamp.Hello{Realm: testRealm, Details: clientRoles}
-		msg, ok := <-client.Recv()
-		require.True(t, ok, "recv chan closed")
+	client.Send() <- &wamp.Hello{Realm: testRealm, Details: clientRoles}
+	msg, ok := <-client.Recv()
+	require.True(t, ok, "recv chan closed")
 
-		_, ok = msg.(*wamp.Welcome)
-		require.True(t, ok, "expected WELCOME")
-	})
+	_, ok = msg.(*wamp.Welcome)
+	require.True(t, ok, "expected WELCOME")
 }
 
 func TestWSHandshakeMsgpack(t *testing.T) {
-	synctest.Test(t, func(t *testing.T) {
-		r, err := NewRouter(routerConfig, nil)
-		require.NoError(t, err)
-		defer r.Close()
+	r, err := NewRouter(routerConfig, nil)
+	require.NoError(t, err)
+	defer r.Close()
 
-		closer, err := NewWebsocketServer(r).ListenAndServe(wsAddr)
-		require.NoError(t, err)
-		defer closer.Close()
+	closer, err := NewWebsocketServer(r).ListenAndServe(wsAddr)
+	require.NoError(t, err)
+	defer closer.Close()
 
-		client, err := transport.ConnectWebsocketPeer(
-			context.Background(), fmt.Sprintf("ws://%s/", wsAddr), serialize.MSGPACK, nil, r.Logger(), nil)
-		require.NoError(t, err)
-		defer client.Close()
+	client, err := transport.ConnectWebsocketPeer(
+		context.Background(), fmt.Sprintf("ws://%s/", wsAddr), serialize.MSGPACK, nil, r.Logger(), nil)
+	require.NoError(t, err)
+	defer client.Close()
 
-		client.Send() <- &wamp.Hello{Realm: testRealm, Details: clientRoles}
-		msg, ok := <-client.Recv()
-		require.True(t, ok, "Receive buffer closed")
+	client.Send() <- &wamp.Hello{Realm: testRealm, Details: clientRoles}
+	msg, ok := <-client.Recv()
+	require.True(t, ok, "Receive buffer closed")
 
-		_, ok = msg.(*wamp.Welcome)
-		require.True(t, ok, "expected WELCOME")
-	})
+	_, ok = msg.(*wamp.Welcome)
+	require.True(t, ok, "expected WELCOME")
 }
 
 func b2p(b bool) *bool { return &b }
@@ -130,38 +125,36 @@ func TestWSCookieAttributes(t *testing.T) {
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			synctest.Test(t, func(t *testing.T) {
-				r, err := NewRouter(routerConfig, nil)
-				require.NoError(t, err)
-				defer r.Close()
+			r, err := NewRouter(routerConfig, nil)
+			require.NoError(t, err)
+			defer r.Close()
 
-				wss := NewWebsocketServer(r)
-				wss.EnableTrackingCookie = true
-				if tt.setSecure != nil {
-					wss.TrackingCookieSecureAttribute = *tt.setSecure
-				}
-				if tt.setSameSite != nil {
-					wss.TrackingCookieSameSiteAttribute = *tt.setSameSite
-				}
-				closer, err := wss.ListenAndServe(wsAddr)
-				require.NoError(t, err)
-				defer closer.Close()
+			wss := NewWebsocketServer(r)
+			wss.EnableTrackingCookie = true
+			if tt.setSecure != nil {
+				wss.TrackingCookieSecureAttribute = *tt.setSecure
+			}
+			if tt.setSameSite != nil {
+				wss.TrackingCookieSameSiteAttribute = *tt.setSameSite
+			}
+			closer, err := wss.ListenAndServe(wsAddr)
+			require.NoError(t, err)
+			defer closer.Close()
 
-				dialer := websocket.Dialer{
-					Subprotocols:    []string{jsonWebsocketProtocol, cborWebsocketProtocol, msgpackWebsocketProtocol},
-					TLSClientConfig: nil,
-				}
-				conn, rsp, err := dialer.DialContext(context.Background(), fmt.Sprintf("ws://%s/", wsAddr), nil)
-				require.NoError(t, err)
-				defer conn.Close()
+			dialer := websocket.Dialer{
+				Subprotocols:    []string{jsonWebsocketProtocol, cborWebsocketProtocol, msgpackWebsocketProtocol},
+				TLSClientConfig: nil,
+			}
+			conn, rsp, err := dialer.DialContext(context.Background(), fmt.Sprintf("ws://%s/", wsAddr), nil)
+			require.NoError(t, err)
+			defer conn.Close()
 
-				for _, c := range rsp.Cookies() {
-					if c.Name == "nexus-wamp-cookie" {
-						require.Equal(t, c.SameSite, tt.wantSameSite)
-						require.Equal(t, c.Secure, tt.wantIsSecure)
-					}
+			for _, c := range rsp.Cookies() {
+				if c.Name == "nexus-wamp-cookie" {
+					require.Equal(t, c.SameSite, tt.wantSameSite)
+					require.Equal(t, c.Secure, tt.wantIsSecure)
 				}
-			})
+			}
 		})
 	}
 

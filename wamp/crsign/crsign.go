@@ -28,7 +28,7 @@ func SignChallengeBytes(ch string, key []byte) []byte {
 }
 
 // VerifySignature compares a signature to a signature that the computed over
-// the given chalenge string using the key. The signature is a base64-encoded
+// the given challenge string using the key. The signature is a base64-encoded
 // string, generally presented by a client, and the challenge string and key
 // are used to compute the expected HMAC signature. If these are the same, then
 // true is returned.

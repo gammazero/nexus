@@ -42,7 +42,7 @@ func TestRespondChallenge(t *testing.T) {
 		Extra:      extra,
 	}
 
-	// Client computes derived key from password and salting info, then signes
+	// Client computes derived key from password and salting info, then signs
 	// challenge using derived key. Response gets sent back to router.
 	sigClient := crsign.RespondChallenge(secret, chMsg, nil)
 
