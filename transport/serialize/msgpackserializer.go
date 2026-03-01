@@ -12,17 +12,25 @@ import (
 var mh *codec.MsgpackHandle //nolint:gochecknoglobals
 
 func init() {
+	InitMsgpackHandle()
+}
+
+// InitMsgpackHandle creates a new global MsgpackHandle.
+func InitMsgpackHandle() {
 	mh = new(codec.MsgpackHandle)
 	mh.WriteExt = true
 	mh.MapType = reflect.TypeOf(map[string]any(nil))
 }
 
 // MsgpackRegisterExtension registers a custom type for special serialization.
-func MsgpackRegisterExtension(rt reflect.Type, ext byte, encode func(reflect.Value) ([]byte, error), decode func(reflect.Value, []byte) error) error { //nolint:lll
+//
+// If the MsgpackHandle is already initialized, then call InitMsgpackHandle
+// before calling MsgpackRegisterExtension.
+func MsgpackRegisterExtension(rt reflect.Type, tag byte, encode func(reflect.Value) ([]byte, error), decode func(reflect.Value, []byte) error) error { //nolint:lll
 	if encode == nil || decode == nil {
-		return mh.SetBytesExt(rt, uint64(ext), nil)
+		return mh.SetBytesExt(rt, uint64(tag), nil)
 	}
-	return mh.SetBytesExt(rt, uint64(ext), bytesExtWrapper{encode, decode})
+	return mh.SetBytesExt(rt, uint64(tag), bytesExtWrapper{encode, decode})
 }
 
 // MessagePackSerializer is an implementation of Serializer that handles

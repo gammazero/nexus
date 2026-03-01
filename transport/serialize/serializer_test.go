@@ -374,6 +374,7 @@ func TestMsgpackExtensions(t *testing.T) {
 		return nil
 	}
 
+	serialize.InitMsgpackHandle()
 	err := serialize.MsgpackRegisterExtension(reflect.TypeFor[serialize.BinaryData](), 42, encode, decode)
 	require.NoError(t, err)
 
@@ -389,6 +390,7 @@ func TestMsgpackExtensions(t *testing.T) {
 	// Calls the customer encoder: BinaryData.MarshalJSON()
 	bin, err := ser.Serialize(msg)
 	require.NoError(t, err)
+	require.NotEmpty(t, bin)
 
 	c, err := ser.Deserialize(bin)
 	require.NoError(t, err)
@@ -402,7 +404,7 @@ func TestMsgpackExtensions(t *testing.T) {
 	require.True(t, ok, "m1.Details[extra] missing")
 	vs1 := string(v1.(serialize.BinaryData))
 	vs2, _ := wamp.AsString(v2)
-	require.Equal(t, vs2, vs1)
+	require.Equal(t, vs1, vs2)
 
 	// Does not work as of commit this commit:
 	// github.com/ugorji/go/codec@@20768e92ac5d44754d3ae811382dea19ec3901c
