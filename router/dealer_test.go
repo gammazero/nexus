@@ -543,7 +543,7 @@ func TestCancelCallModeSkip(t *testing.T) {
 		// callee should NOT receive an INTERRUPT request
 		synctest.Wait()
 		select {
-		case <-time.After(200 * time.Millisecond):
+		default:
 		case <-callee.Recv():
 			require.FailNow(t, "callee received unexpected message")
 		}
@@ -1113,7 +1113,7 @@ func TestWrongYielder(t *testing.T) {
 		select {
 		case <-caller.Recv():
 			require.FailNow(t, "Caller received response from imposter callee")
-		case <-time.After(200 * time.Millisecond):
+		default:
 		}
 	})
 }
