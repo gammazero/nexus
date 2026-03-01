@@ -44,10 +44,7 @@ func AsInt64(v any) (int64, bool) {
 	case int64:
 		return v, true
 	case ID:
-		i := uint64(v)
-		if i <= maxID { // if valid ID
-			return int64(i), true
-		}
+		return int64(v), true //nolint:gosec // G115 ok to convert invalid ID to int64
 	case uint64:
 		return int64(v), true //nolint:gosec // G115 ok, number can wrap
 	case int:
