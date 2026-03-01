@@ -17,6 +17,10 @@ func TestIDGen(t *testing.T) {
 	require.NotEqual(t, id1, id3, errMsg)
 	require.NotEqual(t, id2, id3, errMsg)
 
+	require.GreaterOrEqual(t, id1, ID(1), "GlobalID must be >= 1")
+	require.GreaterOrEqual(t, id2, ID(1), "GlobalID must be >= 1")
+	require.GreaterOrEqual(t, id3, ID(1), "GlobalID must be >= 1")
+
 	idgen := new(IDGen)
 	id1 = idgen.Next()
 	require.Equal(t, ID(1), id1, "Sequential IDs should start at 1")

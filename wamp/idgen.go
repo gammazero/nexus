@@ -10,7 +10,7 @@ const maxID = 1 << 53
 
 // NewID generates a random WAMP ID.
 func GlobalID() ID {
-	return ID(secureUint63n(maxID))
+	return ID(secureUint63n(maxID) + 1)
 }
 
 // IDGen is generator for WAMP request IDs. Create with new(IDGen).
