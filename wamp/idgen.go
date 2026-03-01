@@ -8,7 +8,7 @@ import (
 
 const maxID = 1 << 53
 
-// NewID generates a random WAMP ID.
+// GlobalID generates a random WAMP ID.
 func GlobalID() ID {
 	return ID(secureUint63n(maxID) + 1)
 }
@@ -50,7 +50,7 @@ func (g *SyncIDGen) Next() ID {
 	return g.IDGen.Next()
 }
 
-// secureInt63n generates a cryptographically secure random int64 in the range [0, n).
+// secureUint63n generates a cryptographically secure random uint64 in the range [0, n).
 // It panics if n <= 0.
 func secureUint63n(n int64) uint64 {
 	if n <= 0 {
