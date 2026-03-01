@@ -1015,12 +1015,13 @@ func (rpce RPCError) Error() string {
 // Close causes the client to leave the realm it has joined, and closes the
 // connection to the router.
 //
-// Always returns nil error, for backward compatibility.
+// Returns ErrAlreadyClosed if the client is already closed. This error can be
+// safely ignored.
 func (c *Client) Close() error {
 	c.sess.Lock()
 	if c.closed {
 		c.sess.Unlock()
-		return nil
+		return ErrAlreadyClosed
 	}
 	c.closed = true
 	c.sess.Unlock()
