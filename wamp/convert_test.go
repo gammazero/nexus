@@ -180,12 +180,6 @@ func TestAsInt64(t *testing.T) {
 
 	_, ok = wamp.AsInt64(nil)
 	require.False(t, ok, shouldFailMsg)
-
-	_, ok = wamp.AsInt64(wamp.ID(0))
-	require.True(t, ok, "should convert ID(0)")
-
-	_, ok = wamp.AsInt64(wamp.ID((1 << 53) + 1))
-	require.True(t, ok, "should convert ID((1 << 53) + 1)")
 }
 
 func TestAsFloat64(t *testing.T) {

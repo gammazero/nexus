@@ -444,7 +444,7 @@ func TestWildcardPatternBasedSubscription(t *testing.T) {
 	require.Equal(t, testTopic, topic, "wrong topic received")
 }
 
-func TestSubscriberDenyAllowListing(t *testing.T) {
+func TestSubscriberBlackWhiteListing(t *testing.T) {
 	synctest.Test(t, func(t *testing.T) {
 		broker := newTestBroker(t, nil)
 		subscriber := newTestPeer()
@@ -537,7 +537,7 @@ func TestSubscriberDenyAllowListing(t *testing.T) {
 				"exclude_authid": []string{"jdoe"}},
 		})
 		_, err = wamp.RecvTimeout(sess, time.Second)
-		require.Error(t, err, "should have been excluded by deny-list")
+		require.Error(t, err, "should have been excluded by blacklist")
 	})
 }
 
