@@ -15,8 +15,9 @@ func TestListToMsg(t *testing.T) {
 
 	pubArgs := []string{"hello", "nexus", "wamp", "router"}
 
-	// Deserializing a slice into a message.
-	elems := wamp.List{msgType, 123, wamp.Dict{},
+	// Deserializing a slice into a message. Use uint64 for the message type
+	// to simulate what JSON/CBOR deserializers produce.
+	elems := wamp.List{uint64(msgType), 123, wamp.Dict{},
 		"some.valid.topic", pubArgs}
 	msg, err := listToMsg(msgType, elems)
 	require.NoError(t, err)
