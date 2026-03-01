@@ -365,5 +365,5 @@ func TestHandshake(t *testing.T) {
 	cli, err := connectClientCfgErr(cfg)
 	require.NoError(t, err, "Failed to connect client")
 	cli.Close()
-	cli.Close() // check that 2nd close ok
+	require.ErrorIs(t, cli.Close(), client.ErrAlreadyClosed)
 }

@@ -65,7 +65,7 @@ func (cr *CryptoSignAuthenticator) Authenticate(sid wamp.ID, details wamp.Dict, 
 		return nil, errors.New("failed to retrieve key")
 	}
 
-	// TODO: pass channelBindling to computeChallenge when extractChannelBinding is available.
+	// TODO: pass channelBinding to computeChallenge when extractChannelBinding is available.
 	//channelBinding = cr.extractChannelBinding(details)
 	challenge, err := cr.computeChallenge(nil)
 	if err != nil {
