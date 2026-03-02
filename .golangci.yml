@@ -42,9 +42,6 @@ linters:
           - testpackage
         path: export.*_test\.go
       - linters:
-          - testpackage
-        path: test/
-      - linters:
           - gosec
           - errcheck
         path: examples/
