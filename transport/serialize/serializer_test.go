@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"reflect"
+	"sync"
 	"testing"
 
 	"github.com/stretchr/testify/require"
@@ -275,12 +276,49 @@ func TestMessagePackSerialize(t *testing.T) {
 	msg, err := s.Deserialize(b)
 	require.NoError(t, err)
 	require.Equal(t, wamp.HELLO, msg.MessageType(), "desrialization to wrong message type")
-	has := hasFeature(hello.Details, "publisher", "subscriber_blackwhite_listing")
+	hello2, ok := msg.(*wamp.Hello)
+	require.True(t, ok, "deserialized message is not wamp.Hello")
+	has := hasFeature(hello2.Details, "publisher", "subscriber_blackwhite_listing")
 	require.True(t, has, "did not deserialize message details")
 
-	val, ok := hello.Details["nothere"]
+	val, ok := hello2.Details["nothere"]
 	require.True(t, ok, "nil value item 'nothere' is missing")
 	require.Nil(t, val, "expected nil value item 'nothere'")
+}
+
+func TestConcurrentMessagePackSerialize(t *testing.T) {
+	const concurrency = 128
+	s := &serialize.MessagePackSerializer{}
+	release := make(chan struct{})
+	var wg, waitReady sync.WaitGroup
+	waitReady.Add(concurrency)
+	for i := range concurrency {
+		wg.Go(func() {
+			waitReady.Done()
+			<-release
+			for j := range 256 {
+				realm := wamp.URI(fmt.Sprintf("nexus.realm.%d.%d", i, j))
+				hello := &wamp.Hello{
+					Realm:   realm,
+					Details: detailRolesFeatures(),
+				}
+				b, err := s.Serialize(hello)
+				require.NoError(t, err)
+				require.NotZero(t, len(b), "no serialized data")
+				msg, err := s.Deserialize(b)
+				require.NoError(t, err)
+				require.Equal(t, wamp.HELLO, msg.MessageType(), "desrialization to wrong message type")
+				h2, ok := msg.(*wamp.Hello)
+				require.True(t, ok, "deserialized message is not wamp.Hello")
+				require.Equal(t, realm, h2.Realm)
+				has := hasFeature(h2.Details, "publisher", "subscriber_blackwhite_listing")
+				require.True(t, has, "did not deserialize message details")
+			}
+		})
+	}
+	waitReady.Wait() // wait for all goroutines to be ready
+	close(release)   // tell all goroutines to run
+	wg.Wait()        // wait for all goroutnes to finiah
 }
 
 func TestMessagePackDeserialize(t *testing.T) {
