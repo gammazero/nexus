@@ -2,6 +2,7 @@ package serialize
 
 import (
 	"errors"
+	"math"
 	"reflect"
 
 	"github.com/ugorji/go/codec"
@@ -67,7 +68,11 @@ func (s *MessagePackSerializer) Deserialize(data []byte) (wamp.Message, error) {
 
 	typ, ok := v[0].(int64)
 	if !ok {
-		return nil, errors.New("unsupported message format")
+		utyp, ok := v[0].(uint64)
+		if !ok || utyp > math.MaxInt {
+			return nil, errors.New("unsupported message format")
+		}
+		typ = int64(utyp)
 	}
 	return listToMsg(wamp.MessageType(typ), v)
 }
