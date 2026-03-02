@@ -1,7 +1,5 @@
-/*
-Package wamp defines all message types, data types, and reserved URI values
-defined by the WAMP specification.
-*/
+// Package wamp defines all message types, data types, and reserved URI values
+// defined by the WAMP specification.
 package wamp
 
 type MessageType int
@@ -12,10 +10,10 @@ type Message interface {
 }
 
 // Dict is a dictionary that maps keys to objects in a WAMP message.
-type Dict map[string]interface{}
+type Dict map[string]any
 
 // List represents a list of items in a WAMP message.
-type List []interface{}
+type List []any
 
 // Message Codes and Direction
 const (
@@ -52,7 +50,7 @@ const (
 	YIELD        MessageType = 70 //|      |      |      |      | Rx   | Tx   |
 )
 
-var mtStrings = map[MessageType]string{
+var mtStrings = map[MessageType]string{ //nolint:gochecknoglobals
 	HELLO:        "HELLO",
 	WELCOME:      "WELCOME",
 	ABORT:        "ABORT",
@@ -448,8 +446,8 @@ type Authenticate struct {
 func (msg *Authenticate) MessageType() MessageType { return AUTHENTICATE }
 
 // The CANCEL message is used with the Call Canceling advanced feature. A
-// Caller can cancel an issued call actively by sending a cancel message to
-// the Dealer.
+// Caller can cancel an issued call actively by sending a cancel message to the
+// Dealer.
 //
 // [CANCEL, CALL.Request|id, Options|dict]
 type Cancel struct {
@@ -471,8 +469,8 @@ type Interrupt struct {
 
 func (msg *Interrupt) MessageType() MessageType { return INTERRUPT }
 
-// IsGoodbyeAck checks if the message is an ack to end of session.  This is
-// used by transports to avoid logging an error if unable to send a goodbye
+// IsGoodbyeAck checks if the message is an ack to end of session. This is used
+// by transports to avoid logging an error if unable to send a goodbye
 // acknowledgment to a client, since the client may not have waited for the
 // acknowledgment.
 func IsGoodbyeAck(msg Message) bool {

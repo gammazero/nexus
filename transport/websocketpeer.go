@@ -22,16 +22,16 @@ type DialFunc func(network, addr string) (net.Conn, error)
 
 // WebsocketConfig is used to configure client websocket settings.
 type WebsocketConfig struct {
-	// Supplies alternate Dial function for the websocket dialer.
-	// See https://godoc.org/github.com/gorilla/websocket#Dialer
+	// Supplies alternate Dial function for the websocket dialer. See
+	// https://godoc.org/github.com/gorilla/websocket#Dialer
 	Dial DialFunc
 
 	// Request per message write compression, if allowed by server.
 	EnableCompression bool `json:"enable_compression"`
 
 	// If provided when configuring websocket client, cookies from server are
-	// put in here.  This allows cookies to be stored and then sent back to the
-	// server in subsequent websocket connections.  Cookies may be used to
+	// put in here. This allows cookies to be stored and then sent back to the
+	// server in subsequent websocket connections. Cookies may be used to
 	// identify returning clients, and can be used to authenticate clients.
 	Jar http.CookieJar
 
@@ -40,8 +40,8 @@ type WebsocketConfig struct {
 	ProxyURL string
 
 	// KeepAlive configures a websocket "ping/pong" heartbeat when set to a
-	// non-zero value.  KeepAlive is the interval between websocket "pings".
-	// If a "pong" response is not received after 2 intervals have elapsed then
+	// non-zero value. KeepAlive is the interval between websocket "pings". If
+	// a "pong" response is not received after 2 intervals have elapsed then
 	// the websocket connection is closed.
 	KeepAlive time.Duration
 }
@@ -109,8 +109,8 @@ const (
 // config, connects the client to the websocket server at the specified URL,
 // and returns the connected websocket peer.
 //
-// The provided Context must be non-nil.  If the context expires before the
-// connection is complete, an error is returned.  Once successfully connected,
+// The provided Context must be non-nil. If the context expires before the
+// connection is complete, an error is returned. Once successfully connected,
 // any expiration of the context will not affect the connection.
 func ConnectWebsocketPeer(ctx context.Context, routerURL string, serialization serialize.Serialization, tlsConfig *tls.Config, logger stdlog.StdLog, wsCfg *WebsocketConfig) (wamp.Peer, error) { //nolint:lll
 	var (
@@ -178,12 +178,12 @@ func ConnectWebsocketPeer(ctx context.Context, routerURL string, serialization s
 }
 
 // NewWebsocketPeer creates a websocket peer from an existing websocket
-// connection.  This is used by clients connecting to the WAMP router, and by
+// connection. This is used by clients connecting to the WAMP router, and by
 // servers to handle connections from clients.
 //
 // A non-zero keepAlive value configures a websocket "ping/pong" heartbeat,
-// sending websocket "pings" every keepAlive interval.  If a "pong" response
-// is not received after 2 intervals have elapsed then the websocket is closed.
+// sending websocket "pings" every keepAlive interval. If a "pong" response is
+// not received after 2 intervals have elapsed then the websocket is closed.
 func NewWebsocketPeer(conn WebsocketConnection, serializer serialize.Serializer, payloadType int, logger stdlog.StdLog, keepAlive time.Duration, outQueueSize int) wamp.Peer { //nolint:lll
 	w := &websocketPeer{
 		conn:        conn,
@@ -194,13 +194,13 @@ func NewWebsocketPeer(conn WebsocketConnection, serializer serialize.Serializer,
 		writerDone:  make(chan struct{}),
 
 		// The router will read from this channel and immediately dispatch the
-		// message to the broker or dealer.  Therefore this channel can be
+		// message to the broker or dealer. Therefore this channel can be
 		// unbuffered.
 		rd: make(chan wamp.Message),
 
 		// The channel for messages being written to the websocket should be
 		// large enough to prevent blocking while waiting for a slow websocket
-		// to send messages.  For this reason it may be necessary for these
+		// to send messages. For this reason it may be necessary for these
 		// messages to be put into an outbound queue that can grow.
 		wr: make(chan wamp.Message, outQueueSize),
 
@@ -228,7 +228,7 @@ func (w *websocketPeer) Send() chan<- wamp.Message { return w.wr }
 
 func (w *websocketPeer) IsLocal() bool { return false }
 
-// Close closes the websocket peer.  This closes the local send channel, and
+// Close closes the websocket peer. This closes the local send channel, and
 // sends a close control message to the websocket to tell the other side to
 // close.
 //
@@ -240,7 +240,7 @@ func (w *websocketPeer) Close() {
 	default:
 	}
 
-	// Tell sendHandler to exit and discard any queued messages.  Do not close
+	// Tell sendHandler to exit and discard any queued messages. Do not close
 	// wr channel in case there are incoming messages during close.
 	w.cancelSender()
 	<-w.writerDone
@@ -248,17 +248,15 @@ func (w *websocketPeer) Close() {
 	for range w.wr {
 	}
 
-	closeMsg := websocket.FormatCloseMessage(websocket.CloseNormalClosure,
-		"goodbye")
+	closeMsg := websocket.FormatCloseMessage(websocket.CloseNormalClosure, "goodbye")
 
 	// Tell recvHandler to close.
 	close(w.closed)
 
 	// Ignore errors since websocket may have been closed by other side first
 	// in response to a goodbye message.
-	w.conn.WriteControl(websocket.CloseMessage, closeMsg,
-		time.Now().Add(ctrlTimeout))
-	w.conn.Close()
+	_ = w.conn.WriteControl(websocket.CloseMessage, closeMsg, time.Now().Add(ctrlTimeout))
+	_ = w.conn.Close()
 
 	// Wait for the recvHandler goroutine to exit.
 	<-w.recvDone
@@ -351,7 +349,7 @@ recvLoop:
 			// If missed 2 responses, close websocket.
 			if atomic.LoadInt32(&pendingPongs) >= 2 {
 				w.log.Print("peer not responging to pings, closing websocket")
-				w.conn.Close()
+				_ = w.conn.Close()
 				return
 			}
 			// Send websocket ping.
@@ -378,7 +376,7 @@ func (w *websocketPeer) recvHandler() {
 	// When done, close read channel to cause router to remove session if not
 	// already removed.
 	defer close(w.rd)
-	defer w.conn.Close()
+	defer w.conn.Close() //nolint:errcheck
 	for {
 		msgType, b, err := w.conn.ReadMessage()
 		if err != nil {
@@ -387,18 +385,17 @@ func (w *websocketPeer) recvHandler() {
 				// Peer was closed explicitly. sendHandler should have already
 				// been told to exit.
 			default:
-				// Peer received control message to close.  Cause sendHandler
-				// to exit without closing the write channel (in case writes
-				// still happening) and discard any queued messages.
+				// Peer received control message to close. Cause sendHandler to
+				// exit without closing the write channel (in case writes still
+				// happening) and discard any queued messages.
 				w.cancelSender()
 				// Wait for writer to exit before closing websocket.
 				<-w.writerDone
 			}
-			// The error is only one of these errors.  It is generally not
-			// helpful to log this, so keeping this commented out.
-			// websocket: close sent
-			// websocket: close 1000 (normal): goodbye
-			// read tcp addr:port->addr:port: use of closed network connection
+			// The error is only one of these errors. It is generally not
+			// helpful to log this, so keeping this commented out. websocket:
+			// close sent websocket: close 1000 (normal): goodbye read tcp
+			// addr:port->addr:port: use of closed network connection
 			//w.log.Print(err)
 			return
 		}

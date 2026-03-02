@@ -10,11 +10,11 @@ import (
 	"github.com/gammazero/nexus/v3/wamp"
 )
 
-var jh *codec.JsonHandle
+var jh *codec.JsonHandle //nolint:gochecknoglobals
 
 func init() {
 	jh = &codec.JsonHandle{}
-	jh.MapType = reflect.TypeOf(map[string]interface{}(nil))
+	jh.MapType = reflect.TypeOf(map[string]any(nil))
 }
 
 // JSONSerializer is an implementation of Serializer that handles
@@ -30,7 +30,7 @@ func (s *JSONSerializer) Serialize(msg wamp.Message) ([]byte, error) {
 
 // Deserialize decodes a json payload into a Message.
 func (s *JSONSerializer) Deserialize(data []byte) (wamp.Message, error) {
-	var v []interface{}
+	var v []any
 	err := codec.NewDecoderBytes(data, jh).Decode(&v)
 	if err != nil {
 		return nil, err
@@ -41,22 +41,23 @@ func (s *JSONSerializer) Deserialize(data []byte) (wamp.Message, error) {
 
 	// json deserializer gives us an uint64 instead of an int64, whyever it
 	// doesn't matter here, because valid values are only within an 8bit range.
-	typ, ok := v[0].(uint64)
+	utyp, ok := v[0].(uint64)
 	if !ok {
 		return nil, errors.New("unsupported message format")
 	}
+	typ := int(utyp) //nolint:gosec
 	return listToMsg(wamp.MessageType(typ), v)
 }
 
 // SerializeDataItem encodes any object/structure into a json payload.
-func (s *JSONSerializer) SerializeDataItem(item interface{}) ([]byte, error) {
+func (s *JSONSerializer) SerializeDataItem(item any) ([]byte, error) {
 	var b []byte
 	err := codec.NewEncoderBytes(&b, jh).Encode(item)
 	return b, err
 }
 
 // DeserializeDataItem decodes a json payload into an object/structure.
-func (s *JSONSerializer) DeserializeDataItem(data []byte, v interface{}) error {
+func (s *JSONSerializer) DeserializeDataItem(data []byte, v any) error {
 	return codec.NewDecoderBytes(data, jh).Decode(&v)
 }
 

@@ -1,14 +1,16 @@
-package wamp
+package wamp_test
 
 import (
 	"testing"
 
 	"github.com/stretchr/testify/require"
+
+	"github.com/gammazero/nexus/v3/wamp"
 )
 
 func TestURIPrefixMatch(t *testing.T) {
-	uri := URI("this.is.a.test")
-	matches := []URI{
+	uri := wamp.URI("this.is.a.test")
+	matches := []wamp.URI{
 		"this.is.a",
 		"this.is.",
 		"this.i",
@@ -17,7 +19,7 @@ func TestURIPrefixMatch(t *testing.T) {
 		require.True(t, uri.PrefixMatch(matches[i]), "expected prefix to match")
 	}
 
-	nonMatches := []URI{
+	nonMatches := []wamp.URI{
 		"this.is.a.test.ok",
 		"not.a.test"}
 	for i := range nonMatches {
@@ -26,8 +28,8 @@ func TestURIPrefixMatch(t *testing.T) {
 }
 
 func TestURIWildcardMatch(t *testing.T) {
-	uri := URI("this.is.a.test")
-	matches := []URI{
+	uri := wamp.URI("this.is.a.test")
+	matches := []wamp.URI{
 		"this.is.a.test",
 		"this.is..test",
 		"this...test",
@@ -40,7 +42,7 @@ func TestURIWildcardMatch(t *testing.T) {
 		require.True(t, uri.WildcardMatch(matches[i]), "expected wildcard to match")
 	}
 
-	nonMatches := []URI{
+	nonMatches := []wamp.URI{
 		"this.is.a",
 		"this.is.a.bird",
 		"this.is.test",
@@ -55,7 +57,7 @@ func TestURIWildcardMatch(t *testing.T) {
 // the tail part after the last .) MUST NOT contain a ., # or whitespace
 // characters and MUST NOT be empty (zero-length strings).
 func TestValidURI(t *testing.T) {
-	strictGood := []URI{
+	strictGood := []wamp.URI{
 		"this.is.a.good_test",
 		"this.is.test42",
 		"test.11_22_33.v88.something",
@@ -64,7 +66,7 @@ func TestValidURI(t *testing.T) {
 		require.True(t, strictGood[i].ValidURI(true, ""))
 	}
 
-	strictBad := []URI{
+	strictBad := []wamp.URI{
 		".is.not.good",
 		"this#is_not.allowed",
 		"Mixed.cAsE.URI",
@@ -73,7 +75,7 @@ func TestValidURI(t *testing.T) {
 		require.False(t, strictBad[i].ValidURI(true, ""))
 	}
 
-	strictGoodPrefix := []URI{
+	strictGoodPrefix := []wamp.URI{
 		"this.is.a.good_test",
 		"this.is.hello_123",
 		"somewhere"}
@@ -81,7 +83,7 @@ func TestValidURI(t *testing.T) {
 		require.True(t, strictGoodPrefix[i].ValidURI(true, "prefix"))
 	}
 
-	strictBadPrefix := []URI{
+	strictBadPrefix := []wamp.URI{
 		"this.is.a..",
 		"this..test",
 		".somewhere",
@@ -90,7 +92,7 @@ func TestValidURI(t *testing.T) {
 		require.False(t, strictBadPrefix[i].ValidURI(true, "prefix"))
 	}
 
-	strictGoodWildcard := []URI{
+	strictGoodWildcard := []wamp.URI{
 		"this.is.a.test",
 		"this.is..test",
 		"this...test",
@@ -103,7 +105,7 @@ func TestValidURI(t *testing.T) {
 		require.True(t, strictGoodWildcard[i].ValidURI(true, "wildcard"))
 	}
 
-	strictBadWildcard := []URI{
+	strictBadWildcard := []wamp.URI{
 		"this#is_not.allowed",
 		"Mixed.cAsE.URI",
 		"this.one has.whitespace"}
@@ -111,7 +113,7 @@ func TestValidURI(t *testing.T) {
 		require.False(t, strictBadWildcard[i].ValidURI(true, "wildcard"))
 	}
 
-	looseGood := []URI{
+	looseGood := []wamp.URI{
 		"this.is.a.good_test",
 		"this.is.test42",
 		"test.11_22_33.v88.something",
@@ -120,7 +122,7 @@ func TestValidURI(t *testing.T) {
 		require.True(t, looseGood[i].ValidURI(false, ""))
 	}
 
-	looseBad := []URI{
+	looseBad := []wamp.URI{
 		".is.not.good",
 		"this#is_not.allowed",
 		"this.one has.whitespace"}
@@ -128,7 +130,7 @@ func TestValidURI(t *testing.T) {
 		require.False(t, looseBad[i].ValidURI(false, ""))
 	}
 
-	looseGoodPrefix := []URI{
+	looseGoodPrefix := []wamp.URI{
 		"this.is.a.good_test",
 		"this.is.H-E-L-L-O_123",
 		"somewhere"}
@@ -136,7 +138,7 @@ func TestValidURI(t *testing.T) {
 		require.True(t, looseGoodPrefix[i].ValidURI(false, "prefix"))
 	}
 
-	looseBadPrefix := []URI{
+	looseBadPrefix := []wamp.URI{
 		"this.is.a..",
 		"this..test",
 		"this..test",
@@ -146,7 +148,7 @@ func TestValidURI(t *testing.T) {
 		require.False(t, looseBadPrefix[i].ValidURI(false, "prefix"))
 	}
 
-	looseGoodWildcard := []URI{
+	looseGoodWildcard := []wamp.URI{
 		"this.is.a.test",
 		"This.Is.a.TEST",
 		"this.is..t-e-s-t",
@@ -160,7 +162,7 @@ func TestValidURI(t *testing.T) {
 		require.True(t, looseGoodWildcard[i].ValidURI(false, "wildcard"))
 	}
 
-	looseBadWildcard := []URI{
+	looseBadWildcard := []wamp.URI{
 		"this#is_not.allowed",
 		"this.one has.whitespace"}
 	for i := range looseBadWildcard {

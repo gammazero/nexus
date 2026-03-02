@@ -1,23 +1,19 @@
 package wamp
 
 import (
-	"math/rand"
+	"crypto/rand"
+	"math/big"
 	"sync"
-	"time"
 )
 
-const maxID int64 = 1 << 53
+const maxID = 1 << 53
 
-func init() {
-	rand.Seed(time.Now().UnixNano())
-}
-
-// NewID generates a random WAMP ID.
+// GlobalID generates a random WAMP ID.
 func GlobalID() ID {
-	return ID(rand.Int63n(maxID)) //nolint:gosec
+	return ID(uint64(secureInt63n(maxID)) + 1) //nolint:gosec // G115 ok, secureInt63n never negative.
 }
 
-// IDGen is generator for WAMP request IDs.  Create with new(IDGen).
+// IDGen is generator for WAMP request IDs. Create with new(IDGen).
 //
 // WAMP request IDs are sequential per WAMP session, starting at 1 and wrapping
 // around at 2**53 (both value are inclusive [1, 2**53]).
@@ -29,7 +25,7 @@ func GlobalID() ID {
 //
 // See https://github.com/wamp-proto/wamp-proto/blob/master/spec/basic.md#ids
 type IDGen struct {
-	next int64
+	next uint64
 }
 
 // Next returns next ID.
@@ -41,7 +37,7 @@ func (g *IDGen) Next() ID {
 	return ID(g.next)
 }
 
-// SyncIDGen is a concurrent-safe IDGen.  Create with new(SyncIDGen).
+// SyncIDGen is a concurrent-safe IDGen. Create with new(SyncIDGen).
 type SyncIDGen struct {
 	IDGen
 	lock sync.Mutex
@@ -52,4 +48,20 @@ func (g *SyncIDGen) Next() ID {
 	g.lock.Lock()
 	defer g.lock.Unlock()
 	return g.IDGen.Next()
+}
+
+// secureInt63n generates a cryptographically secure random int64 in the range [0, n).
+// It panics if n <= 0.
+func secureInt63n(n int64) int64 {
+	if n <= 0 {
+		panic("n must be positive")
+	}
+
+	max := big.NewInt(n)
+	result, err := rand.Int(rand.Reader, max)
+	if err != nil {
+		panic(err)
+	}
+
+	return result.Int64()
 }

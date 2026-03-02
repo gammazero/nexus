@@ -1,4 +1,4 @@
-package aat_test
+package test_test
 
 import (
 	"context"
@@ -45,13 +45,13 @@ var (
 	cliLogger stdlog.StdLog
 	rtrLogger stdlog.StdLog
 
-	// scheme determines the transport and use of TLS.  Value must be one of
-	// the following: "http", "https", "ws", "wss", "tcp", "tcps", "unix", "".
-	// Empty indicates direct (in proc) connection to router.  TLS is not
+	// scheme determines the transport and use of TLS. Value must be one of the
+	// following: "http", "https", "ws", "wss", "tcp", "tcps", "unix", "".
+	// Empty indicates direct (in proc) connection to router. TLS is not
 	// available for "" or "unix".
 	scheme string
 
-	// serType is set to "json" or "msgpack".  Ignored if sockType is "".
+	// serType is set to "json" or "msgpack". Ignored if sockType is "".
 	serType string
 
 	// compress enables compression on both client and server config
@@ -364,8 +364,6 @@ func TestHandshake(t *testing.T) {
 
 	cli, err := connectClientCfgErr(cfg)
 	require.NoError(t, err, "Failed to connect client")
-	err = cli.Close()
-	require.NoError(t, err, "Failed to close client")
-	err = cli.Close()
-	require.Error(t, err, "Expected error if client already closed")
+	cli.Close()
+	require.ErrorIs(t, cli.Close(), client.ErrAlreadyClosed)
 }

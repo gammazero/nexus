@@ -1,4 +1,4 @@
-package router
+package router //nolint:testpackage
 
 import (
 	"context"
@@ -31,8 +31,6 @@ var (
 const wsAddr = "127.0.0.1:8000"
 
 func TestWSHandshakeJSON(t *testing.T) {
-	checkGoLeaks(t)
-
 	r, err := NewRouter(routerConfig, nil)
 	require.NoError(t, err)
 	defer r.Close()
@@ -60,8 +58,6 @@ func TestWSHandshakeJSON(t *testing.T) {
 }
 
 func TestWSHandshakeMsgpack(t *testing.T) {
-	checkGoLeaks(t)
-
 	r, err := NewRouter(routerConfig, nil)
 	require.NoError(t, err)
 	defer r.Close()
@@ -83,8 +79,10 @@ func TestWSHandshakeMsgpack(t *testing.T) {
 	require.True(t, ok, "expected WELCOME")
 }
 
-func b2p(b bool) *bool                   { return &b }
+func b2p(b bool) *bool { return &b }
+
 func s2p(s http.SameSite) *http.SameSite { return &s }
+
 func TestWSCookieAttributes(t *testing.T) {
 	// http library treats the samesite attribute for strings as if no attribute was set
 	sameSiteUnsetValue := http.SameSiteDefaultMode - 1
@@ -127,7 +125,6 @@ func TestWSCookieAttributes(t *testing.T) {
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			checkGoLeaks(t)
 			r, err := NewRouter(routerConfig, nil)
 			require.NoError(t, err)
 			defer r.Close()

@@ -1,8 +1,6 @@
-/*
-Package newclient provides a function to create a new client with the socket
-type and serialization specified by command like arguments.  This is used for
-all the sample clients.
-*/
+// Package newclient provides a function to create a new client with the socket
+// type and serialization specified by command like arguments. This is used for
+// all the sample clients.
 package newclient
 
 import (
@@ -93,7 +91,7 @@ func NewClient(logger *log.Logger) (*client.Client, error) {
 		if certFile != "" || keyFile != "" {
 			cert, err := tls.LoadX509KeyPair(certFile, keyFile)
 			if err != nil {
-				return nil, fmt.Errorf("error loading X509 key pair: %s", err)
+				return nil, fmt.Errorf("error loading X509 key pair: %w", err)
 			}
 			tlscfg.Certificates = append(tlscfg.Certificates, cert)
 		}

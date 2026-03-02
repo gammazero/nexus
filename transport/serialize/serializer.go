@@ -1,7 +1,5 @@
-/*
-Package serialize provides a Serializer interface with implementations that
-encode and decode message data in various ways.
-*/
+// Package serialize provides a Serializer interface with implementations that
+// encode and decode message data in various ways.
 package serialize
 
 import (
@@ -31,19 +29,19 @@ type Serialization int
 type Serializer interface {
 	Serialize(wamp.Message) ([]byte, error)
 	Deserialize([]byte) (wamp.Message, error)
-	SerializeDataItem(item interface{}) ([]byte, error)
-	DeserializeDataItem([]byte, interface{}) error
+	SerializeDataItem(item any) ([]byte, error)
+	DeserializeDataItem([]byte, any) error
 }
 
-// listToMessage takes a list of values from a WAMP message and populates the
+// listToMsg takes a list of values from a WAMP message and populates the
 // fields of a message type.
-func listToMsg(msgType wamp.MessageType, vlist []interface{}) (wamp.Message, error) {
+func listToMsg(msgType wamp.MessageType, vlist []any) (wamp.Message, error) {
 	msg := wamp.NewMessage(msgType)
 	if msg == nil {
 		return nil, errors.New("unsupported message type")
 	}
 	val := reflect.ValueOf(msg)
-	if val.Kind() == reflect.Ptr {
+	if val.Kind() == reflect.Pointer {
 		val = val.Elem()
 	}
 	// Iterate each field of the target message and populate the field with
@@ -55,7 +53,7 @@ func listToMsg(msgType wamp.MessageType, vlist []interface{}) (wamp.Message, err
 		}
 		// Get the value of the item in list.
 		arg := reflect.ValueOf(vlist[i+1])
-		if arg.Kind() == reflect.Ptr {
+		if arg.Kind() == reflect.Pointer {
 			arg = arg.Elem()
 		}
 		// Try to assign the item to the message field.
@@ -87,9 +85,9 @@ func listToMsg(msgType wamp.MessageType, vlist []interface{}) (wamp.Message, err
 			}
 			continue
 		}
-		// Should never happen since this means that our own message type has
-		// a type that is not a map or a slice.  This is a programming error,
-		// so panic.
+		// Should never happen since this means that our own message type has a
+		// type that is not a map or a slice. This is a programming error, so
+		// panic.
 		panic(fmt.Sprintf("internal message field %d not recognized", i+1))
 	}
 	return msg, nil
@@ -112,8 +110,8 @@ func convertType(val reflect.Value, typ reflect.Type) (reflect.Value, error) {
 	return val, nil
 }
 
-// assignMap takes the key-value pairs from src and copies them into dst.
-// Types are converted as needed.
+// assignMap takes the key-value pairs from src and copies them into dst. Types
+// are converted as needed.
 func assignMap(dst reflect.Value, src reflect.Value) error {
 	dstKeyType := dst.Type().Key()
 	dstValType := dst.Type().Elem()
@@ -139,7 +137,7 @@ func assignMap(dst reflect.Value, src reflect.Value) error {
 	return nil
 }
 
-// assignSlice takes the values from src and copies them into dst.  Types are
+// assignSlice takes the values from src and copies them into dst. Types are
 // converted as needed.
 func assignSlice(dst reflect.Value, src reflect.Value) error {
 	dst.Set(reflect.MakeSlice(dst.Type(), src.Len(), src.Len()))
@@ -154,11 +152,11 @@ func assignSlice(dst reflect.Value, src reflect.Value) error {
 	return nil
 }
 
-// msgToList converts a message to a list of interface{}. Trailing empty values
-// are not appended to the list.
-func msgToList(msg wamp.Message) []interface{} {
+// msgToList converts a message to a list of any. Trailing empty values are not
+// appended to the list.
+func msgToList(msg wamp.Message) []any {
 	val := reflect.ValueOf(msg)
-	if val.Kind() == reflect.Ptr {
+	if val.Kind() == reflect.Pointer {
 		val = val.Elem()
 	}
 
@@ -173,7 +171,7 @@ func msgToList(msg wamp.Message) []interface{} {
 	}
 
 	// Encode the remaining message elements.
-	ret := make([]interface{}, last+2)
+	ret := make([]any, last+2)
 	ret[0] = int(msg.MessageType())
 	for i := 0; i <= last; i++ {
 		ret[i+1] = val.Field(i).Interface()

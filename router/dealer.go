@@ -14,7 +14,7 @@ import (
 
 const (
 	// sendResultDeadline is the amount of time until the dealer gives up
-	// trying to send a RESULT to a blocked caller.  This is different that the
+	// trying to send a RESULT to a blocked caller. This is different that the
 	// CALL timeout which spedifies how long the callee may take to answer.
 	sendResultDeadline = time.Minute
 	// yieldRetryDelay is the initial delay before reprocessing a blocked yield.
@@ -22,7 +22,7 @@ const (
 )
 
 // Role information for this broker.
-var dealerRole = wamp.Dict{
+var dealerRole = wamp.Dict{ //nolint:gochecknoglobals
 	"features": wamp.Dict{
 		wamp.FeatureCallCanceling:       true,
 		wamp.FeatureCallTimeout:         true,
@@ -131,13 +131,13 @@ func newDealer(logger stdlog.StdLog, strictURI, allowDisclose, debug bool) *deal
 		calleeRegIDSet:   map[*wamp.Session]map[wamp.ID]struct{}{},
 
 		// The action handler should be nearly always runable, since it is the
-		// critical section that does the only routing.  So, and unbuffered
+		// critical section that does the only routing. So, and unbuffered
 		// channel is appropriate.
 		actionChan: make(chan func()),
 		stopped:    make(chan struct{}),
 
 		idGen: new(wamp.IDGen),
-		prng:  rand.New(rand.NewSource(time.Now().Unix())),
+		prng:  rand.New(rand.NewSource(time.Now().Unix())), //nolint:gosec // used for call invocation
 
 		strictURI:     strictURI,
 		allowDisclose: allowDisclose,
@@ -156,7 +156,7 @@ func (d *dealer) setMetaPeer(metaPeer wamp.Peer) {
 	}
 }
 
-// role returns the role information for the "dealer" role.  The data returned
+// role returns the role information for the "dealer" role. The data returned
 // is suitable for use as broker role info in a WELCOME message.
 func (d *dealer) role() wamp.Dict {
 	return dealerRole
@@ -172,7 +172,7 @@ func (d *dealer) register(callee *wamp.Session, msg *wamp.Register) {
 		panic("dealer.Register with nil session or message")
 	}
 
-	// Validate procedure URI.  For REGISTER, must be valid URI (either strict
+	// Validate procedure URI. For REGISTER, must be valid URI (either strict
 	// or loose), and all URI components must be non-empty other than for
 	// wildcard or prefix matched procedures.
 	match, _ := wamp.AsString(msg.Options[wamp.OptMatch])
@@ -273,16 +273,16 @@ func (d *dealer) call(caller *wamp.Session, msg *wamp.Call) {
 // Cancellation behaves differently depending on the mode:
 //
 // "skip": The pending call is canceled and ERROR is send immediately back to
-// the caller.  No INTERRUPT is sent to the callee and the result is discarded
+// the caller. No INTERRUPT is sent to the callee and the result is discarded
 // when received.
 //
 // "kill": INTERRUPT is sent to the client, but ERROR is not returned to the
-// caller until after the callee has responded to the canceled call.  In this
+// caller until after the callee has responded to the canceled call. In this
 // case the caller may receive RESULT or ERROR depending whether the callee
 // finishes processing the invocation or the interrupt first.
 //
 // "killnowait": The pending call is canceled and ERROR is send immediately
-// back to the caller.  INTERRUPT is sent to the callee and any response to the
+// back to the caller. INTERRUPT is sent to the callee and any response to the
 // invocation or interrupt from the callee is discarded when received.
 //
 // If the callee does not support call canceling, then behavior is "skip".
@@ -315,8 +315,8 @@ func (d *dealer) cancel(caller *wamp.Session, msg *wamp.Cancel) {
 // execution of a call, send from callee to dealer.
 //
 // If the RESULT could not be sent to the caller because the caller was blocked
-// (send queue full), then retry sending until timeout.  If timeout while
-// trying to send RESULT, then cancel call.
+// (send queue full), then retry sending until timeout. If timeout while trying
+// to send RESULT, then cancel call.
 func (d *dealer) yield(callee *wamp.Session, msg *wamp.Yield) {
 	if callee == nil || msg == nil {
 		panic("dealer.Yield with nil session or message")
@@ -337,13 +337,13 @@ func (d *dealer) yield(callee *wamp.Session, msg *wamp.Yield) {
 		retry := true
 		delay := yieldRetryDelay
 		start := time.Now()
-		// Retry processing YIELD until caller gone or deadline reached
+		// Retry processing YIELD until caller gone or deadline reached.
 		for {
 			if d.debug {
 				d.log.Println("Retry sending RESULT after", delay)
 			}
 			<-time.After(delay)
-			// Do not retry if the elapsed time exceeds deadline
+			// Do not retry if the elapsed time exceeds deadline.
 			if time.Since(start) >= sendResultDeadline {
 				retry = false
 			}
@@ -370,9 +370,9 @@ func (d *dealer) error(msg *wamp.Error) {
 	}
 }
 
-// removeSessiom removes a callee's registrations.  This is called when a
-// client leaves the realm by sending a GOODBYE message or by disconnecting
-// from the router.  If there are any registrations for this session
+// removeSessiom removes a callee's registrations. This is called when a client
+// leaves the realm by sending a GOODBYE message or by disconnecting from the
+// router. If there are any registrations for this session
 // wamp.registration.on_unregister and wamp.registration.on_delete meta events
 // are published for each.
 func (d *dealer) removeSession(sess *wamp.Session) {
@@ -381,7 +381,7 @@ func (d *dealer) removeSession(sess *wamp.Session) {
 		return
 	}
 	// Meta events must be returned by removeSession and must not be sent to
-	// metaPeer while running inside the dealer goroutine.  Sending to metaPeer
+	// metaPeer while running inside the dealer goroutine. Sending to metaPeer
 	// from inside the dealer goroutine can deadlock since metaPeer may alredy
 	// be waiting for the dealer goroutine to process a yield.
 	var metaPubs []*wamp.Publish
@@ -469,7 +469,7 @@ func (d *dealer) syncRegister(callee *wamp.Session, msg *wamp.Register, match, i
 			})
 		}
 	} else {
-		// There is an existing registration(s) for this procedure.  See if
+		// There is an existing registration(s) for this procedure. See if
 		// invocation policy allows another.
 
 		// Found an existing registration that has an invocation strategy that
@@ -487,7 +487,7 @@ func (d *dealer) syncRegister(callee *wamp.Session, msg *wamp.Register, match, i
 		}
 
 		// Found an existing registration that has an invocation strategy
-		// different from the one requested by the new callee
+		// different from the one requested by the new callee.
 		if reg.policy != invokePolicy {
 			d.log.Println("REGISTER for already registered procedure",
 				msg.Procedure, "with conflicting invocation policy (has",
@@ -523,8 +523,8 @@ func (d *dealer) syncRegister(callee *wamp.Session, msg *wamp.Register, match, i
 	})
 
 	if !wampURI && d.metaPeer != nil {
-		// Publish wamp.registration.on_register meta event.  Fired when a
-		// session is added to a registration.  A wamp.registration.on_register
+		// Publish wamp.registration.on_register meta event. Fired when a
+		// session is added to a registration. A wamp.registration.on_register
 		// event MUST be fired subsequent to a wamp.registration.on_create
 		// event, since the first registration results in both the creation of
 		// the registration and the addition of a session.
@@ -565,8 +565,8 @@ func (d *dealer) syncUnregister(callee *wamp.Session, msg *wamp.Unregister) []*w
 		return metaPubs
 	}
 
-	// Publish wamp.registration.on_unregister meta event.  Fired when a
-	// session is removed from a subscription.
+	// Publish wamp.registration.on_unregister meta event. Fired when a session
+	// is removed from a subscription.
 	metaPubs = append(metaPubs, &wamp.Publish{
 		Request:   wamp.GlobalID(),
 		Topic:     wamp.MetaEventRegOnUnregister,
@@ -574,10 +574,10 @@ func (d *dealer) syncUnregister(callee *wamp.Session, msg *wamp.Unregister) []*w
 	})
 
 	if delReg {
-		// Publish wamp.registration.on_delete meta event.  Fired when a
+		// Publish wamp.registration.on_delete meta event. Fired when a
 		// registration is deleted after the last session attached to it has
-		// been removed.  The wamp.registration.on_delete event MUST be
-		// preceded by a wamp.registration.on_unregister event.
+		// been removed. The wamp.registration.on_delete event MUST be preceded
+		// by a wamp.registration.on_unregister event.
 		metaPubs = append(metaPubs, &wamp.Publish{
 			Request:   wamp.GlobalID(),
 			Topic:     wamp.MetaEventRegOnDelete,
@@ -596,9 +596,9 @@ func (d *dealer) syncMatchProcedure(procedure wamp.URI) (*registration, bool) {
 	// Find registered procedures with exact match.
 	reg, ok := d.procRegMap[procedure]
 	if !ok {
-		// No exact match was found.  So, search for a prefix or wildcard
-		// match, and prefer the most specific math (longest matched pattern).
-		// If there is a tie, then prefer the first longest prefix.
+		// No exact match was found. So, search for a prefix or wildcard match,
+		// and prefer the most specific math (longest matched pattern). If
+		// there is a tie, then prefer the first longest prefix.
 		matchCount := -1 // initialize matchCount to -1 to catch an empty registration.
 		for pfxProc, pfxReg := range d.pfxProcRegMap {
 			if procedure.PrefixMatch(pfxProc) {
@@ -668,9 +668,9 @@ func (d *dealer) syncCall(caller *wamp.Session, msg *wamp.Call) {
 		return
 	}
 
-	// If it is a simple one-time call or first call of progressive call
-	// then we need to init call-invocation-runtime
-	// otherwise we must reuse runtime-data. E.g. not to generate new ID
+	// If it is a simple one-time call or first call of progressive call then
+	// we need to init call-invocation-runtime otherwise we must reuse
+	// runtime-data. E.g. not to generate new ID
 	if !ok {
 		// If there are multiple callees, then select a callee based invocation
 		// policy.
@@ -690,8 +690,8 @@ func (d *dealer) syncCall(caller *wamp.Session, msg *wamp.Call) {
 				callee = reg.callees[len(reg.callees)-1]
 			default:
 				errMsg := fmt.Sprintf("multiple callees registered for %s with '%s' policy", msg.Procedure, wamp.InvokeSingle)
-				// This is disallowed by the dealer, and is a programming error if
-				// it ever happened, so panic.
+				// This is disallowed by the dealer, and is a programming error
+				// if it ever happened, so panic.
 				panic(errMsg)
 			}
 		} else {
@@ -713,9 +713,10 @@ func (d *dealer) syncCall(caller *wamp.Session, msg *wamp.Call) {
 		d.invocations[invocationID] = invk
 		d.invocationByCall[reqID] = invocationID
 
-		// Let's check if callee supports this feature
-		// A Callee that supports progressive call invocations, but does not support call canceling,
-		// shall be considered by the Dealer as not supporting progressive call invocations.
+		// Let's check if callee supports this feature. A Callee that supports
+		// progressive call invocations, but does not support call canceling,
+		// shall be considered by the Dealer as not supporting progressive call
+		// invocations.
 		if isInProgress &&
 			(!callee.HasFeature(wamp.RoleCallee, wamp.FeatureProgCallInvocations) ||
 				!callee.HasFeature(wamp.RoleCallee, wamp.FeatureCallCanceling)) {
@@ -730,13 +731,13 @@ func (d *dealer) syncCall(caller *wamp.Session, msg *wamp.Call) {
 
 		// TODO: handle trust levels
 
-		// Check and handle Payload PassThru Mode
+		// Check and handle Payload PassThru Mode.
 		// @see https://wamp-proto.org/wamp_latest_ietf.html#name-payload-passthru-mode
 		if pptScheme, _ := invk.options[wamp.OptPPTScheme].(string); pptScheme != "" {
 
 			// Let's check: was ppt feature announced by caller?
 			if !caller.HasFeature(wamp.RoleCaller, wamp.FeaturePayloadPassthruMode) {
-				// It's protocol violation, so we need to abort connection
+				// It's protocol violation, so we need to abort connection.
 				abortMsg := wamp.Abort{Reason: wamp.ErrProtocolViolation}
 				abortMsg.Details = wamp.Dict{}
 				abortMsg.Details[wamp.OptMessage] = "Peer is trying to use Payload PassThru Mode while it was not " +
@@ -746,7 +747,7 @@ func (d *dealer) syncCall(caller *wamp.Session, msg *wamp.Call) {
 				return
 			}
 
-			// Let's check if callee supports this feature
+			// Let's check if callee supports this feature.
 			if !callee.HasFeature(wamp.RoleCallee, wamp.FeaturePayloadPassthruMode) {
 				d.trySend(caller, &wamp.Error{
 					Type:    msg.MessageType(),
@@ -757,8 +758,8 @@ func (d *dealer) syncCall(caller *wamp.Session, msg *wamp.Call) {
 				return
 			}
 
-			// Every side supports PPT feature
-			// Let's fill PPT options for callee
+			// Every side supports PPT feature. Let's fill PPT options for
+			// callee.
 			pptOptionsToDetails(invk.options, details)
 		}
 
@@ -771,8 +772,8 @@ func (d *dealer) syncCall(caller *wamp.Session, msg *wamp.Call) {
 			discloseCaller(caller, details)
 		} else {
 			// A Caller MAY request the disclosure of its identity (its WAMP
-			// session ID) to endpoints of a routed call.  This is indicated by the
-			// "disclose_me" flag in the message options.
+			// session ID) to endpoints of a routed call. This is indicated by
+			// the "disclose_me" flag in the message options.
 			if opt, _ := invk.options[wamp.OptDiscloseMe].(bool); opt {
 				// Dealer MAY deny a Caller's request to disclose its identity.
 				if !d.allowDisclose {
@@ -794,11 +795,12 @@ func (d *dealer) syncCall(caller *wamp.Session, msg *wamp.Call) {
 		// A Caller indicates its willingness to receive progressive results by
 		// setting CALL.Options.receive_progress|bool := true
 		if opt, _ := invk.options[wamp.OptReceiveProgress].(bool); opt {
-			// If the Callee supports progressive calls, the Dealer will forward
-			// the Caller's willingness to receive progressive results by setting.
+			// If the Callee supports progressive calls, the Dealer will
+			// forward the Caller's willingness to receive progressive results
+			// by setting.
 			//
-			// The Callee must support call canceling, as this is necessary to stop
-			// progressive results if the caller session is closed during
+			// The Callee must support call canceling, as this is necessary to
+			// stop progressive results if the caller session is closed during
 			// progressive result delivery.
 			if callee.HasFeature(wamp.RoleCallee, wamp.FeatureProgCallResults) &&
 				callee.HasFeature(wamp.RoleCallee, wamp.FeatureCallCanceling) {
@@ -807,8 +809,8 @@ func (d *dealer) syncCall(caller *wamp.Session, msg *wamp.Call) {
 		}
 
 		if reg.match != wamp.MatchExact {
-			// According to the spec, a router must provide the actual procedure to
-			// the client.
+			// According to the spec, a router must provide the actual
+			// procedure to the client.
 			details[wamp.OptProcedure] = msg.Procedure
 		}
 
@@ -826,21 +828,23 @@ func (d *dealer) syncCall(caller *wamp.Session, msg *wamp.Call) {
 	// A timeout allows to automatically cancel a call after a specified time
 	// either at the Callee or at the Dealer.
 	//
-	// Callees wanting to handle the timeout logic MAY specify this intention via
-	// the REGISTER.Options.forward_timeout|boolean option. The Dealer, upon receiving
-	// a CALL with the timeout option set, checks if the matching RPC registration had
-	// the forward_timeout option set, then accordingly either forwards the timeout value
-	// or handles the timeout logic locally without forwarding the timeout value.
+	// Callees wanting to handle the timeout logic MAY specify this intention
+	// via the REGISTER.Options.forward_timeout|boolean option. The Dealer,
+	// upon receiving a CALL with the timeout option set, checks if the
+	// matching RPC registration had the forward_timeout option set, then
+	// accordingly either forwards the timeout value or handles the timeout
+	// logic locally without forwarding the timeout value.
 	callerTimeout, _ := wamp.AsInt64(invk.options[wamp.OptTimeout])
 	if callerTimeout > 0 {
-		// Check that callee supports call_timeout and requested forward_timeout -
-		// if YES then propagate timeout value and handling to the callee side
+		// Check that callee supports call_timeout and requested
+		// forward_timeout - if YES then propagate timeout value and handling
+		// to the callee side
 		if callee.HasFeature(wamp.RoleCallee, wamp.FeatureCallTimeout) && reg.forwardTimeout {
-			if !ok { // Propagate the option only during first progressive call
+			if !ok { // Propagate the option only during first progressive call.
 				details[wamp.OptTimeout] = callerTimeout
 			}
 		} else {
-			// Callee doesn't support timeouts so let's handle it on the dealer's side
+			// Callee doesn't support timeouts so let's handle it on the dealer's side.
 			timeout = callerTimeout
 		}
 	}
@@ -867,27 +871,29 @@ func (d *dealer) syncCall(caller *wamp.Session, msg *wamp.Call) {
 		return
 	}
 
-	// If the Callee does not support Call Timeouts, a Dealer supporting this feature MUST
-	// start a timeout timer upon receiving a CALL message with a timeout option. The message
-	// flow for call timeouts is identical to Call Canceling, except that there is no
-	// CANCEL message that originates from the Caller. The cancellation mode is implicitly
-	// killnowait if the Callee supports call cancellation, otherwise the cancellation mode is skip.
+	// If the Callee does not support Call Timeouts, a Dealer supporting this
+	// feature MUST start a timeout timer upon receiving a CALL message with a
+	// timeout option. The message flow for call timeouts is identical to Call
+	// Canceling, except that there is no CANCEL message that originates from
+	// the Caller. The cancellation mode is implicitly killnowait if the Callee
+	// supports call cancellation, otherwise the cancellation mode is skip.
 	//
-	// The error message that is returned to the Caller MUST use wamp.error.timeout as the reason URI.
+	// The error message that is returned to the Caller MUST use
+	// wamp.error.timeout as the reason URI.
 	if timeout > 0 {
 		// Timer removed if context canceled, call cancelled if timeout.
 		var timerCtx context.Context
 		timerCtx, invk.timerCancel = context.WithTimeout(context.Background(),
 			time.Duration(timeout)*time.Millisecond)
 
-		// Start goroutine to cancel pending call on timeout.  Works like
-		// Cancel with mode=killnowait, and includes an error message argument
-		// "call timeout"
+		// Start goroutine to cancel pending call on timeout. Works like Cancel
+		// with mode=killnowait, and includes an error message argument "call
+		// timeout"
 		go func() {
 			<-timerCtx.Done()
 			if errors.Is(timerCtx.Err(), context.Canceled) {
-				// Timer canceled.  Got response from callee, or caller
-				// canceled or ended session.
+				// Timer canceled. Got response from callee, or caller canceled
+				// or ended session.
 				return
 			}
 			d.actionChan <- func() {
@@ -912,7 +918,7 @@ func (d *dealer) syncCancel(caller *wamp.Session, msg *wamp.Cancel, mode string,
 
 	// Check if the caller of cancel is also the caller of the procedure.
 	if caller != procCaller {
-		// The caller is trying to cancel calls that it does not own.  It it
+		// The caller is trying to cancel calls that it does not own. It it
 		// either confused or trying to do something bad.
 		d.log.Println("CANCEL received from caller", caller,
 			"for call owned by different session")
@@ -961,8 +967,8 @@ func (d *dealer) syncCancel(caller *wamp.Session, msg *wamp.Cancel, mode string,
 					invocationID, "for call", msg.Request, "mode:", mode)
 
 				// If mode is "kill" then let error from callee trigger the
-				// response to the caller.  This is how the caller waits for
-				// the callee to cancel the call.
+				// response to the caller. This is how the caller waits for the
+				// callee to cancel the call.
 				if mode == wamp.CancelModeKill {
 					return
 				}
@@ -972,9 +978,9 @@ func (d *dealer) syncCancel(caller *wamp.Session, msg *wamp.Cancel, mode string,
 	}
 	// Treat any unrecognized mode the same as "skip".
 
-	// Immediately delete the pending call and send ERROR back to the
-	// caller.  This will cause any RESULT or ERROR arriving later from the
-	// callee to be dropped.
+	// Immediately delete the pending call and send ERROR back to the caller.
+	// This will cause any RESULT or ERROR arriving later from the callee to be
+	// dropped.
 	//
 	// This also stops repeated CANCEL messages.
 	delete(d.calls, reqID)
@@ -1027,7 +1033,7 @@ func (d *dealer) syncYield(callee *wamp.Session, msg *wamp.Yield, progress, canR
 		return false
 	}
 
-	// Make sure this yield was sent by the session that handled the call
+	// Make sure this yield was sent by the session that handled the call.
 	if invk.callee != callee {
 		d.log.Println("Ignoring YIELD received from session", callee, "that does not own request", msg.Request)
 		return false
@@ -1076,7 +1082,7 @@ func (d *dealer) syncYield(callee *wamp.Session, msg *wamp.Yield, progress, canR
 
 		// Let's check: was ppt feature announced by callee?
 		if !callee.HasFeature(wamp.RoleCallee, wamp.FeaturePayloadPassthruMode) {
-			// Let's notify caller that CALL was erred
+			// Notify caller that CALL was erred.
 			d.trySend(caller, &wamp.Error{
 				Type:    msg.MessageType(),
 				Request: msg.Request,
@@ -1085,7 +1091,7 @@ func (d *dealer) syncYield(callee *wamp.Session, msg *wamp.Yield, progress, canR
 				},
 				Error: wamp.ErrFeatureNotSupported,
 			})
-			// It's protocol violation, so we need to abort connection
+			// Protocol violation, so need to abort connection.
 			abortMsg := wamp.Abort{Reason: wamp.ErrProtocolViolation}
 			abortMsg.Details = wamp.Dict{}
 			abortMsg.Details[wamp.OptMessage] = ErrPPTNotSupportedByPeer.Error()
@@ -1094,7 +1100,7 @@ func (d *dealer) syncYield(callee *wamp.Session, msg *wamp.Yield, progress, canR
 			return false
 		}
 
-		// Let's check if caller supports this feature
+		// Check if caller supports this feature.
 		if !caller.HasFeature(wamp.RoleCaller, wamp.FeaturePayloadPassthruMode) {
 			d.trySend(callee, &wamp.Error{
 				Type:    msg.MessageType(),
@@ -1107,8 +1113,7 @@ func (d *dealer) syncYield(callee *wamp.Session, msg *wamp.Yield, progress, canR
 			return false
 		}
 
-		// Every side supports PPT feature
-		// Let's fill PPT options for callee
+		// Every side supports PPT feature. Fill PPT options for callee.
 		details[wamp.OptPPTScheme] = pptScheme
 		if val, ok := msg.Options[wamp.OptPPTSerializer]; ok {
 			details[wamp.OptPPTSerializer] = val.(string)
@@ -1121,8 +1126,8 @@ func (d *dealer) syncYield(callee *wamp.Session, msg *wamp.Yield, progress, canR
 		}
 	}
 
-	// Send RESULT to the caller.  If the caller is blocked, then make the
-	// callee wait and retry sending this message again.  The caller may be
+	// Send RESULT to the caller. If the caller is blocked, then make the
+	// callee wait and retry sending this message again. The caller may be
 	// blocked when the callee is generating progressive responses faster than
 	// the caller can handle them.
 	res := &wamp.Result{
@@ -1161,12 +1166,12 @@ func (d *dealer) syncError(msg *wamp.Error) {
 	delete(d.invocations, msg.Request)
 	callID := invk.callID
 
-	// Delete invocationsByCall entry.  This will already be deleted if the
-	// call canceled with mode "skip" or "killnowait".
+	// Delete invocationsByCall entry. This will already be deleted if the call
+	// canceled with mode "skip" or "killnowait".
 	delete(d.invocationByCall, callID)
 
-	// Find and delete pending call.  This will already be deleted if the
-	// call canceled with mode "skip" or "killnowait".
+	// Find and delete pending call. This will already be deleted if the call
+	// canceled with mode "skip" or "killnowait".
 	caller, ok := d.calls[callID]
 	if !ok {
 		d.log.Println("Received ERROR for call that was already canceled:",
@@ -1199,7 +1204,7 @@ func (d *dealer) syncRemoveSession(sess *wamp.Session) []*wamp.Publish {
 			continue
 		}
 
-		// Publish wamp.registration.on_unregister meta event.  Fired when a
+		// Publish wamp.registration.on_unregister meta event. Fired when a
 		// callee session is removed from a registration.
 		metaPubs = append(metaPubs, &wamp.Publish{
 			Request:   wamp.GlobalID(),
@@ -1210,10 +1215,10 @@ func (d *dealer) syncRemoveSession(sess *wamp.Session) []*wamp.Publish {
 		if !delReg {
 			continue
 		}
-		// Publish wamp.registration.on_delete meta event.  Fired when a
-		// registration is deleted after the last session attached to it
-		// has been removed.  The wamp.registration.on_delete event MUST be
-		// preceded by a wamp.registration.on_unregister event.
+		// Publish wamp.registration.on_delete meta event. Fired when a
+		// registration is deleted after the last session attached to it has
+		// been removed. The wamp.registration.on_delete event MUST be preceded
+		// by a wamp.registration.on_unregister event.
 		metaPubs = append(metaPubs, &wamp.Publish{
 			Request:   wamp.GlobalID(),
 			Topic:     wamp.MetaEventRegOnDelete,

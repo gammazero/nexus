@@ -2,12 +2,12 @@ package main
 
 import (
 	"context"
-	"github.com/gammazero/nexus/v3/client"
-	"github.com/gammazero/nexus/v3/transport/serialize"
 	"log"
 	"os"
 	"os/signal"
 
+	"github.com/gammazero/nexus/v3/client"
+	"github.com/gammazero/nexus/v3/transport/serialize"
 	"github.com/gammazero/nexus/v3/wamp"
 )
 

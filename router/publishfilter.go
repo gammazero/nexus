@@ -1,6 +1,7 @@
 package router
 
 import (
+	"slices"
 	"strings"
 
 	"github.com/gammazero/nexus/v3/wamp"
@@ -22,9 +23,9 @@ type simplePublishFilter struct {
 	wlMap map[string][]string
 }
 
-// NewSimplePublishFilter gets any blacklists and whitelists included
-// in a PUBLISH message.  If there are no filters defined by the
-// PUBLISH message, then nil is returned.
+// NewSimplePublishFilter gets any blacklists and whitelists included in a
+// PUBLISH message. If there are no filters defined by the PUBLISH message,
+// then nil is returned.
 func NewSimplePublishFilter(msg *wamp.Publish) PublishFilter {
 	const (
 		blacklistPrefix = "exclude_"
@@ -91,29 +92,24 @@ func NewSimplePublishFilter(msg *wamp.Publish) PublishFilter {
 	return &simplePublishFilter{blIDs, wlIDs, blMap, wlMap}
 }
 
-// Allowed determines if a message is allowed to be published to a
-// subscriber, by looking at any blacklists and whitelists provided
-// with the publish message.
+// Allowed determines if a message is allowed to be published to a subscriber,
+// by looking at any blacklists and whitelists provided with the publish
+// message.
 //
 // To receive a published event, the subscriber session must not have any
 // values that appear in a blacklist, and must have a value from each
 // whitelist.
 func (f *simplePublishFilter) Allowed(sub *wamp.Session) bool {
 	// Check each blacklisted ID to see if session ID is blacklisted.
-	for i := range f.blIDs {
-		if f.blIDs[i] == sub.ID {
-			return false
-		}
+	if slices.Contains(f.blIDs, sub.ID) {
+		return false
 	}
 
 	var eligible bool
 	// If session ID whitelist given, make sure session ID is in whitelist.
 	if len(f.wlIDs) != 0 {
-		for i := range f.wlIDs {
-			if f.wlIDs[i] == sub.ID {
-				eligible = true
-				break
-			}
+		if slices.Contains(f.wlIDs, sub.ID) {
+			eligible = true
 		}
 		if !eligible {
 			return false
@@ -129,11 +125,9 @@ func (f *simplePublishFilter) Allowed(sub *wamp.Session) bool {
 			continue
 		}
 		// Check each blacklisted value to see if session attribute is one.
-		for i := range vals {
-			if vals[i] == sessAttr {
-				// Session has blacklisted attribute value.
-				return false
-			}
+		if slices.Contains(vals, sessAttr) {
+			// Session has blacklisted attribute value.
+			return false
 		}
 	}
 
@@ -145,15 +139,7 @@ func (f *simplePublishFilter) Allowed(sub *wamp.Session) bool {
 			// Session does not have whitelisted value, so deny.
 			return false
 		}
-		eligible = false
-		// Check all whitelisted values to see is session attribute is one.
-		for i := range vals {
-			if vals[i] == sessAttr {
-				// Session has whitelisted attribute value.
-				eligible = true
-				break
-			}
-		}
+		eligible = slices.Contains(vals, sessAttr)
 		// If session attribute value no found in whitelist, then deny.
 		if !eligible {
 			return false

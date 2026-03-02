@@ -28,7 +28,7 @@ jobs:
         uses: gsactions/commit-message-checker@v1
         with:
           # Checks that at least one of the change type is checked
-          pattern: '(.|\n|\r)*((\[x\] Bug fix)|(\[x\] New feature)|(\[x\] Breaking change))(.|\n|\r)*'
+          pattern: '(.|\n|\r)*((\[x\] Enhancement)|(\[x\] Bug fix)|(\[x\] New feature)|(\[x\] Breaking change))(.|\n|\r)*'
           flags: 'gmi'
           error: |
             You have not checked any kind of change this PR introduce. Please select at least one.

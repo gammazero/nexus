@@ -1,4 +1,4 @@
-package router
+package router //nolint:testpackage
 
 import (
 	"testing"

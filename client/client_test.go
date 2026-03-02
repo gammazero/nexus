@@ -1,4 +1,4 @@
-package client
+package client_test
 
 import (
 	"context"
@@ -10,11 +10,12 @@ import (
 	"regexp"
 	"sync"
 	"testing"
+	"testing/synctest"
 	"time"
 
 	"github.com/stretchr/testify/require"
-	"go.uber.org/goleak"
 
+	"github.com/gammazero/nexus/v3/client"
 	"github.com/gammazero/nexus/v3/router"
 	"github.com/gammazero/nexus/v3/router/auth"
 	"github.com/gammazero/nexus/v3/stdlog"
@@ -38,12 +39,6 @@ func init() {
 	logger = log.New(os.Stdout, "", log.LstdFlags)
 }
 
-func checkGoLeaks(t *testing.T) {
-	t.Cleanup(func() {
-		goleak.VerifyNone(t)
-	})
-}
-
 func getTestRouter(t *testing.T, realmConfig *router.RealmConfig) router.Router {
 	config := &router.Config{
 		RealmConfigs: []*router.RealmConfig{realmConfig},
@@ -56,7 +51,7 @@ func getTestRouter(t *testing.T, realmConfig *router.RealmConfig) router.Router 
 	return r
 }
 
-func connectedTestClients(t *testing.T) (*Client, *Client, router.Router) {
+func connectedTestClients(t *testing.T) (*client.Client, *client.Client, router.Router) {
 	realmConfig := &router.RealmConfig{
 		URI:              wamp.URI(testRealm),
 		StrictURI:        true,
@@ -88,10 +83,10 @@ func newTestRealmConfig(realmName string, fns ...realmConfigMutator) *router.Rea
 	return realmConfig
 }
 
-type clientConfigMutator func(*Config)
+type clientConfigMutator func(*client.Config)
 
-func newTestClientConfig(realmName string, fns ...clientConfigMutator) *Config {
-	clientConfig := &Config{
+func newTestClientConfig(realmName string, fns ...clientConfigMutator) *client.Config {
+	clientConfig := &client.Config{
 		Realm:           realmName,
 		ResponseTimeout: 500 * time.Millisecond,
 		Logger:          logger,
@@ -103,8 +98,8 @@ func newTestClientConfig(realmName string, fns ...clientConfigMutator) *Config {
 	return clientConfig
 }
 
-func newTestClientWithConfig(t *testing.T, r router.Router, clientConfig *Config) *Client {
-	c, err := ConnectLocal(r, *clientConfig)
+func newTestClientWithConfig(t *testing.T, r router.Router, clientConfig *client.Config) *client.Client {
+	c, err := client.ConnectLocal(r, *clientConfig)
 	require.NoError(t, err, "failed to connect test clients")
 	t.Cleanup(func() {
 		c.Close()
@@ -112,461 +107,453 @@ func newTestClientWithConfig(t *testing.T, r router.Router, clientConfig *Config
 	return c
 }
 
-func newTestClient(t *testing.T, r router.Router) *Client {
+func newTestClient(t *testing.T, r router.Router) *client.Client {
 	return newTestClientWithConfig(t, r, newTestClientConfig(testRealm))
 }
 
 func TestJoinRealm(t *testing.T) {
-	checkGoLeaks(t)
+	synctest.Test(t, func(t *testing.T) {
+		realmConfig := newTestRealmConfig(testRealm)
+		r := getTestRouter(t, realmConfig)
 
-	realmConfig := newTestRealmConfig(testRealm)
-	r := getTestRouter(t, realmConfig)
+		// Test that client can join realm.
+		cl := newTestClient(t, r)
+		require.NotEqual(t, wamp.ID(0), cl.ID(), "Expected non-0 client id")
 
-	// Test that client can join realm.
-	client := newTestClient(t, r)
-	require.NotEqual(t, wamp.ID(0), client.ID(), "Expected non-0 client id")
+		realmInfo := cl.RealmDetails()
+		_, err := wamp.DictValue(realmInfo, []string{"roles", "broker"})
+		require.NoError(t, err, "Router missing broker role")
+		_, err = wamp.DictValue(realmInfo, []string{"roles", "dealer"})
+		require.NoError(t, err, "Router missing dealer role")
 
-	realmInfo := client.RealmDetails()
-	_, err := wamp.DictValue(realmInfo, []string{"roles", "broker"})
-	require.NoError(t, err, "Router missing broker role")
-	_, err = wamp.DictValue(realmInfo, []string{"roles", "dealer"})
-	require.NoError(t, err, "Router missing dealer role")
+		cl.Close()
+		r.Close()
+		cl.Close() // make sure double-close is ok
 
-	client.Close()
-	r.Close()
-	require.Error(t, client.Close(), "No error from double Close()")
+		// Test the Done is signaled.
+		select {
+		case <-cl.Done():
+		case <-time.After(time.Millisecond):
+			require.FailNow(t, "Expected client done")
+		}
 
-	// Test the Done is signaled.
-	select {
-	case <-client.Done():
-	case <-time.After(time.Millisecond):
-		require.FailNow(t, "Expected client done")
-	}
+		// Test that client cannot join realm when anonymous auth is disabled.
+		realmConfig = &router.RealmConfig{
+			URI:              wamp.URI("nexus.testnoanon"),
+			StrictURI:        true,
+			AnonymousAuth:    false,
+			AllowDisclose:    false,
+			RequireLocalAuth: true,
+		}
+		r = getTestRouter(t, realmConfig)
 
-	// Test that client cannot join realm when anonymous auth is disabled.
-	realmConfig = &router.RealmConfig{
-		URI:              wamp.URI("nexus.testnoanon"),
-		StrictURI:        true,
-		AnonymousAuth:    false,
-		AllowDisclose:    false,
-		RequireLocalAuth: true,
-	}
-	r = getTestRouter(t, realmConfig)
-
-	cfg := Config{
-		Realm:           "nexus.testnoanon",
-		ResponseTimeout: 500 * time.Millisecond,
-		Logger:          logger,
-	}
-	_, err = ConnectLocal(r, cfg)
-	require.Error(t, err, "expected error due to no anonymous authentication")
+		cfg := client.Config{
+			Realm:           "nexus.testnoanon",
+			ResponseTimeout: 500 * time.Millisecond,
+			Logger:          logger,
+		}
+		_, err = client.ConnectLocal(r, cfg)
+		require.Error(t, err, "expected error due to no anonymous authentication")
+	})
 }
 
 func TestClientJoinRealmWithCRAuth(t *testing.T) {
-	checkGoLeaks(t)
+	synctest.Test(t, func(t *testing.T) {
+		crAuth := auth.NewCRAuthenticator(&serverKeyStore{"static"}, time.Second)
+		realmConfig := &router.RealmConfig{
+			URI:              wamp.URI("nexus.test.auth"),
+			StrictURI:        true,
+			AnonymousAuth:    false,
+			AllowDisclose:    false,
+			Authenticators:   []auth.Authenticator{crAuth},
+			RequireLocalAuth: true,
+		}
+		r := getTestRouter(t, realmConfig)
 
-	crAuth := auth.NewCRAuthenticator(&serverKeyStore{"static"}, time.Second)
-	realmConfig := &router.RealmConfig{
-		URI:              wamp.URI("nexus.test.auth"),
-		StrictURI:        true,
-		AnonymousAuth:    false,
-		AllowDisclose:    false,
-		Authenticators:   []auth.Authenticator{crAuth},
-		RequireLocalAuth: true,
-	}
-	r := getTestRouter(t, realmConfig)
-
-	cfg := Config{
-		Realm: "nexus.test.auth",
-		HelloDetails: wamp.Dict{
-			"authid": "jdoe",
-		},
-		AuthHandlers: map[string]AuthFunc{
-			"wampcra": clientAuthFunc,
-		},
-		Logger: logger,
-	}
-	client, err := ConnectLocal(r, cfg)
-	require.NoError(t, err)
-	client.Close()
+		cfg := client.Config{
+			Realm: "nexus.test.auth",
+			HelloDetails: wamp.Dict{
+				"authid": "jdoe",
+			},
+			AuthHandlers: map[string]client.AuthFunc{
+				"wampcra": clientAuthFunc,
+			},
+			Logger: logger,
+		}
+		cl, err := client.ConnectLocal(r, cfg)
+		require.NoError(t, err)
+		cl.Close()
+	})
 }
 
 func TestSubscribe(t *testing.T) {
-	checkGoLeaks(t)
+	synctest.Test(t, func(t *testing.T) {
+		// Connect two clients to the same server
+		sub, pub, _ := connectedTestClients(t)
 
-	// Connect two clients to the same server
-	sub, pub, _ := connectedTestClients(t)
-
-	testTopic := "nexus.test.topic"
-	errChan := make(chan error)
-	eventHandler := func(event *wamp.Event) {
-		arg, _ := wamp.AsString(event.Arguments[0])
-		if arg != "hello world" {
-			errChan <- errors.New("event missing or bad args")
-			return
+		testTopic := "nexus.test.topic"
+		errChan := make(chan error)
+		eventHandler := func(event *wamp.Event) {
+			arg, _ := wamp.AsString(event.Arguments[0])
+			if arg != "hello world" {
+				errChan <- errors.New("event missing or bad args")
+				return
+			}
+			origTopic, _ := wamp.AsURI(event.Details["topic"])
+			if origTopic != wamp.URI(testTopic) {
+				errChan <- errors.New("wrong original topic")
+				return
+			}
+			errChan <- nil
 		}
-		origTopic, _ := wamp.AsURI(event.Details["topic"])
-		if origTopic != wamp.URI(testTopic) {
-			errChan <- errors.New("wrong original topic")
-			return
+
+		// Expect invalid URI error if not setting match option.
+		wcTopic := "nexus..topic"
+		err := sub.Subscribe(wcTopic, eventHandler, nil)
+		require.Error(t, err, "expected invalid uri error")
+
+		// Subscribe should work with match set to wildcard.
+		err = sub.Subscribe(wcTopic, eventHandler, wamp.SetOption(nil, "match", "wildcard"))
+		require.NoError(t, err)
+
+		// Test getting subscription ID.
+		_, ok := sub.SubscriptionID(wcTopic)
+		require.True(t, ok, "Did not get subscription ID")
+		_, ok = sub.SubscriptionID("no.such.topic")
+		require.False(t, ok, "Expected false looking up subscription ID for bad topic")
+
+		// Publish an event to something that matches by wildcard.
+		args := wamp.List{"hello world"}
+		err = pub.Publish(testTopic, nil, args, nil)
+		require.NoError(t, err, "Failed to publish without ack")
+
+		// Make sure the event was received.
+		select {
+		case err = <-errChan:
+			require.NoError(t, err)
+		case <-time.After(time.Second):
+			require.FailNow(t, "did not get published event")
 		}
-		errChan <- nil
-	}
 
-	// Expect invalid URI error if not setting match option.
-	wcTopic := "nexus..topic"
-	err := sub.Subscribe(wcTopic, eventHandler, nil)
-	require.Error(t, err, "expected invalid uri error")
+		opts := wamp.SetOption(nil, wamp.OptAcknowledge, true)
+		err = pub.Publish(testTopic, opts, args, nil)
+		require.NoError(t, err, "Failed to publish with ack")
 
-	// Subscribe should work with match set to wildcard.
-	err = sub.Subscribe(wcTopic, eventHandler, wamp.SetOption(nil, "match", "wildcard"))
-	require.NoError(t, err)
-
-	// Test getting subscription ID.
-	_, ok := sub.SubscriptionID(wcTopic)
-	require.True(t, ok, "Did not get subscription ID")
-	_, ok = sub.SubscriptionID("no.such.topic")
-	require.False(t, ok, "Expected false looking up subscription ID for bad topic")
-
-	// Publish an event to something that matches by wildcard.
-	args := wamp.List{"hello world"}
-	err = pub.Publish(testTopic, nil, args, nil)
-	require.NoError(t, err, "Failed to publish without ack")
-
-	// Make sure the event was received.
-	select {
-	case err = <-errChan:
-		require.NoError(t, err)
-	case <-time.After(time.Second):
-		require.FailNow(t, "did not get published event")
-	}
-
-	opts := wamp.SetOption(nil, wamp.OptAcknowledge, true)
-	err = pub.Publish(testTopic, opts, args, nil)
-	require.NoError(t, err, "Failed to publish with ack")
-
-	// Make sure the event was received.
-	select {
-	case err = <-errChan:
-		require.NoError(t, err)
-	case <-time.After(time.Second):
-		require.FailNow(t, "did not get published event")
-	}
-
-	// Publish to invalid URI and check for error.
-	err = pub.Publish(".bad-uri.bad bad.", opts, args, nil)
-	require.Error(t, err, "Expected error publishing to bad URI with ack")
-
-	err = sub.Unsubscribe(wcTopic)
-	require.NoError(t, err)
-
-	// ***Testing PPT Mode****
-
-	// Publish with invalid PPT Scheme and check for error.
-	options := wamp.Dict{
-		wamp.OptPPTScheme:     "invalid_scheme",
-		wamp.OptPPTSerializer: "native",
-	}
-	args = wamp.List{"hello world"}
-	err = pub.Publish(testTopic, options, args, nil)
-	require.Error(t, err, "Expected error publishing with invalid PPT Scheme")
-
-	// Make sure the event was not received.
-	select {
-	case <-time.After(time.Millisecond):
-	case <-errChan:
-		require.FailNow(t, "Should not have called event handler")
-	}
-
-	// Publish with invalid PPT serializer and check for error.
-	options = wamp.Dict{
-		wamp.OptPPTScheme:     "x_custom",
-		wamp.OptPPTSerializer: "invalid_serializer",
-	}
-	args = wamp.List{"hello world"}
-	err = pub.Publish(testTopic, options, args, nil)
-	require.Error(t, err, "Expected error publishing with invalid PPT serializer")
-
-	// Make sure the event was not received.
-	select {
-	case <-time.After(time.Millisecond):
-	case <-errChan:
-		require.FailNow(t, "Should not have called event handler")
-	}
-
-	eventHandler = func(event *wamp.Event) {
-		arg, _ := wamp.AsString(event.Arguments[0])
-		if arg != "hello world" {
-			errChan <- errors.New("event missing or bad args")
-			return
+		// Make sure the event was received.
+		select {
+		case err = <-errChan:
+			require.NoError(t, err)
+		case <-time.After(time.Second):
+			require.FailNow(t, "did not get published event")
 		}
-		kwarg, _ := wamp.AsString(event.ArgumentsKw["prop"])
-		if kwarg != "hello world" {
-			errChan <- errors.New("event missing or bad kwargs")
-			return
-		}
-		errChan <- nil
-	}
 
-	// Subscribe to test topic
-	testTopic = "test.ppt"
-	err = sub.Subscribe(testTopic, eventHandler, nil)
-	require.NoError(t, err)
+		// Publish to invalid URI and check for error.
+		err = pub.Publish(".bad-uri.bad bad.", opts, args, nil)
+		require.Error(t, err, "Expected error publishing to bad URI with ack")
 
-	// Publish an event within custom ppt scheme and native serializer
-	options = wamp.Dict{
-		wamp.OptPPTScheme:     "x_custom",
-		wamp.OptPPTSerializer: "native",
-	}
-	args = wamp.List{"hello world"}
-	kwargs := wamp.Dict{"prop": "hello world"}
-	err = pub.Publish(testTopic, options, args, kwargs)
-	require.NoError(t, err, "Failed to publish without ack")
-
-	// Make sure the event was received.
-	select {
-	case err = <-errChan:
+		err = sub.Unsubscribe(wcTopic)
 		require.NoError(t, err)
-	case <-time.After(time.Second):
-		require.FailNow(t, "did not get published event")
-	}
 
-	// Publish an event within custom ppt scheme and cbor serializer
-	options = wamp.Dict{
-		wamp.OptPPTScheme:     "x_custom",
-		wamp.OptPPTSerializer: "cbor",
-	}
-	args = wamp.List{"hello world"}
-	kwargs = wamp.Dict{"prop": "hello world"}
-	err = pub.Publish(testTopic, options, args, kwargs)
-	require.NoError(t, err, "Failed to publish without ack")
+		// ***Testing PPT Mode****
 
-	// Make sure the event was received.
-	select {
-	case err = <-errChan:
-		require.NoError(t, err)
-	case <-time.After(time.Second):
-		require.FailNow(t, "did not get published event")
-	}
-
-	// Publish an event within custom ppt scheme and msgpack serializer
-	options = wamp.Dict{
-		wamp.OptPPTScheme:     "x_custom",
-		wamp.OptPPTSerializer: "msgpack",
-	}
-	args = wamp.List{"hello world"}
-	kwargs = wamp.Dict{"prop": "hello world"}
-	err = pub.Publish(testTopic, options, args, kwargs)
-	require.NoError(t, err, "Failed to publish without ack")
-
-	// Make sure the event was received.
-	select {
-	case err = <-errChan:
-		require.NoError(t, err)
-	case <-time.After(time.Second):
-		require.FailNow(t, "did not get published event")
-	}
-
-	// Publish an event within custom ppt scheme and json serializer
-	options = wamp.Dict{
-		wamp.OptPPTScheme:     "x_custom",
-		wamp.OptPPTSerializer: "json",
-	}
-	args = wamp.List{"hello world"}
-	kwargs = wamp.Dict{"prop": "hello world"}
-	err = pub.Publish(testTopic, options, args, kwargs)
-	require.NoError(t, err, "Failed to publish without ack")
-
-	// Make sure the event was received.
-	select {
-	case err = <-errChan:
-		require.NoError(t, err)
-	case <-time.After(time.Second):
-		require.FailNow(t, "did not get published event")
-	}
-}
-
-func TestRemoteProcedureCall(t *testing.T) {
-	checkGoLeaks(t)
-
-	// Connect two clients to the same server
-	callee, caller, _ := connectedTestClients(t)
-
-	// Test unregister invalid procedure.
-	err := callee.Unregister("invalidmethod")
-	require.Error(t, err, "expected error unregistering invalid procedure")
-
-	// Test registering a valid procedure.
-	handler := func(ctx context.Context, inv *wamp.Invocation) InvokeResult {
-		return InvokeResult{Args: wamp.List{inv.Arguments[0].(int) * 37}}
-	}
-	procName := "myproc"
-	err = callee.Register(procName, handler, nil)
-	require.NoError(t, err, "failed to register procedure")
-
-	// Test getting registration ID.
-	_, ok := callee.RegistrationID(procName)
-	require.True(t, ok, "Did not get subscription ID")
-	_, ok = callee.RegistrationID("no.such.procedure")
-	require.False(t, ok, "Expected false looking up registration ID for bad procedure")
-
-	// Test calling the procedure.
-	callArgs := wamp.List{73}
-	ctx := context.Background()
-	result, err := caller.Call(ctx, procName, nil, callArgs, nil, nil)
-	require.NoError(t, err)
-	require.Equal(t, 2701, result.Arguments[0])
-
-	// Test unregister.
-	err = callee.Unregister(procName)
-	require.NoError(t, err)
-
-	// Test calling unregistered procedure.
-	callArgs = wamp.List{555}
-	result, err = caller.Call(ctx, procName, nil, callArgs, nil, nil)
-	require.Error(t, err, "expected error calling unregistered procedure")
-	require.Nil(t, result, "result should be nil on error")
-	require.ErrorContains(t, err, "wamp.error.no_such_procedure")
-	var rpcErr RPCError
-	require.ErrorAs(t, err, &rpcErr)
-	require.Equal(t, wamp.ErrNoSuchProcedure, rpcErr.Err.Error, "Wrong error URI in RPC error")
-
-	// ***Testing PPT Mode****
-
-	// Test registering a valid procedure.
-	handler = func(ctx context.Context, inv *wamp.Invocation) InvokeResult {
-		arg, _ := wamp.AsString(inv.Arguments[0])
-		require.Equal(t, "hello world", arg, "event missing or bad args")
-		kwarg, _ := wamp.AsString(inv.ArgumentsKw["prop"])
-		require.Equal(t, "hello world", kwarg, "event missing or bad kwargs")
-
-		resArgs := wamp.List{"goodbye world"}
-		resKwargs := wamp.Dict{"prop": "goodbye world"}
+		// Publish with invalid PPT Scheme and check for error.
 		options := wamp.Dict{
-			wamp.OptPPTScheme:     inv.Details[wamp.OptPPTScheme],
-			wamp.OptPPTSerializer: inv.Details[wamp.OptPPTSerializer],
+			wamp.OptPPTScheme:     "invalid_scheme",
+			wamp.OptPPTSerializer: "native",
+		}
+		args = wamp.List{"hello world"}
+		err = pub.Publish(testTopic, options, args, nil)
+		require.Error(t, err, "Expected error publishing with invalid PPT Scheme")
+
+		// Make sure the event was not received.
+		select {
+		case <-time.After(time.Millisecond):
+		case <-errChan:
+			require.FailNow(t, "Should not have called event handler")
 		}
 
-		return InvokeResult{Args: resArgs, Kwargs: resKwargs, Options: options}
-	}
-	procName = "test.ppt"
-	err = callee.Register(procName, handler, nil)
-	require.NoError(t, err)
-
-	// Test calling the procedure with invalid PPT Scheme
-	options := wamp.Dict{
-		wamp.OptPPTScheme:     "invalid_scheme",
-		wamp.OptPPTSerializer: "native",
-	}
-	args := wamp.List{"hello world"}
-	kwargs := wamp.Dict{"prop": "hello world"}
-	ctx = context.Background()
-	result, err = caller.Call(ctx, procName, options, args, kwargs, nil)
-	require.Error(t, err, "Expected error calling procedure")
-
-	// Test calling the procedure with invalid PPT serializer
-	options = wamp.Dict{
-		wamp.OptPPTScheme:     "x_custom",
-		wamp.OptPPTSerializer: "invalid_serializer",
-	}
-	args = wamp.List{"hello world"}
-	kwargs = wamp.Dict{"prop": "hello world"}
-	ctx = context.Background()
-	result, err = caller.Call(ctx, procName, options, args, kwargs, nil)
-	require.Error(t, err, "Expected error calling procedure")
-
-	// Test calling the procedure within custom ppt scheme and native serializer
-	options = wamp.Dict{
-		wamp.OptPPTScheme:     "x_custom",
-		wamp.OptPPTSerializer: "native",
-	}
-	args = wamp.List{"hello world"}
-	kwargs = wamp.Dict{"prop": "hello world"}
-	ctx = context.Background()
-	result, err = caller.Call(ctx, procName, options, args, kwargs, nil)
-	require.NoError(t, err)
-	require.Equal(t, "goodbye world", result.Arguments[0])
-	require.Equal(t, "goodbye world", result.ArgumentsKw["prop"])
-
-	// Test calling the procedure within custom ppt scheme and json serializer
-	options = wamp.Dict{
-		wamp.OptPPTScheme:     "x_custom",
-		wamp.OptPPTSerializer: "json",
-	}
-	args = wamp.List{"hello world"}
-	kwargs = wamp.Dict{"prop": "hello world"}
-	ctx = context.Background()
-	result, err = caller.Call(ctx, procName, options, args, kwargs, nil)
-	require.NoError(t, err)
-	require.Equal(t, "goodbye world", result.Arguments[0])
-	require.Equal(t, "goodbye world", result.ArgumentsKw["prop"])
-
-	// Test calling the procedure within custom ppt scheme and cbor serializer
-	options = wamp.Dict{
-		wamp.OptPPTScheme:     "x_custom",
-		wamp.OptPPTSerializer: "cbor",
-	}
-	args = wamp.List{"hello world"}
-	kwargs = wamp.Dict{"prop": "hello world"}
-	ctx = context.Background()
-	result, err = caller.Call(ctx, procName, options, args, kwargs, nil)
-	require.NoError(t, err)
-	require.Equal(t, "goodbye world", result.Arguments[0])
-	require.Equal(t, "goodbye world", result.ArgumentsKw["prop"])
-
-	// Test calling the procedure within custom ppt scheme and msgpack serializer
-	options = wamp.Dict{
-		wamp.OptPPTScheme:     "x_custom",
-		wamp.OptPPTSerializer: "msgpack",
-	}
-	args = wamp.List{"hello world"}
-	kwargs = wamp.Dict{"prop": "hello world"}
-	ctx = context.Background()
-	result, err = caller.Call(ctx, procName, options, args, kwargs, nil)
-	require.NoError(t, err)
-	require.Equal(t, "goodbye world", result.Arguments[0])
-	require.Equal(t, "goodbye world", result.ArgumentsKw["prop"])
-
-	// Bad handler
-	handler = func(ctx context.Context, inv *wamp.Invocation) InvokeResult {
-		resArgs := wamp.List{"goodbye world"}
-		resKwargs := wamp.Dict{"prop": "goodbye world"}
-		options := wamp.Dict{
-			wamp.OptPPTScheme: "invalid_scheme",
-		}
-
-		return InvokeResult{Args: resArgs, Kwargs: resKwargs, Options: options}
-	}
-	procName = "test.ppt.invoke.bad.scheme"
-	err = callee.Register(procName, handler, nil)
-	require.NoError(t, err, "failed to register procedure")
-
-	// Test calling the procedure with invalid PPT Scheme in YIELD
-	args = wamp.List{"hello world"}
-	ctx = context.Background()
-	result, err = caller.Call(ctx, procName, nil, args, nil, nil)
-	require.Error(t, err, "Expected error calling procedure")
-
-	// Bad handler
-	handler = func(ctx context.Context, inv *wamp.Invocation) InvokeResult {
-		resArgs := wamp.List{"goodbye world"}
-		resKwargs := wamp.Dict{"prop": "goodbye world"}
-		options := wamp.Dict{
+		// Publish with invalid PPT serializer and check for error.
+		options = wamp.Dict{
 			wamp.OptPPTScheme:     "x_custom",
 			wamp.OptPPTSerializer: "invalid_serializer",
 		}
+		args = wamp.List{"hello world"}
+		err = pub.Publish(testTopic, options, args, nil)
+		require.Error(t, err, "Expected error publishing with invalid PPT serializer")
 
-		return InvokeResult{Args: resArgs, Kwargs: resKwargs, Options: options}
-	}
-	procName = "test.ppt.invoke.bad.serializer"
-	err = callee.Register(procName, handler, nil)
-	require.NoError(t, err)
+		// Make sure the event was not received.
+		select {
+		case <-time.After(time.Millisecond):
+		case <-errChan:
+			require.FailNow(t, "Should not have called event handler")
+		}
 
-	// Test calling the procedure with invalid PPT Scheme in YIELD
-	args = wamp.List{"hello world"}
-	ctx = context.Background()
-	result, err = caller.Call(ctx, procName, nil, args, nil, nil)
-	require.Error(t, err, "Expected error calling procedure")
+		eventHandler = func(event *wamp.Event) {
+			arg, _ := wamp.AsString(event.Arguments[0])
+			if arg != "hello world" {
+				errChan <- errors.New("event missing or bad args")
+				return
+			}
+			kwarg, _ := wamp.AsString(event.ArgumentsKw["prop"])
+			if kwarg != "hello world" {
+				errChan <- errors.New("event missing or bad kwargs")
+				return
+			}
+			errChan <- nil
+		}
+
+		// Subscribe to test topic
+		testTopic = "test.ppt"
+		err = sub.Subscribe(testTopic, eventHandler, nil)
+		require.NoError(t, err)
+
+		// Publish an event within custom ppt scheme and native serializer
+		options = wamp.Dict{
+			wamp.OptPPTScheme:     "x_custom",
+			wamp.OptPPTSerializer: "native",
+		}
+		args = wamp.List{"hello world"}
+		kwargs := wamp.Dict{"prop": "hello world"}
+		err = pub.Publish(testTopic, options, args, kwargs)
+		require.NoError(t, err, "Failed to publish without ack")
+
+		// Make sure the event was received.
+		select {
+		case err = <-errChan:
+			require.NoError(t, err)
+		case <-time.After(time.Second):
+			require.FailNow(t, "did not get published event")
+		}
+
+		// Publish an event within custom ppt scheme and cbor serializer
+		options = wamp.Dict{
+			wamp.OptPPTScheme:     "x_custom",
+			wamp.OptPPTSerializer: "cbor",
+		}
+		args = wamp.List{"hello world"}
+		kwargs = wamp.Dict{"prop": "hello world"}
+		err = pub.Publish(testTopic, options, args, kwargs)
+		require.NoError(t, err, "Failed to publish without ack")
+
+		// Make sure the event was received.
+		select {
+		case err = <-errChan:
+			require.NoError(t, err)
+		case <-time.After(time.Second):
+			require.FailNow(t, "did not get published event")
+		}
+
+		// Publish an event within custom ppt scheme and msgpack serializer
+		options = wamp.Dict{
+			wamp.OptPPTScheme:     "x_custom",
+			wamp.OptPPTSerializer: "msgpack",
+		}
+		args = wamp.List{"hello world"}
+		kwargs = wamp.Dict{"prop": "hello world"}
+		err = pub.Publish(testTopic, options, args, kwargs)
+		require.NoError(t, err, "Failed to publish without ack")
+
+		// Make sure the event was received.
+		select {
+		case err = <-errChan:
+			require.NoError(t, err)
+		case <-time.After(time.Second):
+			require.FailNow(t, "did not get published event")
+		}
+
+		// Publish an event within custom ppt scheme and json serializer
+		options = wamp.Dict{
+			wamp.OptPPTScheme:     "x_custom",
+			wamp.OptPPTSerializer: "json",
+		}
+		args = wamp.List{"hello world"}
+		kwargs = wamp.Dict{"prop": "hello world"}
+		err = pub.Publish(testTopic, options, args, kwargs)
+		require.NoError(t, err, "Failed to publish without ack")
+
+		// Make sure the event was received.
+		select {
+		case err = <-errChan:
+			require.NoError(t, err)
+		case <-time.After(time.Second):
+			require.FailNow(t, "did not get published event")
+		}
+	})
+}
+
+func TestRemoteProcedureCall(t *testing.T) {
+	synctest.Test(t, func(t *testing.T) {
+		// Connect two clients to the same server
+		callee, caller, _ := connectedTestClients(t)
+
+		// Test unregister invalid procedure.
+		err := callee.Unregister("invalidmethod")
+		require.Error(t, err, "expected error unregistering invalid procedure")
+
+		// Test registering a valid procedure.
+		handler := func(ctx context.Context, inv *wamp.Invocation) client.InvokeResult {
+			return client.InvokeResult{Args: wamp.List{inv.Arguments[0].(int) * 37}}
+		}
+		procName := "myproc"
+		err = callee.Register(procName, handler, nil)
+		require.NoError(t, err, "failed to register procedure")
+
+		// Test getting registration ID.
+		_, ok := callee.RegistrationID(procName)
+		require.True(t, ok, "Did not get subscription ID")
+		_, ok = callee.RegistrationID("no.such.procedure")
+		require.False(t, ok, "Expected false looking up registration ID for bad procedure")
+
+		// Test calling the procedure.
+		callArgs := wamp.List{73}
+		ctx := t.Context()
+		result, err := caller.Call(ctx, procName, nil, callArgs, nil, nil)
+		require.NoError(t, err)
+		require.Equal(t, 2701, result.Arguments[0])
+
+		// Test unregister.
+		err = callee.Unregister(procName)
+		require.NoError(t, err)
+
+		// Test calling unregistered procedure.
+		callArgs = wamp.List{555}
+		result, err = caller.Call(ctx, procName, nil, callArgs, nil, nil)
+		require.Error(t, err, "expected error calling unregistered procedure")
+		require.Nil(t, result, "result should be nil on error")
+		require.ErrorContains(t, err, "wamp.error.no_such_procedure")
+		var rpcErr client.RPCError
+		require.ErrorAs(t, err, &rpcErr)
+		require.Equal(t, wamp.ErrNoSuchProcedure, rpcErr.Err.Error, "Wrong error URI in RPC error")
+
+		// ***Testing PPT Mode****
+
+		// Test registering a valid procedure.
+		handler = func(ctx context.Context, inv *wamp.Invocation) client.InvokeResult {
+			arg, _ := wamp.AsString(inv.Arguments[0])
+			require.Equal(t, "hello world", arg, "event missing or bad args")
+			kwarg, _ := wamp.AsString(inv.ArgumentsKw["prop"])
+			require.Equal(t, "hello world", kwarg, "event missing or bad kwargs")
+
+			resArgs := wamp.List{"goodbye world"}
+			resKwargs := wamp.Dict{"prop": "goodbye world"}
+			options := wamp.Dict{
+				wamp.OptPPTScheme:     inv.Details[wamp.OptPPTScheme],
+				wamp.OptPPTSerializer: inv.Details[wamp.OptPPTSerializer],
+			}
+
+			return client.InvokeResult{Args: resArgs, Kwargs: resKwargs, Options: options}
+		}
+		procName = "test.ppt"
+		err = callee.Register(procName, handler, nil)
+		require.NoError(t, err)
+
+		// Test calling the procedure with invalid PPT Scheme
+		options := wamp.Dict{
+			wamp.OptPPTScheme:     "invalid_scheme",
+			wamp.OptPPTSerializer: "native",
+		}
+		args := wamp.List{"hello world"}
+		kwargs := wamp.Dict{"prop": "hello world"}
+		_, err = caller.Call(ctx, procName, options, args, kwargs, nil)
+		require.Error(t, err, "Expected error calling procedure")
+
+		// Test calling the procedure with invalid PPT serializer
+		options = wamp.Dict{
+			wamp.OptPPTScheme:     "x_custom",
+			wamp.OptPPTSerializer: "invalid_serializer",
+		}
+		args = wamp.List{"hello world"}
+		kwargs = wamp.Dict{"prop": "hello world"}
+		_, err = caller.Call(ctx, procName, options, args, kwargs, nil)
+		require.Error(t, err, "Expected error calling procedure")
+
+		// Test calling the procedure within custom ppt scheme and native serializer
+		options = wamp.Dict{
+			wamp.OptPPTScheme:     "x_custom",
+			wamp.OptPPTSerializer: "native",
+		}
+		args = wamp.List{"hello world"}
+		kwargs = wamp.Dict{"prop": "hello world"}
+		result, err = caller.Call(ctx, procName, options, args, kwargs, nil)
+		require.NoError(t, err)
+		require.Equal(t, "goodbye world", result.Arguments[0])
+		require.Equal(t, "goodbye world", result.ArgumentsKw["prop"])
+
+		// Test calling the procedure within custom ppt scheme and json serializer
+		options = wamp.Dict{
+			wamp.OptPPTScheme:     "x_custom",
+			wamp.OptPPTSerializer: "json",
+		}
+		args = wamp.List{"hello world"}
+		kwargs = wamp.Dict{"prop": "hello world"}
+		result, err = caller.Call(ctx, procName, options, args, kwargs, nil)
+		require.NoError(t, err)
+		require.Equal(t, "goodbye world", result.Arguments[0])
+		require.Equal(t, "goodbye world", result.ArgumentsKw["prop"])
+
+		// Test calling the procedure within custom ppt scheme and cbor serializer
+		options = wamp.Dict{
+			wamp.OptPPTScheme:     "x_custom",
+			wamp.OptPPTSerializer: "cbor",
+		}
+		args = wamp.List{"hello world"}
+		kwargs = wamp.Dict{"prop": "hello world"}
+		result, err = caller.Call(ctx, procName, options, args, kwargs, nil)
+		require.NoError(t, err)
+		require.Equal(t, "goodbye world", result.Arguments[0])
+		require.Equal(t, "goodbye world", result.ArgumentsKw["prop"])
+
+		// Test calling the procedure within custom ppt scheme and msgpack serializer
+		options = wamp.Dict{
+			wamp.OptPPTScheme:     "x_custom",
+			wamp.OptPPTSerializer: "msgpack",
+		}
+		args = wamp.List{"hello world"}
+		kwargs = wamp.Dict{"prop": "hello world"}
+		result, err = caller.Call(ctx, procName, options, args, kwargs, nil)
+		require.NoError(t, err)
+		require.Equal(t, "goodbye world", result.Arguments[0])
+		require.Equal(t, "goodbye world", result.ArgumentsKw["prop"])
+
+		// Bad handler
+		handler = func(ctx context.Context, inv *wamp.Invocation) client.InvokeResult {
+			resArgs := wamp.List{"goodbye world"}
+			resKwargs := wamp.Dict{"prop": "goodbye world"}
+			options := wamp.Dict{
+				wamp.OptPPTScheme: "invalid_scheme",
+			}
+
+			return client.InvokeResult{Args: resArgs, Kwargs: resKwargs, Options: options}
+		}
+		procName = "test.ppt.invoke.bad.scheme"
+		err = callee.Register(procName, handler, nil)
+		require.NoError(t, err, "failed to register procedure")
+
+		// Test calling the procedure with invalid PPT Scheme in YIELD
+		args = wamp.List{"hello world"}
+		_, err = caller.Call(ctx, procName, nil, args, nil, nil)
+		require.Error(t, err, "Expected error calling procedure")
+
+		// Bad handler
+		handler = func(ctx context.Context, inv *wamp.Invocation) client.InvokeResult {
+			resArgs := wamp.List{"goodbye world"}
+			resKwargs := wamp.Dict{"prop": "goodbye world"}
+			options := wamp.Dict{
+				wamp.OptPPTScheme:     "x_custom",
+				wamp.OptPPTSerializer: "invalid_serializer",
+			}
+
+			return client.InvokeResult{Args: resArgs, Kwargs: resKwargs, Options: options}
+		}
+		procName = "test.ppt.invoke.bad.serializer"
+		err = callee.Register(procName, handler, nil)
+		require.NoError(t, err)
+
+		// Test calling the procedure with invalid PPT Scheme in YIELD
+		args = wamp.List{"hello world"}
+		_, err = caller.Call(ctx, procName, nil, args, nil, nil)
+		require.Error(t, err, "Expected error calling procedure")
+	})
 }
 
 func TestProgressiveCallResults(t *testing.T) {
@@ -574,28 +561,25 @@ func TestProgressiveCallResults(t *testing.T) {
 	callee, caller, _ := connectedTestClients(t)
 
 	// Handler sends progressive results.
-	handler := func(ctx context.Context, inv *wamp.Invocation) InvokeResult {
-		// Creating another child context to check that progressive results
-		// work as expected even with another child context passed.
-		ctx = context.WithValue(ctx, "Some-key", true)
+	handler := func(ctx context.Context, inv *wamp.Invocation) client.InvokeResult {
 		senderr := callee.SendProgress(ctx, wamp.List{"Alpha"}, nil)
 		if senderr != nil {
 			fmt.Println("Error sending Alpha progress:", senderr)
-			return InvokeResult{Err: "test.failed"}
+			return client.InvokeResult{Err: "test.failed"}
 		}
 		time.Sleep(500 * time.Millisecond)
 
 		senderr = callee.SendProgress(ctx, wamp.List{"Bravo"}, nil)
 		if senderr != nil {
 			fmt.Println("Error sending Bravo progress:", senderr)
-			return InvokeResult{Err: "test.failed"}
+			return client.InvokeResult{Err: "test.failed"}
 		}
 		time.Sleep(500 * time.Millisecond)
 
 		senderr = callee.SendProgress(ctx, wamp.List{"Charlie"}, nil)
 		if senderr != nil {
 			fmt.Println("Error sending Charlie progress:", senderr)
-			return InvokeResult{Err: "test.failed"}
+			return client.InvokeResult{Err: "test.failed"}
 		}
 		time.Sleep(500 * time.Millisecond)
 
@@ -606,7 +590,7 @@ func TestProgressiveCallResults(t *testing.T) {
 				sum += n
 			}
 		}
-		return InvokeResult{Args: wamp.List{sum}}
+		return client.InvokeResult{Args: wamp.List{sum}}
 	}
 
 	procName := "nexus.test.progproc"
@@ -625,8 +609,7 @@ func TestProgressiveCallResults(t *testing.T) {
 
 	// Test calling the procedure.
 	callArgs := wamp.List{1, 2, 3, 4, 5, 6, 7, 8, 9, 10}
-	ctx := context.Background()
-	result, err := caller.Call(ctx, procName, nil, callArgs, nil, progHandler)
+	result, err := caller.Call(t.Context(), procName, nil, callArgs, nil, progHandler)
 	require.NoError(t, err)
 	sum, ok := wamp.AsInt64(result.Arguments[0])
 	require.True(t, ok, "Could not convert result to int64")
@@ -645,7 +628,7 @@ func TestProgressiveCallInvocations(t *testing.T) {
 	var progressiveIncPayload []int
 	var mu sync.Mutex
 
-	invocationHandler := func(ctx context.Context, inv *wamp.Invocation) InvokeResult {
+	invocationHandler := func(ctx context.Context, inv *wamp.Invocation) client.InvokeResult {
 		mu.Lock()
 		progressiveIncPayload = append(progressiveIncPayload, inv.Arguments[0].(int))
 		mu.Unlock()
@@ -658,10 +641,10 @@ func TestProgressiveCallInvocations(t *testing.T) {
 					sum += n
 				}
 			}
-			return InvokeResult{Args: wamp.List{sum}}
+			return client.InvokeResult{Args: wamp.List{sum}}
 		}
 
-		return InvokeResult{Err: wamp.InternalProgressiveOmitResult}
+		return client.InvokeResult{Err: wamp.InternalProgressiveOmitResult}
 	}
 
 	procName := "nexus.test.progproc"
@@ -709,16 +692,15 @@ func TestProgressiveCallsAndResults(t *testing.T) {
 	callee, caller, _ := connectedTestClients(t)
 
 	// Handler sends progressive results.
-	invocationHandler := func(ctx context.Context, inv *wamp.Invocation) InvokeResult {
+	invocationHandler := func(ctx context.Context, inv *wamp.Invocation) client.InvokeResult {
 		if isInProgress, _ := inv.Details[wamp.OptProgress].(bool); !isInProgress {
-			return InvokeResult{Args: inv.Arguments}
+			return client.InvokeResult{Args: inv.Arguments}
 		}
 		senderr := callee.SendProgress(ctx, inv.Arguments, nil)
 		if senderr != nil {
-			callee.log.Println("Error sending progress:", senderr)
-			return InvokeResult{Err: "test.failed"}
+			return client.InvokeResult{Err: "test.failed"}
 		}
-		return InvokeResult{Err: wamp.InternalProgressiveOmitResult}
+		return client.InvokeResult{Err: wamp.InternalProgressiveOmitResult}
 	}
 
 	procName := "nexus.test.progproc"
@@ -777,49 +759,49 @@ func TestProgressiveCallsAndResults(t *testing.T) {
 }
 
 func TestTimeoutCancelRemoteProcedureCall(t *testing.T) {
-	checkGoLeaks(t)
+	synctest.Test(t, func(t *testing.T) {
+		// Connect two clients to the same server
+		callee, caller, _ := connectedTestClients(t)
 
-	// Connect two clients to the same server
-	callee, caller, _ := connectedTestClients(t)
+		// Test registering a valid procedure.
+		handler := func(ctx context.Context, inv *wamp.Invocation) client.InvokeResult {
+			<-ctx.Done() // handler will block forever until canceled.
+			return client.InvokeResult{Err: wamp.ErrCanceled}
+		}
+		procName := "myproc"
+		err := callee.Register(procName, handler, nil)
+		require.NoError(t, err)
 
-	// Test registering a valid procedure.
-	handler := func(ctx context.Context, inv *wamp.Invocation) InvokeResult {
-		<-ctx.Done() // handler will block forever until canceled.
-		return InvokeResult{Err: wamp.ErrCanceled}
-	}
-	procName := "myproc"
-	err := callee.Register(procName, handler, nil)
-	require.NoError(t, err)
+		err = caller.SetCallCancelMode(wamp.CancelModeKillNoWait)
+		require.NoError(t, err)
+		errChan := make(chan error)
+		ctx, cancel := context.WithTimeout(context.Background(), time.Second)
+		defer cancel()
+		// Calling the procedure, should block.
+		go func() {
+			callArgs := wamp.List{73}
+			_, e := caller.Call(ctx, procName, nil, callArgs, nil, nil)
+			errChan <- e
+		}()
 
-	err = caller.SetCallCancelMode(wamp.CancelModeKillNoWait)
-	require.NoError(t, err)
-	errChan := make(chan error)
-	ctx, cancel := context.WithTimeout(context.Background(), time.Second)
-	defer cancel()
-	// Calling the procedure, should block.
-	go func() {
-		callArgs := wamp.List{73}
-		_, e := caller.Call(ctx, procName, nil, callArgs, nil, nil)
-		errChan <- e
-	}()
+		// Make sure the call is blocked.
+		select {
+		case <-errChan:
+			require.FailNow(t, "call should have been blocked")
+		case <-time.After(200 * time.Millisecond):
+		}
 
-	// Make sure the call is blocked.
-	select {
-	case <-errChan:
-		require.FailNow(t, "call should have been blocked")
-	case <-time.After(200 * time.Millisecond):
-	}
+		// Make sure the call is canceled.
+		select {
+		case err = <-errChan:
+			require.ErrorIs(t, err, context.DeadlineExceeded)
+		case <-time.After(2 * time.Second):
+			require.FailNow(t, "call should have been canceled")
+		}
 
-	// Make sure the call is canceled.
-	select {
-	case err = <-errChan:
-		require.ErrorIs(t, err, context.DeadlineExceeded)
-	case <-time.After(2 * time.Second):
-		require.FailNow(t, "call should have been canceled")
-	}
-
-	err = callee.Unregister(procName)
-	require.NoError(t, err)
+		err = callee.Unregister(procName)
+		require.NoError(t, err)
+	})
 }
 
 func TestCancelRemoteProcedureCall(t *testing.T) {
@@ -827,9 +809,9 @@ func TestCancelRemoteProcedureCall(t *testing.T) {
 	callee, caller, _ := connectedTestClients(t)
 
 	// Test registering a valid procedure.
-	handler := func(ctx context.Context, inv *wamp.Invocation) InvokeResult {
+	handler := func(ctx context.Context, inv *wamp.Invocation) client.InvokeResult {
 		<-ctx.Done() // handler will block forever until canceled.
-		return InvokeResult{Err: wamp.ErrCanceled}
+		return client.InvokeResult{Err: wamp.ErrCanceled}
 	}
 	procName := "myproc"
 	err := callee.Register(procName, handler, nil)
@@ -866,52 +848,52 @@ func TestCancelRemoteProcedureCall(t *testing.T) {
 }
 
 func TestTimeoutRemoteProcedureCall(t *testing.T) {
-	checkGoLeaks(t)
+	synctest.Test(t, func(t *testing.T) {
+		// Connect two clients to the same server
+		callee, caller, _ := connectedTestClients(t)
 
-	// Connect two clients to the same server
-	callee, caller, _ := connectedTestClients(t)
+		// Test registering a valid procedure.
+		handler := func(ctx context.Context, inv *wamp.Invocation) client.InvokeResult {
+			<-ctx.Done() // handler will block forever until canceled.
+			return client.InvokeResult{Err: wamp.ErrCanceled}
+		}
+		procName := "myproc"
+		err := callee.Register(procName, handler, nil)
+		require.NoError(t, err)
 
-	// Test registering a valid procedure.
-	handler := func(ctx context.Context, inv *wamp.Invocation) InvokeResult {
-		<-ctx.Done() // handler will block forever until canceled.
-		return InvokeResult{Err: wamp.ErrCanceled}
-	}
-	procName := "myproc"
-	err := callee.Register(procName, handler, nil)
-	require.NoError(t, err)
+		err = callee.Register("bad proc! no no", handler, nil)
+		require.Error(t, err, "Expected error registering with bad procedure name")
 
-	err = callee.Register("bad proc! no no", handler, nil)
-	require.Error(t, err, "Expected error registering with bad procedure name")
+		errChan := make(chan error)
+		ctx := context.Background()
+		opts := wamp.Dict{wamp.OptTimeout: 1000}
+		// Calling the procedure, should block.
+		go func() {
+			callArgs := wamp.List{73}
+			_, e := caller.Call(ctx, procName, opts, callArgs, nil, nil)
+			errChan <- e
+		}()
 
-	errChan := make(chan error)
-	ctx := context.Background()
-	opts := wamp.Dict{wamp.OptTimeout: 1000}
-	// Calling the procedure, should block.
-	go func() {
-		callArgs := wamp.List{73}
-		_, e := caller.Call(ctx, procName, opts, callArgs, nil, nil)
-		errChan <- e
-	}()
+		// Make sure the call is blocked.
+		select {
+		case <-errChan:
+			require.FailNow(t, "call should have been blocked")
+		case <-time.After(200 * time.Millisecond):
+		}
 
-	// Make sure the call is blocked.
-	select {
-	case <-errChan:
-		require.FailNow(t, "call should have been blocked")
-	case <-time.After(200 * time.Millisecond):
-	}
+		// Make sure the call is canceled.
+		select {
+		case err = <-errChan:
+			var rpcError client.RPCError
+			require.ErrorAs(t, err, &rpcError)
+			require.Equal(t, wamp.ErrTimeout, rpcError.Err.Error)
+		case <-time.After(2 * time.Second):
+			require.FailNow(t, "call should have been canceled")
+		}
 
-	// Make sure the call is canceled.
-	select {
-	case err = <-errChan:
-		var rpcError RPCError
-		require.ErrorAs(t, err, &rpcError)
-		require.Equal(t, wamp.ErrTimeout, rpcError.Err.Error)
-	case <-time.After(2 * time.Second):
-		require.FailNow(t, "call should have been canceled")
-	}
-
-	err = callee.Unregister(procName)
-	require.NoError(t, err)
+		err = callee.Unregister(procName)
+		require.NoError(t, err)
+	})
 }
 
 // ---- authentication test stuff ------
@@ -964,7 +946,7 @@ func TestConnectContext(t *testing.T) {
 		unixExpect = "dial unix /tmp/wamp.sock: operation was canceled"
 	)
 
-	cfg := Config{
+	cfg := client.Config{
 		Realm:           testRealm,
 		ResponseTimeout: 500 * time.Millisecond,
 		Logger:          logger,
@@ -972,27 +954,27 @@ func TestConnectContext(t *testing.T) {
 	}
 	ctx, cancel := context.WithCancel(context.Background())
 	cancel()
-	_, err := ConnectNet(ctx, "http://localhost:9999/ws", cfg)
+	_, err := client.ConnectNet(ctx, "http://localhost:9999/ws", cfg)
 	require.Error(t, err)
 	resStrMatch, _ := regexp.MatchString(expect, err.Error())
 	require.True(t, resStrMatch)
 
-	_, err = ConnectNet(ctx, "https://localhost:9999/ws", cfg)
+	_, err = client.ConnectNet(ctx, "https://localhost:9999/ws", cfg)
 	require.Error(t, err)
 	resStrMatch, _ = regexp.MatchString(expect, err.Error())
 	require.True(t, resStrMatch)
 
-	_, err = ConnectNet(ctx, "tcp://localhost:9999", cfg)
+	_, err = client.ConnectNet(ctx, "tcp://localhost:9999", cfg)
 	require.Error(t, err)
 	resStrMatch, _ = regexp.MatchString(expect, err.Error())
 	require.True(t, resStrMatch)
 
-	_, err = ConnectNet(ctx, "tcps://localhost:9999", cfg)
+	_, err = client.ConnectNet(ctx, "tcps://localhost:9999", cfg)
 	require.Error(t, err)
 	resStrMatch, _ = regexp.MatchString(expect, err.Error())
 	require.True(t, resStrMatch)
 
-	_, err = ConnectNet(ctx, "unix:///tmp/wamp.sock", cfg)
+	_, err = client.ConnectNet(ctx, "unix:///tmp/wamp.sock", cfg)
 	require.Error(t, err)
 	require.EqualError(t, err, unixExpect)
 }
@@ -1018,36 +1000,36 @@ func createTestServer(t *testing.T) (router.Router, io.Closer) {
 	return r, closer
 }
 
-func newNetTestClientConfig(realmName string, logger *log.Logger) *Config {
-	clientConfig := Config{
+func newNetTestClientConfig(realmName string, logger *log.Logger) *client.Config {
+	clientConfig := client.Config{
 		Realm:           realmName,
 		ResponseTimeout: 10 * time.Millisecond,
-		Serialization:   MSGPACK,
+		Serialization:   client.MSGPACK,
 		Logger:          logger,
 		Debug:           true,
 	}
 	return &clientConfig
 }
 
-func newNetTestCalleeWithConfig(t *testing.T, routerURL string, clientConfig *Config) *Client {
-	cl, err := ConnectNet(context.Background(), routerURL, *clientConfig)
+func newNetTestCalleeWithConfig(t *testing.T, routerURL string, clientConfig *client.Config) *client.Client {
+	cl, err := client.ConnectNet(context.Background(), routerURL, *clientConfig)
 	require.NoError(t, err)
 	t.Cleanup(func() {
 		cl.Close()
 	})
 
-	sleep := func(ctx context.Context, inv *wamp.Invocation) InvokeResult {
+	sleep := func(ctx context.Context, inv *wamp.Invocation) client.InvokeResult {
 		logger.Println("sleep rpc start")
 		select {
 		case <-ctx.Done():
-			return InvocationCanceled
+			return client.InvocationCanceled
 		case <-time.After(5 * time.Second):
 		}
 		logger.Println("sleep rpc done")
-		return InvokeResult{Kwargs: wamp.Dict{"success": true}}
+		return client.InvokeResult{Kwargs: wamp.Dict{"success": true}}
 	}
 
-	for ii := 0; ii < 40; ii++ {
+	for ii := range 40 {
 		procedureName := fmt.Sprintf("sleep_%d", ii)
 		if err = cl.Register(procedureName, sleep, nil); err != nil {
 			// Expect to get kill before we get through the list of register functions
@@ -1059,7 +1041,7 @@ func newNetTestCalleeWithConfig(t *testing.T, routerURL string, clientConfig *Co
 	return cl
 }
 
-func newNetTestCallee(t *testing.T, routerURL string) *Client {
+func newNetTestCallee(t *testing.T, routerURL string) *client.Client {
 	return newNetTestCalleeWithConfig(
 		t,
 		routerURL,
@@ -1067,9 +1049,9 @@ func newNetTestCallee(t *testing.T, routerURL string) *Client {
 	)
 }
 
-func newNetTestKillerWithConfig(t *testing.T, routerURL string, clientConfig *Config) *Client {
+func newNetTestKillerWithConfig(t *testing.T, routerURL string, clientConfig *client.Config) *client.Client {
 	logger := clientConfig.Logger
-	cl, err := ConnectNet(context.Background(), routerURL, *clientConfig)
+	cl, err := client.ConnectNet(context.Background(), routerURL, *clientConfig)
 	require.NoError(t, err)
 	t.Cleanup(func() {
 		cl.Close()
@@ -1110,7 +1092,7 @@ func newNetTestKillerWithConfig(t *testing.T, routerURL string, clientConfig *Co
 	return cl
 }
 
-func newNetTestKiller(t *testing.T, routerURL string) *Client {
+func newNetTestKiller(t *testing.T, routerURL string) *client.Client {
 	return newNetTestKillerWithConfig(
 		t,
 		routerURL,
@@ -1137,59 +1119,59 @@ func TestClientRace(t *testing.T) {
 // an invocation handler, that the handler still gets marked as done when it
 // completes.
 func TestInvocationHandlerMissedDone(t *testing.T) {
-	checkGoLeaks(t)
+	synctest.Test(t, func(t *testing.T) {
+		// Connect two clients to the same server
+		callee, caller, _ := connectedTestClients(t)
 
-	// Connect two clients to the same server
-	callee, caller, _ := connectedTestClients(t)
+		calledChan := make(chan struct{})
 
-	calledChan := make(chan struct{})
+		// Register procedure.
+		handler := func(ctx context.Context, inv *wamp.Invocation) client.InvokeResult {
+			close(calledChan)
+			<-ctx.Done()
+			return client.InvokeResult{Args: wamp.List{inv.Arguments[0].(int) * 37}}
+		}
+		procName := "myproc"
+		err := callee.Register(procName, handler, nil)
+		require.NoError(t, err)
 
-	// Register procedure.
-	handler := func(ctx context.Context, inv *wamp.Invocation) InvokeResult {
-		close(calledChan)
-		<-ctx.Done()
-		return InvokeResult{Args: wamp.List{inv.Arguments[0].(int) * 37}}
-	}
-	procName := "myproc"
-	err := callee.Register(procName, handler, nil)
-	require.NoError(t, err)
+		// Call procedure
+		callArgs := wamp.List{73}
+		ctx := context.Background()
 
-	// Call procedure
-	callArgs := wamp.List{73}
-	ctx := context.Background()
+		go caller.Call(ctx, procName, nil, callArgs, nil, nil)
 
-	go caller.Call(ctx, procName, nil, callArgs, nil, nil)
+		<-calledChan
 
-	<-calledChan
+		killArgs := wamp.List{callee.ID()}
+		killKwArgs := wamp.Dict{"reason": "com.session.kill", "message": "because i can"}
+		var result *wamp.Result
+		result, err = caller.Call(ctx, string(wamp.MetaProcSessionKill), nil, killArgs, killKwArgs, nil)
+		if err != nil {
+			t.Log("Kill new client failed:", err)
+		}
+		if result == nil {
+			t.Log("Kill new client returned no result")
+		}
 
-	killArgs := wamp.List{callee.ID()}
-	killKwArgs := wamp.Dict{"reason": "com.session.kill", "message": "because i can"}
-	var result *wamp.Result
-	result, err = caller.Call(ctx, string(wamp.MetaProcSessionKill), nil, killArgs, killKwArgs, nil)
-	if err != nil {
-		t.Log("Kill new client failed:", err)
-	}
-	if result == nil {
-		t.Log("Kill new client returned no result")
-	}
+		caller.Close()
 
-	caller.Close()
+		done := make(chan struct{})
+		go func() {
+			callee.Close()
+			close(done)
+		}()
 
-	done := make(chan struct{})
-	go func() {
-		callee.Close()
-		close(done)
-	}()
-	select {
-	case <-done:
-	case <-time.After(2 * time.Second):
-		require.FailNow(t, "Timed out waiting to close client")
-	}
+		synctest.Wait()
+		select {
+		case <-done:
+		case <-time.After(2 * time.Second):
+			require.FailNow(t, "Timed out waiting to close client")
+		}
+	})
 }
 
 func TestProgressDisconnect(t *testing.T) {
-	checkGoLeaks(t)
-
 	// Create a websocket server
 	r, closer := createTestServer(t)
 
@@ -1197,13 +1179,20 @@ func TestProgressDisconnect(t *testing.T) {
 
 	// Connect callee session.
 	calleeLog := log.New(os.Stderr, "CALLEE> ", log.Lmicroseconds)
-	cfg := Config{
+	cfg := client.Config{
 		Realm:           testRealm,
 		ResponseTimeout: 10 * time.Millisecond,
 		Logger:          calleeLog,
 		Debug:           true,
 	}
-	callee, err := ConnectNet(context.Background(), testURL, cfg)
+
+	// TODO: is this necessary?
+	go func() {
+		time.Sleep(time.Second)
+		time.Sleep(time.Second)
+		time.Sleep(time.Second)
+	}()
+	callee, err := client.ConnectNet(t.Context(), testURL, cfg)
 	require.NoError(t, err)
 	defer callee.Close()
 
@@ -1213,13 +1202,13 @@ func TestProgressDisconnect(t *testing.T) {
 	disconnected := make(chan struct{})
 
 	// Define invocation handler.
-	handler := func(ctx context.Context, inv *wamp.Invocation) InvokeResult {
+	handler := func(ctx context.Context, inv *wamp.Invocation) client.InvokeResult {
 		for {
 			// Send a chunk of data.
 			e := callee.SendProgress(ctx, wamp.List{"hello"}, nil)
 			if e != nil {
 				sendProgErr <- e
-				return InvocationCanceled
+				return client.InvocationCanceled
 			}
 			<-disconnected
 		}
@@ -1232,7 +1221,7 @@ func TestProgressDisconnect(t *testing.T) {
 
 	// Connect caller session.
 	cfg.Logger = log.New(os.Stderr, "CALLER> ", log.Lmicroseconds)
-	caller, err := ConnectNet(context.Background(), testURL, cfg)
+	caller, err := client.ConnectNet(context.Background(), testURL, cfg)
 	require.NoError(t, err)
 	defer caller.Close()
 
@@ -1257,12 +1246,12 @@ func TestProgressDisconnect(t *testing.T) {
 
 	// Check for expected error from caller.
 	err = <-progErr
-	require.ErrorIs(t, err, ErrNotConn)
+	require.ErrorIs(t, err, client.ErrNotConn)
 
 	// Check for expected error from callee.
 	err = <-sendProgErr
 	require.Error(t, err)
-	if !errors.Is(err, context.Canceled) && !errors.Is(err, ErrNotConn) {
+	if !errors.Is(err, context.Canceled) && !errors.Is(err, client.ErrNotConn) {
 		require.FailNowf(t, "wrong error from SendProgress: %s", err.Error())
 	}
 }
@@ -1289,99 +1278,99 @@ func (*testEmptyDictLeakAuthorizer) Authorize(sess *wamp.Session, message wamp.M
 }
 
 func TestEmptyDictLeak(t *testing.T) {
-	checkGoLeaks(t)
+	synctest.Test(t, func(t *testing.T) {
+		// realm configs
+		realm1Config := newTestRealmConfig(testRealm, func(config *router.RealmConfig) {
+			config.Authorizer = new(testEmptyDictLeakAuthorizer)
+			config.RequireLocalAuthz = true
+		})
+		realm2Config := newTestRealmConfig(testRealm2, func(config *router.RealmConfig) {
+			config.Authorizer = new(testEmptyDictLeakAuthorizer)
+			config.RequireLocalAuthz = true
+		})
 
-	// realm configs
-	realm1Config := newTestRealmConfig(testRealm, func(config *router.RealmConfig) {
-		config.Authorizer = new(testEmptyDictLeakAuthorizer)
-		config.RequireLocalAuthz = true
+		// client configs
+		client1Config := newTestClientConfig(testRealm)
+		client2Config := newTestClientConfig(testRealm2)
+
+		// construct routers
+		router1 := getTestRouter(t, realm1Config)
+		router2 := getTestRouter(t, realm2Config)
+
+		// create local clients to each realm
+		client1 := newTestClientWithConfig(t, router1, client1Config)
+		require.NotEqual(t, wamp.ID(0), client1.ID(), "Expected non-0 client id")
+		client2 := newTestClientWithConfig(t, router2, client2Config)
+		require.NotEqual(t, wamp.ID(0), client2.ID(), "Expected non-0 client id")
+
+		// subscribe to topics in each realm and test for leak
+		err := client1.Subscribe(testTopic, func(*wamp.Event) {}, nil)
+		require.NoError(t, err)
+		err = client2.Subscribe(testTopic2, func(*wamp.Event) {}, nil)
+		require.NoError(t, err)
 	})
-	realm2Config := newTestRealmConfig(testRealm2, func(config *router.RealmConfig) {
-		config.Authorizer = new(testEmptyDictLeakAuthorizer)
-		config.RequireLocalAuthz = true
-	})
-
-	// client configs
-	client1Config := newTestClientConfig(testRealm)
-	client2Config := newTestClientConfig(testRealm2)
-
-	// construct routers
-	router1 := getTestRouter(t, realm1Config)
-	router2 := getTestRouter(t, realm2Config)
-
-	// create local clients to each realm
-	client1 := newTestClientWithConfig(t, router1, client1Config)
-	require.NotEqual(t, wamp.ID(0), client1.ID(), "Expected non-0 client id")
-	client2 := newTestClientWithConfig(t, router2, client2Config)
-	require.NotEqual(t, wamp.ID(0), client2.ID(), "Expected non-0 client id")
-
-	// subscribe to topics in each realm and test for leak
-	err := client1.Subscribe(testTopic, func(*wamp.Event) {}, nil)
-	require.NoError(t, err)
-	err = client2.Subscribe(testTopic2, func(*wamp.Event) {}, nil)
-	require.NoError(t, err)
 }
 
 func TestEventContentSafety(t *testing.T) {
-	checkGoLeaks(t)
+	synctest.Test(t, func(t *testing.T) {
+		// Connect two subscribers and one publisher to router
+		sub1, sub2, r := connectedTestClients(t)
+		pub := newTestClient(t, r)
 
-	// Connect two subscribers and one publisher to router
-	sub1, sub2, r := connectedTestClients(t)
-	pub := newTestClient(t, r)
+		errChan := make(chan error)
+		gate := make(chan struct{}, 1)
+		eventHandler := func(event *wamp.Event) {
+			gate <- struct{}{}
+			_, ok := event.Details["oops"]
+			if ok {
+				errChan <- errors.New("should not have seen oops")
+				<-gate
+				return
+			}
+			arg, ok := event.Arguments[0].(string)
+			if !ok {
+				errChan <- errors.New("arg was not strings")
+				<-gate
+				return
+			}
+			if arg != "Hello" {
+				errChan <- fmt.Errorf("expected \"Hello\", got %q", arg)
+				<-gate
+				return
+			}
 
-	errChan := make(chan error)
-	gate := make(chan struct{}, 1)
-	eventHandler := func(event *wamp.Event) {
-		gate <- struct{}{}
-		_, ok := event.Details["oops"]
-		if ok {
-			errChan <- errors.New("should not have seen oops")
+			prop, ok := event.ArgumentsKw["prop"]
+			if !ok || prop != "value" {
+				errChan <- fmt.Errorf("expected kwArgs 'prop':'value', got %q", prop)
+				<-gate
+				return
+			}
+
+			event.Details["oops"] = true
+			event.Arguments[0] = "oops"
+			event.ArgumentsKw["prop"] = "oops"
+			errChan <- nil
 			<-gate
-			return
-		}
-		arg, ok := event.Arguments[0].(string)
-		if !ok {
-			errChan <- errors.New("arg was not strings")
-			<-gate
-			return
-		}
-		if arg != "Hello" {
-			errChan <- fmt.Errorf("expected \"Hello\", got %q", arg)
-			<-gate
-			return
 		}
 
-		prop, ok := event.ArgumentsKw["prop"]
-		if !ok || prop != "value" {
-			errChan <- fmt.Errorf("expected kwArgs 'prop':'value', got %q", prop)
-			<-gate
-			return
+		// Expect invalid URI error if not setting match option.
+		err := sub1.Subscribe(testTopic, eventHandler, nil)
+		require.NoError(t, err)
+		err = sub2.Subscribe(testTopic, eventHandler, nil)
+		require.NoError(t, err)
+
+		err = pub.Publish(testTopic, nil, wamp.List{"Hello"}, wamp.Dict{"prop": "value"})
+		require.NoError(t, err)
+
+		for range 2 {
+			select {
+			case err = <-errChan:
+				require.NoError(t, err)
+			case <-time.After(3 * time.Second):
+				require.FailNow(t, "did not get published event")
+			}
 		}
-
-		event.Details["oops"] = true
-		event.Arguments[0] = "oops"
-		event.ArgumentsKw["prop"] = "oops"
-		errChan <- nil
-		<-gate
-	}
-
-	// Expect invalid URI error if not setting match option.
-	err := sub1.Subscribe(testTopic, eventHandler, nil)
-	require.NoError(t, err)
-	err = sub2.Subscribe(testTopic, eventHandler, nil)
-	require.NoError(t, err)
-
-	err = pub.Publish(testTopic, nil, wamp.List{"Hello"}, wamp.Dict{"prop": "value"})
-	require.NoError(t, err)
-
-	for i := 0; i < 2; i++ {
-		select {
-		case err = <-errChan:
-			require.NoError(t, err)
-		case <-time.After(3 * time.Second):
-			require.FailNow(t, "did not get published event")
-		}
-	}
+	})
 }
 
 func TestRouterFeatures(t *testing.T) {

@@ -1,7 +1,7 @@
 # Contributing to nexus
 
 ## Welcome
-Thank you for your interest in contributing to the nexus project.  Any improvements to the core code, documentation, test code, or external utilities, to help nexus be the best in class WAMP implementation are welcome.
+Thank you for your interest in contributing to the nexus project. Any improvements to the core code, documentation, test code, or external utilities, to help nexus be the best in class WAMP implementation are welcome.
 
 Please take a moment to review this document in order to make the contribution process easy and effective for everyone involved.
 
@@ -23,9 +23,9 @@ By submitting a pull request, or other form of submission of a contribution to t
 
 ## Code Review Process
 
-The core team looks at Pull Requests on a regular basis.  If your change is not an obvious fix, we will discuss the PR in comments on the PR, in GitHub issues, or hold a meeting hold in a public Google Hangout. After feedback has been given we expect responses within two weeks. After two weeks we may close the pull request if it isn't showing any activity.
+The core team looks at Pull Requests on a regular basis. If your change is not an obvious fix, we will discuss the PR in comments on the PR, in GitHub issues, or hold a meeting hold in a public Google Hangout. After feedback has been given we expect responses within two weeks. After two weeks we may close the pull request if it isn't showing any activity.
 
-Once the core team has decided to accept a PR, one of the maintainers will merge it.  Minor obvious changes, like spelling or grammar fixes or fixes to other obvious minor errors may me merged immediately by a maintainer.
+Once the core team has decided to accept a PR, one of the maintainers will merge it. Minor obvious changes, like spelling or grammar fixes or fixes to other obvious minor errors may me merged immediately by a maintainer.
 
 Please make sure your PR meets the guidelines in the [PR Review Checklist](#pull-request-review-checklist)
 
@@ -33,7 +33,7 @@ Please make sure your PR meets the guidelines in the [PR Review Checklist](#pull
 
 **Working on your first Pull Request?** You can learn how from this *free* series [How to Contribute to an Open Source Project on GitHub](https://egghead.io/series/how-to-contribute-to-an-open-source-project-on-github)
 
-At this point, you're ready to make your changes! Feel free to ask for help.  If you want to know know where to put contributions, how to test, or just discuss changes you think would improve the project, then please ask; we are happy that you are interested.
+At this point, you're ready to make your changes! Feel free to ask for help. If you want to know know where to put contributions, how to test, or just discuss changes you think would improve the project, then please ask; we are happy that you are interested.
 
 ## Pull Request Review Checklist
 

@@ -1,13 +1,15 @@
-package wamp
+package wamp_test
 
 import (
 	"errors"
 	"testing"
 
 	"github.com/stretchr/testify/require"
+
+	"github.com/gammazero/nexus/v3/wamp"
 )
 
-func checkRoles(sess *Session) error {
+func checkRoles(sess *wamp.Session) error {
 	if !sess.HasRole("caller") {
 		return errors.New("session does not have caller role")
 	}
@@ -39,8 +41,8 @@ func recognizeRole(roleName string) bool {
 }
 
 func TestHasRoleFeatureLookup(t *testing.T) {
-	dict := Dict{}
-	clientRoles := map[string]Dict{
+	dict := wamp.Dict{}
+	clientRoles := map[string]wamp.Dict{
 		"publisher": {},
 		"subscriber": {
 			"junk": struct{}{}},
@@ -53,18 +55,18 @@ func TestHasRoleFeatureLookup(t *testing.T) {
 	clientRoles["caller"]["features"] = boolMap
 	dict["roles"] = clientRoles
 
-	err := checkRoles(NewSession(nil, 0, nil, dict))
+	err := checkRoles(wamp.NewSession(nil, 0, nil, dict))
 	require.NoError(t, err)
 
-	sess := &Session{ID: ID(193847264)}
+	sess := &wamp.Session{ID: wamp.ID(193847264)}
 	require.Equal(t, "193847264", sess.String(), "Got unexpected session ID string")
 
-	dict = NormalizeDict(dict)
+	dict = wamp.NormalizeDict(dict)
 
-	roleVals, err := DictValue(dict, []string{"roles"})
+	roleVals, err := wamp.DictValue(dict, []string{"roles"})
 	require.NoError(t, err)
 
-	for k := range roleVals.(Dict) {
+	for k := range roleVals.(wamp.Dict) {
 		if k == "badrole" {
 			require.False(t, recognizeRole(k), "badrole is recognized")
 		} else {
@@ -73,87 +75,87 @@ func TestHasRoleFeatureLookup(t *testing.T) {
 	}
 
 	// Check again after conversion.
-	err = checkRoles(NewSession(nil, 0, nil, dict))
+	err = checkRoles(wamp.NewSession(nil, 0, nil, dict))
 	require.NoError(t, err)
 
-	dict = Dict{
-		"roles": Dict{
-			"subscriber": Dict{
-				"features": Dict{
+	dict = wamp.Dict{
+		"roles": wamp.Dict{
+			"subscriber": wamp.Dict{
+				"features": wamp.Dict{
 					"publisher_identification": true,
 				},
 			},
 			"publisher": struct{}{},
 			"callee":    struct{}{},
-			"caller": Dict{
-				"features": Dict{
+			"caller": wamp.Dict{
+				"features": wamp.Dict{
 					"call_timeout": true,
 				},
 			},
 		},
 		"authmethods": []string{"anonymous", "ticket"},
 	}
-	err = checkRoles(NewSession(nil, 0, nil, dict))
+	err = checkRoles(wamp.NewSession(nil, 0, nil, dict))
 	require.NoError(t, err)
 }
 
 func TestOptions(t *testing.T) {
-	options := Dict{
+	options := wamp.Dict{
 		"disclose_me":  true,
 		"call_timeout": 5000,
 		"mode":         "killnowait",
-		"flags": Dict{
+		"flags": wamp.Dict{
 			"flag_a":   true,
 			"flag_b":   false,
 			"not_flag": 123,
 		},
 	}
 
-	options = NormalizeDict(options)
+	options = wamp.NormalizeDict(options)
 
-	require.True(t, OptionFlag(options, "disclose_me"))
-	require.False(t, OptionFlag(options, "not_here"))
-	require.False(t, OptionFlag(options, "call_timeout"))
-	require.Empty(t, OptionString(options, "not_here"))
-	require.Empty(t, OptionString(options, "call_timeout"))
-	require.Equal(t, int64(5000), OptionInt64(options, "call_timeout"))
-	require.Equal(t, "killnowait", OptionString(options, "mode"))
+	require.True(t, wamp.OptionFlag(options, "disclose_me"))
+	require.False(t, wamp.OptionFlag(options, "not_here"))
+	require.False(t, wamp.OptionFlag(options, "call_timeout"))
+	require.Empty(t, wamp.OptionString(options, "not_here"))
+	require.Empty(t, wamp.OptionString(options, "call_timeout"))
+	require.Equal(t, int64(5000), wamp.OptionInt64(options, "call_timeout"))
+	require.Equal(t, "killnowait", wamp.OptionString(options, "mode"))
 
 	boolOpts := map[string]bool{"disclose_me": true}
 
-	require.True(t, OptionFlag(NormalizeDict(boolOpts), "disclose_me"))
-	require.False(t, OptionFlag(NormalizeDict(boolOpts), "not_here"))
+	require.True(t, wamp.OptionFlag(wamp.NormalizeDict(boolOpts), "disclose_me"))
+	require.False(t, wamp.OptionFlag(wamp.NormalizeDict(boolOpts), "not_here"))
 
-	fval, err := DictFlag(options, []string{"flags", "flag_a"})
+	fval, err := wamp.DictFlag(options, []string{"flags", "flag_a"})
 	require.NoError(t, err, "Failed to get flag")
 	require.True(t, fval, "Failed to get flag")
 
-	fval, err = DictFlag(options, []string{"flags", "flag_b"})
+	fval, err = wamp.DictFlag(options, []string{"flags", "flag_b"})
 	require.NoError(t, err, "Failed to get flag")
 	require.False(t, fval, "Failed to get flag")
 
-	_, err = DictFlag(options, []string{"flags", "flag_c"})
+	_, err = wamp.DictFlag(options, []string{"flags", "flag_c"})
 	require.Error(t, err, "Expected error for invalid flag path")
-	_, err = DictFlag(options, []string{"no_flags", "flag_a"})
+	_, err = wamp.DictFlag(options, []string{"no_flags", "flag_a"})
 	require.Error(t, err, "Expected error for invalid flag path")
-	_, err = DictFlag(options, []string{"flags", "not_flag"})
+	_, err = wamp.DictFlag(options, []string{"flags", "not_flag"})
 	require.Error(t, err, "Expected error for non-bool flag value")
 
-	uri := URI("some.test.uri")
-	SetOption(options, "uri", uri)
-	require.Equal(t, uri, OptionURI(options, "uri"), "failed to get uri")
+	uri := wamp.URI("some.test.uri")
+	wamp.SetOption(options, "uri", uri)
+	require.Equal(t, uri, wamp.OptionURI(options, "uri"), "failed to get uri")
 
-	id := ID(1234)
-	newDict := SetOption(nil, "id", id)
-	require.Equal(t, id, OptionID(newDict, "id"), "failed to get id")
+	id := wamp.ID(1234)
+	newDict := wamp.SetOption(nil, "id", id)
+	require.Equal(t, id, wamp.OptionID(newDict, "id"), "failed to get id")
 
-	require.Equal(t, int64(5000), OptionInt64(options, "call_timeout"), "Failed to get int64 option")
-	require.Zero(t, OptionInt64(options, "mode"), "Expected 0 for invalid int64 option")
+	require.Equal(t, int64(5000), wamp.OptionInt64(options, "call_timeout"), "Failed to get int64 option")
+	require.Zero(t, wamp.OptionInt64(options, "mode"), "Expected 0 for invalid int64 option")
 }
 
 func BenchmarkNormalized(b *testing.B) {
-	dict := Dict{}
-	clientRoles := map[string]Dict{
+	dict := wamp.Dict{}
+	clientRoles := map[string]wamp.Dict{
 		"publisher": {},
 		"subscriber": {
 			"junk": struct{}{}},
@@ -166,16 +168,16 @@ func BenchmarkNormalized(b *testing.B) {
 	dict["roles"] = clientRoles
 
 	b.ResetTimer()
-	dict = NormalizeDict(dict)
-	sess := &Session{Details: dict}
+	dict = wamp.NormalizeDict(dict)
+	sess := &wamp.Session{Details: dict}
 	for i := 0; i < b.N; i++ {
 		checkRoles(sess)
 	}
 }
 
 func BenchmarkNotNormalized(b *testing.B) {
-	dict := Dict{}
-	clientRoles := map[string]Dict{
+	dict := wamp.Dict{}
+	clientRoles := map[string]wamp.Dict{
 		"publisher": {},
 		"subscriber": {
 			"junk": struct{}{}},
@@ -188,7 +190,7 @@ func BenchmarkNotNormalized(b *testing.B) {
 	dict["roles"] = clientRoles
 
 	b.ResetTimer()
-	sess := &Session{Details: dict}
+	sess := &wamp.Session{Details: dict}
 	for i := 0; i < b.N; i++ {
 		checkRoles(sess)
 	}

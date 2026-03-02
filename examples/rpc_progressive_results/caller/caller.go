@@ -1,15 +1,13 @@
-/*
-Progressive Call Results Example Caller
-
-This example demonstrates a caller client that receives data in chunks, as
-separate progressive call results.  A caller may do this to receive a large
-body of data in managable chunks, or to deliver some portion of the result more
-immediately.
-
-In this example, the progressive results are portions of a larger body of text.
-The final result is a sha256 sum of all the data, allowing the caller to verify
-that it received everything correcly.
-*/
+// Progressive Call Results Example Caller
+//
+// This example demonstrates a caller client that receives data in chunks, as
+// separate progressive call results. A caller may do this to receive a large
+// body of data in manageable chunks, or to deliver some portion of the result
+// more immediately.
+//
+// In this example, the progressive results are portions of a larger body of
+// text. The final result is a sha256 sum of all the data, allowing the caller
+// to verify that it received everything correctly.
 package main
 
 import (
@@ -42,7 +40,7 @@ func main() {
 	}
 	defer caller.Close()
 
-	// The progress handler accumulates the chunks of data as they arrive.  It
+	// The progress handler accumulates the chunks of data as they arrive. It
 	// also progressively calculates a sha256 hash of the data as it arrives.
 	var chunks []string
 	h := sha256.New()
@@ -66,8 +64,8 @@ func main() {
 	}
 
 	// As a final result, the callee returns the base64 encoded sha256 hash of
-	// the data.  This is decoded and compared to the value that the caller
-	// calculated.  If they match, then the caller recieved the data correctly.
+	// the data. This is decoded and compared to the value that the caller
+	// calculated. If they match, then the caller received the data correctly.
 	hashB64 := result.Arguments[0].(string)
 	calleeHash, err := base64.StdEncoding.DecodeString(hashB64)
 	if err != nil {

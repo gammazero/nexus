@@ -23,7 +23,7 @@ func main() {
 	}
 	defer callee.Close()
 
-	// Register procedure "sum"
+	// Register procedure "sum".
 	if err = callee.Register(procedureName, sum, nil); err != nil {
 		logger.Fatal("Failed to register procedure:", err)
 	}
@@ -36,7 +36,7 @@ func main() {
 	case <-sigChan:
 	case <-callee.Done():
 		logger.Print("Router gone, exiting")
-		return // router gone, just exit
+		return // router gone, just exit.
 	}
 
 	if err = callee.Unregister(procedureName); err != nil {
@@ -47,8 +47,8 @@ func main() {
 var progressiveIncPayload []int64
 var mu sync.Mutex
 
-// Important node: ctx context.Context here is the context of the whole invocation
-// starting with 1st call/invocation and lasts until final result
+// Important node: ctx context.Context here is the context of the whole
+// invocation starting with 1st call/invocation and lasts until final result
 func sum(ctx context.Context, inv *wamp.Invocation) client.InvokeResult {
 	mu.Lock()
 	n, _ := wamp.AsInt64(inv.Arguments[0])
@@ -64,7 +64,7 @@ func sum(ctx context.Context, inv *wamp.Invocation) client.InvokeResult {
 				sum += n
 			}
 		}
-		// Let's clean up data as call is finished
+		// Let's clean up data as call is finished.
 		progressiveIncPayload = nil
 		return client.InvokeResult{Args: wamp.List{sum}}
 	}

@@ -16,10 +16,10 @@ type TicketAuthenticator struct {
 // NewTicketAuthenticator creates a ticket-based CR authenticator.
 //
 // Caution: This scheme is extremely simple and flexible, but the resulting
-// security may be limited. E.g., the ticket value will be sent over the
-// wire. If the transport WAMP is running over is not encrypted, a
-// man-in-the-middle can sniff and possibly hijack the ticket. If the ticket
-// value is reused, that might enable replay attacks.
+// security may be limited. E.g., the ticket value will be sent over the wire.
+// If the transport WAMP is running over is not encrypted, a man-in-the-middle
+// can sniff and possibly hijack the ticket. If the ticket value is reused,
+// that might enable replay attacks.
 func NewTicketAuthenticator(keyStore KeyStore, timeout time.Duration) *TicketAuthenticator {
 	if timeout == 0 {
 		timeout = defaultCRAuthTimeout
@@ -69,7 +69,7 @@ func (t *TicketAuthenticator) Authenticate(sid wamp.ID, details wamp.Dict, clien
 
 	ticket, err := t.keyStore.AuthKey(authID, t.AuthMethod())
 	if err != nil {
-		// Do not return error here as this leaks authid.  Instead, set the
+		// Do not return error here as this leaks authid. Instead, set the
 		// ticket to nil which will prevent it from authenticating.
 		ticket = nil
 	}
@@ -83,7 +83,7 @@ func (t *TicketAuthenticator) Authenticate(sid wamp.ID, details wamp.Dict, clien
 	select {
 	case client.Send() <- chalMsg:
 	default:
-		return nil, errors.New("Cannot send challenge to client: blocked")
+		return nil, errors.New("cannot send challenge to client: blocked")
 	}
 
 	// Read AUTHENTICATE response from client.
@@ -97,7 +97,7 @@ func (t *TicketAuthenticator) Authenticate(sid wamp.ID, details wamp.Dict, clien
 			msg.MessageType(), client)
 	}
 
-	// The client will send an AUTHENTICATE message containing a ticket.  The
+	// The client will send an AUTHENTICATE message containing a ticket. The
 	// server will then check if the ticket provided is permissible (for the
 	// authid given).
 	if ticket == nil || authRsp.Signature != string(ticket) {

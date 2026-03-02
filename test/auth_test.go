@@ -1,4 +1,4 @@
-package aat_test
+package test_test
 
 import (
 	"context"
@@ -241,7 +241,7 @@ func (ks *serverKeyStore) OnWelcome(authid string, welcome *wamp.Welcome, detail
 	v, err := wamp.DictValue(details, []string{"transport", "auth", "nextcookie"})
 	if err != nil {
 		// Tracking cookie not enabled, return no error.
-		return nil
+		return nil //nolint:nilerr
 	}
 	nextcookie := v.(*http.Cookie)
 

@@ -1,4 +1,4 @@
-package transport
+package transport_test
 
 import (
 	"errors"
@@ -7,11 +7,12 @@ import (
 
 	"github.com/stretchr/testify/require"
 
+	"github.com/gammazero/nexus/v3/transport"
 	"github.com/gammazero/nexus/v3/wamp"
 )
 
 func TestSendRecv(t *testing.T) {
-	c, r := LinkedPeers()
+	c, r := transport.LinkedPeers()
 
 	go func() {
 		c.Send() <- &wamp.Hello{}
@@ -40,10 +41,10 @@ func TestSendRecv(t *testing.T) {
 
 func TestDropOnBlockedClient(t *testing.T) {
 	const qsize = 5
-	_, r := LinkedPeersQSize(qsize)
+	_, r := transport.LinkedPeersQSize(qsize)
 
 	// Check that r -> c drops when full
-	for i := 0; i < qsize; i++ {
+	for range qsize {
 		select {
 		case r.Send() <- &wamp.Publish{}:
 		default:
@@ -68,7 +69,7 @@ func TestDropOnBlockedClient(t *testing.T) {
 }
 
 func TestBlockOnBlockedRouter(t *testing.T) {
-	c, r := LinkedPeers()
+	c, r := transport.LinkedPeers()
 
 	done := make(chan struct{})
 	go func() {
@@ -77,6 +78,7 @@ func TestBlockOnBlockedRouter(t *testing.T) {
 		}
 		close(done)
 	}()
+
 	select {
 	case <-done:
 		require.FailNow(t, "Expected send to be blocked")
@@ -87,7 +89,7 @@ func TestBlockOnBlockedRouter(t *testing.T) {
 }
 
 func BenchmarkClientToRouter(b *testing.B) {
-	c, r := LinkedPeers()
+	c, r := transport.LinkedPeers()
 
 	b.ResetTimer()
 	go func() {
@@ -101,7 +103,7 @@ func BenchmarkClientToRouter(b *testing.B) {
 }
 
 func BenchmarkRouterToClient(b *testing.B) {
-	c, r := LinkedPeers()
+	c, r := transport.LinkedPeers()
 
 	b.ResetTimer()
 	go func() {

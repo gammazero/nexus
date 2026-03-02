@@ -1,4 +1,4 @@
-package aat_test
+package test_test
 
 import (
 	"context"
@@ -40,8 +40,7 @@ func TestAddTestament(t *testing.T) {
 	require.NoError(t, err)
 
 	// Disconnect client to trigger testament
-	err = sess.Close()
-	require.NoError(t, err)
+	sess.Close()
 
 	checkEvent := func(event *wamp.Event) error {
 		args := event.Arguments
@@ -94,8 +93,7 @@ func TestAddFlushTestament(t *testing.T) {
 
 	// Disconnect client to trigge testament, which should not exist since it
 	// was flushed above.
-	err = sess.Close()
-	require.NoError(t, err)
+	sess.Close()
 
 	// Make sure the event was received.
 	select {

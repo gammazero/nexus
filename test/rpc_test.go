@@ -1,4 +1,4 @@
-package aat_test
+package test_test
 
 import (
 	"context"
@@ -73,7 +73,7 @@ func TestRPCRegisterAndCall(t *testing.T) {
 
 	errs := []error{err1, err2}
 	results := []*wamp.Result{result1, result2}
-	for i := 0; i < len(errs); i++ {
+	for i := range errs {
 		require.NoErrorf(t, errs[i], "Caller %d failed to call procedure", i)
 		sum, ok := wamp.AsInt64(results[i].Arguments[0])
 		require.Truef(t, ok, "Could not convert result %d to int64", i)
@@ -298,7 +298,7 @@ func TestRPCResponseRouting(t *testing.T) {
 	close(respond)
 
 	var result *wamp.Result
-	for i := 0; i < 2; i++ {
+	for range 2 {
 		select {
 		case result = <-rc1:
 			require.Equal(t, "HELLO", result.Arguments[0])

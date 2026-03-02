@@ -30,13 +30,13 @@ func (a *AnonymousAuth) AuthMethod() string {
 	return "anonymous"
 }
 
-// Authenticate an anonymous client.  This always succeeds, and provides the
+// Authenticate an anonymous client. This always succeeds, and provides the
 // authmethod and authrole for the WELCOME message.
 func (a *AnonymousAuth) Authenticate(sid wamp.ID, details wamp.Dict, client wamp.Peer) (*wamp.Welcome, error) {
 	// Create welcome details containing auth info.
 	return &wamp.Welcome{
 		Details: wamp.Dict{
-			"authid":       strconv.FormatInt(int64(wamp.GlobalID()), 16),
+			"authid":       strconv.FormatUint(uint64(wamp.GlobalID()), 16),
 			"authrole":     a.AuthRole,
 			"authprovider": "static",
 			"authmethod":   a.AuthMethod(),

@@ -1,8 +1,6 @@
-/*
-Package router provides a WAMP router implementation that supports most of the
-WAMP advanced profile, offers multiple transports and TLS, and extends
-publication filtering functionality.
-*/
+// Package router provides a WAMP router implementation that supports most of the
+// WAMP advanced profile, offers multiple transports and TLS, and extends
+// publication filtering functionality.
 package router
 
 import (
@@ -11,6 +9,7 @@ import (
 	"log"
 	"os"
 	"runtime"
+	"slices"
 	"sync"
 	"time"
 
@@ -20,7 +19,7 @@ import (
 
 const helloTimeout = 5 * time.Second
 
-var Version string
+var Version string //nolint:gochecknoglobals
 
 // A Router handles new Peers and routes requests to the requested Realm.
 type Router interface {
@@ -37,15 +36,15 @@ type Router interface {
 	// Logger returns the logger the router is using.
 	Logger() stdlog.StdLog
 
-	// AddRealm will append a realm to this router
+	// AddRealm will append a realm to this router.
 	AddRealm(*RealmConfig) error
 
-	// RemoveRealm will attempt to remove a realm from this router
+	// RemoveRealm will attempt to remove a realm from this router.
 	RemoveRealm(wamp.URI)
 
-	// RouterFeatures exposes WAMP features current version provides
-	// When Nexus is used as a pluggable library sometimes it is
-	// usefully to expose WAMP features current version provides.
+	// RouterFeatures exposes WAMP features current version provides When Nexus
+	// is used as a pluggable library sometimes it is usefully to expose WAMP
+	// features current version provides.
 	RouterFeatures() *wamp.Dict
 }
 
@@ -121,18 +120,18 @@ func (r *router) logMemStats(interval time.Duration) {
 // Logger returns the StdLog that the router uses for logging.
 func (r *router) Logger() stdlog.StdLog { return r.log }
 
-// Attach connects a client to the router and to the requested realm.  If
+// Attach connects a client to the router and to the requested realm. If
 // successful, Attach returns after sending a WELCOME message to the client.
 func (r *router) Attach(client wamp.Peer) error {
 	return r.AttachClient(client, nil)
 }
 
-// AttachClient connects a client to the router and to the requested realm.  If
+// AttachClient connects a client to the router and to the requested realm. If
 // successful, Attach returns after sending a WELCOME message to the client.
 //
-// Additional information is provided in transportDetails.  This information
+// Additional information is provided in transportDetails. This information
 // becomes part of HELLO.Details and session.Details, as details["transport"].
-// This exposes it to authenticator and authorizer logic.  The information
+// This exposes it to authenticator and authorizer logic. The information
 // includes items useful for authentication, in details.transport.auth.
 //
 // See websocketpeer.WebSocketConfig for information provided by websocket
@@ -159,7 +158,7 @@ func (r *router) AttachClient(client wamp.Peer, transportDetails wamp.Dict) erro
 	}
 
 	// A WAMP session is initiated by the Client sending a HELLO message to the
-	// Router.  The HELLO message MUST be the very first message sent by the
+	// Router. The HELLO message MUST be the very first message sent by the
 	// Client after the transport has been established.
 	hello, ok := msg.(*wamp.Hello)
 	if !ok {
@@ -185,7 +184,7 @@ func (r *router) AttachClient(client wamp.Peer, transportDetails wamp.Dict) erro
 			return
 		}
 		// Realm is a string identifying the realm this session should attach
-		// to.  Check if the requested realm exists.
+		// to. Check if the requested realm exists.
 		var found bool
 		realm, found = r.realms[hello.Realm]
 		if !found {
@@ -198,7 +197,7 @@ func (r *router) AttachClient(client wamp.Peer, transportDetails wamp.Dict) erro
 				return
 			}
 
-			// Create the new realm based on template
+			// Create the new realm based on template.
 			config := *r.realmTemplate
 			config.URI = hello.Realm
 			if realm, err = r.addRealm(&config); err != nil {
@@ -225,13 +224,10 @@ func (r *router) AttachClient(client wamp.Peer, transportDetails wamp.Dict) erro
 
 	// A Client must announce the roles it supports via
 	// Hello.Details.roles|dict, where the keys can be: publisher, subscriber,
-	// caller, callee.  Check that client has at least one supported role.
+	// caller, callee. Check that client has at least one supported role.
 	var rolesOK bool
-	for _, role := range []string{wamp.RolePublisher, wamp.RoleSubscriber, wamp.RoleCallee, wamp.RoleCaller} {
-		if sess.HasRole(role) {
-			rolesOK = true
-			break
-		}
+	if slices.ContainsFunc([]string{wamp.RolePublisher, wamp.RoleSubscriber, wamp.RoleCallee, wamp.RoleCaller}, sess.HasRole) {
+		rolesOK = true
 	}
 	if !rolesOK {
 		err = errors.New("client did not announce any supported roles")
@@ -244,7 +240,7 @@ func (r *router) AttachClient(client wamp.Peer, transportDetails wamp.Dict) erro
 		hello.Details["transport"] = transportDetails
 	}
 
-	// Handle any necessary client auth.  This results in either a WELCOME
+	// Handle any necessary client auth. This results in either a WELCOME
 	// message or an error.
 	//
 	// Authentication may take some time.
@@ -338,7 +334,8 @@ func (r *router) RouterFeatures() *wamp.Dict {
 	}
 }
 
-// RemoveRealm will close and then remove a realm from this router, if the realm exists.
+// RemoveRealm will close and then remove a realm from this router, if the
+// realm exists.
 func (r *router) RemoveRealm(name wamp.URI) {
 	// Because we want to force atomicity as briefly as possible, the atomic
 	// func will be used purely to attempt to locate the realm
@@ -354,7 +351,7 @@ func (r *router) RemoveRealm(name wamp.URI) {
 		}
 		close(sync)
 	}
-	// wait until the atomic func has completed
+	// wait until the atomic func has completed.
 	<-sync
 	// if the realm was found within the router, close it outside the atomic
 	// func while still blocking the caller

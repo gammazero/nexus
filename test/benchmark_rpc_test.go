@@ -1,4 +1,4 @@
-package aat_test
+package test_test
 
 import (
 	"context"
@@ -51,7 +51,7 @@ func BenchmarkRpcLargeString(b *testing.B) {
 
 func BenchmarkRpcDict(b *testing.B) {
 	dict := wamp.Dict{}
-	for i := 0; i < 8; i++ {
+	for range 8 {
 		dict[randomString(8)] = randomString(8)
 	}
 	args := wamp.List{dict}
@@ -85,7 +85,7 @@ func BenchmarkRPCProgress(b *testing.B) {
 
 	// Make a chunk of data to send as a progressive result.
 	sendBytes := make([]byte, chunkSize)
-	for i := 0; i < chunkSize; i++ {
+	for i := range chunkSize {
 		sendBytes[i] = byte((i % 26) + int('a'))
 	}
 	sendChunk := string(sendBytes)

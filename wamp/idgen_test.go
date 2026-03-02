@@ -1,4 +1,4 @@
-package wamp
+package wamp //nolint:testpackage
 
 import (
 	"errors"
@@ -17,6 +17,10 @@ func TestIDGen(t *testing.T) {
 	require.NotEqual(t, id1, id3, errMsg)
 	require.NotEqual(t, id2, id3, errMsg)
 
+	require.GreaterOrEqual(t, id1, ID(1), "GlobalID must be >= 1")
+	require.GreaterOrEqual(t, id2, ID(1), "GlobalID must be >= 1")
+	require.GreaterOrEqual(t, id3, ID(1), "GlobalID must be >= 1")
+
 	idgen := new(IDGen)
 	id1 = idgen.Next()
 	require.Equal(t, ID(1), id1, "Sequential IDs should start at 1")
@@ -26,7 +30,7 @@ func TestIDGen(t *testing.T) {
 	require.Equal(t, ID(2), id2, errMsg)
 	require.Equal(t, ID(3), id3, errMsg)
 
-	idgen.next = int64(1) << 53
+	idgen.next = uint64(1) << 53
 	id1 = idgen.Next()
 	require.Equal(t, ID(1), id1, "Sequential IDs should wrap at 1 << 53")
 }
@@ -38,7 +42,7 @@ func TestSyncIDGen(t *testing.T) {
 	f := func() {
 		var i, prev ID
 		<-start
-		for j := 0; j < 100000; j++ {
+		for range 100000 {
 			i = idgen.Next()
 			if i <= prev {
 				errs <- errors.New("Bad sequential ID")
@@ -54,7 +58,7 @@ func TestSyncIDGen(t *testing.T) {
 	go f()
 	go f()
 	close(start)
-	for g := 0; g < 4; g++ {
+	for range 4 {
 		err := <-errs
 		require.NoError(t, err)
 	}

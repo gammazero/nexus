@@ -19,8 +19,8 @@ func main() {
 	}
 	defer caller.Close()
 
-	// Test calling the "sum" procedure with args 1..10.  Requires
-	// external rpc client to be running.
+	// Test calling the "sum" procedure with args 1..10. Requires external rpc
+	// client to be running.
 	callArgs := []int{1, 2, 3, 4, 5, 6, 7, 8, 9, 10}
 	ctx := context.Background()
 

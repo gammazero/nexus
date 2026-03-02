@@ -39,32 +39,32 @@ type protocol struct {
 // # Origin Considerations
 //
 // Web browsers allow Javascript applications to open a WebSocket connection to
-// any host.  It is up to the server to enforce an origin policy using the
-// Origin request header sent by the browser.  To specify origins allowed by
-// the server, call AllowOrigins() to allow origins matching glob patterns, or
-// assign a custom function to the server's Upgrader.CheckOrigin.  See
+// any host. It is up to the server to enforce an origin policy using the
+// Origin request header sent by the browser. To specify origins allowed by the
+// server, call AllowOrigins() to allow origins matching glob patterns, or
+// assign a custom function to the server's Upgrader.CheckOrigin. See
 // AllowOrigins() for details.
 type WebsocketServer struct {
 	// Upgrader specifies parameters for upgrading an HTTP connection to a
-	// websocket connection.  See:
+	// websocket connection. See:
 	// https://godoc.org/github.com/gorilla/websocket#Upgrader
 	Upgrader *websocket.Upgrader
 
-	// Serializer for text frames.  Defaults to JSONSerializer.
+	// Serializer for text frames. Defaults to JSONSerializer.
 	TextSerializer serialize.Serializer
-	// Serializer for binary frames.  Defaults to MessagePackSerializer.
+	// Serializer for binary frames. Defaults to MessagePackSerializer.
 	BinarySerializer serialize.Serializer
 
 	// EnableTrackingCookie tells the server to send a random-value cookie to
-	// the websocket client.  A returning client may identify itself by sending
-	// a previously issued tracking cookie in a websocket request.  If a
-	// request header received by the server contains the tracking cookie, then
-	// the cookie is included in the HELLO and session details.  The new
-	// tracking cookie that gets sent to the client (the cookie to expect for
-	// subsequent connections) is also stored in HELLO and session details.
+	// the websocket client. A returning client may identify itself by sending
+	// a previously issued tracking cookie in a websocket request. If a request
+	// header received by the server contains the tracking cookie, then the
+	// cookie is included in the HELLO and session details. The new tracking
+	// cookie that gets sent to the client (the cookie to expect for subsequent
+	// connections) is also stored in HELLO and session details.
 	//
-	// The cookie from the request, and the next cookie to expect, are
-	// stored in the HELLO and session details, respectively, as:
+	// The cookie from the request, and the next cookie to expect, are stored
+	// in the HELLO and session details, respectively, as:
 	//
 	//     Details.transport.auth.cookie|*http.Cookie
 	//     Details.transport.auth.nextcookie|*http.Cookie
@@ -82,25 +82,25 @@ type WebsocketServer struct {
 	// The "cookie" and "nextcookie" values are retrieved similarly.
 	EnableTrackingCookie bool
 	// EnableRequestCapture tells the server to include the upgrade HTTP
-	// request in the HELLO and session details.  It is stored in
+	// request in the HELLO and session details. It is stored in
 	// Details.transport.auth.request|*http.Request making it available to
 	// authenticator and authorizer logic.
 	EnableRequestCapture bool
-	// TrackingCookieSameSiteAttribute defines which SameSite attribute will be assigned to
-	// the next auth cookie if EnableTrackingCookie is true
+	// TrackingCookieSameSiteAttribute defines which SameSite attribute will be
+	// assigned to the next auth cookie if EnableTrackingCookie is true.
 	TrackingCookieSameSiteAttribute http.SameSite
-	// TrackingCookieSecureAttribute defines whether the TrackingCookie should be marked as
-	// secure and thus only sent over encrypted connections.
+	// TrackingCookieSecureAttribute defines whether the TrackingCookie should
+	// be marked as secure and thus only sent over encrypted connections.
 	TrackingCookieSecureAttribute bool
 
 	// KeepAlive configures a websocket "ping/pong" heartbeat when set to a
-	// non-zero value.  KeepAlive is the interval between websocket "pings".
-	// If a "pong" response is not received after 2 intervals have elapsed then
+	// non-zero value. KeepAlive is the interval between websocket "pings". If
+	// a "pong" response is not received after 2 intervals have elapsed then
 	// the websocket connection is closed.
 	KeepAlive time.Duration
 
 	// OutQueueSize is the maximum number of pending outbound messages, per
-	// client.  The default is defaultOutQueueSize.
+	// client. The default is defaultOutQueueSize.
 	OutQueueSize int
 
 	router    Router
@@ -112,7 +112,7 @@ type WebsocketServer struct {
 //
 // Optional websocket server configuration can be set, after creating the
 // server instance, by setting WebsocketServer.Upgrader and other
-// WebsocketServer members directly.  Use then WebsocketServer.AllowOrigins()
+// WebsocketServer members directly. Use then WebsocketServer.AllowOrigins()
 // function to specify what origins to allow for CORS support.
 //
 // To run the websocket server, call one of the server's
@@ -121,7 +121,7 @@ type WebsocketServer struct {
 //	s := NewWebsocketServer(r)
 //	closer, err := s.ListenAndServe(address)
 //
-// Or, use the various ListenAndServe functions provided by net/http.  This
+// Or, use the various ListenAndServe functions provided by net/http. This
 // works because WebsocketServer implements the http.Handler interface:
 //
 //	s := NewWebsocketServer(r)
@@ -136,11 +136,11 @@ func NewWebsocketServer(r Router) *WebsocketServer {
 		protocols: map[string]protocol{},
 	}
 	s.Upgrader = &websocket.Upgrader{}
-	s.addProtocol(jsonWebsocketProtocol, websocket.TextMessage,
+	_ = s.addProtocol(jsonWebsocketProtocol, websocket.TextMessage,
 		&serialize.JSONSerializer{})
-	s.addProtocol(msgpackWebsocketProtocol, websocket.BinaryMessage,
+	_ = s.addProtocol(msgpackWebsocketProtocol, websocket.BinaryMessage,
 		&serialize.MessagePackSerializer{})
-	s.addProtocol(cborWebsocketProtocol, websocket.BinaryMessage,
+	_ = s.addProtocol(cborWebsocketProtocol, websocket.BinaryMessage,
 		&serialize.CBORSerializer{})
 
 	return s
@@ -151,7 +151,7 @@ func NewWebsocketServer(r Router) *WebsocketServer {
 //
 // If the origin request header in the websocket upgrade request is present,
 // then the connection is allowed if the Origin host is equal to the Host
-// request header or Origin matches one of the allowed patterns.  A pattern is
+// request header or Origin matches one of the allowed patterns. A pattern is
 // in the form of a shell glob as described here:
 // https://golang.org/pkg/path/filepath/#Match Glob matching is
 // case-insensitive.
@@ -183,7 +183,7 @@ func NewWebsocketServer(r Router) *WebsocketServer {
 //	})
 //
 // Allow any port, by specifying a wildcard. Be sure to include the colon ":"
-// so that the pattern does not match a longer origin.  Without the ":" this
+// so that the pattern does not match a longer origin. Without the ":" this
 // example would also match "x.somewhere.comics.net"
 //
 //	err := s.AllowOrigins([]string{"*.somewhere.com:*"})
@@ -191,10 +191,10 @@ func NewWebsocketServer(r Router) *WebsocketServer {
 // # Custom Origin Checks
 //
 // Alternatively, a custom function my be configured to supplied any origin
-// checking logic your application needs.  The WebsocketServer calls the
+// checking logic your application needs. The WebsocketServer calls the
 // function specified in the WebsocketServer.Upgrader.CheckOrigin field to
-// check the origin.  If the CheckOrigin function returns false, then the
-// WebSocket handshake fails with HTTP status 403.  To supply a CheckOrigin
+// check the origin. If the CheckOrigin function returns false, then the
+// WebSocket handshake fails with HTTP status 403. To supply a CheckOrigin
 // function:
 //
 //	s := NewWebsocketServer(r)
@@ -244,16 +244,17 @@ func (s *WebsocketServer) ListenAndServe(address string) (io.Closer, error) {
 
 	// Run service on configured port.
 	server := &http.Server{
-		Handler: s,
-		Addr:    l.Addr().String(),
+		Handler:           s,
+		Addr:              l.Addr().String(),
+		ReadHeaderTimeout: 5 * time.Second,
 	}
-	go server.Serve(l)
+	go server.Serve(l) //nolint:errcheck
 	return l, nil
 }
 
 // ListenAndServeTLS listens on the specified TCP address and starts a
 // goroutine that accepts new TLS client connections until the returned
-// io.closer is closed.  If tls.Config does not already contain a certificate,
+// io.closer is closed. If tls.Config does not already contain a certificate,
 // then certFile and keyFile, if specified, are used to load an X509
 // certificate.
 func (s *WebsocketServer) ListenAndServeTLS(address string, tlscfg *tls.Config, certFile, keyFile string) (io.Closer, error) { //nolint:lll
@@ -261,7 +262,9 @@ func (s *WebsocketServer) ListenAndServeTLS(address string, tlscfg *tls.Config, 
 	// serving.
 	var hasCert bool
 	if tlscfg == nil {
-		tlscfg = &tls.Config{}
+		tlscfg = &tls.Config{
+			MinVersion: tls.VersionTLS12,
+		}
 	} else if len(tlscfg.Certificates) > 0 || tlscfg.GetCertificate != nil {
 		hasCert = true
 	}
@@ -282,11 +285,12 @@ func (s *WebsocketServer) ListenAndServeTLS(address string, tlscfg *tls.Config, 
 
 	// Run service on configured port.
 	server := &http.Server{
-		Handler:   s,
-		Addr:      l.Addr().String(),
-		TLSConfig: tlscfg,
+		Handler:           s,
+		Addr:              l.Addr().String(),
+		ReadHeaderTimeout: 5 * time.Second,
+		TLSConfig:         tlscfg,
 	}
-	go server.ServeTLS(l, "", "")
+	go server.ServeTLS(l, "", "") //nolint:errcheck
 	return l, nil
 }
 
@@ -296,7 +300,7 @@ func (s *WebsocketServer) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	var nextCookie *http.Cookie
 
 	// If tracking cookie is enabled, then read the tracking cookie from the
-	// request header, if it contains the cookie.  Generate a new tracking
+	// request header, if it contains the cookie. Generate a new tracking
 	// cookie for next time and put it in the response header.
 	if s.EnableTrackingCookie {
 		if authDict == nil {
@@ -375,7 +379,7 @@ func (s *WebsocketServer) handleWebsocket(conn transport.WebsocketConnection, tr
 			serializer = &serialize.CBORSerializer{}
 			payloadType = websocket.BinaryMessage
 		default:
-			conn.Close()
+			_ = conn.Close()
 			return
 		}
 	}
@@ -393,7 +397,7 @@ func (s *WebsocketServer) handleWebsocket(conn transport.WebsocketConnection, tr
 }
 
 // checkOrigin returns true if the origin is not set, is equal to the request
-// host, or matches one of the allowed patterns.  This function is assigned to
+// host, or matches one of the allowed patterns. This function is assigned to
 // the server's Upgrader.CheckOrigin when AllowOrigins() is called.
 func checkOrigin(exacts, globs []string, r *http.Request) bool {
 	origin := r.Header["Origin"]

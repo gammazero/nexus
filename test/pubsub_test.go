@@ -1,4 +1,4 @@
-package aat_test
+package test_test
 
 import (
 	"errors"
@@ -149,14 +149,14 @@ func TestSubscribeBurst(t *testing.T) {
 
 	eventHandler := func(_ *wamp.Event) {}
 
-	for i := 0; i < 10; i++ {
+	for i := range 10 {
 		// Subscribe to event.
 		topic := fmt.Sprintf("test.topic%d", i)
 		err := sub.Subscribe(topic, eventHandler, nil)
 		require.NoError(t, err)
 	}
 
-	for i := 0; i < 10; i++ {
+	for i := range 10 {
 		// Subscribe to event.
 		topic := fmt.Sprintf("test.topic%d", i)
 		err := sub.Unsubscribe(topic)

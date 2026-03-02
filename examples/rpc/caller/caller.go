@@ -32,8 +32,8 @@ func main() {
 		logger.Println(locTime)
 	}
 
-	// Test calling the "sum" procedure with args 1..10.  Requires
-	// external rpc client to be running.
+	// Test calling the "sum" procedure with args 1..10. Requires external rpc
+	// client to be running.
 	callArgs = wamp.List{1, 2, 3, 4, 5, 6, 7, 8, 9, 10}
 	logger.Println("Call remote procedure to sum numbers 1-10")
 	result, err = caller.Call(ctx, "sum", nil, callArgs, nil, nil)

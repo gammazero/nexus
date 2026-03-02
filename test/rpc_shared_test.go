@@ -1,4 +1,4 @@
-package aat_test
+package test_test
 
 import (
 	"context"
@@ -48,7 +48,7 @@ func TestRPCSharedRoundRobin(t *testing.T) {
 
 	expect := int64(1)
 	var result *wamp.Result
-	for i := 0; i < 5; i++ {
+	for range 5 {
 		// Test calling the procedure - expect callee1-3
 		ctx := context.Background()
 		result, err = caller.Call(ctx, procName, options, nil, nil, nil)
@@ -67,7 +67,7 @@ func TestRPCSharedRoundRobin(t *testing.T) {
 	require.NoError(t, err)
 
 	expect = int64(1)
-	for i := 0; i < 5; i++ {
+	for range 5 {
 		// Test calling the procedure - expect callee1-3
 		ctx := context.Background()
 		result, err = caller.Call(ctx, procName, options, nil, nil, nil)

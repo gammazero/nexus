@@ -3,7 +3,7 @@ package wamp
 import "reflect"
 
 // AsString is an extended type assertion for string.
-func AsString(v interface{}) (string, bool) {
+func AsString(v any) (string, bool) {
 	switch v := v.(type) {
 	case string:
 		return v, true
@@ -16,15 +16,17 @@ func AsString(v interface{}) (string, bool) {
 }
 
 // AsID is an extended type assertion for ID.
-func AsID(v interface{}) (ID, bool) {
+func AsID(v any) (ID, bool) {
 	if i64, ok := AsInt64(v); ok {
-		return ID(i64), true
+		if i64 > 0 && i64 <= maxID { // if valid ID
+			return ID(i64), true
+		}
 	}
 	return ID(0), false
 }
 
 // AsURI is an extended type assertion for URI.
-func AsURI(v interface{}) (URI, bool) {
+func AsURI(v any) (URI, bool) {
 	switch v := v.(type) {
 	case URI:
 		return v, true
@@ -37,20 +39,20 @@ func AsURI(v interface{}) (URI, bool) {
 }
 
 // AsInt64 is an extended type assertion for int64.
-func AsInt64(v interface{}) (int64, bool) {
+func AsInt64(v any) (int64, bool) {
 	switch v := v.(type) {
 	case int64:
 		return v, true
 	case ID:
-		return int64(v), true
+		return int64(v), true //nolint:gosec // G115 ok to convert invalid ID to int64
 	case uint64:
-		return int64(v), true
+		return int64(v), true //nolint:gosec // G115 ok, number can wrap
 	case int:
 		return int64(v), true
 	case int32:
 		return int64(v), true
 	case uint:
-		return int64(v), true
+		return int64(v), true //nolint:gosec // G115 ok, number can wrap
 	case uint32:
 		return int64(v), true
 	case float64:
@@ -62,7 +64,7 @@ func AsInt64(v interface{}) (int64, bool) {
 }
 
 // AsFloat64 is an extended type assertion for float64.
-func AsFloat64(v interface{}) (float64, bool) {
+func AsFloat64(v any) (float64, bool) {
 	switch v := v.(type) {
 	case float64:
 		return v, true
@@ -87,13 +89,13 @@ func AsFloat64(v interface{}) (float64, bool) {
 }
 
 // AsBool is an extended type assertion for bool.
-func AsBool(v interface{}) (bool, bool) {
+func AsBool(v any) (bool, bool) {
 	b, ok := v.(bool)
 	return b, ok
 }
 
 // AsDict is an extended type assertion for Dict.
-func AsDict(v interface{}) (Dict, bool) {
+func AsDict(v any) (Dict, bool) {
 	if v == nil {
 		return nil, true
 	}
@@ -102,11 +104,11 @@ func AsDict(v interface{}) (Dict, bool) {
 }
 
 // AsList is an extended type assertion for List.
-func AsList(v interface{}) (List, bool) {
+func AsList(v any) (List, bool) {
 	switch v := v.(type) {
 	case List:
 		return v, true
-	case []interface{}:
+	case []any:
 		return List(v), true
 	case nil:
 		return nil, true
@@ -122,8 +124,8 @@ func AsList(v interface{}) (List, bool) {
 	return list, true
 }
 
-// ListToStrings converts a List to a slice of string.  Returns the string
-// slice and a boolean indicating if the conversion was successful.
+// ListToStrings converts a List to a slice of string. Returns the string slice
+// and a boolean indicating if the conversion was successful.
 func ListToStrings(list List) ([]string, bool) {
 	if len(list) == 0 {
 		return nil, true

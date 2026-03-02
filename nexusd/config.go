@@ -17,7 +17,7 @@ type Config struct {
 		// Files containing a certificate and matching private key.
 		CertFile string `json:"cert_file"`
 		KeyFile  string `json:"key_file"`
-		// Heartbeat ("pings") interval in seconds.  Set to 0 to disable.
+		// Heartbeat ("pings") interval in seconds. Set to 0 to disable.
 		KeepAlive time.Duration `json:"keep_alive"`
 		// Enable per message write compression.
 		EnableCompression bool `json:"enable_compression"`
@@ -36,7 +36,7 @@ type Config struct {
 	RawSocket struct {
 		// String form of address (example, "192.0.2.1:25", "[2001:db8::1]:80")
 		TCPAddress string `json:"tcp_address"`
-		// TCP keepalive interval in seconds.  Set to 0 to disable.
+		// TCP keepalive interval in seconds. Set to 0 to disable.
 		TCPKeepAliveInterval time.Duration `json:"tcp_keepalive_interval"`
 		// Path to Unix domain socket.
 		UnixAddress string `json:"unix_address"`
@@ -49,7 +49,7 @@ type Config struct {
 		OutQueueSize int `json:"out_queue_size"`
 	}
 
-	// File to write log data to.  If not specified, log to stdout.
+	// File to write log data to. If not specified, log to stdout.
 	LogPath string `json:"log_path"`
 	// Router configuration parameters.
 	// See https://godoc.org/github.com/gammazero/nexus/v3#RouterConfig
@@ -57,7 +57,7 @@ type Config struct {
 }
 
 func LoadConfig(path string) *Config {
-	file, err := os.ReadFile(path)
+	file, err := os.ReadFile(path) //nolint:gosec // need to read file at path specified by user
 	if err != nil {
 		log.Fatal("Config File Missing. ", err)
 	}
@@ -69,10 +69,10 @@ func LoadConfig(path string) *Config {
 	}
 
 	if config.WebSocket.KeepAlive != 0 {
-		config.WebSocket.KeepAlive *= time.Second
+		config.WebSocket.KeepAlive *= time.Second // nolint:durationcheck
 	}
 	if config.RawSocket.TCPKeepAliveInterval != 0 {
-		config.RawSocket.TCPKeepAliveInterval *= time.Second
+		config.RawSocket.TCPKeepAliveInterval *= time.Second // nolint:durationcheck
 	}
 	return &config
 }

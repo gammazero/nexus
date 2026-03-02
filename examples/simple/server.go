@@ -44,5 +44,5 @@ func main() {
 	shutdown := make(chan os.Signal, 1)
 	signal.Notify(shutdown, os.Interrupt)
 	<-shutdown
-	closer.Close()
+	_ = closer.Close()
 }

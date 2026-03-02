@@ -10,8 +10,8 @@ import (
 
 // ConnectLocal creates a new client directly connected to the router instance.
 // This is used to connect clients, embedded in the same application as the
-// router, to the router.  Doing this eliminates the need for any socket of
-// serialization overhead, and does not require authentication.  The new client
+// router, to the router. Doing this eliminates the need for any socket of
+// serialization overhead, and does not require authentication. The new client
 // joins the realm specified in the Config.
 func ConnectLocal(router router.Router, cfg Config) (*Client, error) {
 	if cfg.Logger == nil {

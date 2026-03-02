@@ -3,7 +3,7 @@ package client
 import "github.com/gammazero/nexus/v3/wamp"
 
 // Features supported by nexus client.
-var clientRoles = wamp.Dict{
+var clientRoles = wamp.Dict{ //nolint:gochecknoglobals
 	wamp.RolePublisher: wamp.Dict{
 		"features": wamp.Dict{
 			wamp.FeatureSubBlackWhiteListing: true,

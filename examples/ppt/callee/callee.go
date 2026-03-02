@@ -2,14 +2,13 @@ package main
 
 import (
 	"context"
-	"github.com/gammazero/nexus/v3/transport/serialize"
 	"log"
 	"math/rand"
 	"os"
 	"os/signal"
-	"time"
 
 	"github.com/gammazero/nexus/v3/client"
+	"github.com/gammazero/nexus/v3/transport/serialize"
 	"github.com/gammazero/nexus/v3/wamp"
 )
 
@@ -23,8 +22,6 @@ const (
 var logger = log.New(os.Stdout, "CALLEE> ", 0)
 
 func main() {
-	rand.Seed(time.Now().UnixNano())
-
 	var serialization serialize.Serialization
 	var callee *client.Client
 	var err error
@@ -90,8 +87,8 @@ func sum(ctx context.Context, inv *wamp.Invocation) client.InvokeResult {
 	logger.Println("  Calculated sum", sum)
 
 	options := wamp.Dict{}
-	r := rand.Intn(3)
-	switch r {
+	// Make a random choice to demonstrate different serializers.
+	switch rand.Intn(3) {
 	case 0:
 		options = wamp.Dict{
 			wamp.OptPPTScheme:     "x_custom",

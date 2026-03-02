@@ -13,14 +13,14 @@ import (
 // RawSocketServer handles socket connections.
 type RawSocketServer struct {
 	// RecvLimit is the maximum length of messages the server is willing to
-	// receive.  Defaults to maximum allowed for protocol: 16M.
+	// receive. Defaults to maximum allowed for protocol: 16M.
 	RecvLimit int
 
-	// KeepAlive is the TCP keep-alive period.  Default is disable keep-alive.
+	// KeepAlive is the TCP keep-alive period. Default is disable keep-alive.
 	KeepAlive time.Duration
 
 	// OutQueueSize is the maximum number of pending outbound messages, per
-	// client.  The default is defaultOutQueueSize.
+	// client. The default is defaultOutQueueSize.
 	OutQueueSize int
 
 	router Router
@@ -47,15 +47,16 @@ func (s *RawSocketServer) ListenAndServe(network, address string) (io.Closer, er
 	return l, nil
 }
 
-// ListenAndServeTLS listens on the specified endpoint and starts a
-// goroutine that accepts new TLS client connections until the returned
-// io.closer is closed.  If tls.Config does not already contain a certificate,
-// then certFile and keyFile, if specified, are used to load an X509
-// certificate.
+// ListenAndServeTLS listens on the specified endpoint and starts a goroutine
+// that accepts new TLS client connections until the returned io.closer is
+// closed. If tls.Config does not already contain a certificate, then certFile
+// and keyFile, if specified, are used to load an X509 certificate.
 func (s *RawSocketServer) ListenAndServeTLS(network, address string, tlscfg *tls.Config, certFile, keyFile string) (io.Closer, error) { //nolint:lll
 	var hasCert bool
 	if tlscfg == nil {
-		tlscfg = &tls.Config{}
+		tlscfg = &tls.Config{
+			MinVersion: tls.VersionTLS12,
+		}
 	} else if len(tlscfg.Certificates) > 0 || tlscfg.GetCertificate != nil {
 		hasCert = true
 	}
@@ -84,7 +85,7 @@ func (s *RawSocketServer) requestHandler(l net.Listener) {
 		conn, err := l.Accept()
 		if err != nil {
 			// Error normal when listener closed, do not log.
-			l.Close()
+			_ = l.Close()
 			return
 		}
 		if tcpConn, ok := conn.(*net.TCPConn); ok {

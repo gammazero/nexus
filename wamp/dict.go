@@ -7,12 +7,12 @@ import (
 )
 
 // NormalizeDict takes a dict and creates a new normalized dict where all
-// map[string]xxx are converted to Dict.  Values that cannot
-// be converted, or are already the correct map type, remain the same.
+// map[string]xxx are converted to Dict. Values that cannot be converted, or
+// are already the correct map type, remain the same.
 //
-// This is used for initial conversion of hello details.  The original dict is
+// This is used for initial conversion of hello details. The original dict is
 // not mutated.
-func NormalizeDict(v interface{}) Dict {
+func NormalizeDict(v any) Dict {
 	val := reflect.ValueOf(v)
 	if val.Kind() != reflect.Map {
 		return nil
@@ -28,11 +28,11 @@ func NormalizeDict(v interface{}) Dict {
 		cv := val.MapIndex(key)
 		newVal := NormalizeDict(cv.Interface())
 		if newVal == nil {
-			// If the value is interface{} representing []interface{}, then
-			// convert the slice to a List type.
+			// If the value is any representing []any, then convert the slice
+			// to a List type.
 			if cv.Kind() == reflect.Interface && cv.Elem().Kind() == reflect.Slice {
 				cv = cv.Elem()
-				listType := reflect.TypeOf(List{})
+				listType := reflect.TypeFor[List]()
 				if cv.Type().ConvertibleTo(listType) {
 					cv = cv.Convert(listType)
 				}
@@ -47,9 +47,9 @@ func NormalizeDict(v interface{}) Dict {
 
 // Return the child dictionary for the given key, or nil if not present.
 //
-// If the child is not a Dict, an attempt is made to convert
-// it.  The dict is not modified since features may be looked up cuncurrently
-// for the same session.
+// If the child is not a Dict, an attempt is made to convert it. The dict is
+// not modified since features may be looked up concurrently for the same
+// session.
 func DictChild(dict Dict, key string) Dict {
 	iface, ok := dict[key]
 	if !ok || iface == nil {
@@ -58,9 +58,9 @@ func DictChild(dict Dict, key string) Dict {
 	}
 	child, ok := iface.(Dict)
 	if !ok {
-		// value is not in expected form; try to convert
-		// Session details are normalized whensession is attached, so this
-		// should not be necessary normally.
+		// value is not in expected form; try to convert. Session details are
+		// normalized when session is attached, so this should not be necessary
+		// normally.
 		child = NormalizeDict(iface)
 		if child == nil {
 			// could not convert
@@ -77,9 +77,9 @@ func DictChild(dict Dict, key string) Dict {
 //	DictValue(dict, strings.Split(path, "."))
 //
 // For example, the path []string{"roles","callee","features","call_timeout"}
-// returns  the value of the call_timeout feature as interface{}.  An error
-// is returned if the value is not present.
-func DictValue(dict Dict, path []string) (interface{}, error) {
+// returns the value of the call_timeout feature as any. An error is returned
+// if the value is not present.
+func DictValue(dict Dict, path []string) (any, error) {
 	for i := range path[:len(path)-1] {
 		dict = DictChild(dict, path[i])
 		if dict == nil {
@@ -101,7 +101,7 @@ func DictValue(dict Dict, path []string) (interface{}, error) {
 //	DictFlag(dict, strings.Split(path, "."))
 //
 // For example: "roles.subscriber.features.publisher_identification" returns
-// the value of the publisher_identification feature.  An error is returned if
+// the value of the publisher_identification feature. An error is returned if
 // the value is not present or is not a boolean type.
 func DictFlag(dict Dict, path []string) (bool, error) {
 	v, err := DictValue(dict, path)
@@ -117,7 +117,7 @@ func DictFlag(dict Dict, path []string) (bool, error) {
 }
 
 // SetOption sets a single option name-value pair in message options dict.
-func SetOption(dict Dict, name string, value interface{}) Dict {
+func SetOption(dict Dict, name string, value any) Dict {
 	if dict == nil {
 		dict = Dict{}
 	}

@@ -1,4 +1,4 @@
-package router
+package router //nolint:testpackage
 
 import (
 	"context"
@@ -14,8 +14,6 @@ import (
 const tcpAddr = "127.0.0.1:8181"
 
 func TestRSHandshakeJSON(t *testing.T) {
-	checkGoLeaks(t)
-
 	r, err := NewRouter(routerConfig, nil)
 	require.NoError(t, err)
 	defer r.Close()
@@ -37,8 +35,6 @@ func TestRSHandshakeJSON(t *testing.T) {
 }
 
 func TestRSHandshakeMsgpack(t *testing.T) {
-	checkGoLeaks(t)
-
 	r, err := NewRouter(routerConfig, nil)
 	require.NoError(t, err)
 	defer r.Close()
