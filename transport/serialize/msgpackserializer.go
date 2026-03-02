@@ -16,6 +16,9 @@ func init() {
 }
 
 // InitMsgpackHandle creates a new global MsgpackHandle.
+//
+// Calling InitMsgpackHandle discards existing extensions, and cannot be called
+// concurrently with other serialization functions.
 func InitMsgpackHandle() {
 	mh = new(codec.MsgpackHandle)
 	mh.WriteExt = true
