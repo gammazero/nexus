@@ -24,8 +24,12 @@ func InitMsgpackHandle() {
 
 // MsgpackRegisterExtension registers a custom type for special serialization.
 //
-// If the MsgpackHandle is already initialized, then call InitMsgpackHandle
-// before calling MsgpackRegisterExtension.
+// MsgpackRegisterExtension cannot be called after the MsgpackHandle is already
+// initialized. If it is necessary to register extensions after MsgpackHandle
+// initialization, call InitMsgpackHandle to reinitialize the MsgpackHandle.
+// After calling InitMsgpackHandle, call MsgpackRegisterExtension to
+// re-register any extensions, since InitMsgpackHandle discards all previously
+// registered extensions.
 func MsgpackRegisterExtension(rt reflect.Type, tag byte, encode func(reflect.Value) ([]byte, error), decode func(reflect.Value, []byte) error) error { //nolint:lll
 	if encode == nil || decode == nil {
 		return mh.SetBytesExt(rt, uint64(tag), nil)
