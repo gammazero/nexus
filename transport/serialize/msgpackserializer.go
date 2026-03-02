@@ -82,6 +82,7 @@ type bytesExtWrapper struct {
 func (x bytesExtWrapper) WriteExt(v any) []byte {
 	bs, err := x.encFn(reflect.ValueOf(v))
 	if err != nil {
+		// Panic is recovered by codec package and returned as an error.
 		panic(err)
 	}
 	return bs
@@ -90,6 +91,7 @@ func (x bytesExtWrapper) WriteExt(v any) []byte {
 func (x bytesExtWrapper) ReadExt(v any, bs []byte) {
 	err := x.decFn(reflect.ValueOf(v), bs)
 	if err != nil {
+		// Panic is recovered by codec package and returned as an error.
 		panic(err)
 	}
 }

@@ -365,7 +365,6 @@ func TestBinaryDataJSON(t *testing.T) {
 }
 
 func TestMsgpackExtensions(t *testing.T) {
-	t.Skip("MsgpackRegisterExtension not working - need fix ")
 	encode := func(value reflect.Value) ([]byte, error) {
 		return value.Bytes(), nil
 	}
@@ -403,15 +402,12 @@ func TestMsgpackExtensions(t *testing.T) {
 	v2, ok := m1.Details["extra"]
 	require.True(t, ok, "m1.Details[extra] missing")
 	vs1 := string(v1.(serialize.BinaryData))
-	vs2, _ := wamp.AsString(v2)
+	vs2 := string(v2.(serialize.BinaryData))
 	require.Equal(t, vs1, vs2)
 
-	// Does not work as of commit this commit:
-	// github.com/ugorji/go/codec@@20768e92ac5d44754d3ae811382dea19ec3901c
-	//
-	//if !reflect.DeepEqual(msg, m1) {
-	//	t.Fatalf("Values are not equal: expected: %v, got: %v", msg, m1)
-	//}
+	if !reflect.DeepEqual(msg, m1) {
+		t.Fatalf("Values are not equal: expected: %v, got: %v", msg, m1)
+	}
 }
 
 func TestMsgpackDeserializeFail(t *testing.T) {
