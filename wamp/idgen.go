@@ -10,7 +10,7 @@ const maxID = 1 << 53
 
 // GlobalID generates a random WAMP ID.
 func GlobalID() ID {
-	return ID(secureUint63n(maxID) + 1)
+	return ID(uint64(secureInt63n(maxID)) + 1) //nolint:gosec // G115 ok, secureInt63n never negative.
 }
 
 // IDGen is generator for WAMP request IDs. Create with new(IDGen).
@@ -50,9 +50,9 @@ func (g *SyncIDGen) Next() ID {
 	return g.IDGen.Next()
 }
 
-// secureUint63n generates a cryptographically secure random uint64 in the range [0, n).
+// secureInt63n generates a cryptographically secure random int64 in the range [0, n).
 // It panics if n <= 0.
-func secureUint63n(n int64) uint64 {
+func secureInt63n(n int64) int64 {
 	if n <= 0 {
 		panic("n must be positive")
 	}
@@ -63,5 +63,5 @@ func secureUint63n(n int64) uint64 {
 		panic(err)
 	}
 
-	return result.Uint64()
+	return result.Int64()
 }

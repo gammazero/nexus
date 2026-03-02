@@ -38,7 +38,7 @@ type subscription struct {
 }
 
 // storedEvent is a wrapper around wamp event message with timestamp to be used
-// in event history
+// in event history.
 type storedEvent struct {
 	timestamp    time.Time
 	Subscription wamp.ID
