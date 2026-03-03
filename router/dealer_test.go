@@ -178,7 +178,6 @@ func TestBasicCall(t *testing.T) {
 // Callee's session.
 func TestInvocationSessionSequentialIDs(t *testing.T) {
 	dealer, _ := newTestDealer(t)
-	dealer.debug = true
 
 	// Set up 2 Callees with 2 unique registered procedure names
 	const numCallee = 2
@@ -244,7 +243,7 @@ func TestInvocationSessionSequentialIDs(t *testing.T) {
 		require.Falsef(t, ok, "unexpected error from callee %s", werr)
 
 		inv, ok := rsp.(*wamp.Invocation)
-		require.True(t, ok, "expected INVOCATION; Got: ", rsp.MessageType().String())
+		require.Truef(t, ok, "expected INVOCATION; Got: %s", rsp.MessageType().String())
 		require.Equalf(t, wamp.ID(expectedID), inv.Request, "invocation request ID should be %d", expectedID)
 	}
 

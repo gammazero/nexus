@@ -204,7 +204,7 @@ func (s *Session) IsNewRecvID(id ID) bool {
 		return true
 	}
 
-	if id == last {
+	if id == last || id == 0 {
 		return false
 	}
 	// If the new id is less than the last id, and the wrap-around distance
