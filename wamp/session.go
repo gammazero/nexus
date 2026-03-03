@@ -199,6 +199,11 @@ func (s *Session) IsNewRecvID(id ID) bool {
 
 	last := s.lastRecvID
 
+	// Have not seen any previous id, so must me new.
+	if last == 0 {
+		return true
+	}
+
 	if id == last {
 		return false
 	}
@@ -209,7 +214,6 @@ func (s *Session) IsNewRecvID(id ID) bool {
 		return (MaxID - (last - id)) < deltaID
 	}
 
-	// Can only advance at most deltaID. This is specifically to prevent
-	// jumping to close to the last id after a wraparound.
+	// Can only advance at most deltaID.
 	return id > last && (id-last) < deltaID
 }

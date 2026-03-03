@@ -1714,7 +1714,13 @@ func (c *Client) runHandleInvocation(msg *wamp.Invocation) {
 						// client application to stop whatever it is doing if
 						// it cares to pay attention.
 						result := handler(ctx, msg)
-						resChan <- result
+						select {
+						case resChan <- result:
+						case <-c.Done():
+							return
+						case <-ctx.Done():
+							return
+						}
 						if result.Err != "" && result.Err != wamp.InternalProgressiveOmitResult {
 							processMessages = false
 						}

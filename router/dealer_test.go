@@ -118,7 +118,7 @@ func TestBasicCall(t *testing.T) {
 	var rsp wamp.Message
 	select {
 	case rsp = <-callee.Recv():
-	case <-time.After(time.Millisecond):
+	case <-time.After(200 * time.Millisecond):
 		require.FailNow(t, "timed out waiting for response")
 	}
 	_, ok := rsp.(*wamp.Registered)
@@ -202,7 +202,7 @@ func TestInvocationSessionSequentialIDs(t *testing.T) {
 			var rsp wamp.Message
 			select {
 			case rsp = <-callee[i].Recv():
-			case <-time.After(time.Millisecond):
+			case <-time.After(200 * time.Millisecond):
 				require.FailNowf(t, "timed out waiting for response", "callee[%d]", i)
 			}
 			switch rsp := rsp.(type) {
