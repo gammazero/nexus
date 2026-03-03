@@ -240,7 +240,7 @@ func TestInvocationSessionSequentialIDs(t *testing.T) {
 		rsp, err := wamp.RecvTimeout(calleeSess, time.Second)
 		require.NoError(t, err)
 		werr, ok := rsp.(*wamp.Error)
-		require.Falsef(t, ok, "unexpected error from callee %s", werr)
+		require.Falsef(t, ok, "unexpected error from callee %v", werr)
 
 		inv, ok := rsp.(*wamp.Invocation)
 		require.Truef(t, ok, "expected INVOCATION; Got: %s", rsp.MessageType().String())
