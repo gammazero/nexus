@@ -108,7 +108,7 @@ func TestJSONSerialize(t *testing.T) {
 
 	msg, err := s.Deserialize(b)
 	require.NoError(t, err)
-	require.Equal(t, wamp.HELLO, msg.MessageType(), "desrialization to wrong message type")
+	require.Equal(t, wamp.HELLO, msg.MessageType(), "deserialization to wrong message type")
 	has := hasPubBWListingFeature(hello.Details)
 	require.True(t, has, "did not deserialize message details")
 

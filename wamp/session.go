@@ -197,14 +197,19 @@ func (s *Session) UpdateLastRecvIDLocked(id ID) bool {
 func (s *Session) IsNewRecvID(id ID) bool {
 	const deltaID = ID(500) // maximum allowed wraparound distance
 
+	// Reject invalid IDs: WAMP request IDs must be > 0 and <= MaxID.
+	if id == 0 || id > MaxID {
+		return false
+	}
+
 	last := s.lastRecvID
 
-	// Have not seen any previous id, so must be new.
+	// Have not seen any previous id, so any valid id must be new.
 	if last == 0 {
 		return true
 	}
 
-	if id == last || id == 0 {
+	if id == last {
 		return false
 	}
 	// If the new id is less than the last id, and the wrap-around distance
