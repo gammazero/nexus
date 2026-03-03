@@ -187,7 +187,7 @@ func TestCBORSerialize(t *testing.T) {
 
 	msg, err := s.Deserialize(b)
 	require.NoError(t, err)
-	require.Equal(t, wamp.HELLO, msg.MessageType(), "desrialization to wrong message type")
+	require.Equal(t, wamp.HELLO, msg.MessageType(), "deserialization to wrong message type")
 	has := hasPubBWListingFeature(hello.Details)
 	require.True(t, has, "did not deserialize message details")
 
@@ -275,7 +275,7 @@ func TestMessagePackSerialize(t *testing.T) {
 	require.NotZero(t, len(b), "no serialized data")
 	msg, err := s.Deserialize(b)
 	require.NoError(t, err)
-	require.Equal(t, wamp.HELLO, msg.MessageType(), "desrialization to wrong message type")
+	require.Equal(t, wamp.HELLO, msg.MessageType(), "deserialization to wrong message type")
 	hello2, ok := msg.(*wamp.Hello)
 	require.True(t, ok, "deserialized message is not wamp.Hello")
 	has := hasPubBWListingFeature(hello2.Details)
@@ -307,7 +307,7 @@ func TestConcurrentMessagePackSerialize(t *testing.T) {
 				require.NotZero(t, len(b), "no serialized data")
 				msg, err := s.Deserialize(b)
 				require.NoError(t, err)
-				require.Equal(t, wamp.HELLO, msg.MessageType(), "desrialization to wrong message type")
+				require.Equal(t, wamp.HELLO, msg.MessageType(), "deserialization to wrong message type")
 				h2, ok := msg.(*wamp.Hello)
 				require.True(t, ok, "deserialized message is not wamp.Hello")
 				require.Equal(t, realm, h2.Realm)
@@ -565,7 +565,7 @@ func benchmarkSerialize(b *testing.B, s serialize.Serializer, msg wamp.Message) 
 
 		_, err = s.Deserialize(data)
 		if err != nil {
-			panic("desrialization error: " + err.Error())
+			panic("deserialization error: " + err.Error())
 		}
 	}
 }

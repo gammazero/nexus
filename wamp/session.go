@@ -208,17 +208,15 @@ func (s *Session) IsNewRecvID(id ID) bool {
 	if last == 0 {
 		return true
 	}
-
+	// For forward progress, accept any strictly increasing ID.
+	if id > last {
+		return true
+	}
 	if id == last {
 		return false
 	}
 	// If the new id is less than the last id, and the wrap-around distance
 	// from the last id to the new id is within delta, then this is a
 	// legitimate new id within the allowed wraparound.
-	if id < last {
-		return (MaxID - (last - id)) < deltaID
-	}
-
-	// Can only advance at most deltaID.
-	return id > last && (id-last) < deltaID
+	return (MaxID - (last - id)) < deltaID
 }

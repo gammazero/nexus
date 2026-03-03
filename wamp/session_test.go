@@ -24,14 +24,17 @@ func TestIsNewRecvIDBounds(t *testing.T) {
 		// valid for rollover but new value is too far out of bounds
 		{last: MaxID - deltaID + 100, id: deltaID + 100, expected: false},
 		{last: MaxID - deltaID + 1, id: 1, expected: false},
+		{last: 2, id: 1, expected: false},
 		// just within bounds after rollover
 		{last: MaxID - deltaID + 2, id: 1, expected: true},
 		// id is technically out of bounds but that's OK
 		{last: ID(MaxID), id: deltaID - 1, expected: true},
-		// Can't jump more than deltaID (prevents flip-fop after rollover)
-		{last: 1, id: MaxID - deltaID + 1, expected: false},
-		{last: 100, id: 100 + deltaID, expected: false},
-		{last: 100, id: 100 + deltaID - 1, expected: true},
+		// Jump forward any amount.
+		{last: 1, id: MaxID - deltaID + 1, expected: true},
+		{last: 100, id: 100 + deltaID, expected: true},
+		// illegal id values
+		{last: MaxID, id: MaxID + 1, expected: false},
+		{last: MaxID, id: 0, expected: false},
 	}
 
 	s := Session{lastRecvID: 0}
