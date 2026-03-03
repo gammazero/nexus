@@ -9,6 +9,7 @@ import (
 	"os"
 	"regexp"
 	"sync"
+	"sync/atomic"
 	"testing"
 	"testing/synctest"
 	"time"
@@ -702,7 +703,7 @@ func TestProgressiveCallInvocationCalleeError(t *testing.T) {
 
 	const forcedError = wamp.URI("error.forced")
 	moreArgsSent := make(chan struct{})
-	errorRaised := false
+	var errorRaised atomic.Bool
 
 	invocationHandler := func(ctx context.Context, inv *wamp.Invocation) client.InvokeResult {
 		switch inv.Arguments[0].(int) {
@@ -716,7 +717,7 @@ func TestProgressiveCallInvocationCalleeError(t *testing.T) {
 			// be waiting
 			<-moreArgsSent
 			time.Sleep(100 * time.Millisecond)
-			errorRaised = true
+			errorRaised.Store(true)
 			t.Log("n=2 Returning error (as expected)")
 			// Error
 			return client.InvokeResult{Err: forcedError}
@@ -765,7 +766,7 @@ func TestProgressiveCallInvocationCalleeError(t *testing.T) {
 		t.Error("Unexpected error type")
 	}
 	require.GreaterOrEqual(t, sendCount, 4)
-	require.True(t, errorRaised, "Error was never raised in handler")
+	require.True(t, errorRaised.Load(), "Error was never raised in handler")
 
 	// #319: Show deadlock
 	t.Log("Closing rooter")
