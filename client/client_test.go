@@ -708,7 +708,18 @@ func TestProgressiveCallInvocationCalleeError(t *testing.T) {
 	var errorRaised atomic.Bool
 
 	invocationHandler := func(ctx context.Context, inv *wamp.Invocation) client.InvokeResult {
-		switch inv.Arguments[0].(int) {
+		if len(inv.Arguments) == 0 {
+			t.Error("Invocation missing required argument")
+			return client.InvokeResult{Err: wamp.ErrInvalidArgument}
+		}
+
+		n, ok := wamp.AsInt64(inv.Arguments[0])
+		if !ok {
+			t.Errorf("Invocation argument has unexpected type: %T", inv.Arguments[0])
+			return client.InvokeResult{Err: wamp.ErrInvalidArgument}
+		}
+
+		switch n {
 		case 1:
 			// Eat the first arg
 			t.Log("n=1 Returning OmitResult")
