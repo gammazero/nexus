@@ -199,7 +199,7 @@ func (s *Session) IsNewRecvID(id ID) bool {
 
 	last := s.lastRecvID
 
-	// Have not seen any previous id, so must me new.
+	// Have not seen any previous id, so must be new.
 	if last == 0 {
 		return true
 	}

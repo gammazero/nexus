@@ -698,7 +698,9 @@ func TestProgressiveCallInvocations(t *testing.T) {
 func TestProgressiveCallInvocationCalleeError(t *testing.T) {
 	// Connect two clients to the same server
 	// t.Setenv(debugRouterEnv, "1")
-	t.Setenv(debugClientEnv, "1")
+	if os.Getenv(debugClientEnv) != "" {
+		t.Setenv(debugClientEnv, "1")
+	}
 	callee, caller, rooter := connectedTestClients(t)
 
 	const forcedError = wamp.URI("error.forced")
