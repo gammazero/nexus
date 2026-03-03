@@ -703,15 +703,12 @@ func (d *dealer) syncCall(caller *wamp.Session, msg *wamp.Call) {
 			request: msg.Request,
 		}
 		d.calls[reqID] = caller
-		invocationID = d.idGen.Next()
 		invk = &invocation{
 			callID:     reqID,
 			callee:     callee,
 			inProgress: isInProgress,
 			options:    msg.Options,
 		}
-		d.invocations[invocationID] = invk
-		d.invocationByCall[reqID] = invocationID
 
 		// Let's check if callee supports this feature. A Callee that supports
 		// progressive call invocations, but does not support call canceling,
@@ -814,6 +811,11 @@ func (d *dealer) syncCall(caller *wamp.Session, msg *wamp.Call) {
 			details[wamp.OptProcedure] = msg.Procedure
 		}
 
+		// Generate the invocationID now that it is certain that the invocation
+		// will be sent.
+		invocationID = callee.IDGen.Next()
+		d.invocations[invocationID] = invk
+		d.invocationByCall[reqID] = invocationID
 	} else {
 		// It is an ongoing progressive call (not first one)
 		invk = d.invocations[storedInvocationID]

@@ -174,6 +174,102 @@ func TestBasicCall(t *testing.T) {
 	require.Equal(t, wamp.ID(126), errMsg.Request, "wrong request ID in ERROR, should match call ID")
 }
 
+// Ensure INVOCATION.Request IDs are incremented by 1 and scoped to the
+// Callee's session.
+func TestInvocationSessionSequentialIDs(t *testing.T) {
+	dealer, _ := newTestDealer(t)
+	dealer.debug = true
+
+	// Set up 2 Callees with 2 unique registered procedure names
+	const numCallee = 2
+	const numProcNames = 2
+	var procNames [numCallee][numProcNames]wamp.URI
+	var callee [numCallee]*testPeer
+	var calleeSess [numCallee]*wamp.Session
+
+	routerScopeID := 1
+	for i := range numCallee {
+		callee[i] = newTestPeer()
+		calleeSess[i] = wamp.NewSession(callee[i], wamp.ID(9990+i), nil, nil)
+		for n := range numProcNames {
+			procNames[i][n] = wamp.URI(fmt.Sprintf("nexus.test.callee%d.proc%d", i, n))
+			dealer.register(calleeSess[i],
+				&wamp.Register{
+					Request:   wamp.ID(n),
+					Procedure: procNames[i][n],
+				})
+
+			var rsp wamp.Message
+			select {
+			case rsp = <-callee[i].Recv():
+			case <-time.After(time.Millisecond):
+				require.FailNowf(t, "timed out waiting for response", "callee[%d]", i)
+			}
+			switch rsp.(type) {
+			case *wamp.Registered:
+				// Tests that Dealer is using router scoped IDs for proc reg
+				require.Equal(t, wamp.ID(routerScopeID),
+					rsp.(*wamp.Registered).Registration)
+				routerScopeID++
+			case *wamp.Error:
+				require.FailNowf(t, "error registering procedure",
+					"callee[%d] err=%v", i, rsp.(*wamp.Error))
+			default:
+				require.FailNowf(t, "did not receive REGISTERED response",
+					"callee[%d] got=%v", i, rsp.MessageType())
+
+			}
+		}
+	}
+
+	// Create a Callers to test invocation of each procedure
+	const numCallers = 2
+	var caller [numCallers]*testPeer
+	var callerSess [numCallers]*wamp.Session
+	for i := range numCallers {
+		caller[i] = newTestPeer()
+		callerSess[i] = wamp.NewSession(caller[i], wamp.ID(2240+i), nil, nil)
+	}
+
+	// Call procName and ensure callee got expectedID for INVOCATION.request
+	callAndCheckInvocationRequestID := func(callerIdx int, calleeSess *wamp.Session, procName wamp.URI, expectedID int) {
+		fmt.Println("calling", procName)
+		dealer.call(
+			callerSess[callerIdx],
+			&wamp.Call{Request: callerSess[callerIdx].IDGen.Next(), Procedure: procName})
+
+		rsp, err := wamp.RecvTimeout(calleeSess, time.Second)
+		require.NoError(t, err)
+		werr, ok := rsp.(*wamp.Error)
+		require.Falsef(t, ok, "unexpected error from callee %s", werr)
+
+		inv, ok := rsp.(*wamp.Invocation)
+		require.True(t, ok, "expected INVOCATION; Got: ", rsp.MessageType().String())
+		require.Equalf(t, wamp.ID(expectedID), inv.Request, "invocation request ID should be %d", expectedID)
+	}
+
+	// Caller 0 invoke Callee 0 and 1 with both procedures
+	callAndCheckInvocationRequestID(0, calleeSess[1], procNames[1][0], 1)
+	callAndCheckInvocationRequestID(0, calleeSess[1], procNames[1][1], 2)
+	callAndCheckInvocationRequestID(0, calleeSess[0], procNames[0][0], 1)
+	callAndCheckInvocationRequestID(0, calleeSess[0], procNames[0][1], 2)
+
+	callAndCheckInvocationRequestID(0, calleeSess[1], procNames[1][1], 3)
+	callAndCheckInvocationRequestID(0, calleeSess[0], procNames[0][0], 3)
+
+	// Caller 1 invoke Callee 0 with both procedures
+	// Because it is the same Callee (even with different Caller) the IDs
+	// continue to increment
+	callAndCheckInvocationRequestID(1, calleeSess[0], procNames[0][1], 4)
+	callAndCheckInvocationRequestID(1, calleeSess[0], procNames[0][0], 5)
+
+	// Weave Callers on Callee 1
+	callAndCheckInvocationRequestID(1, calleeSess[1], procNames[1][1], 4)
+	callAndCheckInvocationRequestID(0, calleeSess[1], procNames[1][0], 5)
+	callAndCheckInvocationRequestID(1, calleeSess[1], procNames[1][0], 6)
+	callAndCheckInvocationRequestID(0, calleeSess[1], procNames[1][1], 7)
+}
+
 func TestRemovePeer(t *testing.T) {
 	dealer, metaClient := newTestDealer(t)
 

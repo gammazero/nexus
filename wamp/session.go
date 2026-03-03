@@ -15,6 +15,10 @@ type Session struct {
 	ID ID
 	// Details about session.
 	Details Dict
+	IDGen   SyncIDGen
+	// Greatest value of Dealer's end of Session Scope ID. Use IsNewRecvID()
+	// and UpdateLastRecvID() for comparison/update.
+	lastRecvID ID
 
 	// Roles and features supported by peer.
 	roles map[string]map[string]struct{}
@@ -158,4 +162,54 @@ func (s *Session) setRoles(details Dict) {
 		roleMap[role] = featMap
 	}
 	s.roles = roleMap
+}
+
+// UpdateLastRecvID updates the Session's lastRecvID with IDs coming from the
+// other end. Returns true if this is a new ID.
+//
+// This is our only way to track the session-based request IDs to determine if
+// we're responding to a new request.
+func (s *Session) UpdateLastRecvID(id ID) bool {
+	s.Lock()
+	defer s.Unlock()
+	return s.UpdateLastRecvIDLocked(id)
+}
+
+// UpdateLastRecvIDLocked works just like UpdateLastRecvID if, but expects that
+// the caller holds the session lock.
+func (s *Session) UpdateLastRecvIDLocked(id ID) bool {
+	if s.IsNewRecvID(id) {
+		s.lastRecvID = id
+		return true
+	}
+	return false
+}
+
+// IsNewRecvID returns true if the ID is considered new.
+//
+// It is not guaranteed that when lastRecvID is MaxID the next ID will be 1,
+// becuase it is possible for a Dealer to skip IDs if there are internal errors
+// or if it incorrectly uses Dealer scoped IDs instead of Session scoped. To
+// maximize compatability, allow ID rollover/wraparound as long as the
+// wraparound distance is withing an allowed limit.
+//
+// Call this function when the Session.Lock is held.
+func (s *Session) IsNewRecvID(id ID) bool {
+	const deltaID = ID(500) // maximum allowed wraparound distance
+
+	last := s.lastRecvID
+
+	if id == last {
+		return false
+	}
+	// If the new id is less than the last id, and the wrap-around distance
+	// from the last id to the new id is withing delta, then this is a
+	// legitimate new id within the allowed wraparound.
+	if id < last {
+		return (MaxID - (last - id)) < deltaID
+	}
+
+	// Can only advance at most deltaID. This is specifically to prevent
+	// jumping to close to the last id after a wraparound.
+	return id > last && (id-last) < deltaID
 }
