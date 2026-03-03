@@ -1534,20 +1534,21 @@ func (c *Client) runHandleEvent(msg *wamp.Event) {
 }
 
 func (c *Client) cleanupInvHandlersQueue(cliInvocation clientInvocation) {
+	if c.debug {
+		c.log.Println("Running cleanupInvHandlersQueue cleanup for", cliInvocation)
+	}
+
 	c.sess.Lock()
-	defer c.sess.Unlock()
 
 	handlerQueue, ok := c.invHandlersQueues[cliInvocation]
 	if !ok {
+		c.sess.Unlock()
 		return
 	}
 	delete(c.invHandlersQueues, cliInvocation)
 	delete(c.invHandlersCtxs, cliInvocation)
 
-	if c.debug {
-		c.log.Println("Running cleanupInvHandlersQueue cleanup for", cliInvocation)
-	}
-
+	c.sess.Unlock()
 	// Drain chan in case anyone is blocked.
 	for {
 		select {
@@ -1707,7 +1708,6 @@ func (c *Client) runHandleInvocation(msg *wamp.Invocation) {
 						}
 
 						if isInProgress, _ := msg.Details[wamp.OptProgress].(bool); !isInProgress {
-							c.cleanupInvHandlersQueue(cliInvocation)
 							processMessages = false
 						}
 
@@ -1723,7 +1723,7 @@ func (c *Client) runHandleInvocation(msg *wamp.Invocation) {
 							return
 						}
 						if result.Err != "" && result.Err != wamp.InternalProgressiveOmitResult {
-							processMessages = false
+							return
 						}
 					case <-c.Done():
 						return

@@ -8,8 +8,6 @@ import (
 )
 
 func TestIsNewRecvIDBounds(t *testing.T) {
-	const deltaID = ID(500)
-
 	testCases := [...]struct {
 		last     ID
 		id       ID

@@ -5,6 +5,8 @@ import (
 	"sync"
 )
 
+const deltaID = ID(500) // maximum allowed wraparound distance
+
 // Session is an active WAMP session. It associates a session ID and details
 // with a connected Peer, which is the remote side of the session. So, if the
 // session owned by the router, then the Peer is the connected client.
@@ -195,8 +197,6 @@ func (s *Session) UpdateLastRecvIDLocked(id ID) bool {
 //
 // Call this function when the Session.Lock is held.
 func (s *Session) IsNewRecvID(id ID) bool {
-	const deltaID = ID(500) // maximum allowed wraparound distance
-
 	// Reject invalid IDs: WAMP request IDs must be > 0 and <= MaxID.
 	if id == 0 || id > MaxID {
 		return false
