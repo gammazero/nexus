@@ -568,21 +568,21 @@ func TestProgressiveCallResults(t *testing.T) {
 	handler := func(ctx context.Context, inv *wamp.Invocation) client.InvokeResult {
 		senderr := callee.SendProgress(ctx, wamp.List{"Alpha"}, nil)
 		if senderr != nil {
-			fmt.Println("Error sending Alpha progress:", senderr)
+			t.Log("Error sending Alpha progress:", senderr)
 			return client.InvokeResult{Err: "test.failed"}
 		}
 		time.Sleep(500 * time.Millisecond)
 
 		senderr = callee.SendProgress(ctx, wamp.List{"Bravo"}, nil)
 		if senderr != nil {
-			fmt.Println("Error sending Bravo progress:", senderr)
+			t.Log("Error sending Bravo progress:", senderr)
 			return client.InvokeResult{Err: "test.failed"}
 		}
 		time.Sleep(500 * time.Millisecond)
 
 		senderr = callee.SendProgress(ctx, wamp.List{"Charlie"}, nil)
 		if senderr != nil {
-			fmt.Println("Error sending Charlie progress:", senderr)
+			t.Log("Error sending Charlie progress:", senderr)
 			return client.InvokeResult{Err: "test.failed"}
 		}
 		time.Sleep(500 * time.Millisecond)

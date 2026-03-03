@@ -505,7 +505,7 @@ func (r *realm) handleInboundMessages(sess *wamp.Session) (bool, bool, error) {
 			if msg.Type != wamp.INVOCATION {
 				return false, false, fmt.Errorf("invalid ERROR received: %v", msg)
 			}
-			r.dealer.error(msg)
+			r.dealer.error(sess, msg)
 
 		case *wamp.Goodbye:
 			// Handle client leaving realm.

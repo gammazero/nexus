@@ -165,7 +165,7 @@ func TestBasicCall(t *testing.T) {
 	inv = rsp.(*wamp.Invocation)
 
 	// Callee responds with a ERROR message
-	dealer.error(&wamp.Error{Request: inv.Request})
+	dealer.error(calleeSess, &wamp.Error{Request: inv.Request})
 
 	// Check that caller received an ERROR message.
 	rsp = <-caller.Recv()
@@ -233,7 +233,7 @@ func TestInvocationSessionSequentialIDs(t *testing.T) {
 
 	// Call procName and ensure callee got expectedID for INVOCATION.request
 	callAndCheckInvocationRequestID := func(callerIdx int, calleeSess *wamp.Session, procName wamp.URI, expectedID int) {
-		fmt.Println("calling", procName)
+		t.Log("calling", procName)
 		dealer.call(
 			callerSess[callerIdx],
 			&wamp.Call{Request: callerSess[callerIdx].IDGen.Next(), Procedure: procName})
@@ -456,7 +456,7 @@ func TestCallTimeoutOnClient(t *testing.T) {
 		Error:     wamp.ErrTimeout,
 		Arguments: wamp.List{"call timeout"},
 	}
-	dealer.error(errMsg)
+	dealer.error(calleeSess, errMsg)
 
 	rsp = <-caller.Recv()
 
@@ -516,7 +516,7 @@ func TestCancelCallModeKill(t *testing.T) {
 	require.Equal(t, inv.Request, interrupt.Request, "INTERRUPT request ID does not match INVOCATION request ID")
 
 	// callee responds with ERROR message
-	dealer.error(&wamp.Error{
+	dealer.error(calleeSess, &wamp.Error{
 		Type:    wamp.INVOCATION,
 		Request: inv.Request,
 		Error:   wamp.ErrCanceled,
@@ -580,7 +580,7 @@ func TestCancelCallModeKillNoWait(t *testing.T) {
 	require.Equal(t, inv.Request, interrupt.Request, "INTERRUPT request ID does not match INVOCATION request ID")
 
 	// callee responds with ERROR message
-	dealer.error(&wamp.Error{
+	dealer.error(calleeSess, &wamp.Error{
 		Type:    wamp.INVOCATION,
 		Request: inv.Request,
 		Error:   wamp.ErrCanceled,
@@ -1097,7 +1097,7 @@ func TestRPCBlockedUnresponsiveCallee(t *testing.T) {
 sendLoop:
 	for {
 		i++
-		fmt.Println("Calling", i)
+		t.Log("Calling", i)
 		// Test calling valid procedure
 		dealer.call(callerSession, &wamp.Call{
 			Request:   wamp.ID(i + 225),
