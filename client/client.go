@@ -1575,8 +1575,7 @@ func (c *Client) runHandleInvocation(msg *wamp.Invocation) {
 	handler, ok := c.invHandlers[msg.Registration]
 	if !ok {
 		c.sess.Unlock()
-		errMsg := fmt.Sprintf("client has no handler for registration %v",
-			msg.Registration)
+		errMsg := fmt.Sprintf("client has no handler for registration %v", msg.Registration)
 		// The dealer has a procedure registered to this client, but this
 		// client does not recognize the registration ID. This is not reported
 		// as ErrNoSuchProcedure, since the dealer has a procedure registered.
@@ -1597,6 +1596,7 @@ func (c *Client) runHandleInvocation(msg *wamp.Invocation) {
 	// @see https://wamp-proto.org/wamp_latest_ietf.html#name-payload-passthru-mode
 	if pptScheme, _ := msg.Details[wamp.OptPPTScheme].(string); pptScheme != "" {
 		if !isPPTSchemeValid(pptScheme) {
+			c.sess.Unlock()
 			c.sess.Send() <- &wamp.Error{
 				Type:      wamp.INVOCATION,
 				Request:   reqID,
@@ -1621,6 +1621,7 @@ func (c *Client) runHandleInvocation(msg *wamp.Invocation) {
 		}
 
 		if err != nil {
+			c.sess.Unlock()
 			c.sess.Send() <- &wamp.Error{
 				Type:      wamp.INVOCATION,
 				Request:   reqID,
