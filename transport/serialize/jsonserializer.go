@@ -14,7 +14,7 @@ var jh *codec.JsonHandle //nolint:gochecknoglobals
 
 func init() {
 	jh = &codec.JsonHandle{}
-	jh.MapType = reflect.TypeOf(map[string]any(nil))
+	jh.MapType = reflect.TypeFor[map[string]any]()
 }
 
 // JSONSerializer is an implementation of Serializer that handles

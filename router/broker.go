@@ -3,6 +3,7 @@ package router
 import (
 	"fmt"
 	"maps"
+	"slices"
 	"time"
 
 	"github.com/gammazero/deque"
@@ -779,8 +780,7 @@ func prepareEvent(pub *wamp.Session, msg *wamp.Publish, pubID wamp.ID, sub *subs
 			event.Details = options
 		}
 		if msg.Arguments != nil {
-			event.Arguments = make([]any, len(msg.Arguments))
-			copy(event.Arguments, msg.Arguments)
+			event.Arguments = slices.Clone(msg.Arguments)
 		}
 		if msg.ArgumentsKw != nil {
 			argsKw := make(map[string]any, len(msg.ArgumentsKw))

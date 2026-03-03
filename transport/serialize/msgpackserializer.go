@@ -23,7 +23,7 @@ func init() {
 func InitMsgpackHandle() {
 	mh = new(codec.MsgpackHandle)
 	mh.WriteExt = true
-	mh.MapType = reflect.TypeOf(map[string]any(nil))
+	mh.MapType = reflect.TypeFor[map[string]any]()
 }
 
 // MsgpackRegisterExtension registers a custom type for special serialization.
