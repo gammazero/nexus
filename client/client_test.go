@@ -9,6 +9,7 @@ import (
 	"os"
 	"regexp"
 	"sync"
+	"sync/atomic"
 	"testing"
 	"testing/synctest"
 	"time"
@@ -31,6 +32,9 @@ const (
 
 	testTopic  = "test.topic1"
 	testTopic2 = "test.topic2"
+
+	debugClientEnv = "TEST_DEBUG_CLIENT"
+	debugRouterEnv = "TEST_DEBUG_ROUTER"
 )
 
 var logger stdlog.StdLog
@@ -42,6 +46,7 @@ func init() {
 func getTestRouter(t *testing.T, realmConfig *router.RealmConfig) router.Router {
 	config := &router.Config{
 		RealmConfigs: []*router.RealmConfig{realmConfig},
+		Debug:        os.Getenv(debugRouterEnv) != "",
 	}
 	r, err := router.NewRouter(config, logger)
 	require.NoError(t, err)
@@ -90,7 +95,7 @@ func newTestClientConfig(realmName string, fns ...clientConfigMutator) *client.C
 		Realm:           realmName,
 		ResponseTimeout: 500 * time.Millisecond,
 		Logger:          logger,
-		Debug:           false,
+		Debug:           os.Getenv(debugClientEnv) != "",
 	}
 	for _, fn := range fns {
 		fn(clientConfig)
@@ -564,21 +569,21 @@ func TestProgressiveCallResults(t *testing.T) {
 	handler := func(ctx context.Context, inv *wamp.Invocation) client.InvokeResult {
 		senderr := callee.SendProgress(ctx, wamp.List{"Alpha"}, nil)
 		if senderr != nil {
-			fmt.Println("Error sending Alpha progress:", senderr)
+			t.Log("Error sending Alpha progress:", senderr)
 			return client.InvokeResult{Err: "test.failed"}
 		}
 		time.Sleep(500 * time.Millisecond)
 
 		senderr = callee.SendProgress(ctx, wamp.List{"Bravo"}, nil)
 		if senderr != nil {
-			fmt.Println("Error sending Bravo progress:", senderr)
+			t.Log("Error sending Bravo progress:", senderr)
 			return client.InvokeResult{Err: "test.failed"}
 		}
 		time.Sleep(500 * time.Millisecond)
 
 		senderr = callee.SendProgress(ctx, wamp.List{"Charlie"}, nil)
 		if senderr != nil {
-			fmt.Println("Error sending Charlie progress:", senderr)
+			t.Log("Error sending Charlie progress:", senderr)
 			return client.InvokeResult{Err: "test.failed"}
 		}
 		time.Sleep(500 * time.Millisecond)
@@ -685,6 +690,108 @@ func TestProgressiveCallInvocations(t *testing.T) {
 	// Test unregister.
 	err = callee.Unregister(procName)
 	require.NoError(t, err)
+}
+
+// Tests that a callee can return error while caller IsInProgress
+// Test for #319 to ensure messages in-flight do not re-open the handlerQueue
+// or call the handler function after the callee has errored.
+func TestProgressiveCallInvocationCalleeError(t *testing.T) {
+	// Connect two clients to the same server
+	// t.Setenv(debugRouterEnv, "1")
+	if os.Getenv(debugClientEnv) != "" {
+		t.Setenv(debugClientEnv, "1")
+	}
+	callee, caller, rooter := connectedTestClients(t)
+
+	const forcedError = wamp.URI("error.forced")
+	moreArgsSent := make(chan struct{})
+	var errorRaised atomic.Bool
+
+	invocationHandler := func(ctx context.Context, inv *wamp.Invocation) client.InvokeResult {
+		if len(inv.Arguments) == 0 {
+			t.Error("Invocation missing required argument")
+			return client.InvokeResult{Err: wamp.ErrInvalidArgument}
+		}
+
+		n, ok := wamp.AsInt64(inv.Arguments[0])
+		if !ok {
+			t.Errorf("Invocation argument has unexpected type: %T", inv.Arguments[0])
+			return client.InvokeResult{Err: wamp.ErrInvalidArgument}
+		}
+
+		switch n {
+		case 1:
+			// Eat the first arg
+			t.Log("n=1 Returning OmitResult")
+			return client.InvokeResult{Err: wamp.InternalProgressiveOmitResult}
+		case 2:
+			t.Log("n=2 Waiting for moreArgsSent")
+			// Wait till the 4th arg is sent which means 3 should already
+			// be waiting
+			<-moreArgsSent
+			time.Sleep(100 * time.Millisecond)
+			errorRaised.Store(true)
+			t.Log("n=2 Returning error (as expected)")
+			// Error
+			return client.InvokeResult{Err: forcedError}
+		default:
+			// BUG: The handler function should never be called again
+			t.Error("Handler should not have been called after error returned")
+			return client.InvokeResult{Err: wamp.ErrInvalidArgument}
+		}
+	}
+
+	const procName = "nexus.test.progprocerr"
+
+	// Register procedure
+	err := callee.Register(procName, invocationHandler, nil)
+	require.NoError(t, err)
+
+	// Test calling the procedure.
+	callArgs := [...]int{1, 2, 3, 4, 5, 6, 7, 8, 9, 10}
+	ctx := context.Background()
+
+	sendCount := 0
+	sendProgDataCb := func(ctx context.Context) (options wamp.Dict, args wamp.List, kwargs wamp.Dict, err error) {
+		options = wamp.Dict{
+			wamp.OptProgress: sendCount < (len(callArgs) - 1),
+		}
+
+		args = wamp.List{callArgs[sendCount]}
+		sendCount++
+
+		// signal the handler should return its error
+		if sendCount == 4 {
+			close(moreArgsSent)
+		}
+		t.Logf("Sending n=%v", sendCount)
+
+		return options, args, nil, nil
+	}
+
+	result, err := caller.CallProgressive(ctx, procName, sendProgDataCb, nil)
+	require.Error(t, err, "Expected call to return an error")
+	require.Nil(t, result, "Expected call to return no result")
+	var rErr client.RPCError
+	if errors.As(err, &rErr) {
+		require.Equal(t, forcedError, rErr.Err.Error, "Unexpected error URI")
+	} else {
+		t.Error("Unexpected error type")
+	}
+	require.GreaterOrEqual(t, sendCount, 4)
+	require.True(t, errorRaised.Load(), "Error was never raised in handler")
+
+	// #319: Show deadlock
+	t.Log("Closing rooter")
+	rooter.Close()
+	t.Log("Closing caller")
+	require.NoError(t, caller.Close())
+	t.Log("Closing callee")
+	// #319: We never get past here
+	require.NoError(t, callee.Close())
+
+	t.Log("All closed")
+	t.Log("Done")
 }
 
 func TestProgressiveCallsAndResults(t *testing.T) {

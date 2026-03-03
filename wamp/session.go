@@ -5,6 +5,8 @@ import (
 	"sync"
 )
 
+const deltaID = ID(500) // maximum allowed wraparound distance
+
 // Session is an active WAMP session. It associates a session ID and details
 // with a connected Peer, which is the remote side of the session. So, if the
 // session owned by the router, then the Peer is the connected client.
@@ -15,6 +17,10 @@ type Session struct {
 	ID ID
 	// Details about session.
 	Details Dict
+	IDGen   SyncIDGen
+	// Greatest value of Dealer's end of Session Scope ID. Use IsNewRecvID()
+	// and UpdateLastRecvID() for comparison/update.
+	lastRecvID ID
 
 	// Roles and features supported by peer.
 	roles map[string]map[string]struct{}
@@ -158,4 +164,59 @@ func (s *Session) setRoles(details Dict) {
 		roleMap[role] = featMap
 	}
 	s.roles = roleMap
+}
+
+// UpdateLastRecvID updates the Session's lastRecvID with IDs coming from the
+// other end. Returns true if this is a new ID.
+//
+// This is our only way to track the session-based request IDs to determine if
+// we're responding to a new request.
+func (s *Session) UpdateLastRecvID(id ID) bool {
+	s.Lock()
+	defer s.Unlock()
+	return s.UpdateLastRecvIDLocked(id)
+}
+
+// UpdateLastRecvIDLocked works just like UpdateLastRecvID but expects that the
+// caller holds the session lock.
+func (s *Session) UpdateLastRecvIDLocked(id ID) bool {
+	if s.IsNewRecvID(id) {
+		s.lastRecvID = id
+		return true
+	}
+	return false
+}
+
+// IsNewRecvID returns true if the ID is considered new.
+//
+// It is not guaranteed that when lastRecvID is MaxID the next ID will be 1,
+// because it is possible for a Dealer to skip IDs if there are internal errors
+// or if it incorrectly uses Dealer scoped IDs instead of Session scoped. To
+// maximize compatibility, allow ID rollover/wraparound as long as the
+// wraparound distance is within an allowed limit.
+//
+// Call this function when the Session.Lock is held.
+func (s *Session) IsNewRecvID(id ID) bool {
+	// Reject invalid IDs: WAMP request IDs must be > 0 and <= MaxID.
+	if id == 0 || id > MaxID {
+		return false
+	}
+
+	last := s.lastRecvID
+
+	// Have not seen any previous id, so any valid id must be new.
+	if last == 0 {
+		return true
+	}
+	// For forward progress, accept any strictly increasing ID.
+	if id > last {
+		return true
+	}
+	if id == last {
+		return false
+	}
+	// If the new id is less than the last id, and the wrap-around distance
+	// from the last id to the new id is within delta, then this is a
+	// legitimate new id within the allowed wraparound.
+	return (MaxID - (last - id)) < deltaID
 }

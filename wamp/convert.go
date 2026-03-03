@@ -18,7 +18,7 @@ func AsString(v any) (string, bool) {
 // AsID is an extended type assertion for ID.
 func AsID(v any) (ID, bool) {
 	if i64, ok := AsInt64(v); ok {
-		if i64 > 0 && i64 <= maxID { // if valid ID
+		if i64 > 0 && i64 <= MaxID { // if valid ID
 			return ID(i64), true
 		}
 	}

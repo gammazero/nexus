@@ -6,11 +6,12 @@ import (
 	"sync"
 )
 
-const maxID = 1 << 53
+// MaxID is the maximum valid WAMP ID.
+const MaxID = 1 << 53
 
 // GlobalID generates a random WAMP ID.
 func GlobalID() ID {
-	return ID(uint64(secureInt63n(maxID)) + 1) //nolint:gosec // G115 ok, secureInt63n never negative.
+	return ID(uint64(secureInt63n(MaxID)) + 1) //nolint:gosec // G115 ok, secureInt63n never negative.
 }
 
 // IDGen is generator for WAMP request IDs. Create with new(IDGen).
@@ -31,13 +32,13 @@ type IDGen struct {
 // Next returns next ID.
 func (g *IDGen) Next() ID {
 	g.next++
-	if g.next > maxID {
+	if g.next > MaxID {
 		g.next = 1
 	}
 	return ID(g.next)
 }
 
-// SyncIDGen is a concurrent-safe IDGen. Create with new(SyncIDGen).
+// SyncIDGen is a concurrent-safe IDGen.
 type SyncIDGen struct {
 	IDGen
 	lock sync.Mutex

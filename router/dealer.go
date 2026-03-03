@@ -69,6 +69,10 @@ type requestID struct {
 	request wamp.ID
 }
 
+func (r requestID) String() string {
+	return fmt.Sprintf("%d-%d", r.session, r.request)
+}
+
 type dealer struct {
 	// procedure URI -> registration ID
 	procRegMap    map[wamp.URI]*registration
@@ -83,10 +87,10 @@ type dealer struct {
 	calls map[requestID]*wamp.Session
 
 	// invocation ID -> {call ID, callee, canceled}
-	invocations map[wamp.ID]*invocation
+	invocations map[requestID]*invocation
 
 	// call ID -> invocation ID (for cancel)
-	invocationByCall map[requestID]wamp.ID
+	invocationByCall map[requestID]requestID
 
 	// callee session -> registration ID set.
 	// Used to lookup registrations when removing a callee session.
@@ -126,8 +130,8 @@ func newDealer(logger stdlog.StdLog, strictURI, allowDisclose, debug bool) *deal
 		registrations: map[wamp.ID]*registration{},
 
 		calls:            map[requestID]*wamp.Session{},
-		invocations:      map[wamp.ID]*invocation{},
-		invocationByCall: map[requestID]wamp.ID{},
+		invocations:      map[requestID]*invocation{},
+		invocationByCall: map[requestID]requestID{},
 		calleeRegIDSet:   map[*wamp.Session]map[wamp.ID]struct{}{},
 
 		// The action handler should be nearly always runable, since it is the
@@ -361,12 +365,12 @@ func (d *dealer) yield(callee *wamp.Session, msg *wamp.Yield) {
 }
 
 // error handles an invocation error returned by the callee.
-func (d *dealer) error(msg *wamp.Error) {
+func (d *dealer) error(callee *wamp.Session, msg *wamp.Error) {
 	if msg == nil {
 		panic("dealer.Error with nil message")
 	}
 	d.actionChan <- func() {
-		d.syncError(msg)
+		d.syncError(callee, msg)
 	}
 }
 
@@ -703,15 +707,12 @@ func (d *dealer) syncCall(caller *wamp.Session, msg *wamp.Call) {
 			request: msg.Request,
 		}
 		d.calls[reqID] = caller
-		invocationID = d.idGen.Next()
 		invk = &invocation{
 			callID:     reqID,
 			callee:     callee,
 			inProgress: isInProgress,
 			options:    msg.Options,
 		}
-		d.invocations[invocationID] = invk
-		d.invocationByCall[reqID] = invocationID
 
 		// Let's check if callee supports this feature. A Callee that supports
 		// progressive call invocations, but does not support call canceling,
@@ -814,12 +815,21 @@ func (d *dealer) syncCall(caller *wamp.Session, msg *wamp.Call) {
 			details[wamp.OptProcedure] = msg.Procedure
 		}
 
+		// Generate the invocationID now that it is certain that the invocation
+		// will be sent.
+		invocationID = callee.IDGen.Next()
+		invkReqID := requestID{
+			session: callee.ID,
+			request: invocationID,
+		}
+		d.invocations[invkReqID] = invk
+		d.invocationByCall[reqID] = invkReqID
 	} else {
 		// It is an ongoing progressive call (not first one)
 		invk = d.invocations[storedInvocationID]
 		invk.inProgress = isInProgress
 		callee = invk.callee
-		invocationID = storedInvocationID
+		invocationID = storedInvocationID.request
 	}
 
 	// A Caller might want to issue a call providing a timeout for the call to
@@ -861,7 +871,7 @@ func (d *dealer) syncCall(caller *wamp.Session, msg *wamp.Call) {
 	select {
 	case callee.Send() <- invMsg:
 	default:
-		d.syncError(&wamp.Error{
+		d.syncError(callee, &wamp.Error{
 			Type:      wamp.INVOCATION,
 			Request:   invocationID,
 			Details:   wamp.Dict{},
@@ -926,13 +936,13 @@ func (d *dealer) syncCancel(caller *wamp.Session, msg *wamp.Cancel, mode string,
 	}
 
 	// Find the pending invocation.
-	invocationID, ok := d.invocationByCall[reqID]
+	invkReqID, ok := d.invocationByCall[reqID]
 	if !ok {
 		// If there is no pending invocation, ignore cancel.
 		d.log.Print("Found call with no pending invocation")
 		return
 	}
-	invk, ok := d.invocations[invocationID]
+	invk, ok := d.invocations[invkReqID]
 	if !ok {
 		d.log.Print("CRITICAL: missing caller for pending invocation")
 		return
@@ -958,14 +968,12 @@ func (d *dealer) syncCancel(caller *wamp.Session, msg *wamp.Cancel, mode string,
 		} else {
 			// Send INTERRUPT message to callee.
 			intrMsg := &wamp.Interrupt{
-				Request: invocationID,
+				Request: invkReqID.request,
 				Options: wamp.Dict{wamp.OptReason: reason, wamp.OptMode: mode},
 			}
 			select {
 			case invk.callee.Send() <- intrMsg:
-				d.log.Println("Dealer sent INTERRUPT to cancel invocation",
-					invocationID, "for call", msg.Request, "mode:", mode)
-
+				d.log.Println("Dealer sent INTERRUPT to cancel invocation", invkReqID, "for call", msg.Request, "mode:", mode)
 				// If mode is "kill" then let error from callee trigger the
 				// response to the caller. This is how the caller waits for the
 				// callee to cancel the call.
@@ -985,7 +993,7 @@ func (d *dealer) syncCancel(caller *wamp.Session, msg *wamp.Cancel, mode string,
 	// This also stops repeated CANCEL messages.
 	delete(d.calls, reqID)
 	delete(d.invocationByCall, reqID)
-	delete(d.invocations, invocationID)
+	delete(d.invocations, invkReqID)
 
 	errMsg := &wamp.Error{
 		Type:    wamp.CALL,
@@ -1002,8 +1010,13 @@ func (d *dealer) syncCancel(caller *wamp.Session, msg *wamp.Cancel, mode string,
 }
 
 func (d *dealer) syncYield(callee *wamp.Session, msg *wamp.Yield, progress, canRetry bool) bool {
+	invkReqID := requestID{
+		session: callee.ID,
+		request: msg.Request,
+	}
+
 	// Find and delete pending invocation.
-	invk, ok := d.invocations[msg.Request]
+	invk, ok := d.invocations[invkReqID]
 	if !ok {
 		// The pending invocation is gone, which means the caller has left the
 		// realm or canceled the call.
@@ -1060,7 +1073,7 @@ func (d *dealer) syncYield(callee *wamp.Session, msg *wamp.Yield, progress, canR
 			if keepInvocation || invk.inProgress {
 				return
 			}
-			delete(d.invocations, msg.Request)
+			delete(d.invocations, invkReqID)
 			// Delete callID -> invocation.
 			delete(d.invocationByCall, callID)
 			// Delete pending call since it is finished.
@@ -1150,9 +1163,14 @@ func (d *dealer) syncYield(callee *wamp.Session, msg *wamp.Yield, progress, canR
 	return false
 }
 
-func (d *dealer) syncError(msg *wamp.Error) {
+func (d *dealer) syncError(callee *wamp.Session, msg *wamp.Error) {
+	invkReqID := requestID{
+		session: callee.ID,
+		request: msg.Request,
+	}
+
 	// Find and delete pending invocation.
-	invk, ok := d.invocations[msg.Request]
+	invk, ok := d.invocations[invkReqID]
 	if !ok {
 		d.log.Println("Received ERROR (INVOCATION) with invalid request ID:",
 			msg.Request, "(response to canceled call)")
@@ -1163,10 +1181,10 @@ func (d *dealer) syncError(msg *wamp.Error) {
 		invk.timerCancel()
 	}
 
-	delete(d.invocations, msg.Request)
+	delete(d.invocations, invkReqID)
 	callID := invk.callID
 
-	// Delete invocationsByCall entry. This will already be deleted if the call
+	// Delete invocationByCall entry. This will already be deleted if the call
 	// canceled with mode "skip" or "killnowait".
 	delete(d.invocationByCall, callID)
 
