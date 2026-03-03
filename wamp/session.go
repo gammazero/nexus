@@ -175,8 +175,8 @@ func (s *Session) UpdateLastRecvID(id ID) bool {
 	return s.UpdateLastRecvIDLocked(id)
 }
 
-// UpdateLastRecvIDLocked works just like UpdateLastRecvID if, but expects that
-// the caller holds the session lock.
+// UpdateLastRecvIDLocked works just like UpdateLastRecvID but expects that the
+// caller holds the session lock.
 func (s *Session) UpdateLastRecvIDLocked(id ID) bool {
 	if s.IsNewRecvID(id) {
 		s.lastRecvID = id
