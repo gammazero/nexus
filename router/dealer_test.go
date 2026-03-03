@@ -205,15 +205,15 @@ func TestInvocationSessionSequentialIDs(t *testing.T) {
 			case <-time.After(time.Millisecond):
 				require.FailNowf(t, "timed out waiting for response", "callee[%d]", i)
 			}
-			switch rsp.(type) {
+			switch rsp := rsp.(type) {
 			case *wamp.Registered:
 				// Tests that Dealer is using router scoped IDs for proc reg
 				require.Equal(t, wamp.ID(routerScopeID),
-					rsp.(*wamp.Registered).Registration)
+					rsp.Registration)
 				routerScopeID++
 			case *wamp.Error:
 				require.FailNowf(t, "error registering procedure",
-					"callee[%d] err=%v", i, rsp.(*wamp.Error))
+					"callee[%d] err=%v", i, rsp)
 			default:
 				require.FailNowf(t, "did not receive REGISTERED response",
 					"callee[%d] got=%v", i, rsp.MessageType())

@@ -25,8 +25,8 @@ var dataItem = []map[string]any{{
 //	return err == nil
 //}
 
-func hasFeature(details wamp.Dict, role, feature string) bool {
-	b, _ := wamp.DictFlag(details, []string{"roles", role, "features", feature})
+func hasPubBWListingFeature(details wamp.Dict) bool {
+	b, _ := wamp.DictFlag(details, []string{"roles", "publisher", "features", "subscriber_blackwhite_listing"})
 	return b
 }
 
@@ -109,7 +109,7 @@ func TestJSONSerialize(t *testing.T) {
 	msg, err := s.Deserialize(b)
 	require.NoError(t, err)
 	require.Equal(t, wamp.HELLO, msg.MessageType(), "desrialization to wrong message type")
-	has := hasFeature(hello.Details, "publisher", "subscriber_blackwhite_listing")
+	has := hasPubBWListingFeature(hello.Details)
 	require.True(t, has, "did not deserialize message details")
 
 	val, ok := hello.Details["nothere"]
@@ -188,7 +188,7 @@ func TestCBORSerialize(t *testing.T) {
 	msg, err := s.Deserialize(b)
 	require.NoError(t, err)
 	require.Equal(t, wamp.HELLO, msg.MessageType(), "desrialization to wrong message type")
-	has := hasFeature(hello.Details, "publisher", "subscriber_blackwhite_listing")
+	has := hasPubBWListingFeature(hello.Details)
 	require.True(t, has, "did not deserialize message details")
 
 	val, ok := hello.Details["nothere"]
@@ -278,7 +278,7 @@ func TestMessagePackSerialize(t *testing.T) {
 	require.Equal(t, wamp.HELLO, msg.MessageType(), "desrialization to wrong message type")
 	hello2, ok := msg.(*wamp.Hello)
 	require.True(t, ok, "deserialized message is not wamp.Hello")
-	has := hasFeature(hello2.Details, "publisher", "subscriber_blackwhite_listing")
+	has := hasPubBWListingFeature(hello2.Details)
 	require.True(t, has, "did not deserialize message details")
 
 	val, ok := hello2.Details["nothere"]
@@ -311,7 +311,7 @@ func TestConcurrentMessagePackSerialize(t *testing.T) {
 				h2, ok := msg.(*wamp.Hello)
 				require.True(t, ok, "deserialized message is not wamp.Hello")
 				require.Equal(t, realm, h2.Realm)
-				has := hasFeature(h2.Details, "publisher", "subscriber_blackwhite_listing")
+				has := hasPubBWListingFeature(h2.Details)
 				require.True(t, has, "did not deserialize message details")
 			}
 		})

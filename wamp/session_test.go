@@ -1,4 +1,4 @@
-package wamp
+package wamp //nolint:testpackage
 
 import (
 	"fmt"

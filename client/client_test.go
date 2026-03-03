@@ -747,7 +747,7 @@ func TestProgressiveCallInvocationCalleeError(t *testing.T) {
 		sendCount++
 
 		// signal the handler should return its error
-		if 4 == sendCount {
+		if sendCount == 4 {
 			close(moreArgsSent)
 		}
 		t.Logf("Sending n=%v", sendCount)
