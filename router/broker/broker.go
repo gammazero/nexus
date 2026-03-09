@@ -1,4 +1,4 @@
-package router
+package broker
 
 import (
 	"fmt"
@@ -7,6 +7,7 @@ import (
 	"time"
 
 	"github.com/gammazero/deque"
+	"github.com/gammazero/nexus/v3/router/helpers"
 	"github.com/gammazero/nexus/v3/stdlog"
 	"github.com/gammazero/nexus/v3/wamp"
 )
@@ -15,8 +16,8 @@ const (
 	detailTopic = "topic"
 )
 
-// Role information for this broker.
-var brokerRole = wamp.Dict{ //nolint:gochecknoglobals
+// role information for this broker.
+var role = wamp.Dict{ //nolint:gochecknoglobals
 	"features": wamp.Dict{
 		wamp.FeaturePatternSub:           true,
 		wamp.FeaturePubExclusion:         true,
@@ -64,7 +65,7 @@ func (h *historyStore) atLimit() bool {
 	return h.entries.Len() >= h.limit
 }
 
-type broker struct {
+type Broker struct {
 	// topic -> subscription
 	topicSubscription    map[wamp.URI]*subscription
 	pfxTopicSubscription map[wamp.URI]*subscription
@@ -93,15 +94,15 @@ type broker struct {
 	filterFactory FilterFactory
 }
 
-// newBroker returns a new default broker implementation instance.
-func newBroker(logger stdlog.StdLog, strictURI, allowDisclose, debug bool, publishFilter FilterFactory, evntCfgs []*TopicEventHistoryConfig) (*broker, error) { //nolint:lll
+// New returns a new Broker instance.
+func New(logger stdlog.StdLog, strictURI, allowDisclose, debug bool, publishFilter FilterFactory, evntCfgs []*TopicEventHistoryConfig) (*Broker, error) { //nolint:lll
 	if logger == nil {
 		panic("logger is nil")
 	}
 	if publishFilter == nil {
 		publishFilter = NewSimplePublishFilter
 	}
-	b := &broker{
+	b := &Broker{
 		topicSubscription:    map[wamp.URI]*subscription{},
 		pfxTopicSubscription: map[wamp.URI]*subscription{},
 		wcTopicSubscription:  map[wamp.URI]*subscription{},
@@ -126,24 +127,24 @@ func newBroker(logger stdlog.StdLog, strictURI, allowDisclose, debug bool, publi
 		filterFactory: publishFilter,
 	}
 	err := b.PreInitEventHistoryTopics(evntCfgs)
-	// if broker fails initialize event history store we just log it, the
-	// broker itself will continue to operate but without event history store
+	// if Broker fails to initialize event history store we just log it, the
+	// Broker itself will continue to operate but without event history store.
 	if err != nil {
-		return nil, configError{Err: err}
+		return nil, fmt.Errorf("broker config: %w", err)
 	}
 	go b.run()
 	return b, nil
 }
 
-// role returns the role information for the "broker" role. The data returned
+// Role returns the role information for the "broker" role. The data returned
 // is suitable for use as broker role info in a WELCOME message.
-func (b *broker) role() wamp.Dict {
-	return brokerRole
+func Role() wamp.Dict {
+	return role
 }
 
 // PreInitEventHistoryTopics initializes storage for event history enabled
 // topics.
-func (b *broker) PreInitEventHistoryTopics(evntCfgs []*TopicEventHistoryConfig) error {
+func (b *Broker) PreInitEventHistoryTopics(evntCfgs []*TopicEventHistoryConfig) error {
 	for _, topicCfg := range evntCfgs {
 		if !topicCfg.Topic.ValidURI(b.strictURI, topicCfg.MatchPolicy) {
 			return fmt.Errorf("invalid topic/match configuration found: %s %s", topicCfg.Topic, topicCfg.MatchPolicy)
@@ -164,7 +165,7 @@ func (b *broker) PreInitEventHistoryTopics(evntCfgs []*TopicEventHistoryConfig) 
 	return nil
 }
 
-// publish finds all subscriptions for the topic being published to, including
+// Publish finds all subscriptions for the topic being published to, including
 // those matching the topic by pattern, and sends an event to the subscribers
 // of that topic.
 //
@@ -173,7 +174,7 @@ func (b *broker) PreInitEventHistoryTopics(evntCfgs []*TopicEventHistoryConfig) 
 //
 // The Subscriber can detect the delivery of that same event on multiple
 // subscriptions via EVENT.PUBLISHED.Publication, which will be identical.
-func (b *broker) publish(pub *wamp.Session, msg *wamp.Publish) {
+func (b *Broker) Publish(pub *wamp.Session, msg *wamp.Publish) {
 	if pub == nil || msg == nil {
 		panic("broker.Publish with nil session or message")
 	}
@@ -206,13 +207,12 @@ func (b *broker) publish(pub *wamp.Session, msg *wamp.Publish) {
 	// Check and handle Payload PassThru Mode.
 	// @see https://wamp-proto.org/wamp_latest_ietf.html#name-payload-passthru-mode
 	if pptScheme, _ := msg.Options[wamp.OptPPTScheme].(string); pptScheme != "" {
-
 		// Let's check: was ppt feature announced by publisher?
 		if !pub.HasFeature(wamp.RolePublisher, wamp.FeaturePayloadPassthruMode) {
 			// It's protocol violation, so we need to abort connection.
 			abortMsg := wamp.Abort{Reason: wamp.ErrProtocolViolation}
 			abortMsg.Details = wamp.Dict{}
-			abortMsg.Details[wamp.OptMessage] = ErrPPTNotSupportedByPeer.Error()
+			abortMsg.Details[wamp.OptMessage] = "publisher sent message with Payload PassThru Mode without announcing support for it"
 			b.trySend(pub, &abortMsg)
 			pub.Close()
 
@@ -220,7 +220,7 @@ func (b *broker) publish(pub *wamp.Session, msg *wamp.Publish) {
 		}
 
 		// Every side supports PPT feature. Fill PPT options for callee.
-		pptOptionsToDetails(msg.Options, details)
+		helpers.PPTOptionsToDetails(msg.Options, details)
 	}
 
 	excludePub := true
@@ -273,7 +273,7 @@ func (b *broker) publish(pub *wamp.Session, msg *wamp.Publish) {
 	}
 }
 
-// subscribe subscribes the client to the given topic.
+// Subscribe subscribes the client to the given topic.
 //
 // In case of receiving a SUBSCRIBE message from the same Subscriber and to
 // already subscribed topic, Broker should answer with SUBSCRIBED message,
@@ -283,7 +283,7 @@ func (b *broker) publish(pub *wamp.Session, msg *wamp.Publish) {
 // Subscriber might want to subscribe to topics based on a pattern. If the
 // Broker and the Subscriber support pattern-based subscriptions, this matching
 // can happen by prefix-matching policy or wildcard-matching policy.
-func (b *broker) subscribe(sub *wamp.Session, msg *wamp.Subscribe) {
+func (b *Broker) Subscribe(sub *wamp.Session, msg *wamp.Subscribe) {
 	if sub == nil || msg == nil {
 		panic("broker.Subscribe with nil session or message")
 	}
@@ -311,8 +311,8 @@ func (b *broker) subscribe(sub *wamp.Session, msg *wamp.Subscribe) {
 	}
 }
 
-// unsubscribe removes the requested subscription.
-func (b *broker) unsubscribe(sub *wamp.Session, msg *wamp.Unsubscribe) {
+// Unsubscribe removes the requested subscription.
+func (b *Broker) Unsubscribe(sub *wamp.Session, msg *wamp.Unsubscribe) {
 	if sub == nil || msg == nil {
 		panic("broker.Unsubscribe with nil session or message")
 	}
@@ -321,11 +321,11 @@ func (b *broker) unsubscribe(sub *wamp.Session, msg *wamp.Unsubscribe) {
 	}
 }
 
-// removeSession removes all subscriptions of the subscriber. This is called
+// RemoveSession removes all subscriptions of the subscriber. This is called
 // when a client leaves the realm by sending a GOODBYE message or by
 // disconnecting from the router. If there are any subscriptions for this
 // session a wamp.subscription.on_delete meta event is published for each.
-func (b *broker) removeSession(sess *wamp.Session) {
+func (b *Broker) RemoveSession(sess *wamp.Session) {
 	if sess == nil {
 		return
 	}
@@ -334,8 +334,8 @@ func (b *broker) removeSession(sess *wamp.Session) {
 	}
 }
 
-// Close stops the broker, letting already queued actions finish.
-func (b *broker) close() {
+// Close stops the Broker, letting already queued actions finish.
+func (b *Broker) Close() {
 	close(b.actionChan)
 	<-b.stopped
 	if b.debug {
@@ -343,14 +343,14 @@ func (b *broker) close() {
 	}
 }
 
-func (b *broker) run() {
+func (b *Broker) run() {
 	for action := range b.actionChan {
 		action()
 	}
 	close(b.stopped)
 }
 
-func (b *broker) syncPublish(pub *wamp.Session, msg *wamp.Publish, pubID wamp.ID, excludePub, disclose bool, filter PublishFilter, eventDetails wamp.Dict) { //nolint:lll
+func (b *Broker) syncPublish(pub *wamp.Session, msg *wamp.Publish, pubID wamp.ID, excludePub, disclose bool, filter PublishFilter, eventDetails wamp.Dict) { //nolint:lll
 	// Publish to subscribers with exact match.
 	if sub, ok := b.topicSubscription[msg.Topic]; ok {
 		b.syncPubEvent(pub, msg, pubID, sub, excludePub, false, disclose, filter, eventDetails)
@@ -386,7 +386,7 @@ func newSubscription(id wamp.ID, subscriber *wamp.Session, topic wamp.URI, match
 	}
 }
 
-func (b *broker) syncSaveEvent(eventStore *historyStore, pub *wamp.Publish, event *wamp.Event) {
+func (b *Broker) syncSaveEvent(eventStore *historyStore, pub *wamp.Publish, event *wamp.Event) {
 	if eventStore.atLimit() {
 		eventStore.entries.PopFront()
 	}
@@ -406,7 +406,7 @@ func (b *broker) syncSaveEvent(eventStore *historyStore, pub *wamp.Publish, even
 	eventStore.entries.PushBack(item)
 }
 
-func (b *broker) syncInitSubscription(topic wamp.URI, match string, subscriber *wamp.Session) (sub *subscription, existingSub bool) {
+func (b *Broker) syncInitSubscription(topic wamp.URI, match string, subscriber *wamp.Session) (sub *subscription, existingSub bool) {
 
 	switch match {
 	case wamp.MatchPrefix:
@@ -439,7 +439,7 @@ func (b *broker) syncInitSubscription(topic wamp.URI, match string, subscriber *
 	return sub, existingSub
 }
 
-func (b *broker) syncSubscribe(subscriber *wamp.Session, msg *wamp.Subscribe, match string) {
+func (b *Broker) syncSubscribe(subscriber *wamp.Session, msg *wamp.Subscribe, match string) {
 	sub, existingSub := b.syncInitSubscription(msg.Topic, match, subscriber)
 
 	// If the topic already has subscribers, then see if the session requesting
@@ -479,7 +479,7 @@ func (b *broker) syncSubscribe(subscriber *wamp.Session, msg *wamp.Subscribe, ma
 
 // syncDeleteSubscription removes the the ID->subscription mapping and removes
 // the topic->subscription mapping.
-func (b *broker) syncDelSubscription(sub *subscription) {
+func (b *Broker) syncDelSubscription(sub *subscription) {
 	// Remove ID -> subscription.
 	delete(b.subscriptions, sub.id)
 
@@ -495,7 +495,7 @@ func (b *broker) syncDelSubscription(sub *subscription) {
 }
 
 // syncUnsibsubscribe removes the subscriber from the specified subscription.
-func (b *broker) syncUnsubscribe(subscriber *wamp.Session, msg *wamp.Unsubscribe) {
+func (b *Broker) syncUnsubscribe(subscriber *wamp.Session, msg *wamp.Unsubscribe) {
 	subID := msg.Subscription
 	sub, ok := b.subscriptions[subID]
 	if !ok {
@@ -548,7 +548,7 @@ func (b *broker) syncUnsubscribe(subscriber *wamp.Session, msg *wamp.Unsubscribe
 }
 
 // syncRemoveSession removed all subscriptions for the session.
-func (b *broker) syncRemoveSession(subscriber *wamp.Session) {
+func (b *Broker) syncRemoveSession(subscriber *wamp.Session) {
 	subIDSet, ok := b.sessionSubIDSet[subscriber]
 	if !ok {
 		return
@@ -579,7 +579,7 @@ func (b *broker) syncRemoveSession(subscriber *wamp.Session) {
 
 // syncPubEvent sends an event to all subscribers that are not excluded from
 // receiving the event.
-func (b *broker) syncPubEvent(pub *wamp.Session, msg *wamp.Publish, pubID wamp.ID, sub *subscription, excludePublisher, sendTopic, disclose bool, filter PublishFilter, eventDetails wamp.Dict) { //nolint:lll
+func (b *Broker) syncPubEvent(pub *wamp.Session, msg *wamp.Publish, pubID wamp.ID, sub *subscription, excludePublisher, sendTopic, disclose bool, filter PublishFilter, eventDetails wamp.Dict) { //nolint:lll
 	for subscriber := range sub.subscribers {
 		// Do not send event to publisher.
 		if subscriber == pub && excludePublisher {
@@ -624,7 +624,7 @@ func (b *broker) syncPubEvent(pub *wamp.Session, msg *wamp.Publish, pubID wamp.I
 
 // syncPubMeta publishes the subscription meta event, using the supplied
 // function, to the matching subscribers.
-func (b *broker) syncPubMeta(metaTopic wamp.URI, sendMeta func(metaSub *subscription, sendTopic bool)) {
+func (b *Broker) syncPubMeta(metaTopic wamp.URI, sendMeta func(metaSub *subscription, sendTopic bool)) {
 	// Publish to subscribers with exact match.
 	if metaSub, ok := b.topicSubscription[metaTopic]; ok {
 		sendMeta(metaSub, false)
@@ -645,7 +645,7 @@ func (b *broker) syncPubMeta(metaTopic wamp.URI, sendMeta func(metaSub *subscrip
 
 // syncPubSubMeta publishes a subscription meta event when a subscription is
 // added, removed, or deleted.
-func (b *broker) syncPubSubMeta(metaTopic wamp.URI, subSessID, subID wamp.ID) {
+func (b *Broker) syncPubSubMeta(metaTopic wamp.URI, subSessID, subID wamp.ID) {
 	pubID := wamp.GlobalID() // create here so that it is same for all events.
 	b.syncPubMeta(metaTopic, func(metaSub *subscription, sendTopic bool) {
 		makeEvent := func() *wamp.Event {
@@ -689,7 +689,7 @@ func (b *broker) syncPubSubMeta(metaTopic wamp.URI, subSessID, subID wamp.ID) {
 //
 // Fired when a subscription is created through a subscription request for a
 // topic which was previously without subscribers.
-func (b *broker) syncPubSubCreateMeta(subSessID wamp.ID, sub *subscription) {
+func (b *Broker) syncPubSubCreateMeta(subSessID wamp.ID, sub *subscription) {
 	pubID := wamp.GlobalID() // create here so that it is same for all events.
 	b.syncPubMeta(wamp.MetaEventSubOnCreate, func(metaSub *subscription, sendTopic bool) {
 		makeEvent := func() *wamp.Event {
@@ -737,7 +737,7 @@ func (b *broker) syncPubSubCreateMeta(subSessID wamp.ID, sub *subscription) {
 	})
 }
 
-func (b *broker) trySend(sess *wamp.Session, msg wamp.Message) {
+func (b *Broker) trySend(sess *wamp.Session, msg wamp.Message) {
 	select {
 	case sess.Send() <- msg:
 	default:
@@ -807,8 +807,8 @@ func disclosePublisher(pub *wamp.Session, details wamp.Dict) {
 
 // ----- Subscription Meta Procedure Handlers -----
 
-// subList retrieves subscription IDs listed according to match policies.
-func (b *broker) subList(msg *wamp.Invocation) wamp.Message {
+// SubList retrieves subscription IDs listed according to match policies.
+func (b *Broker) SubList(msg *wamp.Invocation) wamp.Message {
 	var exactSubs, pfxSubs, wcSubs []wamp.ID
 	sync := make(chan struct{})
 	b.actionChan <- func() {
@@ -836,9 +836,9 @@ func (b *broker) subList(msg *wamp.Invocation) wamp.Message {
 	}
 }
 
-// subLookup obtains the subscription (if any) managing a topic, according to
+// SubLookup obtains the subscription (if any) managing a topic, according to
 // some match policy.
-func (b *broker) subLookup(msg *wamp.Invocation) wamp.Message {
+func (b *Broker) SubLookup(msg *wamp.Invocation) wamp.Message {
 	var subID wamp.ID
 	if len(msg.Arguments) != 0 {
 		if topic, ok := wamp.AsURI(msg.Arguments[0]); ok {
@@ -874,9 +874,9 @@ func (b *broker) subLookup(msg *wamp.Invocation) wamp.Message {
 	}
 }
 
-// subMatch retrieves a list of IDs of subscriptions matching a topic URI,
+// SubMatch retrieves a list of IDs of subscriptions matching a topic URI,
 // irrespective of match policy.
-func (b *broker) subMatch(msg *wamp.Invocation) wamp.Message {
+func (b *Broker) SubMatch(msg *wamp.Invocation) wamp.Message {
 	var subIDs []wamp.ID
 	if len(msg.Arguments) != 0 {
 		if topic, ok := wamp.AsURI(msg.Arguments[0]); ok {
@@ -906,8 +906,8 @@ func (b *broker) subMatch(msg *wamp.Invocation) wamp.Message {
 	}
 }
 
-// subGet retrieves information on a particular subscription.
-func (b *broker) subGet(msg *wamp.Invocation) wamp.Message {
+// SubGet retrieves information on a particular subscription.
+func (b *Broker) SubGet(msg *wamp.Invocation) wamp.Message {
 	var dict wamp.Dict
 	if len(msg.Arguments) != 0 {
 		if subID, ok := wamp.AsID(msg.Arguments[0]); ok {
@@ -940,9 +940,9 @@ func (b *broker) subGet(msg *wamp.Invocation) wamp.Message {
 	}
 }
 
-// subListSubscribers retrieves a list of session IDs for sessions currently
+// SubListSubscribers retrieves a list of session IDs for sessions currently
 // attached to the subscription.
-func (b *broker) subListSubscribers(msg *wamp.Invocation) wamp.Message {
+func (b *Broker) SubListSubscribers(msg *wamp.Invocation) wamp.Message {
 	var subscriberIDs []wamp.ID
 	if len(msg.Arguments) != 0 {
 		if subID, ok := wamp.AsID(msg.Arguments[0]); ok {
@@ -975,9 +975,9 @@ func (b *broker) subListSubscribers(msg *wamp.Invocation) wamp.Message {
 	}
 }
 
-// subCountSubscribers obtains the number of sessions currently attached to the
+// SubCountSubscribers obtains the number of sessions currently attached to the
 // subscription.
-func (b *broker) subCountSubscribers(msg *wamp.Invocation) wamp.Message {
+func (b *Broker) SubCountSubscribers(msg *wamp.Invocation) wamp.Message {
 	var count int
 	var ok bool
 	if len(msg.Arguments) != 0 {
@@ -1009,10 +1009,10 @@ func (b *broker) subCountSubscribers(msg *wamp.Invocation) wamp.Message {
 	}
 }
 
-// eventHistoryLast retrieves events history for subscription applying provided filters
+// SubEventHistory retrieves events history for subscription applying provided filters
 // TODO: Need to filter by authid and/or authrole of caller if stored events have any of them
 // But that's not possible in current arch as meta peer doesn't know anything about caller, just invocation message
-func (b *broker) subEventHistory(msg *wamp.Invocation) wamp.Message {
+func (b *Broker) SubEventHistory(msg *wamp.Invocation) wamp.Message {
 	var events wamp.List // []*storedEvent
 	var isLimitReached bool
 	var reverse bool

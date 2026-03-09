@@ -13,6 +13,8 @@ import (
 	"sync"
 	"time"
 
+	"github.com/gammazero/nexus/v3/router/broker"
+	"github.com/gammazero/nexus/v3/router/dealer"
 	"github.com/gammazero/nexus/v3/stdlog"
 	"github.com/gammazero/nexus/v3/wamp"
 )
@@ -329,8 +331,8 @@ func (r *router) AddRealm(config *RealmConfig) error {
 func (r *router) RouterFeatures() *wamp.Dict {
 	return &wamp.Dict{
 		"roles": wamp.Dict{
-			wamp.RoleBroker: brokerRole,
-			wamp.RoleDealer: dealerRole,
+			wamp.RoleBroker: broker.Role(),
+			wamp.RoleDealer: dealer.Role(),
 		},
 	}
 }
@@ -370,14 +372,14 @@ func (r *router) addRealm(config *RealmConfig) (*realm, error) {
 		return nil, errors.New("realm already exists: " + string(config.URI))
 	}
 
-	broker, err := newBroker(r.log, config.StrictURI, config.AllowDisclose, r.debug, config.PublishFilterFactory, config.TopicEventHistoryConfigs)
+	broker, err := broker.New(r.log, config.StrictURI, config.AllowDisclose, r.debug, config.PublishFilterFactory, config.TopicEventHistoryConfigs)
 	if err != nil {
 		return nil, err
 	}
 	realm, err := newRealm(
 		config,
 		broker,
-		newDealer(r.log, config.StrictURI, config.AllowDisclose, r.debug),
+		dealer.New(r.log, config.StrictURI, config.AllowDisclose, r.debug),
 		r.log, r.debug)
 	if err != nil {
 		return nil, err
