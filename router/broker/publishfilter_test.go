@@ -1,19 +1,20 @@
-package router //nolint:testpackage
+package broker_test
 
 import (
 	"testing"
 
 	"github.com/stretchr/testify/require"
 
+	"github.com/gammazero/nexus/v3/router/broker"
 	"github.com/gammazero/nexus/v3/wamp"
 )
 
-func TestFilterBlacklist(t *testing.T) {
-	const (
-		shouldAllowMsg = "Publish to session should be allowed"
-		shouldDenyMsg  = "Publish to session should be denied"
-	)
+const (
+	shouldAllowMsg = "Publish to session should be allowed"
+	shouldDenyMsg  = "Publish to session should be denied"
+)
 
+func TestFilterBlacklist(t *testing.T) {
 	allowedID := wamp.ID(1234)
 	allowedAuthid := "root"
 	allowedAuthrole := "admin"
@@ -32,7 +33,7 @@ func TestFilterBlacklist(t *testing.T) {
 		Topic: wamp.URI("blacklist.test"),
 	}
 
-	pf := NewSimplePublishFilter(pub)
+	pf := broker.NewSimplePublishFilter(pub)
 
 	details := wamp.Dict{
 		"authid":   allowedAuthid,
@@ -62,11 +63,6 @@ func TestFilterBlacklist(t *testing.T) {
 }
 
 func TestFilterWhitelist(t *testing.T) {
-	const (
-		shouldAllowMsg = "Publish to session should be allowed"
-		shouldDenyMsg  = "Publish to session should be denied"
-	)
-
 	allowedID := wamp.ID(1234)
 	allowedAuthid := "root"
 	allowedAuthrole := "admin"
@@ -85,7 +81,7 @@ func TestFilterWhitelist(t *testing.T) {
 		Topic: wamp.URI("whitelist.test"),
 	}
 
-	pf := NewSimplePublishFilter(pub)
+	pf := broker.NewSimplePublishFilter(pub)
 
 	details := wamp.Dict{
 		"authid":   allowedAuthid,
@@ -115,11 +111,6 @@ func TestFilterWhitelist(t *testing.T) {
 }
 
 func TestFilterBlackWhitelistPrecedence(t *testing.T) {
-	const (
-		shouldAllowMsg = "Publish to session should be allowed"
-		shouldDenyMsg  = "Publish to session should be denied"
-	)
-
 	allowedID := wamp.ID(1234)
 	allowedAuthid := "root"
 	allowedAuthrole := "admin"
@@ -141,7 +132,7 @@ func TestFilterBlackWhitelistPrecedence(t *testing.T) {
 		Topic: wamp.URI("whitelist.test"),
 	}
 
-	pf := NewSimplePublishFilter(pub)
+	pf := broker.NewSimplePublishFilter(pub)
 
 	details := wamp.Dict{
 		"authid":   allowedAuthid,
