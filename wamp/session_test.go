@@ -37,7 +37,6 @@ func TestIsNewRecvIDBounds(t *testing.T) {
 
 	s := Session{lastRecvID: 0}
 	for i, tc := range testCases {
-		tc := tc
 		name := fmt.Sprintf("%02d_%d-%d-%v", i, tc.last, tc.id, tc.expected)
 		t.Run(name, func(t *testing.T) {
 			s.lastRecvID = tc.last

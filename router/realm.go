@@ -124,8 +124,7 @@ func newRealm(config *RealmConfig, broker *broker, dealer *dealer, logger stdlog
 		}
 	}
 	if r.metaStrict && len(config.MetaIncludeSessionDetails) != 0 {
-		r.metaIncDetails = make([]string, len(config.MetaIncludeSessionDetails))
-		copy(r.metaIncDetails, config.MetaIncludeSessionDetails)
+		r.metaIncDetails = slices.Clone(config.MetaIncludeSessionDetails)
 	}
 
 	r.authenticators = map[string]auth.Authenticator{}

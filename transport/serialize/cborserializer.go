@@ -13,7 +13,7 @@ var ch *codec.CborHandle //nolint:gochecknoglobals
 
 func init() {
 	ch = &codec.CborHandle{}
-	ch.MapType = reflect.TypeOf(map[string]any(nil))
+	ch.MapType = reflect.TypeFor[map[string]any]()
 }
 
 // CBORSerializer is an implementation of Serializer that handles

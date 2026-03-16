@@ -164,14 +164,11 @@ func (cr *CryptoSignAuthenticator) computeChallenge(channelBinding []byte) ([]by
 		return nil, err
 	}
 
-	signedMessage := make([]byte, 32)
 	if channelBinding != nil {
-		for i, v := range challenge {
-			signedMessage[i] = v ^ channelBinding[i]
+		for i := range challenge {
+			challenge[i] ^= channelBinding[i]
 		}
-	} else {
-		copy(signedMessage, challenge)
 	}
 
-	return signedMessage, nil
+	return challenge, nil
 }
