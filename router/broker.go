@@ -746,16 +746,33 @@ func (b *broker) trySend(sess *wamp.Session, msg wamp.Message) {
 }
 
 func prepareEvent(pub *wamp.Session, msg *wamp.Publish, pubID wamp.ID, sub *subscription, sendTopic, disclose bool, eventDetails wamp.Dict, subscriber *wamp.Session) *wamp.Event { //nolint:lll
-	details := eventDetails
-	if details == nil {
+	// Make defensive copies of all maps to prevent concurrent map iteration and write issues.
+	// These maps may be accessed concurrently by multiple goroutines during serialization.
+	var details wamp.Dict
+	if eventDetails != nil {
+		details = make(map[string]any, len(eventDetails))
+		maps.Copy(details, eventDetails)
+	} else {
 		details = wamp.Dict{}
+	}
+
+	var args wamp.List
+	if msg.Arguments != nil {
+		args = make([]any, len(msg.Arguments))
+		copy(args, msg.Arguments)
+	}
+
+	var argsKw wamp.Dict
+	if msg.ArgumentsKw != nil {
+		argsKw = make(map[string]any, len(msg.ArgumentsKw))
+		maps.Copy(argsKw, msg.ArgumentsKw)
 	}
 
 	event := &wamp.Event{
 		Publication:  pubID,
 		Subscription: sub.id,
-		Arguments:    msg.Arguments,
-		ArgumentsKw:  msg.ArgumentsKw,
+		Arguments:    args,
+		ArgumentsKw:  argsKw,
 		Details:      details,
 	}
 	// If a subscription was established with a pattern-based matching policy,
@@ -770,24 +787,6 @@ func prepareEvent(pub *wamp.Session, msg *wamp.Publish, pubID wamp.ID, sub *subs
 
 	// TODO: Handle publication trust levels.
 
-	if subscriber != nil && subscriber.IsLocal() {
-		// The local handler may be lousy and may try to modify either of those
-		// fields, make sure that each event carries a copy of the respective
-		// structure, even if it's empty.
-		if event.Details != nil {
-			options := make(map[string]any, len(event.Details))
-			maps.Copy(options, event.Details)
-			event.Details = options
-		}
-		if msg.Arguments != nil {
-			event.Arguments = slices.Clone(msg.Arguments)
-		}
-		if msg.ArgumentsKw != nil {
-			argsKw := make(map[string]any, len(msg.ArgumentsKw))
-			maps.Copy(argsKw, msg.ArgumentsKw)
-			event.ArgumentsKw = argsKw
-		}
-	}
 	return event
 }
 
