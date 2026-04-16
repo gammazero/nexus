@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"maps"
 	"math/rand"
 	"strings"
 	"time"
@@ -861,12 +862,24 @@ func (d *dealer) syncCall(caller *wamp.Session, msg *wamp.Call) {
 
 	// Send INVOCATION to the endpoint that has registered the requested
 	// procedure.
+	// Make defensive copies to prevent concurrent map access during serialization.
+	var args wamp.List
+	if msg.Arguments != nil {
+		args = make([]any, len(msg.Arguments))
+		copy(args, msg.Arguments)
+	}
+	var argsKw wamp.Dict
+	if msg.ArgumentsKw != nil {
+		argsKw = make(map[string]any, len(msg.ArgumentsKw))
+		maps.Copy(argsKw, msg.ArgumentsKw)
+	}
+
 	invMsg := &wamp.Invocation{
 		Request:      invocationID,
 		Registration: reg.id,
 		Details:      details,
-		Arguments:    msg.Arguments,
-		ArgumentsKw:  msg.ArgumentsKw,
+		Arguments:    args,
+		ArgumentsKw:  argsKw,
 	}
 	select {
 	case callee.Send() <- invMsg:
@@ -1143,11 +1156,22 @@ func (d *dealer) syncYield(callee *wamp.Session, msg *wamp.Yield, progress, canR
 	// callee wait and retry sending this message again. The caller may be
 	// blocked when the callee is generating progressive responses faster than
 	// the caller can handle them.
+	var args wamp.List
+	if msg.Arguments != nil {
+		args = make([]any, len(msg.Arguments))
+		copy(args, msg.Arguments)
+	}
+	var argsKw wamp.Dict
+	if msg.ArgumentsKw != nil {
+		argsKw = make(map[string]any, len(msg.ArgumentsKw))
+		maps.Copy(argsKw, msg.ArgumentsKw)
+	}
+
 	res := &wamp.Result{
 		Request:     callID.request,
 		Details:     details,
-		Arguments:   msg.Arguments,
-		ArgumentsKw: msg.ArgumentsKw,
+		Arguments:   args,
+		ArgumentsKw: argsKw,
 	}
 	select {
 	case caller.Send() <- res:
