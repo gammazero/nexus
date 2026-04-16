@@ -3,7 +3,6 @@ package router
 import (
 	"fmt"
 	"maps"
-	"slices"
 	"time"
 
 	"github.com/gammazero/deque"
