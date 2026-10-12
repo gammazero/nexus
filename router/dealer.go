@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"maps"
 	"math/rand"
 	"strings"
 	"time"
@@ -861,12 +862,29 @@ func (d *dealer) syncCall(caller *wamp.Session, msg *wamp.Call) {
 
 	// Send INVOCATION to the endpoint that has registered the requested
 	// procedure.
+
+	// Without this copy, the INVOCATION aliases the caller's incoming Arguments
+	// and ArgumentsKw directly. Nothing writes to those fields after this point
+	// today, but if that changes, a concurrent write while the callee's transport
+	// goroutine is serializing this message would abort the router with the same
+	// fatal map race that prepareEvent prevents in the broker. One allocation per
+	// call.
+	var args wamp.List
+	if msg.Arguments != nil {
+		args = make(wamp.List, len(msg.Arguments))
+		copy(args, msg.Arguments)
+	}
+	var argsKw wamp.Dict
+	if msg.ArgumentsKw != nil {
+		argsKw = make(wamp.Dict, len(msg.ArgumentsKw))
+		maps.Copy(argsKw, msg.ArgumentsKw)
+	}
 	invMsg := &wamp.Invocation{
 		Request:      invocationID,
 		Registration: reg.id,
 		Details:      details,
-		Arguments:    msg.Arguments,
-		ArgumentsKw:  msg.ArgumentsKw,
+		Arguments:    args,
+		ArgumentsKw:  argsKw,
 	}
 	select {
 	case callee.Send() <- invMsg:
@@ -1143,11 +1161,27 @@ func (d *dealer) syncYield(callee *wamp.Session, msg *wamp.Yield, progress, canR
 	// callee wait and retry sending this message again. The caller may be
 	// blocked when the callee is generating progressive responses faster than
 	// the caller can handle them.
+
+	// Without this copy, the RESULT aliases the callee's incoming Arguments and
+	// ArgumentsKw directly. Nothing writes to those fields after this point today,
+	// but if that changes, a concurrent write while the caller's transport goroutine
+	// is serializing this message would abort the router with the same fatal map
+	// race that prepareEvent prevents in the broker. One allocation per call.
+	var args wamp.List
+	if msg.Arguments != nil {
+		args = make(wamp.List, len(msg.Arguments))
+		copy(args, msg.Arguments)
+	}
+	var argsKw wamp.Dict
+	if msg.ArgumentsKw != nil {
+		argsKw = make(wamp.Dict, len(msg.ArgumentsKw))
+		maps.Copy(argsKw, msg.ArgumentsKw)
+	}
 	res := &wamp.Result{
 		Request:     callID.request,
 		Details:     details,
-		Arguments:   msg.Arguments,
-		ArgumentsKw: msg.ArgumentsKw,
+		Arguments:   args,
+		ArgumentsKw: argsKw,
 	}
 	select {
 	case caller.Send() <- res:
@@ -1198,14 +1232,36 @@ func (d *dealer) syncError(callee *wamp.Session, msg *wamp.Error) {
 	}
 	delete(d.calls, callID)
 
+	// Without this copy, the forwarded ERROR aliases the callee's incoming Details,
+	// Arguments, and ArgumentsKw directly. Nothing writes to those fields after
+	// this point today, but if that changes, a concurrent write while the caller's
+	// transport goroutine is serializing this message would abort the router with
+	// the same fatal map race that prepareEvent prevents in the broker. One
+	// allocation per call.
+	var details wamp.Dict
+	if msg.Details != nil {
+		details = make(wamp.Dict, len(msg.Details))
+		maps.Copy(details, msg.Details)
+	}
+	var args wamp.List
+	if msg.Arguments != nil {
+		args = make(wamp.List, len(msg.Arguments))
+		copy(args, msg.Arguments)
+	}
+	var argsKw wamp.Dict
+	if msg.ArgumentsKw != nil {
+		argsKw = make(wamp.Dict, len(msg.ArgumentsKw))
+		maps.Copy(argsKw, msg.ArgumentsKw)
+	}
+
 	// Send error to the caller.
 	d.trySend(caller, &wamp.Error{
 		Type:        wamp.CALL,
 		Request:     callID.request,
 		Error:       msg.Error,
-		Details:     msg.Details,
-		Arguments:   msg.Arguments,
-		ArgumentsKw: msg.ArgumentsKw,
+		Details:     details,
+		Arguments:   args,
+		ArgumentsKw: argsKw,
 	})
 }
 
