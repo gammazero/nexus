@@ -79,10 +79,6 @@ func TestWSHandshakeMsgpack(t *testing.T) {
 	require.True(t, ok, "expected WELCOME")
 }
 
-func b2p(b bool) *bool { return &b }
-
-func s2p(s http.SameSite) *http.SameSite { return &s }
-
 func TestWSCookieAttributes(t *testing.T) {
 	// http library treats the samesite attribute for strings as if no attribute was set
 	sameSiteUnsetValue := http.SameSiteDefaultMode - 1
@@ -100,25 +96,25 @@ func TestWSCookieAttributes(t *testing.T) {
 		},
 		{
 			name:         "same site strict",
-			setSameSite:  s2p(http.SameSiteStrictMode),
+			setSameSite:  new(http.SameSiteStrictMode),
 			wantSameSite: http.SameSiteStrictMode,
 			wantIsSecure: false,
 		},
 		{
 			name:         "same site none",
-			setSameSite:  s2p(http.SameSiteNoneMode),
+			setSameSite:  new(http.SameSiteNoneMode),
 			wantSameSite: http.SameSiteNoneMode,
 			wantIsSecure: false,
 		},
 		{
 			name:         "secure is true",
-			setSecure:    b2p(true),
+			setSecure:    new(true),
 			wantSameSite: sameSiteUnsetValue,
 			wantIsSecure: true,
 		},
 		{
 			name:         "secure is false",
-			setSecure:    b2p(false),
+			setSecure:    new(false),
 			wantSameSite: sameSiteUnsetValue,
 			wantIsSecure: false,
 		},

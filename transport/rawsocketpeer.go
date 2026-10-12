@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"io"
 	"net"
+	"slices"
 	"strings"
 	"time"
 
@@ -461,8 +462,8 @@ func intToBytes(i int) [3]byte {
 // bytesToInt decodes a slice of bytes into an int value.
 func bytesToInt(b []byte) int {
 	var n, shift uint
-	for i := len(b) - 1; i >= 0; i-- {
-		n |= uint(b[i]) << shift
+	for _, v := range slices.Backward(b) {
+		n |= uint(v) << shift
 		shift += 8
 	}
 	return int(n) //nolint:gosec // if uint bigger than in, let int be negative.

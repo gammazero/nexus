@@ -772,8 +772,7 @@ func TestProgressiveCallInvocationCalleeError(t *testing.T) {
 	result, err := caller.CallProgressive(ctx, procName, sendProgDataCb, nil)
 	require.Error(t, err, "Expected call to return an error")
 	require.Nil(t, result, "Expected call to return no result")
-	var rErr client.RPCError
-	if errors.As(err, &rErr) {
+	if rErr, ok := errors.AsType[client.RPCError](err); ok {
 		require.Equal(t, forcedError, rErr.Err.Error, "Unexpected error URI")
 	} else {
 		t.Error("Unexpected error type")

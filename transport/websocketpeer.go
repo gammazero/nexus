@@ -317,10 +317,10 @@ func (w *websocketPeer) sendHandlerKeepAlive(keepAlive time.Duration) {
 		return nil
 	})
 
-	var pendingPongs int32
+	var pendingPongs atomic.Int32
 	w.conn.SetPongHandler(func(msg string) error {
 		// Any response resets counter.
-		atomic.StoreInt32(&pendingPongs, 0)
+		pendingPongs.Store(0)
 		return nil
 	})
 
@@ -347,7 +347,7 @@ recvLoop:
 			}
 		case <-ticker.C:
 			// If missed 2 responses, close websocket.
-			if atomic.LoadInt32(&pendingPongs) >= 2 {
+			if pendingPongs.Load() >= 2 {
 				w.log.Print("peer not responging to pings, closing websocket")
 				_ = w.conn.Close()
 				return
@@ -357,7 +357,7 @@ recvLoop:
 			if err != nil {
 				return
 			}
-			atomic.AddInt32(&pendingPongs, 1)
+			pendingPongs.Add(1)
 		case m := <-pongs:
 			err := w.conn.WriteMessage(websocket.PongMessage, []byte(m))
 			if err != nil {
