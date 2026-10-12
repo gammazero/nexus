@@ -2,9 +2,9 @@
 
 # WAMP v2 router library, client library and router service
 
-[![Build Status](https://travis-ci.org/gammazero/nexus.svg)](https://travis-ci.org/gammazero/nexus)
+[![Main CI](https://github.com/gammazero/nexus/actions/workflows/main-golint.yml/badge.svg)](https://github.com/gammazero/nexus/actions/workflows/main-golint.yml)
 [![License](https://img.shields.io/badge/License-MIT-blue.svg)](LICENSE)
-[![GoDoc](https://godoc.org/github.com/gammazero/nexus?status.svg)](https://godoc.org/github.com/gammazero/nexus)
+[![GoDoc](https://pkg.go.dev/badge/github.com/gammazero/nexus)](https://pkg.go.dev/github.com/gammazero/nexus)
 
 **nexus** is a [WAMP](http://wamp-proto.org/) v2 router library, client library, and a router service, that implements
 most of the features defined in the WAMP-protocol advanced profile. The nexus project is written in
@@ -16,7 +16,7 @@ functionality. The router and client interoperate with other WAMP implementation
 See the [**nexus project Wiki**](https://github.com/gammazero/nexus/wiki) for documentation, examples, and
 operational details.
 
-[![GoDoc](https://godoc.org/github.com/gammazero/nexus?status.svg)](https://godoc.org/github.com/gammazero/nexus) for
+[![GoDoc](https://pkg.go.dev/badge/github.com/gammazero/nexus)](https://pkg.go.dev/github.com/gammazero/nexus) for
 API documentation.
 
 ## What is WAMP and nexus
@@ -51,7 +51,7 @@ make install
 ```
 
 Run `nexusd -help` to see usage information. Although `nexusd` can be run using only command line flags,
-a [configuration file](https://raw.githubusercontent.com/gammazero/nexus/v3/nexusd/etc/nexus.json) offers much
+a [configuration file](https://raw.githubusercontent.com/gammazero/nexus/main/nexusd/etc/nexus.json) offers much
 more configurability.
 
 ### Create configuration file and run nexusd service
@@ -107,26 +107,26 @@ an unprivileged user.
 ## Examples
 
 Look at the examples to see how to create simple clients and servers. Follow the
-[README.md](https://github.com/gammazero/nexus/blob/v3/examples/README.md) in the `nexus/examples` directory.
+[README.md](https://github.com/gammazero/nexus/blob/main/examples/README.md) in the `nexus/examples` directory.
 Examples of using advanced profile features are also available in the
 [wiki documentation](https://github.com/gammazero/nexus/wiki).
 
-https://github.com/gammazero/nexus/tree/v3/examples
+https://github.com/gammazero/nexus/tree/main/examples
 
 The examples include interoperability examples to demonstrate nexus working with different WAMP implementations.
 Each of these has its own README.md that describes how to set up the environment and run the examples.
 
-https://github.com/gammazero/nexus/tree/v3/examples/interop
+https://github.com/gammazero/nexus/tree/main/examples/interop
 
 The nexusd service is also an example stand-alone WAMP router. All the router options are configurable in nexusd
 using a configuration file, and one is provided in the `nexusd/etc/` directory. This can be used as starting point
 to write your own WAMP router service.
 
-https://github.com/gammazero/nexus/tree/v3/nexusd
+https://github.com/gammazero/nexus/tree/main/nexusd
 
 ## Contributing
 
-Please read the [Contributing](https://github.com/gammazero/nexus/blob/v3/CONTRIBUTING.md#contributing-to-nexus)
+Please read the [Contributing](https://github.com/gammazero/nexus/blob/main/CONTRIBUTING.md#contributing-to-nexus)
 guide if you are interested in becoming a contributor to this project.
 
 Please report any problems, or request changes and new functionality by opening
