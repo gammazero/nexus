@@ -15,7 +15,7 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - name: Check Pull Request Title/Description
-        uses: gsactions/commit-message-checker@v1
+        uses: gsactions/commit-message-checker@v2
         with:
           pattern: '^\s*(\w|[^\ ])+( +(\w|.)+)+$'  # Do not allow one-word strings
           flags: 'gmi'
@@ -25,10 +25,10 @@ jobs:
           excludeTitle: 'false' # optional: this excludes the title of a pull request
           checkAllCommitMessages: 'false' # optional: this checks all commits associated with a pull request
       - name: Check Pull Request Checkbox marks
-        uses: gsactions/commit-message-checker@v1
+        uses: gsactions/commit-message-checker@v2
         with:
           # Checks that at least one of the change type is checked
-          pattern: '(.|\n|\r)*((\[x\] Enhancement)|(\[x\] Bug fix)|(\[x\] New feature)|(\[x\] Breaking change))(.|\n|\r)*'
+          pattern: '(.|\n|\r)*((\[x\] Enhancement)|(\[x\] Bug fix)|(\[x\] New feature)|(\[x\] Breaking change)|(\[x\] Dependency update))(.|\n|\r)*'
           flags: 'gmi'
           error: |
             You have not checked any kind of change this PR introduce. Please select at least one.
@@ -37,7 +37,7 @@ jobs:
           excludeTitle: 'false' # optional: this excludes the title of a pull request
           checkAllCommitMessages: 'false' # optional: this checks all commits associated with a pull request
       - name: Check commits messages
-        uses: gsactions/commit-message-checker@v1
+        uses: gsactions/commit-message-checker@v2
         with:
           pattern: '^\s*(\w|[^\ ])+( +(\w|.)+)+$'  # Do not allow one-word strings
           flags: 'gmi'
