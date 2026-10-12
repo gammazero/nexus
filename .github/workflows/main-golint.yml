@@ -85,3 +85,14 @@ jobs:
 
       - name: Check build of nexusd
         run: make service
+
+      - name: Run coverage and refresh README badge
+        if: matrix.os == 'ubuntu-latest'
+        run: make coverage
+
+      - name: Report coverage drift in README badge
+        if: matrix.os == 'ubuntu-latest'
+        run: |
+          if ! git diff --exit-code -- README.md; then
+            echo "::warning::README.md coverage badge differs from committed version. Run 'make coverage' locally and commit the result if you want the badge refreshed."
+          fi
