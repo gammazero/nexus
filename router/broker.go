@@ -746,10 +746,15 @@ func (b *broker) trySend(sess *wamp.Session, msg wamp.Message) {
 }
 
 func prepareEvent(pub *wamp.Session, msg *wamp.Publish, pubID wamp.ID, sub *subscription, sendTopic, disclose bool, eventDetails wamp.Dict, subscriber *wamp.Session) *wamp.Event { //nolint:lll
-	details := eventDetails
-	if details == nil {
-		details = wamp.Dict{}
-	}
+	// Without this copy, Go aborts the router with "fatal error: concurrent map
+	// iteration and map write". eventDetails is shared across every subscriber of
+	// this publication. The sendTopic and disclosePublisher writes below land on
+	// that shared map while earlier subscribers' transport goroutines are already
+	// iterating it during serialization.
+	//
+	// Every subscriber must get a private map before any writes land.
+	details := make(wamp.Dict, len(eventDetails))
+	maps.Copy(details, eventDetails)
 
 	event := &wamp.Event{
 		Publication:  pubID,
@@ -771,14 +776,11 @@ func prepareEvent(pub *wamp.Session, msg *wamp.Publish, pubID wamp.ID, sub *subs
 	// TODO: Handle publication trust levels.
 
 	if subscriber != nil && subscriber.IsLocal() {
-		// The local handler may be lousy and may try to modify either of those
-		// fields, make sure that each event carries a copy of the respective
-		// structure, even if it's empty.
-		if event.Details != nil {
-			options := make(map[string]any, len(event.Details))
-			maps.Copy(options, event.Details)
-			event.Details = options
-		}
+		// Without these copies a local handler that writes to Arguments or
+		// ArgumentsKw corrupts those fields for every other subscriber receiving
+		// the same publication. Remote subscribers skip this copy: nothing writes
+		// to these fields after publish so sharing is safe, and the savings are
+		// significant at high subscriber counts.
 		if msg.Arguments != nil {
 			event.Arguments = slices.Clone(msg.Arguments)
 		}
