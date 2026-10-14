@@ -186,8 +186,13 @@ func (rs *rawSocketPeer) Close() {
 	// wr channel in case there are incoming messages during close.
 	rs.cancelSender()
 	<-rs.writerDone
-	close(rs.wr)
-	for range rs.wr {
+drainLoop:
+	for {
+		select {
+		case <-rs.wr:
+		default:
+			break drainLoop
+		}
 	}
 
 	// Tell recvHandler to close.
