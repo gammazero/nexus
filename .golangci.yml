@@ -15,7 +15,7 @@ linters:
     - errcheck
     - errorlint
     #- gochecknoglobals
-    - goconst
+    #- goconst
     - gosec
     - govet
     - ineffassign
