@@ -1212,3 +1212,51 @@ func TestWrongYielder(t *testing.T) {
 		}
 	})
 }
+
+// TestReceiveProgressForwardedWithoutCallCanceling pins the spec-conformant
+// behavior fixed in this commit: per WAMP §14.3.1.2, the dealer must forward
+// CALL.Options.receive_progress to the callee's INVOCATION as long as the
+// callee declared the progressive_call_results feature. Earlier the dealer
+// also required call_canceling on the rationale that caller-disconnect
+// cleanup needed INTERRUPT — but caller-disconnect is handled in
+// syncRemoveSession by deleting the invocation entry, not by sending
+// INTERRUPT, so the extra requirement was over-constraining.
+func TestReceiveProgressForwardedWithoutCallCanceling(t *testing.T) {
+	dealer, metaClient := newTestDealer(t)
+
+	// Callee declares progressive_call_results but NOT call_canceling.
+	calleeRoles := wamp.Dict{
+		"roles": wamp.Dict{
+			"callee": wamp.Dict{
+				"features": wamp.Dict{
+					wamp.FeatureProgCallResults: true,
+				},
+			},
+		},
+	}
+	callee := newTestPeer()
+	calleeSess := wamp.NewSession(callee, 0, nil, calleeRoles)
+	dealer.register(calleeSess,
+		&wamp.Register{Request: 1, Procedure: testProcedure})
+	rsp := <-callee.Recv()
+	_, ok := rsp.(*wamp.Registered)
+	require.True(t, ok, "expected REGISTERED")
+	checkMetaReg(t, metaClient, calleeSess.ID)
+	checkMetaReg(t, metaClient, calleeSess.ID)
+
+	caller := newTestPeer()
+	callerSession := wamp.NewSession(caller, 0, nil, nil)
+	dealer.call(callerSession, &wamp.Call{
+		Request:   2,
+		Procedure: testProcedure,
+		Options:   wamp.Dict{wamp.OptReceiveProgress: true},
+	})
+
+	rsp = <-callee.Recv()
+	inv, ok := rsp.(*wamp.Invocation)
+	require.True(t, ok, "expected INVOCATION")
+	got, _ := wamp.AsBool(inv.Details[wamp.OptReceiveProgress])
+	require.True(t, got,
+		"dealer should forward receive_progress when callee declares "+
+			"progressive_call_results, regardless of call_canceling")
+}

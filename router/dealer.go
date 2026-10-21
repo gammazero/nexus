@@ -794,18 +794,21 @@ func (d *dealer) syncCall(caller *wamp.Session, msg *wamp.Call) {
 			}
 		}
 
-		// A Caller indicates its willingness to receive progressive results by
-		// setting CALL.Options.receive_progress|bool := true
+		// A Caller indicates its willingness to receive progressive results
+		// by setting CALL.Options.receive_progress|bool := true. Per WAMP
+		// spec §14.3.1.2, the dealer forwards this whenever the callee
+		// declares the progressive_call_results feature.
+		//
+		// (Earlier this check also required call_canceling on the
+		// rationale that a caller-disconnect mid-stream needs to send
+		// INTERRUPT to stop the callee. That conflated two concerns:
+		// caller-disconnect cleanup is handled in syncRemoveSession by
+		// deleting the invocation entry so any further YIELDs from the
+		// callee are dropped silently — INTERRUPT is best-effort cleanup,
+		// not a spec precondition. See cancel() at the call site below
+		// for the call_canceling guard on the cleanup path itself.)
 		if opt, _ := invk.options[wamp.OptReceiveProgress].(bool); opt {
-			// If the Callee supports progressive calls, the Dealer will
-			// forward the Caller's willingness to receive progressive results
-			// by setting.
-			//
-			// The Callee must support call canceling, as this is necessary to
-			// stop progressive results if the caller session is closed during
-			// progressive result delivery.
-			if callee.HasFeature(wamp.RoleCallee, wamp.FeatureProgCallResults) &&
-				callee.HasFeature(wamp.RoleCallee, wamp.FeatureCallCanceling) {
+			if callee.HasFeature(wamp.RoleCallee, wamp.FeatureProgCallResults) {
 				details[wamp.OptReceiveProgress] = true
 			}
 		}
