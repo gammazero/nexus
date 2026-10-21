@@ -273,13 +273,14 @@ func (r *router) AttachClient(client wamp.Peer, transportDetails wamp.Dict) erro
 
 	sess.Details = sessDetails
 
-	if err := realm.handleSession(sess); err != nil {
+	// handleSession queues the WELCOME before the session becomes visible to
+	// the realm, so nothing triggered by the join can overtake it.
+	if err := realm.handleSession(sess, welcome); err != nil {
 		// Any error returned here is a shutdown error.
 		sendAbort(wamp.ErrSystemShutdown, nil)
 		return err
 	}
 
-	client.Send() <- welcome // Blocking OK; this is session goroutine.
 	if r.debug {
 		r.log.Println("Finished attaching session:", sid)
 	}
