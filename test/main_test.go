@@ -129,6 +129,7 @@ func TestMain(m *testing.M) {
 		provider: "UserDB",
 	}
 	crAuth := auth.NewCRAuthenticator(sks, time.Second)
+	ticketAuth := auth.NewTicketAuthenticator(sks, time.Second)
 
 	// Create router instance.
 	routerConfig := &router.Config{
@@ -147,7 +148,7 @@ func TestMain(m *testing.M) {
 				StrictURI:         false,
 				AnonymousAuth:     true,
 				AllowDisclose:     false,
-				Authenticators:    []auth.Authenticator{crAuth},
+				Authenticators:    []auth.Authenticator{crAuth, ticketAuth},
 				Authorizer:        &testAuthz{},
 				RequireLocalAuth:  true,
 				RequireLocalAuthz: true,

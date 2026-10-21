@@ -394,3 +394,68 @@ func TestRPCProgressiveCallTimeout(t *testing.T) {
 		require.FailNow(t, "Callee should have finished sending progressive results")
 	}
 }
+
+// TestSpecRPCProgressiveCallInvocations exercises progressive call
+// INVOCATIONS over the parameterized transport matrix (the equivalent test
+// in client/client_test.go only runs over the local in-process transport).
+// Per WAMP spec §14.3.2 the caller may send multiple INVOCATION-bearing
+// frames on the same call ID with progress=true, ending with progress=false.
+func TestSpecRPCProgressiveCallInvocations(t *testing.T) {
+	checkGoLeaks(t)
+	const procName = "spec.progressive.invocations"
+
+	callee := connectClient(t)
+
+	has := callee.HasFeature(wamp.RoleDealer, wamp.FeatureProgCallInvocations)
+	require.Truef(t, has, "Dealer does not support %s", wamp.FeatureProgCallInvocations)
+
+	receivedAll := make(chan []int64, 1)
+	var received []int64
+
+	handler := func(_ context.Context, inv *wamp.Invocation) client.InvokeResult {
+		n, _ := wamp.AsInt64(inv.Arguments[0])
+		received = append(received, n)
+		inProgress, _ := inv.Details[wamp.OptProgress].(bool)
+		if inProgress {
+			return client.InvokeResult{Err: wamp.InternalProgressiveOmitResult}
+		}
+		var sum int64
+		for _, v := range received {
+			sum += v
+		}
+		out := append([]int64(nil), received...)
+		receivedAll <- out
+		return client.InvokeResult{Args: wamp.List{sum}}
+	}
+	require.NoError(t, callee.Register(procName, handler, nil))
+
+	caller := connectClient(t)
+
+	want := []int64{1, 2, 3, 4, 5}
+	idx := 0
+	send := func(_ context.Context) (wamp.Dict, wamp.List, wamp.Dict, error) {
+		opts := wamp.Dict{}
+		if idx == len(want)-1 {
+			opts[wamp.OptProgress] = false
+		} else {
+			opts[wamp.OptProgress] = true
+		}
+		args := wamp.List{want[idx]}
+		idx++
+		return opts, args, nil, nil
+	}
+
+	res, err := caller.CallProgressive(context.Background(), procName, send, nil)
+	require.NoError(t, err)
+	sum, _ := wamp.AsInt64(res.Arguments[0])
+	require.Equal(t, int64(15), sum)
+
+	select {
+	case got := <-receivedAll:
+		require.Equal(t, want, got, "callee must observe invocations in caller order")
+	case <-time.After(time.Second):
+		t.Fatal("callee did not record all progressive invocations")
+	}
+
+	require.NoError(t, callee.Unregister(procName))
+}
