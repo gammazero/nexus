@@ -255,6 +255,71 @@ func TestPublishNoAcknowledge(t *testing.T) {
 	})
 }
 
+// TestDealerYieldDoesNotBlockCalleeOnSlowCaller pins gammazero/nexus#324:
+// when a caller's outbound queue fills (the caller is slow or unresponsive
+// reading its Recv channel), the dealer's RESULT-delivery retry loop must
+// not stall the callee's session goroutine. Otherwise a single bad caller
+// freezes communication for the callee, even though the callee has
+// nothing wrong with it.
+//
+// Without the fix this test trips its 1-second deadline; with the fix the
+// callee remains responsive within milliseconds.
+func TestDealerYieldDoesNotBlockCalleeOnSlowCaller(t *testing.T) {
+	r := newTestRouter(t)
+
+	// Caller with the smallest practical outbound queue. After WELCOME is
+	// drained the queue is empty; one stalled RESULT will fill it.
+	callerClient, callerServer := transport.LinkedPeersQSize(1)
+	go func() {
+		callerClient.Send() <- &wamp.Hello{Realm: testRealm, Details: clientRoles}
+	}()
+	require.NoError(t, r.Attach(callerServer))
+	welcome := <-callerClient.Recv()
+	_, ok := welcome.(*wamp.Welcome)
+	require.True(t, ok, "expected WELCOME, got %T", welcome)
+
+	// Callee with the normal default queue.
+	callee := testClient(t, r)
+
+	const proc = wamp.URI("nexus.test.slowcaller.proc")
+	callee.Send() <- &wamp.Register{Request: 1, Procedure: proc}
+	msg, err := wamp.RecvTimeout(callee, time.Second)
+	require.NoError(t, err)
+	_, ok = msg.(*wamp.Registered)
+	require.True(t, ok, "expected REGISTERED, got %T", msg)
+
+	deliverYield := func(callRequest wamp.ID) {
+		t.Helper()
+		callerClient.Send() <- &wamp.Call{Request: callRequest, Procedure: proc}
+		msg, err := wamp.RecvTimeout(callee, time.Second)
+		require.NoErrorf(t, err, "callee never received INVOCATION for call %d", callRequest)
+		inv, ok := msg.(*wamp.Invocation)
+		require.True(t, ok, "expected INVOCATION, got %T", msg)
+		callee.Send() <- &wamp.Yield{Request: inv.Request}
+	}
+
+	// First call: RESULT 1 fills caller's 1-slot queue (test never reads it).
+	deliverYield(1)
+
+	// Second call: RESULT 2 cannot be queued — caller is now blocked.
+	// dealer.yield enters its retry loop. With the bug, this retry runs on
+	// the callee's session goroutine and blocks it.
+	deliverYield(2)
+
+	// The callee must still be able to do other work while the dealer
+	// retries delivering RESULT 2 in the background. SUBSCRIBE → SUBSCRIBED
+	// must complete promptly; without the fix it waits for the retry
+	// deadline (~1 minute).
+	callee.Send() <- &wamp.Subscribe{Request: 100, Topic: testTopic}
+	select {
+	case msg := <-callee.Recv():
+		_, ok := msg.(*wamp.Subscribed)
+		require.True(t, ok, "expected SUBSCRIBED, got %T", msg)
+	case <-time.After(time.Second):
+		t.Fatal("callee blocked for >1s while caller's queue is full — see #324")
+	}
+}
+
 func TestRouterCall(t *testing.T) {
 	synctest.Test(t, func(t *testing.T) {
 		r := newTestRouter(t)
