@@ -163,3 +163,118 @@ func TestSubscribeBurst(t *testing.T) {
 		require.NoError(t, err)
 	}
 }
+
+// TestSpecPubSubSubscribeInvalidURI verifies SUBSCRIBE with a malformed
+// URI is rejected per spec §3.6.2 with wamp.error.invalid_uri.
+func TestSpecPubSubSubscribeInvalidURI(t *testing.T) {
+	checkGoLeaks(t)
+	sub := connectClient(t)
+
+	// Trailing dot violates URI shape.
+	err := sub.Subscribe("nexus.bad.uri.", func(_ *wamp.Event) {}, nil)
+	require.Error(t, err, "expected error subscribing to invalid URI")
+	require.ErrorContains(t, err, string(wamp.ErrInvalidURI))
+}
+
+// TestSpecPubSubPublishNoSubscribers verifies a PUBLISH with acknowledge=true
+// to a topic with no subscribers succeeds (no error, just no delivery).
+func TestSpecPubSubPublishNoSubscribers(t *testing.T) {
+	checkGoLeaks(t)
+	pub := connectClient(t)
+
+	err := pub.Publish("nexus.test.no.subscribers", wamp.Dict{wamp.OptAcknowledge: true},
+		wamp.List{"silently dropped"}, nil)
+	require.NoError(t, err, "publish to topic with no subscribers must succeed")
+}
+
+// TestSpecPubSubExcludeMeFalse verifies disclose=true / exclude_me=false:
+// the publisher itself receives the event it published when exclude_me is
+// explicitly disabled (spec §14.4.1).
+func TestSpecPubSubExcludeMeFalse(t *testing.T) {
+	checkGoLeaks(t)
+	pub := connectClient(t)
+
+	gotEvent := make(chan struct{}, 1)
+	err := pub.Subscribe("nexus.test.self", func(_ *wamp.Event) {
+		gotEvent <- struct{}{}
+	}, nil)
+	require.NoError(t, err)
+
+	err = pub.Publish("nexus.test.self",
+		wamp.Dict{wamp.OptAcknowledge: true, wamp.OptExcludeMe: false},
+		wamp.List{"hi self"}, nil)
+	require.NoError(t, err)
+
+	select {
+	case <-gotEvent:
+	case <-time.After(500 * time.Millisecond):
+		t.Fatal("publisher with exclude_me=false did not receive own event")
+	}
+
+	require.NoError(t, pub.Unsubscribe("nexus.test.self"))
+}
+
+// TestSpecPubSubExcludeMeDefault verifies the default behavior is for the
+// publisher to NOT receive its own event (spec §3.5.4 default).
+func TestSpecPubSubExcludeMeDefault(t *testing.T) {
+	checkGoLeaks(t)
+	pub := connectClient(t)
+
+	gotEvent := make(chan struct{}, 1)
+	err := pub.Subscribe("nexus.test.self.default", func(_ *wamp.Event) {
+		gotEvent <- struct{}{}
+	}, nil)
+	require.NoError(t, err)
+
+	err = pub.Publish("nexus.test.self.default",
+		wamp.Dict{wamp.OptAcknowledge: true},
+		wamp.List{"goes nowhere"}, nil)
+	require.NoError(t, err)
+
+	select {
+	case <-gotEvent:
+		t.Fatal("publisher received own event with default exclude_me")
+	case <-time.After(150 * time.Millisecond):
+	}
+
+	require.NoError(t, pub.Unsubscribe("nexus.test.self.default"))
+}
+
+// TestSpecPubSubArgsRoundTrip verifies arguments and argumentskw survive
+// the broker untouched. This catches serializer/deserializer bugs at the
+// router boundary.
+func TestSpecPubSubArgsRoundTrip(t *testing.T) {
+	checkGoLeaks(t)
+	sub := connectClient(t)
+	pub := connectClient(t)
+
+	type got struct {
+		args wamp.List
+		kw   wamp.Dict
+	}
+	gotChan := make(chan got, 1)
+	err := sub.Subscribe("nexus.test.args", func(ev *wamp.Event) {
+		gotChan <- got{args: ev.Arguments, kw: ev.ArgumentsKw}
+	}, nil)
+	require.NoError(t, err)
+
+	wantArgs := wamp.List{"a", int64(2), 3.14, true}
+	wantKw := wamp.Dict{"key": "value", "n": int64(42)}
+	err = pub.Publish("nexus.test.args",
+		wamp.Dict{wamp.OptAcknowledge: true}, wantArgs, wantKw)
+	require.NoError(t, err)
+
+	select {
+	case g := <-gotChan:
+		require.Equal(t, "a", g.args[0])
+		v, _ := wamp.AsInt64(g.args[1])
+		require.Equal(t, int64(2), v)
+		require.Equal(t, "value", g.kw["key"])
+		n, _ := wamp.AsInt64(g.kw["n"])
+		require.Equal(t, int64(42), n)
+	case <-time.After(500 * time.Millisecond):
+		t.Fatal("event with args+kwargs not delivered")
+	}
+
+	require.NoError(t, sub.Unsubscribe("nexus.test.args"))
+}

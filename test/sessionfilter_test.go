@@ -140,3 +140,147 @@ func TestBlacklistAttribute(t *testing.T) {
 	case <-time.After(200 * time.Millisecond):
 	}
 }
+
+// TestSpecFilterEligibleSessionID verifies the standard `eligible` whitelist
+// option (session-id list) per WAMP spec §14.4.2.
+func TestSpecFilterEligibleSessionID(t *testing.T) {
+	checkGoLeaks(t)
+
+	sub1 := connectClient(t)
+	ev1 := make(chan *wamp.Event, 1)
+	require.NoError(t, sub1.SubscribeChan(testTopic, ev1, nil))
+
+	sub2 := connectClient(t)
+	ev2 := make(chan *wamp.Event, 1)
+	require.NoError(t, sub2.SubscribeChan(testTopic, ev2, nil))
+
+	pub := connectClient(t)
+	opts := wamp.Dict{wamp.WhitelistKey: wamp.List{sub1.ID()}}
+	require.NoError(t, pub.Publish(testTopic, opts, wamp.List{"hi"}, nil))
+
+	select {
+	case <-ev1:
+	case <-time.After(500 * time.Millisecond):
+		t.Fatal("eligible-listed subscriber did not receive event")
+	}
+	select {
+	case <-ev2:
+		t.Fatal("non-eligible subscriber received event")
+	case <-time.After(150 * time.Millisecond):
+	}
+
+	require.NoError(t, sub1.Unsubscribe(testTopic))
+	require.NoError(t, sub2.Unsubscribe(testTopic))
+}
+
+// TestSpecFilterExcludeSessionID verifies the standard `exclude` blacklist
+// option (session-id list) per WAMP spec §14.4.2.
+func TestSpecFilterExcludeSessionID(t *testing.T) {
+	checkGoLeaks(t)
+
+	sub1 := connectClient(t)
+	ev1 := make(chan *wamp.Event, 1)
+	require.NoError(t, sub1.SubscribeChan(testTopic, ev1, nil))
+
+	sub2 := connectClient(t)
+	ev2 := make(chan *wamp.Event, 1)
+	require.NoError(t, sub2.SubscribeChan(testTopic, ev2, nil))
+
+	pub := connectClient(t)
+	opts := wamp.Dict{wamp.BlacklistKey: wamp.List{sub2.ID()}}
+	require.NoError(t, pub.Publish(testTopic, opts, wamp.List{"hi"}, nil))
+
+	select {
+	case <-ev1:
+	case <-time.After(500 * time.Millisecond):
+		t.Fatal("non-excluded subscriber did not receive event")
+	}
+	select {
+	case <-ev2:
+		t.Fatal("excluded subscriber received event")
+	case <-time.After(150 * time.Millisecond):
+	}
+
+	require.NoError(t, sub1.Unsubscribe(testTopic))
+	require.NoError(t, sub2.Unsubscribe(testTopic))
+}
+
+// TestSpecFilterEligibleAndExclude verifies that when both eligible and
+// exclude lists name the same session, exclude wins (spec §14.4.2).
+func TestSpecFilterEligibleAndExclude(t *testing.T) {
+	checkGoLeaks(t)
+
+	sub1 := connectClient(t)
+	ev1 := make(chan *wamp.Event, 1)
+	require.NoError(t, sub1.SubscribeChan(testTopic, ev1, nil))
+
+	sub2 := connectClient(t)
+	ev2 := make(chan *wamp.Event, 1)
+	require.NoError(t, sub2.SubscribeChan(testTopic, ev2, nil))
+
+	pub := connectClient(t)
+	opts := wamp.Dict{
+		wamp.WhitelistKey: wamp.List{sub1.ID(), sub2.ID()},
+		wamp.BlacklistKey: wamp.List{sub2.ID()},
+	}
+	require.NoError(t, pub.Publish(testTopic, opts, wamp.List{"hi"}, nil))
+
+	select {
+	case <-ev1:
+	case <-time.After(500 * time.Millisecond):
+		t.Fatal("eligible subscriber did not receive event")
+	}
+	select {
+	case <-ev2:
+		t.Fatal("eligible-but-excluded subscriber received event")
+	case <-time.After(150 * time.Millisecond):
+	}
+
+	require.NoError(t, sub1.Unsubscribe(testTopic))
+	require.NoError(t, sub2.Unsubscribe(testTopic))
+}
+
+// TestSpecFilterEligibleAuthRole verifies eligible_authrole filtering using
+// the auth realm where wampcra-authenticated clients get authrole=user and
+// the publisher's anonymous role is filtered out.
+func TestSpecFilterEligibleAuthRole(t *testing.T) {
+	checkGoLeaks(t)
+
+	authedCfg := client.Config{
+		Realm:        testAuthRealm,
+		HelloDetails: wamp.Dict{"authid": "jdoe"},
+		AuthHandlers: map[string]client.AuthFunc{
+			"wampcra": clientAuthFunc,
+		},
+		ResponseTimeout: time.Second,
+	}
+	subAuthed := connectClientCfg(t, authedCfg)
+	evAuthed := make(chan *wamp.Event, 1)
+	require.NoError(t, subAuthed.SubscribeChan(testTopic, evAuthed, nil))
+
+	anonCfg := client.Config{
+		Realm:           testAuthRealm,
+		ResponseTimeout: time.Second,
+	}
+	subAnon := connectClientCfg(t, anonCfg)
+	evAnon := make(chan *wamp.Event, 1)
+	require.NoError(t, subAnon.SubscribeChan(testTopic, evAnon, nil))
+
+	pub := connectClientCfg(t, anonCfg)
+	opts := wamp.Dict{"eligible_authrole": wamp.List{"user"}}
+	require.NoError(t, pub.Publish(testTopic, opts, wamp.List{"to user role"}, nil))
+
+	select {
+	case <-evAuthed:
+	case <-time.After(500 * time.Millisecond):
+		t.Fatal("subscriber with authrole=user did not receive event")
+	}
+	select {
+	case <-evAnon:
+		t.Fatal("anonymous subscriber received event filtered to authrole=user")
+	case <-time.After(150 * time.Millisecond):
+	}
+
+	require.NoError(t, subAuthed.Unsubscribe(testTopic))
+	require.NoError(t, subAnon.Unsubscribe(testTopic))
+}

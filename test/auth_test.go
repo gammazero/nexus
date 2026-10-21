@@ -174,6 +174,119 @@ func clientAuthFunc(c *wamp.Challenge) (string, wamp.Dict) {
 	return crsign.RespondChallenge(password, c, nil), wamp.Dict{}
 }
 
+// TestSpecAuthAnonymousSucceeds verifies that connecting to a realm with
+// AnonymousAuth=true and authmethods=[anonymous] succeeds without challenge.
+// (spec §14.6.2)
+func TestSpecAuthAnonymousSucceeds(t *testing.T) {
+	checkGoLeaks(t)
+
+	cfg := client.Config{
+		Realm:           testRealm,
+		HelloDetails:    wamp.Dict{"authmethods": wamp.List{"anonymous"}},
+		ResponseTimeout: clientResponseTimeout,
+	}
+	cli := connectClientCfg(t, cfg)
+	details := cli.RealmDetails()
+	authrole, _ := wamp.AsString(details["authrole"])
+	require.NotEmpty(t, authrole, "anonymous welcome must include authrole")
+}
+
+// TestSpecAuthCRABadAuthMethod verifies HELLO requesting an authmethod the
+// realm does not offer is rejected.
+func TestSpecAuthCRABadAuthMethod(t *testing.T) {
+	checkGoLeaks(t)
+
+	cfg := client.Config{
+		Realm: testAuthRealm,
+		HelloDetails: wamp.Dict{
+			"authid":      "jdoe",
+			"authmethods": wamp.List{"no_such_method"},
+		},
+		ResponseTimeout: time.Second,
+	}
+	_, err := connectClientCfgErr(cfg)
+	require.Error(t, err, "expected error with unsupported authmethod")
+}
+
+// TestSpecAuthTicketSucceeds verifies the ticket-auth flow works against
+// the testAuthRealm using the existing serverKeyStore (which already
+// recognizes the ticket "ticketforjoe1234" for authid jdoe).
+// Pin: this path was previously untested in the integration suite.
+func TestSpecAuthTicketSucceeds(t *testing.T) {
+	checkGoLeaks(t)
+
+	ticketHandler := func(_ *wamp.Challenge) (string, wamp.Dict) {
+		return "ticketforjoe1234", wamp.Dict{}
+	}
+
+	cfg := client.Config{
+		Realm: testAuthRealm,
+		HelloDetails: wamp.Dict{
+			"authid":      "jdoe",
+			"authmethods": wamp.List{"ticket"},
+		},
+		AuthHandlers: map[string]client.AuthFunc{
+			"ticket": ticketHandler,
+		},
+		ResponseTimeout: time.Second,
+	}
+	cli := connectClientCfg(t, cfg)
+
+	authrole, _ := wamp.AsString(cli.RealmDetails()["authrole"])
+	require.Equal(t, "user", authrole, "ticket auth must set authrole from KeyStore")
+
+	authmethod, _ := wamp.AsString(cli.RealmDetails()["authmethod"])
+	require.Equal(t, "ticket", authmethod)
+}
+
+// TestSpecAuthTicketBad verifies an invalid ticket value is rejected with
+// an authentication failure (spec §14.6.4).
+func TestSpecAuthTicketBad(t *testing.T) {
+	checkGoLeaks(t)
+
+	ticketHandler := func(_ *wamp.Challenge) (string, wamp.Dict) {
+		return "wrong-ticket-value", wamp.Dict{}
+	}
+
+	cfg := client.Config{
+		Realm: testAuthRealm,
+		HelloDetails: wamp.Dict{
+			"authid":      "jdoe",
+			"authmethods": wamp.List{"ticket"},
+		},
+		AuthHandlers: map[string]client.AuthFunc{
+			"ticket": ticketHandler,
+		},
+		ResponseTimeout: time.Second,
+	}
+	_, err := connectClientCfgErr(cfg)
+	require.Error(t, err, "expected ticket auth to fail")
+}
+
+// TestSpecAuthTicketUnknownUser verifies a ticket for an authid not in the
+// keystore is rejected.
+func TestSpecAuthTicketUnknownUser(t *testing.T) {
+	checkGoLeaks(t)
+
+	ticketHandler := func(_ *wamp.Challenge) (string, wamp.Dict) {
+		return "anything", wamp.Dict{}
+	}
+
+	cfg := client.Config{
+		Realm: testAuthRealm,
+		HelloDetails: wamp.Dict{
+			"authid":      "no_such_user",
+			"authmethods": wamp.List{"ticket"},
+		},
+		AuthHandlers: map[string]client.AuthFunc{
+			"ticket": ticketHandler,
+		},
+		ResponseTimeout: time.Second,
+	}
+	_, err := connectClientCfgErr(cfg)
+	require.Error(t, err, "expected ticket auth to fail for unknown user")
+}
+
 type serverKeyStore struct {
 	provider     string
 	cookie       *http.Cookie

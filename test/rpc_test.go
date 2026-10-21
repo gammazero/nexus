@@ -236,6 +236,153 @@ func TestRPCTimeoutCall(t *testing.T) {
 	require.NoError(t, err)
 }
 
+// TestSpecRPCRegisterDuplicate verifies REGISTER on an already-registered
+// procedure (without shared registration) yields wamp.error.procedure_already_exists
+// per spec §3.7.7.
+func TestSpecRPCRegisterDuplicate(t *testing.T) {
+	checkGoLeaks(t)
+	const procName = "spec.duplicate.proc"
+
+	callee1 := connectClient(t)
+	handler := func(ctx context.Context, _ *wamp.Invocation) client.InvokeResult {
+		return client.InvokeResult{}
+	}
+	require.NoError(t, callee1.Register(procName, handler, nil))
+
+	callee2 := connectClient(t)
+	err := callee2.Register(procName, handler, nil)
+	require.Error(t, err, "expected error on duplicate registration")
+	require.ErrorContains(t, err, string(wamp.ErrProcedureAlreadyExists))
+
+	require.NoError(t, callee1.Unregister(procName))
+}
+
+// TestSpecRPCRegisterInvalidURI verifies REGISTER with a malformed procedure
+// URI is rejected with wamp.error.invalid_uri (spec §3.7.6).
+func TestSpecRPCRegisterInvalidURI(t *testing.T) {
+	checkGoLeaks(t)
+	callee := connectClient(t)
+
+	err := callee.Register("trailing.dot.", func(_ context.Context, _ *wamp.Invocation) client.InvokeResult {
+		return client.InvokeResult{}
+	}, nil)
+	require.Error(t, err)
+	require.ErrorContains(t, err, string(wamp.ErrInvalidURI))
+}
+
+// TestSpecRPCInvocationErrorPropagation verifies a callee that returns an
+// InvokeResult.Err produces a CALL ERROR with the same URI/args/kwargs to
+// the caller per spec §3.7.4.
+func TestSpecRPCInvocationErrorPropagation(t *testing.T) {
+	checkGoLeaks(t)
+	const procName = "spec.failing.proc"
+
+	callee := connectClient(t)
+	customURI := wamp.URI("com.example.custom_failure")
+	require.NoError(t, callee.Register(procName, func(_ context.Context, _ *wamp.Invocation) client.InvokeResult {
+		return client.InvokeResult{
+			Err:  customURI,
+			Args: wamp.List{"detail string", int64(42)},
+			Kwargs: wamp.Dict{
+				"reason": "deliberate failure",
+			},
+		}
+	}, nil))
+
+	caller := connectClient(t)
+	_, err := caller.Call(context.Background(), procName, nil, nil, nil, nil)
+	require.Error(t, err)
+
+	var rpcErr client.RPCError
+	require.ErrorAs(t, err, &rpcErr)
+	require.Equal(t, customURI, rpcErr.Err.Error)
+	require.Equal(t, "detail string", rpcErr.Err.Arguments[0])
+	require.Equal(t, "deliberate failure", rpcErr.Err.ArgumentsKw["reason"])
+
+	require.NoError(t, callee.Unregister(procName))
+}
+
+// TestSpecRPCCancelModeKill verifies CANCEL with mode=kill: the callee's
+// invocation is interrupted AND the caller waits for the callee's response
+// before getting the CALL ERROR(canceled) (spec §14.3.4).
+func TestSpecRPCCancelModeKill(t *testing.T) {
+	checkGoLeaks(t)
+	const procName = "spec.cancel.kill"
+
+	callee := connectClient(t)
+	caleeReceived := make(chan struct{}, 1)
+	require.NoError(t, callee.Register(procName, func(ctx context.Context, _ *wamp.Invocation) client.InvokeResult {
+		<-ctx.Done()
+		caleeReceived <- struct{}{}
+		return client.InvokeResult{Err: wamp.ErrCanceled}
+	}, nil))
+
+	caller := connectClient(t)
+	require.NoError(t, caller.SetCallCancelMode(wamp.CancelModeKill))
+
+	errChan := make(chan error, 1)
+	ctx, cancel := context.WithCancel(context.Background())
+	go func() {
+		_, e := caller.Call(ctx, procName, nil, nil, nil, nil)
+		errChan <- e
+	}()
+
+	time.Sleep(100 * time.Millisecond)
+	cancel()
+
+	select {
+	case <-caleeReceived:
+	case <-time.After(time.Second):
+		t.Fatal("callee did not see INTERRUPT")
+	}
+
+	select {
+	case err := <-errChan:
+		require.Error(t, err)
+	case <-time.After(2 * time.Second):
+		t.Fatal("caller did not receive cancel ERROR")
+	}
+
+	require.NoError(t, callee.Unregister(procName))
+}
+
+// TestSpecRPCCancelModeSkip verifies CANCEL with mode=skip: caller gets the
+// canceled error immediately without waiting for the callee.
+func TestSpecRPCCancelModeSkip(t *testing.T) {
+	checkGoLeaks(t)
+	const procName = "spec.cancel.skip"
+
+	callee := connectClient(t)
+	calleeStarted := make(chan struct{}, 1)
+	require.NoError(t, callee.Register(procName, func(ctx context.Context, _ *wamp.Invocation) client.InvokeResult {
+		calleeStarted <- struct{}{}
+		<-ctx.Done()
+		return client.InvokeResult{Err: wamp.ErrCanceled}
+	}, nil))
+
+	caller := connectClient(t)
+	require.NoError(t, caller.SetCallCancelMode(wamp.CancelModeSkip))
+
+	errChan := make(chan error, 1)
+	ctx, cancel := context.WithCancel(context.Background())
+	go func() {
+		_, e := caller.Call(ctx, procName, nil, nil, nil, nil)
+		errChan <- e
+	}()
+
+	<-calleeStarted
+	cancel()
+
+	select {
+	case err := <-errChan:
+		require.Error(t, err)
+	case <-time.After(time.Second):
+		t.Fatal("caller did not get prompt skip-mode cancel error")
+	}
+
+	require.NoError(t, callee.Unregister(procName))
+}
+
 func TestRPCResponseRouting(t *testing.T) {
 	checkGoLeaks(t)
 	// Connect callee session.
