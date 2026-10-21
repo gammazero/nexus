@@ -738,6 +738,17 @@ func (b *broker) syncPubSubCreateMeta(subSessID wamp.ID, sub *subscription) {
 }
 
 func (b *broker) trySend(sess *wamp.Session, msg wamp.Message) {
+	// Recover from a "send on closed channel" panic: the session's handler
+	// goroutine may have exited (and closed its peer) concurrently with the
+	// broker's actor goroutine processing this in-flight action. select +
+	// default protects against a *full* channel but not a *closed* one;
+	// both should result in the same best-effort-drop semantics rather
+	// than crashing the router process.
+	defer func() {
+		if r := recover(); r != nil {
+			b.log.Printf("Dropped %s to closed session %s: %v", msg.MessageType(), sess, r)
+		}
+	}()
 	select {
 	case sess.Send() <- msg:
 	default:

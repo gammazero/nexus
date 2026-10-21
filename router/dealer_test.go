@@ -12,6 +12,20 @@ import (
 	"github.com/gammazero/nexus/v3/wamp"
 )
 
+// TestDealerTrySendDoesNotPanicOnClosedSession pins the safety guarantee
+// added to dealer.trySend: a session whose outbound channel was closed
+// concurrently must result in a silent drop, not a process-killing
+// panic. See TestBrokerTrySendDoesNotPanicOnClosedSession for full
+// context — same race, parallel function in the dealer.
+func TestDealerTrySendDoesNotPanicOnClosedSession(t *testing.T) {
+	d, _ := newTestDealer(t)
+	sess := &wamp.Session{Peer: newClosedSendPeer(), ID: 1}
+
+	require.NotPanics(t, func() {
+		d.trySend(sess, &wamp.Result{Request: 1})
+	}, "dealer.trySend must not panic when session outbound is closed")
+}
+
 func newTestDealer(t *testing.T) (*dealer, wamp.Peer) {
 	d := newDealer(logger, false, true, debug)
 	metaClient, rtr := transport.LinkedPeers()
