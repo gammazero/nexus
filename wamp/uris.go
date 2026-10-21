@@ -22,6 +22,11 @@ const (
 	// is not active.
 	ErrNoSuchRegistration = URI("wamp.error.no_such_registration")
 
+	// Sent by a Dealer in an unsolicited UNREGISTERED message to a Callee
+	// whose registration has been revoked — e.g. because another peer forcibly
+	// took it over with force_reregister=true.
+	ErrUnregistered = URI("wamp.error.unregistered")
+
 	// A Broker could not perform an unsubscribe, since the given subscription
 	// is not active.
 	ErrNoSuchSubscription = URI("wamp.error.no_such_subscription")

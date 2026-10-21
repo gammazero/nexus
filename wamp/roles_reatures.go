@@ -18,6 +18,7 @@ const (
 	FeatureProgCallInvocations = "progressive_call_invocations"
 	FeatureSessionMetaAPI      = "session_meta_api"
 	FeatureSharedReg           = "shared_registration"
+	FeatureForceReregister     = "force_reregister"
 	FeatureRegMetaAPI          = "registration_meta_api"
 	FeatureTestamentMetaAPI    = "testament_meta_api"
 
