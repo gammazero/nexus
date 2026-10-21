@@ -109,6 +109,12 @@ type readDeadliner interface {
 	SetReadDeadline(t time.Time) error
 }
 
+// writeDeadliner is readDeadliner's write-side twin, type-asserted the same
+// way.
+type writeDeadliner interface {
+	SetWriteDeadline(t time.Time) error
+}
+
 const (
 	// WAMP uses the following websocket subprotocol identifiers for unbatched
 	// modes:
@@ -117,6 +123,13 @@ const (
 	cborWebsocketProtocol    = "wamp.2.cbor"
 
 	ctrlTimeout = 5 * time.Second
+
+	// writeTimeout bounds one frame write. A peer that stops draining its
+	// socket while the connection stays up otherwise parks the writer in
+	// WriteMessage for good, and with it everything queued behind it.
+	// Generous, so a large frame on a slow link still gets through; the
+	// keepalive read deadline is the fast path for a dead peer.
+	writeTimeout = 60 * time.Second
 )
 
 // ConnectWebsocketPeer creates a new websocket client with the specified
@@ -239,6 +252,16 @@ func NewWebsocketPeer(conn WebsocketConnection, serializer serialize.Serializer,
 
 func (w *websocketPeer) Recv() <-chan wamp.Message { return w.rd }
 
+// write sends one frame under a fresh write deadline when the connection
+// supports one. Every frame goes through here — a deadline left behind by
+// a data frame would otherwise fail a later ping.
+func (w *websocketPeer) write(messageType int, data []byte) error {
+	if wd, ok := w.conn.(writeDeadliner); ok {
+		_ = wd.SetWriteDeadline(time.Now().Add(writeTimeout))
+	}
+	return w.conn.WriteMessage(messageType, data)
+}
+
 func (w *websocketPeer) Send() chan<- wamp.Message { return w.wr }
 
 func (w *websocketPeer) IsLocal() bool { return false }
@@ -307,14 +330,14 @@ sendLoop:
 				continue sendLoop
 			}
 
-			if err = w.conn.WriteMessage(w.payloadType, b); err != nil {
+			if err = w.write(w.payloadType, b); err != nil {
 				if !wamp.IsGoodbyeAck(msg) {
 					w.log.Print(err)
 				}
 				return
 			}
 		case m := <-pongs:
-			err := w.conn.WriteMessage(websocket.PongMessage, []byte(m))
+			err := w.write(websocket.PongMessage, []byte(m))
 			if err != nil {
 				w.log.Print(err)
 			}
@@ -379,7 +402,7 @@ recvLoop:
 				continue recvLoop
 			}
 
-			if err = w.conn.WriteMessage(w.payloadType, b); err != nil {
+			if err = w.write(w.payloadType, b); err != nil {
 				if !wamp.IsGoodbyeAck(msg) {
 					w.log.Print(err)
 				}
@@ -393,13 +416,13 @@ recvLoop:
 				return
 			}
 			// Send websocket ping.
-			err := w.conn.WriteMessage(websocket.PingMessage, pingMsg)
+			err := w.write(websocket.PingMessage, pingMsg)
 			if err != nil {
 				return
 			}
 			pendingPongs.Add(1)
 		case m := <-pongs:
-			err := w.conn.WriteMessage(websocket.PongMessage, []byte(m))
+			err := w.write(websocket.PongMessage, []byte(m))
 			if err != nil {
 				w.log.Print(err)
 			}
