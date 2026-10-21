@@ -1,10 +1,17 @@
 package router //nolint:testpackage
 
 import (
+	"bytes"
 	"context"
 	"fmt"
+	"log"
+	"net"
 	"net/http"
+	"net/http/httptest"
+	"strings"
+	"sync"
 	"testing"
+	"time"
 
 	"github.com/gorilla/websocket"
 	"github.com/stretchr/testify/require"
@@ -249,4 +256,75 @@ func TestAllowOriginsWithPorts(t *testing.T) {
 	allowed = "http://happy.somewhere.com:1313"
 	r.Header.Set("Origin", allowed)
 	require.Truef(t, check(r), "Should have allowed: %s", allowed)
+}
+
+// lockedBuffer is a bytes.Buffer safe for concurrent writes from the router's
+// logger goroutines and reads from the test.
+type lockedBuffer struct {
+	mu  sync.Mutex
+	buf bytes.Buffer
+}
+
+func (b *lockedBuffer) Write(p []byte) (int, error) {
+	b.mu.Lock()
+	defer b.mu.Unlock()
+	return b.buf.Write(p)
+}
+
+func (b *lockedBuffer) String() string {
+	b.mu.Lock()
+	defer b.mu.Unlock()
+	return b.buf.String()
+}
+
+// A HELLO for a realm the router does not have is ABORTed, and the log line
+// names the peer so the source of a reconnect loop can be traced.
+func TestWSAttachFailureLogsPeer(t *testing.T) {
+	logBuf := &lockedBuffer{}
+	r, err := NewRouter(routerConfig, log.New(logBuf, "", 0))
+	require.NoError(t, err)
+	defer r.Close()
+
+	closer, err := NewWebsocketServer(r).ListenAndServe(wsAddr)
+	require.NoError(t, err)
+	defer closer.Close()
+
+	client, err := transport.ConnectWebsocketPeer(
+		context.Background(), fmt.Sprintf("ws://%s/", wsAddr), serialize.JSON, nil, r.Logger(), nil)
+	require.NoError(t, err)
+	defer client.Close()
+
+	client.Send() <- &wamp.Hello{Realm: "realm-1-1-dev", Details: clientRoles}
+	msg, ok := <-client.Recv()
+	require.True(t, ok, "recv chan closed")
+	_, ok = msg.(*wamp.Abort)
+	require.True(t, ok, "expected ABORT")
+
+	require.Eventually(t, func() bool {
+		return strings.Contains(logBuf.String(), "Client cannot attach to router")
+	}, 2*time.Second, 10*time.Millisecond)
+	line := logBuf.String()
+	require.Contains(t, line, `no realm "realm-1-1-dev" exists`)
+	require.Regexp(t, `\(peer 127\.0\.0\.1:\d+\)`, line)
+}
+
+type addrMockConn struct {
+	transport.WebsocketConnection
+	addr net.Addr
+}
+
+func (c addrMockConn) RemoteAddr() net.Addr { return c.addr }
+
+type addrlessMockConn struct{ transport.WebsocketConnection }
+
+func TestPeerDescription(t *testing.T) {
+	tcp := &net.TCPAddr{IP: net.IPv4(10, 0, 0, 7), Port: 4321}
+
+	require.Equal(t, "unknown", peerDescription(addrlessMockConn{}, wamp.Dict{}))
+	require.Equal(t, "10.0.0.7:4321", peerDescription(addrMockConn{addr: tcp}, wamp.Dict{"auth": wamp.Dict(nil)}))
+
+	req := httptest.NewRequest(http.MethodGet, "/ws", nil)
+	req.Header.Set("X-Forwarded-For", "203.0.113.9, 10.1.1.1")
+	got := peerDescription(addrMockConn{addr: tcp}, wamp.Dict{"auth": wamp.Dict{"request": req}})
+	require.Equal(t, "10.0.0.7:4321 forwarded-for 203.0.113.9, 10.1.1.1", got)
 }

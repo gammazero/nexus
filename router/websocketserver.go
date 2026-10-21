@@ -392,8 +392,32 @@ func (s *WebsocketServer) handleWebsocket(conn transport.WebsocketConnection, tr
 	}
 	peer := transport.NewWebsocketPeer(conn, serializer, payloadType, s.router.Logger(), s.KeepAlive, qsize)
 	if err := s.router.AttachClient(peer, transportDetails); err != nil {
-		s.router.Logger().Println("Client cannot attach to router:", err)
+		// Name the remote end: without it a client stuck in a reconnect
+		// loop against a realm that does not exist is untraceable.
+		s.router.Logger().Printf("Client cannot attach to router: %v (peer %s)",
+			err, peerDescription(conn, transportDetails))
 	}
+}
+
+// peerDescription identifies the remote end of a websocket connection for
+// log lines: the transport's remote address, plus the X-Forwarded-For header
+// when the upgrade request was captured (EnableRequestCapture) and a proxy
+// in front of the router set it.
+func peerDescription(conn transport.WebsocketConnection, transportDetails wamp.Dict) string {
+	desc := "unknown"
+	if ra, ok := conn.(interface{ RemoteAddr() net.Addr }); ok {
+		if addr := ra.RemoteAddr(); addr != nil {
+			desc = addr.String()
+		}
+	}
+	if auth, ok := transportDetails["auth"].(wamp.Dict); ok {
+		if req, ok := auth["request"].(*http.Request); ok && req != nil {
+			if fwd := req.Header.Get("X-Forwarded-For"); fwd != "" {
+				desc += " forwarded-for " + fwd
+			}
+		}
+	}
+	return desc
 }
 
 // checkOrigin returns true if the origin is not set, is equal to the request
