@@ -2,6 +2,8 @@ name: Lint Commits messages and Pull Request Description
 
 on:
   pull_request:
+    # `edited` re-runs the description checks when the PR body changes.
+    types: [opened, edited, synchronize, reopened]
 
 concurrency:
   group: '${{ github.workflow }} @ ${{ github.event.pull_request.head.label || github.head_ref || github.ref }}'
