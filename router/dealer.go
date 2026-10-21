@@ -429,13 +429,66 @@ func (d *dealer) syncRegister(callee *wamp.Session, msg *wamp.Register, match, i
 		reg = d.wcProcRegMap[msg.Procedure]
 	}
 
-	var created string
 	var regID wamp.ID
+	if reg == nil {
+		regID = d.idGen.Next()
+	} else {
+		// There is an existing registration(s) for this procedure. See if
+		// invocation policy allows another.
+
+		// Found an existing registration that has an invocation strategy that
+		// only allows a single callee on the given registration.
+		if reg.policy == "" || reg.policy == wamp.InvokeSingle {
+			d.log.Println("REGISTER for already registered procedure",
+				msg.Procedure, "from callee", callee)
+			d.trySend(callee, &wamp.Error{
+				Type:    msg.MessageType(),
+				Request: msg.Request,
+				Details: wamp.Dict{},
+				Error:   wamp.ErrProcedureAlreadyExists,
+			})
+			return metaPubs
+		}
+
+		// Found an existing registration that has an invocation strategy
+		// different from the one requested by the new callee.
+		if reg.policy != invokePolicy {
+			d.log.Println("REGISTER for already registered procedure",
+				msg.Procedure, "with conflicting invocation policy (has",
+				reg.policy, "and requested", invokePolicy)
+			d.trySend(callee, &wamp.Error{
+				Type:    msg.MessageType(),
+				Request: msg.Request,
+				Details: wamp.Dict{},
+				Error:   wamp.ErrProcedureAlreadyExists,
+			})
+			return metaPubs
+		}
+
+		regID = reg.id
+	}
+
+	// Deliver the REGISTERED ack before creating any registration state. The
+	// dealer and the callee must agree on whether a registration exists: if
+	// the ack cannot even be queued (outbound queue full, session closing),
+	// registering anyway would leave the callee unaware of the registration,
+	// and a later INVOCATION for the unknown registration ID is a protocol
+	// violation that makes some clients drop the connection. Failing the
+	// register entirely keeps both views consistent: the callee sees an
+	// unacknowledged register and retries or reconnects.
+	if !d.trySend(callee, &wamp.Registered{
+		Request:      msg.Request,
+		Registration: regID,
+	}) {
+		d.log.Printf("REGISTERED for procedure %v undeliverable to callee %v; registration not created",
+			msg.Procedure, callee)
+		return metaPubs
+	}
+
 	// If no existing registration found for the procedure, then create a new
 	// registration.
 	if reg == nil {
-		regID = d.idGen.Next()
-		created = wamp.NowISO8601()
+		created := wamp.NowISO8601()
 		reg = &registration{
 			id:             regID,
 			procedure:      msg.Procedure,
@@ -474,40 +527,6 @@ func (d *dealer) syncRegister(callee *wamp.Session, msg *wamp.Register, match, i
 			})
 		}
 	} else {
-		// There is an existing registration(s) for this procedure. See if
-		// invocation policy allows another.
-
-		// Found an existing registration that has an invocation strategy that
-		// only allows a single callee on the given registration.
-		if reg.policy == "" || reg.policy == wamp.InvokeSingle {
-			d.log.Println("REGISTER for already registered procedure",
-				msg.Procedure, "from callee", callee)
-			d.trySend(callee, &wamp.Error{
-				Type:    msg.MessageType(),
-				Request: msg.Request,
-				Details: wamp.Dict{},
-				Error:   wamp.ErrProcedureAlreadyExists,
-			})
-			return metaPubs
-		}
-
-		// Found an existing registration that has an invocation strategy
-		// different from the one requested by the new callee.
-		if reg.policy != invokePolicy {
-			d.log.Println("REGISTER for already registered procedure",
-				msg.Procedure, "with conflicting invocation policy (has",
-				reg.policy, "and requested", invokePolicy)
-			d.trySend(callee, &wamp.Error{
-				Type:    msg.MessageType(),
-				Request: msg.Request,
-				Details: wamp.Dict{},
-				Error:   wamp.ErrProcedureAlreadyExists,
-			})
-			return metaPubs
-		}
-
-		regID = reg.id
-
 		// Add callee for the registration.
 		reg.callees = append(reg.callees, callee)
 	}
@@ -522,10 +541,6 @@ func (d *dealer) syncRegister(callee *wamp.Session, msg *wamp.Register, match, i
 		d.log.Printf("Registered procedure %v (regID=%v) to callee %v",
 			msg.Procedure, regID, callee)
 	}
-	d.trySend(callee, &wamp.Registered{
-		Request:      msg.Request,
-		Registration: regID,
-	})
 
 	if !wampURI && d.metaPeer != nil {
 		// Publish wamp.registration.on_register meta event. Fired when a
@@ -1594,7 +1609,12 @@ func (d *dealer) regCountCallees(msg *wamp.Invocation) wamp.Message {
 	}
 }
 
-func (d *dealer) trySend(sess *wamp.Session, msg wamp.Message) {
+// trySend queues msg on the session's outbound channel without ever blocking
+// the dealer goroutine, reporting whether the message was accepted. Most
+// callers ignore the result (a drop only degrades that one session), but
+// callers whose state must match what the client saw, like the REGISTERED
+// ack in syncRegister, use it to abort instead.
+func (d *dealer) trySend(sess *wamp.Session, msg wamp.Message) (sent bool) {
 	// Recover from a "send on closed channel" panic: the session's handler
 	// goroutine may have exited (and closed its peer) concurrently with the
 	// dealer's actor goroutine processing this in-flight action. select +
@@ -1603,13 +1623,16 @@ func (d *dealer) trySend(sess *wamp.Session, msg wamp.Message) {
 	// than crashing the router process.
 	defer func() {
 		if r := recover(); r != nil {
+			sent = false
 			d.log.Printf("Dropped %s to closed session %s: %v", msg.MessageType(), sess, r)
 		}
 	}()
 	select {
 	case sess.Send() <- msg:
+		return true
 	default:
 		d.log.Printf("!!! Dropped %s to session %s: blocked", msg.MessageType(), sess)
+		return false
 	}
 }
 
