@@ -5,6 +5,8 @@ import (
 	"fmt"
 	"io"
 	"net"
+	"os"
+	"strings"
 	"time"
 
 	"github.com/gammazero/nexus/v3/transport"
@@ -36,7 +38,7 @@ func NewRawSocketServer(r Router) *RawSocketServer {
 // ListenAndServe listens on the specified endpoint and starts a goroutine that
 // accepts new client connections until the returned io.closer is closed.
 func (s *RawSocketServer) ListenAndServe(network, address string) (io.Closer, error) {
-	l, err := net.Listen(network, address)
+	l, err := listenWithStaleSockRecovery(network, address)
 	if err != nil {
 		return nil, err
 	}
@@ -45,6 +47,52 @@ func (s *RawSocketServer) ListenAndServe(network, address string) (io.Closer, er
 	go s.requestHandler(l)
 
 	return l, nil
+}
+
+// listenWithStaleSockRecovery wraps net.Listen with a Unix-socket-only
+// recovery path: if the bind fails with "address already in use", the
+// path on disk is a socket file, and nothing is currently listening on
+// it (a fresh dial is refused), then the file is treated as a leftover
+// from a crashed prior process — unlink it and retry. Per
+// gammazero/nexus#272.
+//
+// Safety properties:
+//   - Other errors are returned untouched.
+//   - Non-unix networks are returned untouched.
+//   - A regular file at the path is never removed: protects user data.
+//   - A socket with a live listener is never removed: refuses to steal the
+//     address from another running process.
+func listenWithStaleSockRecovery(network, address string) (net.Listener, error) {
+	l, err := net.Listen(network, address)
+	if err == nil {
+		return l, nil
+	}
+	if network != "unix" && network != "unixpacket" {
+		return nil, err
+	}
+	// Only attempt recovery for "address already in use" (substring check
+	// for portability across Linux/Darwin error wrappings).
+	if !strings.Contains(err.Error(), "address already in use") {
+		return nil, err
+	}
+	fi, statErr := os.Stat(address)
+	if statErr != nil || fi.Mode()&os.ModeSocket == 0 {
+		// Not a socket file (regular file, dir, broken symlink, etc.) —
+		// don't touch it; surface the original listen error.
+		return nil, err
+	}
+	// Probe: a quick dial. If it succeeds, a live listener exists; bail
+	// without removing the address.
+	if c, dialErr := net.DialTimeout(network, address, 100*time.Millisecond); dialErr == nil {
+		_ = c.Close()
+		return nil, err
+	}
+	// Stale socket from a crashed prior process. Unlink and retry.
+	if rmErr := os.Remove(address); rmErr != nil {
+		return nil, fmt.Errorf("listen %s %s: %w (failed to remove stale socket: %w)",
+			network, address, err, rmErr)
+	}
+	return net.Listen(network, address)
 }
 
 // ListenAndServeTLS listens on the specified endpoint and starts a goroutine
