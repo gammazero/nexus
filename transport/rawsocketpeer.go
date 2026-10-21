@@ -314,9 +314,13 @@ MsgLoop:
 			}
 			msg, err = rs.serializer.Deserialize(buf)
 			if err != nil {
-				// TODO: something more than merely logging?
+				// A malformed payload is a protocol violation per
+				// WAMP §5.3.1; abort the connection rather than
+				// silently skipping the frame. Same teardown shape
+				// as the io.ReadFull error path above.
 				rs.log.Println("Cannot deserialize peer message:", err)
-				continue MsgLoop
+				_ = rs.conn.Close()
+				return
 			}
 		case 1: // PING
 			header[0] = 0x02
