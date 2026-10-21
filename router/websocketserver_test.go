@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"net/http"
+	"net/http/httptest"
 	"testing"
 
 	"github.com/gorilla/websocket"
@@ -316,4 +317,28 @@ func TestAllowOriginsWithPorts(t *testing.T) {
 	allowed = "http://happy.somewhere.com:1313"
 	r.Header.Set("Origin", allowed)
 	require.Truef(t, check(r), "Should have allowed: %s", allowed)
+}
+
+// TestWSFailedUpgradeRepliesOnce pins that a rejected handshake produces
+// exactly one HTTP error response. gorilla's Upgrade already replies via
+// its returnError before handing the error back; replying a second time
+// in ServeHTTP produced a "superfluous response.WriteHeader call" from
+// net/http and appended a second error body.
+func TestWSFailedUpgradeRepliesOnce(t *testing.T) {
+	r, err := NewRouter(routerConfig, nil)
+	require.NoError(t, err)
+	defer r.Close()
+
+	s := NewWebsocketServer(r)
+
+	// A plain GET with no Upgrade/Connection headers: gorilla rejects the
+	// handshake with 400 and writes its own body.
+	req := httptest.NewRequest(http.MethodGet, "/ws", nil)
+	rec := httptest.NewRecorder()
+	s.ServeHTTP(rec, req)
+
+	require.Equal(t, http.StatusBadRequest, rec.Code)
+	// http.StatusText + "\n" is exactly what gorilla wrote. Anything more
+	// means ServeHTTP answered a request that was already answered.
+	require.Equal(t, http.StatusText(http.StatusBadRequest)+"\n", rec.Body.String())
 }

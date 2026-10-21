@@ -348,8 +348,15 @@ func (s *WebsocketServer) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 
 	conn, err := s.Upgrader.Upgrade(w, r, w.Header())
 	if err != nil {
+		// Upgrade has already replied: every handshake rejection goes
+		// through its returnError, which writes the status it chose (403
+		// for a disallowed origin, 405 for a non-GET, ...) or defers to
+		// Upgrader.Error. Its one remaining error path happens after the
+		// connection is hijacked, where the ResponseWriter can no longer
+		// be written to at all. Answering again here only produced a
+		// "superfluous response.WriteHeader call" from net/http, so log
+		// and return.
 		s.router.Logger().Println("Error upgrading to websocket connection:", err)
-		http.Error(w, err.Error(), http.StatusBadRequest)
 		return
 	}
 
