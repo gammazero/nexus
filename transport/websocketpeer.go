@@ -7,6 +7,7 @@ import (
 	"net"
 	"net/http"
 	"net/url"
+	"sync"
 	"sync/atomic"
 	"time"
 
@@ -91,6 +92,8 @@ type websocketPeer struct {
 
 	recvDone   chan struct{}
 	writerDone chan struct{}
+
+	closeOnce sync.Once
 
 	log stdlog.StdLog
 }
@@ -232,39 +235,38 @@ func (w *websocketPeer) IsLocal() bool { return false }
 // sends a close control message to the websocket to tell the other side to
 // close.
 //
+// Close is idempotent and safe to call concurrently; calls after the first
+// are no-ops.
+//
 // *** Do not call Send after calling Close. ***
 func (w *websocketPeer) Close() {
-	select {
-	case <-w.closed:
-		return
-	default:
-	}
-
-	// Tell sendHandler to exit and discard any queued messages. Do not close
-	// wr channel in case there are incoming messages during close.
-	w.cancelSender()
-	<-w.writerDone
-drainLoop:
-	for {
-		select {
-		case <-w.wr:
-		default:
-			break drainLoop
+	w.closeOnce.Do(func() {
+		// Tell sendHandler to exit and discard any queued messages. Do not close
+		// wr channel in case there are incoming messages during close.
+		w.cancelSender()
+		<-w.writerDone
+	drainLoop:
+		for {
+			select {
+			case <-w.wr:
+			default:
+				break drainLoop
+			}
 		}
-	}
 
-	closeMsg := websocket.FormatCloseMessage(websocket.CloseNormalClosure, "goodbye")
+		closeMsg := websocket.FormatCloseMessage(websocket.CloseNormalClosure, "goodbye")
 
-	// Tell recvHandler to close.
-	close(w.closed)
+		// Tell recvHandler to close.
+		close(w.closed)
 
-	// Ignore errors since websocket may have been closed by other side first
-	// in response to a goodbye message.
-	_ = w.conn.WriteControl(websocket.CloseMessage, closeMsg, time.Now().Add(ctrlTimeout))
-	_ = w.conn.Close()
+		// Ignore errors since websocket may have been closed by other side first
+		// in response to a goodbye message.
+		_ = w.conn.WriteControl(websocket.CloseMessage, closeMsg, time.Now().Add(ctrlTimeout))
+		_ = w.conn.Close()
 
-	// Wait for the recvHandler goroutine to exit.
-	<-w.recvDone
+		// Wait for the recvHandler goroutine to exit.
+		<-w.recvDone
+	})
 }
 
 // sendHandler pulls messages from the write channel, and pushes them to the
