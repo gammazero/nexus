@@ -73,6 +73,10 @@ type realm struct {
 	localAuth  bool
 	localAuthz bool
 
+	// authorizeUnlocked calls the authorizer on a details snapshot without
+	// holding the session lock. See RealmConfig.AuthorizeUnlocked.
+	authorizeUnlocked bool
+
 	metaStrict     bool
 	metaIncDetails []string
 
@@ -110,6 +114,8 @@ func newRealm(config *RealmConfig, broker *broker, dealer *dealer, logger stdlog
 		localAuth:   config.RequireLocalAuth,
 		localAuthz:  config.RequireLocalAuthz,
 		metaStrict:  config.MetaStrict,
+
+		authorizeUnlocked: config.AuthorizeUnlocked,
 
 		enableMetaKill:   config.EnableMetaKill,
 		enableMetaModify: config.EnableMetaModify,
@@ -565,17 +571,32 @@ func (r *realm) authzMessage(sess *wamp.Session, msg wamp.Message) bool {
 		return true
 	}
 
-	// Create a safe session to prevent access to the session.Peer.
-	safeSession := &wamp.Session{
-		ID:      sess.ID,
-		Details: sess.Details,
-	}
+	var isAuthz bool
+	var err error
+	if r.authorizeUnlocked {
+		// Snapshot the details under the lock, then authorize without it, so
+		// a blocking Authorizer delays only this session's own messages and
+		// never the broker, which locks subscriber sessions while filtering.
+		sess.Lock()
+		details := make(wamp.Dict, len(sess.Details))
+		for k, v := range sess.Details {
+			details[k] = v
+		}
+		sess.Unlock()
+		isAuthz, err = r.authorizer.Authorize(&wamp.Session{ID: sess.ID, Details: details}, msg)
+	} else {
+		// Create a safe session to prevent access to the session.Peer.
+		safeSession := &wamp.Session{
+			ID:      sess.ID,
+			Details: sess.Details,
+		}
 
-	// Write-lock the session, because there is no telling what the Authorizer
-	// will do to the session details.
-	sess.Lock()
-	isAuthz, err := r.authorizer.Authorize(safeSession, msg)
-	sess.Unlock()
+		// Write-lock the session, because there is no telling what the
+		// Authorizer will do to the session details.
+		sess.Lock()
+		isAuthz, err = r.authorizer.Authorize(safeSession, msg)
+		sess.Unlock()
+	}
 
 	if !isAuthz {
 		skipResponse := false

@@ -16,6 +16,8 @@ type Authorizer interface {
 	// as an interceptor of messages that can change their content and/or
 	// change the sending session based on the intercepted message. This
 	// functionality may be used to set values in the session upon encountering
-	// certain messages sent by that session.
+	// certain messages sent by that session. A realm configured with
+	// AuthorizeUnlocked passes a details snapshot instead, so there session
+	// changes are discarded; see RealmConfig.AuthorizeUnlocked.
 	Authorize(*wamp.Session, wamp.Message) (bool, error)
 }
