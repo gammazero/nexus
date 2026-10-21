@@ -1,0 +1,17 @@
+name: subscribe-unsubscribe-roundtrip
+spec_section: "Basic Profile §3.5 / §3.6"
+realm: realm1
+serializer: json
+
+steps:
+  - send: [1, "realm1", {roles: {subscriber: {}}}]
+  - expect: [2, "{{$session_id:int}}", "_"]
+
+  - send: [32, 8001, {}, "spec.test.unsubscribe"]
+  - expect: [33, 8001, "{{$sub_id:int}}"]
+    note: "SUBSCRIBED — capture subscription id"
+
+  - send: [34, 8002, "{{$sub_id:int}}"]
+    note: "UNSUBSCRIBE referencing the captured id"
+  - expect: [35, 8002]
+    note: "UNSUBSCRIBED for request_id=8002"

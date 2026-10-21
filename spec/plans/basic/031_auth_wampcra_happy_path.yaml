@@ -1,0 +1,35 @@
+name: wampcra-auth-challenge-sign-authenticate-welcome
+spec_section: "Authentication §13.4 — Challenge-Response (WAMP-CRA)"
+realm: realm1
+serializer: json
+
+# Full WAMP-CRA flow:
+#   1. Client → HELLO with authmethods=[wampcra], authid=alice
+#   2. Router → CHALLENGE [4, "wampcra", {challenge: "<json>", ...}]
+#   3. Client computes HMAC-SHA256(challenge, secret), base64-encodes
+#      → AUTHENTICATE [5, signature, {}]
+#   4. Router → WELCOME [2, session_id, {authid, authrole, authmethod}]
+#
+# The HMAC computation is done in a runner `compute` step over a
+# captured challenge string — see WAMPCRASignSpec in auth.go.
+auth:
+  wampcra:
+    users:
+      alice:
+        secret: "alice-secret"
+        role: "user"
+
+steps:
+  - send: [1, "realm1", {authmethods: ["wampcra"], authid: "alice", roles: {publisher: {}}}]
+  - expect: [4, "wampcra", {challenge: "{{$challenge:string}}"}]
+    note: "CHALLENGE — capture the challenge string for the signing step"
+
+  - compute:
+      wampcra_sign:
+        challenge: "{{$challenge}}"
+        secret: "alice-secret"
+        capture: signature
+
+  - send: [5, "{{$signature}}", {}]
+    note: "AUTHENTICATE with the computed base64 HMAC"
+  - expect: [2, "{{$session_id:int}}", {authid: "alice", authrole: "user", authmethod: "wampcra"}]

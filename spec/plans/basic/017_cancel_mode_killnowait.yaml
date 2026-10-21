@@ -1,0 +1,42 @@
+name: cancel-mode-killnowait-interrupts-callee-and-replies-immediately
+spec_section: "Advanced §14.3.4 — Call Canceling, mode=killnowait"
+realm: realm1
+serializer: json
+
+# In `killnowait` mode, the dealer sends INTERRUPT to the callee AND
+# replies to the caller with ERROR(canceled) immediately, without
+# waiting for the callee's response. Any later YIELD/ERROR from the
+# callee is discarded by the dealer.
+peers:
+  - name: callee
+  - name: caller
+
+steps:
+  - peer: callee
+    send: [1, "realm1", {roles: {callee: {features: {call_canceling: true}}}}]
+  - peer: callee
+    expect: [2, "{{$callee_session:int}}", "_"]
+
+  - peer: callee
+    send: [64, 17001, {}, "spec.test.cancel.killnowait"]
+  - peer: callee
+    expect: [65, 17001, "{{$reg_id:int}}"]
+
+  - peer: caller
+    send: [1, "realm1", {roles: {caller: {features: {call_canceling: true}}}}]
+  - peer: caller
+    expect: [2, "{{$caller_session:int}}", "_"]
+
+  - peer: caller
+    send: [48, 17002, {}, "spec.test.cancel.killnowait", []]
+  - peer: callee
+    expect: [68, "{{$inv_id:int}}", "{{$reg_id:int}}", "_"]
+
+  # CANCEL with mode=killnowait. Caller gets ERROR immediately (no
+  # waiting on the callee), and the callee receives INTERRUPT.
+  - peer: caller
+    send: [49, 17002, {mode: "killnowait"}]
+  - peer: caller
+    expect: [8, 48, 17002, "_", "wamp.error.canceled"]
+  - peer: callee
+    expect: [69, "{{$inv_id:int}}", "_"]

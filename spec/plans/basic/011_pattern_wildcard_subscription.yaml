@@ -1,0 +1,35 @@
+name: pattern-based-wildcard-subscription
+spec_section: "Advanced §14.4.7 — Pattern-based Subscription"
+realm: realm1
+serializer: json
+
+# Wildcard pattern: each empty URI component is a single-segment
+# wildcard. "spec.test..fire" matches "spec.test.<anything>.fire".
+peers:
+  - name: subscriber
+  - name: publisher
+
+steps:
+  - peer: subscriber
+    send: [1, "realm1", {roles: {subscriber: {}}}]
+  - peer: subscriber
+    expect: [2, "{{$sub_session:int}}", "_"]
+
+  - peer: subscriber
+    send: [32, 11001, {match: "wildcard"}, "spec.test..fire"]
+    note: "SUBSCRIBE with match=wildcard, second segment is the wildcard"
+  - peer: subscriber
+    expect: [33, 11001, "{{$sub_id:int}}"]
+
+  - peer: publisher
+    send: [1, "realm1", {roles: {publisher: {}}}]
+  - peer: publisher
+    expect: [2, "{{$pub_session:int}}", "_"]
+
+  - peer: publisher
+    send: [16, 11002, {acknowledge: true}, "spec.test.alarm.fire", ["match"]]
+  - peer: publisher
+    expect: [17, 11002, "{{$pub_id:int}}"]
+
+  - peer: subscriber
+    expect: [36, "{{$sub_id:int}}", "{{$pub_id:int}}", {topic: "spec.test.alarm.fire"}, ["match"]]

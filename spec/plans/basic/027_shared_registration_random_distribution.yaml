@@ -1,0 +1,77 @@
+name: shared-registration-invoke-random-distributes-across-callees
+spec_section: "Advanced §14.3.9 — Shared Registration, invoke=random"
+realm: realm1
+serializer: json
+
+# Builds on 026 (which only smoke-tested option acceptance) by actually
+# exercising the random dispatch path. Uses the runner's `from_any`
+# step: each CALL produces an INVOCATION on either callee1 or callee2;
+# whichever fires gets captured under {{$picked}}, and the matching
+# YIELD is sent from that same captured peer name.
+#
+# Distribution itself isn't asserted (PRNG is seeded from time.Now,
+# non-deterministic), but the plan exercises the actual random branch
+# (len(reg.callees) > 1 path in dealer.go:824) and verifies every call
+# produces a successful round-trip RESULT no matter which callee was
+# picked.
+peers:
+  - name: callee1
+  - name: callee2
+  - name: caller
+
+steps:
+  - peer: callee1
+    send: [1, "realm1", {roles: {callee: {features: {shared_registration: true}}}}]
+  - peer: callee1
+    expect: [2, "{{$c1_session:int}}", "_"]
+  - peer: callee1
+    send: [64, 27001, {invoke: "random"}, "spec.test.shared.random.dist"]
+  - peer: callee1
+    expect: [65, 27001, "{{$reg_id:int}}"]
+
+  - peer: callee2
+    send: [1, "realm1", {roles: {callee: {features: {shared_registration: true}}}}]
+  - peer: callee2
+    expect: [2, "{{$c2_session:int}}", "_"]
+  - peer: callee2
+    send: [64, 27002, {invoke: "random"}, "spec.test.shared.random.dist"]
+  - peer: callee2
+    expect: [65, 27002, "{{$reg_id:int}}"]
+
+  - peer: caller
+    send: [1, "realm1", {roles: {caller: {}}}]
+  - peer: caller
+    expect: [2, "{{$caller_session:int}}", "_"]
+
+  # CALL #1 — wait on either callee.
+  - peer: caller
+    send: [48, 27101, {}, "spec.test.shared.random.dist", [1]]
+  - from_any: [callee1, callee2]
+    expect: [68, "{{$inv1:int}}", "{{$reg_id:int}}", "_", [1]]
+    capture_source: picked1
+  - peer: "{{$picked1}}"
+    send: [70, "{{$inv1:int}}", {}, ["one"]]
+  - peer: caller
+    expect: [50, 27101, "_", ["one"]]
+
+  # CALL #2 — same dance; the picked callee may differ.
+  - peer: caller
+    send: [48, 27102, {}, "spec.test.shared.random.dist", [2]]
+  - from_any: [callee1, callee2]
+    expect: [68, "{{$inv2:int}}", "{{$reg_id:int}}", "_", [2]]
+    capture_source: picked2
+  - peer: "{{$picked2}}"
+    send: [70, "{{$inv2:int}}", {}, ["two"]]
+  - peer: caller
+    expect: [50, 27102, "_", ["two"]]
+
+  # CALL #3.
+  - peer: caller
+    send: [48, 27103, {}, "spec.test.shared.random.dist", [3]]
+  - from_any: [callee1, callee2]
+    expect: [68, "{{$inv3:int}}", "{{$reg_id:int}}", "_", [3]]
+    capture_source: picked3
+  - peer: "{{$picked3}}"
+    send: [70, "{{$inv3:int}}", {}, ["three"]]
+  - peer: caller
+    expect: [50, 27103, "_", ["three"]]

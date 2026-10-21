@@ -1,0 +1,36 @@
+name: pattern-based-prefix-subscription
+spec_section: "Advanced §14.4.7 — Pattern-based Subscription"
+realm: realm1
+serializer: json
+
+# Subscriber subscribes with `match=prefix` to "spec.test.area.";
+# publisher posts to a child URI; broker delivers the EVENT.
+peers:
+  - name: subscriber
+  - name: publisher
+
+steps:
+  - peer: subscriber
+    send: [1, "realm1", {roles: {subscriber: {}}}]
+  - peer: subscriber
+    expect: [2, "{{$sub_session:int}}", "_"]
+
+  - peer: subscriber
+    send: [32, 10001, {match: "prefix"}, "spec.test.area."]
+    note: "SUBSCRIBE with match=prefix"
+  - peer: subscriber
+    expect: [33, 10001, "{{$sub_id:int}}"]
+
+  - peer: publisher
+    send: [1, "realm1", {roles: {publisher: {}}}]
+  - peer: publisher
+    expect: [2, "{{$pub_session:int}}", "_"]
+
+  - peer: publisher
+    send: [16, 10002, {acknowledge: true}, "spec.test.area.fire", ["alarm"]]
+  - peer: publisher
+    expect: [17, 10002, "{{$pub_id:int}}"]
+
+  # Pattern-matched EVENT carries the original topic in details.topic.
+  - peer: subscriber
+    expect: [36, "{{$sub_id:int}}", "{{$pub_id:int}}", {topic: "spec.test.area.fire"}, ["alarm"]]

@@ -1,0 +1,9 @@
+name: hello-with-valid-realm-yields-welcome
+spec_section: "Basic Profile §3.4.1"
+realm: realm1
+serializer: json
+steps:
+  - send: [1, "realm1", {roles: {publisher: {}, subscriber: {}, caller: {}, callee: {}}}]
+    note: "HELLO"
+  - expect: [2, "{{$session_id:int}}", {roles: {broker: {features: {pattern_based_subscription: true}}, dealer: {features: {shared_registration: true}}}}]
+    note: "WELCOME with broker+dealer features"

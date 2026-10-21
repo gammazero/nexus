@@ -1,0 +1,13 @@
+name: client-initiated-goodbye-router-echoes
+spec_section: "Basic Profile §3.4.2"
+realm: realm1
+serializer: json
+
+steps:
+  - send: [1, "realm1", {roles: {publisher: {}}}]
+  - expect: [2, "{{$session_id:int}}", "_"]
+
+  - send: [6, {message: "client done"}, "wamp.close.normal"]
+    note: "GOODBYE — message=6"
+  - expect: [6, "_", "wamp.close.goodbye_and_out"]
+    note: "Router echoes GOODBYE with the standard reason URI"

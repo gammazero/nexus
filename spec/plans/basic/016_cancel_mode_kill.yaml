@@ -1,0 +1,47 @@
+name: cancel-mode-kill-interrupts-callee-then-error-after-callee-responds
+spec_section: "Advanced §14.3.4 — Call Canceling, mode=kill"
+realm: realm1
+serializer: json
+
+# In `kill` mode, the dealer sends INTERRUPT to the callee and waits
+# for the callee's response (ERROR or YIELD) before forwarding ERROR
+# back to the caller. The caller's ERROR carries the URI the callee
+# returned (or the standard canceled URI if the callee chose that).
+peers:
+  - name: callee
+  - name: caller
+
+steps:
+  - peer: callee
+    send: [1, "realm1", {roles: {callee: {features: {call_canceling: true}}}}]
+  - peer: callee
+    expect: [2, "{{$callee_session:int}}", "_"]
+
+  - peer: callee
+    send: [64, 16001, {}, "spec.test.cancel.kill"]
+  - peer: callee
+    expect: [65, 16001, "{{$reg_id:int}}"]
+
+  - peer: caller
+    send: [1, "realm1", {roles: {caller: {features: {call_canceling: true}}}}]
+  - peer: caller
+    expect: [2, "{{$caller_session:int}}", "_"]
+
+  - peer: caller
+    send: [48, 16002, {}, "spec.test.cancel.kill", []]
+  - peer: callee
+    expect: [68, "{{$inv_id:int}}", "{{$reg_id:int}}", "_"]
+
+  # CANCEL with mode=kill — INTERRUPT lands on the callee.
+  - peer: caller
+    send: [49, 16002, {mode: "kill"}]
+  - peer: callee
+    expect: [69, "{{$inv_id:int}}", "_"]
+    note: "INTERRUPT delivered (msg type 69)"
+
+  # Callee responds with ERROR for the invocation; dealer translates
+  # it into the caller's ERROR.
+  - peer: callee
+    send: [8, 68, "{{$inv_id:int}}", {}, "wamp.error.canceled"]
+  - peer: caller
+    expect: [8, 48, 16002, "_", "wamp.error.canceled"]

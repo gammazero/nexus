@@ -1,0 +1,29 @@
+name: ticket-auth-challenge-authenticate-welcome
+spec_section: "Authentication §13.5 — Ticket"
+realm: realm1
+serializer: json
+
+# Static ticket-auth flow. Plan declares one user "tester" with a known
+# ticket value; the router builds a TicketAuthenticator over the
+# spec-runner static keystore.
+#
+# Wire sequence:
+#   1. Client → HELLO with authmethods=[ticket], authid=tester
+#   2. Router → CHALLENGE for method=ticket
+#   3. Client → AUTHENTICATE with the ticket value as the signature
+#   4. Router → WELCOME with the configured role
+auth:
+  ticket:
+    users:
+      tester:
+        ticket: "ticket-X-1234"
+        role: "user"
+
+steps:
+  - send: [1, "realm1", {authmethods: ["ticket"], authid: "tester", roles: {publisher: {}}}]
+  - expect: [4, "ticket", "_"]
+    note: "CHALLENGE — method=ticket"
+
+  - send: [5, "ticket-X-1234", {}]
+    note: "AUTHENTICATE — ticket value as the signature"
+  - expect: [2, "{{$session_id:int}}", {authid: "tester", authrole: "user", authmethod: "ticket"}]

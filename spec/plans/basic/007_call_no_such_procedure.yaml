@@ -1,0 +1,14 @@
+name: call-unknown-procedure-yields-no-such-procedure-error
+spec_section: "Basic Profile §3.7 / Errors §13.6.2"
+realm: realm1
+serializer: json
+
+steps:
+  - send: [1, "realm1", {roles: {caller: {}}}]
+  - expect: [2, "{{$session_id:int}}", "_"]
+
+  - send: [48, 7001, {}, "no.such.procedure.exists", []]
+    note: "CALL request_id=7001 to a never-registered URI"
+
+  # ERROR for CALL: [8, CALL=48, request_id, details, error_uri, args?, kwargs?]
+  - expect: [8, 48, 7001, "_", "wamp.error.no_such_procedure"]

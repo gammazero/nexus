@@ -1,0 +1,41 @@
+name: pubsub-fan-out-across-two-sessions
+spec_section: "Basic Profile §3.5"
+realm: realm1
+serializer: json
+
+# Verifies the broker fans an event from one publisher session to a
+# distinct subscriber session — without relying on the exclude_me=false
+# self-fan trick that 003 uses.
+peers:
+  - name: subscriber
+  - name: publisher
+
+steps:
+  # Subscriber handshake + SUBSCRIBE.
+  - peer: subscriber
+    send: [1, "realm1", {roles: {subscriber: {}}}]
+  - peer: subscriber
+    expect: [2, "{{$sub_session:int}}", "_"]
+
+  - peer: subscriber
+    send: [32, 1101, {}, "spec.test.fanout"]
+    note: "SUBSCRIBE"
+  - peer: subscriber
+    expect: [33, 1101, "{{$sub_id:int}}"]
+
+  # Publisher handshake + PUBLISH (with acknowledge).
+  - peer: publisher
+    send: [1, "realm1", {roles: {publisher: {}}}]
+  - peer: publisher
+    expect: [2, "{{$pub_session:int}}", "_"]
+
+  - peer: publisher
+    send: [16, 1102, {acknowledge: true}, "spec.test.fanout", ["hello"]]
+  - peer: publisher
+    expect: [17, 1102, "{{$pub_id:int}}"]
+    note: "PUBLISHED ack"
+
+  # Subscriber receives the EVENT.
+  - peer: subscriber
+    expect: [36, "{{$sub_id:int}}", "{{$pub_id:int}}", "_", ["hello"]]
+    note: "EVENT carries publication id and payload"

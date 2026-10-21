@@ -1,0 +1,35 @@
+name: same-session-resubscribing-to-same-topic-returns-existing-id
+spec_section: "Basic Profile §3.5.4 — SUBSCRIBE de-duplication"
+realm: realm1
+serializer: json
+
+# WAMP §3.5.4: "In case of receiving a SUBSCRIBE message from the same
+# Subscriber and to already subscribed topic, Broker should answer
+# with SUBSCRIBED message, containing the existing Subscription|id."
+# (See broker.go:275-280 — nexus mirrors this language exactly.)
+#
+# This plan pins that behavior: two SUBSCRIBEs to the same topic on
+# the same session return the SAME subscription id, and a PUBLISH
+# fires exactly ONE EVENT (no duplication just because the client
+# called SUBSCRIBE twice).
+steps:
+  - send: [1, "realm1", {roles: {publisher: {features: {publisher_exclusion: true}}, subscriber: {}}}]
+  - expect: [2, "{{$session_id:int}}", "_"]
+
+  # SUBSCRIBE #1 — capture the subscription id.
+  - send: [32, 25001, {}, "spec.test.dup"]
+  - expect: [33, 25001, "{{$sub_id:int}}"]
+
+  # SUBSCRIBE #2 — same topic, same session. The broker returns the
+  # SAME subscription id; reusing the {{$sub_id}} placeholder asserts
+  # equality with the previously captured value (matchPlaceholder in
+  # matcher.go enforces this on second sighting).
+  - send: [32, 25002, {}, "spec.test.dup"]
+  - expect: [33, 25002, "{{$sub_id:int}}"]
+    note: "If nexus regressed to issuing a distinct id, this match would fail"
+
+  # One PUBLISH → exactly one EVENT (the de-duped subscription is
+  # delivered once). No second EVENT is expected.
+  - send: [16, 25101, {acknowledge: true, exclude_me: false}, "spec.test.dup", ["x"]]
+  - expect: [17, 25101, "{{$pub_id:int}}"]
+  - expect: [36, "{{$sub_id:int}}", "{{$pub_id:int}}", "_", ["x"]]
