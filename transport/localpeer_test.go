@@ -11,6 +11,19 @@ import (
 	"github.com/gammazero/nexus/v3/wamp"
 )
 
+// TestLocalPeerCloseIdempotent verifies that calling Close more than
+// once on the same peer is a safe no-op rather than a "close of closed
+// channel" panic. The realm shutdown ordering relies on this: a session
+// whose handler closed its peer naturally may also be in the snapshot
+// of pending-to-close peers that the realm walks at the end of close().
+func TestLocalPeerCloseIdempotent(t *testing.T) {
+	c, r := transport.LinkedPeers()
+	c.Close()
+	require.NotPanics(t, func() { c.Close() }, "second Close on client peer must not panic")
+	require.NotPanics(t, func() { r.Close() }, "Close on router peer must not panic")
+	require.NotPanics(t, func() { r.Close() }, "second Close on router peer must not panic")
+}
+
 func TestSendRecv(t *testing.T) {
 	c, r := transport.LinkedPeers()
 

@@ -157,68 +157,87 @@ func (r *realm) run() {
 	close(r.stopped)
 }
 
-// close performs an orderly shutdown of the realm.
+// close performs an orderly shutdown of the realm in five stages:
 //
-// First a lock is acquired that prevents any new clients from joining the
-// realm and makes sure any clients already in the process of joining finish
-// joining.
+//  1. Kick — under closeLock (no new sessions can join), atomically with
+//     the realm actor: snapshot every active client and EndRecv each. The
+//     snapshot is what gets its peer closed in stage 5; we capture it now
+//     because onLeave will have removed the entries from r.clients by
+//     the time we reach the close stage.
 //
-// Next, each client session is killed, removing it from the broker and dealer,
-// triggering a GOODBYE message to the client, and causing the session's
-// message handler to exit. This ensures there are no messages remaining to be
-// sent to the router.
+//  2. Wait — block on waitHandlers until every session-handler goroutine
+//     has finished its inbound loop and run onLeave. Per change in
+//     handleSession, those goroutines no longer call sess.Close on the
+//     shutdown path; that is deferred to stage 5 so the dealer/broker
+//     actors stop before their peers close.
 //
-// After that, the meta client session is killed. This ensures there are no
-// more meta messages to sent to the router.
+//  3. Wind down meta — EndRecv the internal meta session, wait for its
+//     handler to exit. After this, no router-internal source can submit
+//     to dealer/broker either.
 //
-// At this point the broker and dealer are shutdown since they cannot receive
-// any more messages to route, and have no clients to route messages to.
+//  4. Stop actors — dealer.close() and broker.close() drain their action
+//     queues and exit their goroutines. Once these return, NO goroutine
+//     in the realm will ever call trySend on any of the snapshotted
+//     sessions. This ordering is what makes the close in stage 5
+//     race-free against in-flight actions.
 //
-// Finally, the realm's action channel is closed and its goroutine is stopped.
+//  5. Close peers — finally close every snapshotted session's peer.
+//     localPeer.Close is idempotent (via sync.Once), so a session that
+//     left of its own accord between stages 1 and 5 simply no-ops.
+//
+// This staging is also the foundation for a future drain primitive
+// needed for cluster-rolling-update support: stages 1-2 plus a soft
+// "no new sessions" gate without proceeding to stage 4.
 func (r *realm) close() {
-	// The lock is held in mutual exclusion with the router starting any new
-	// session handlers for this realm. This prevents the router from starting
-	// any new session handlers, allowing the realm can safely close after
-	// waiting for all existing session handlers to exit.
+	// closeLock is held in mutual exclusion with the router starting any
+	// new session handlers for this realm.
 	r.closeLock.Lock()
-	defer r.closeLock.Unlock()
 	if r.closed {
 		// This realm is already closed.
+		r.closeLock.Unlock()
 		return
 	}
 	r.closed = true
 
-	// Kick all clients off. Sending shutdownGoodbye causes client message
-	// handlers to exit without sending meta events.
+	// Stage 1: kick + snapshot. Done atomically inside the realm actor so
+	// the snapshot reflects exactly the set of clients that received the
+	// EndRecv goodbye.
+	var pendingClose []*wamp.Session
 	ch := make(chan struct{})
 	r.actionChan <- func() {
 		for _, c := range r.clients {
+			pendingClose = append(pendingClose, c)
 			c.EndRecv(shutdownGoodbye)
 		}
 		close(ch)
 	}
 	<-ch
+	r.closeLock.Unlock()
 
-	// Wait until each client's handleInboundMessages() has exited. No new
-	// messages can be generated once sessions are closed.
+	// Stage 2: wait for session-handler goroutines. They run onLeave and
+	// then return without closing their peer (per shutdown=true branch
+	// in handleSession).
 	r.waitHandlers.Wait()
 
-	// All normal handlers have exited, so now stop the meta session. When the
-	// meta client receives GOODBYE from the meta session, the meta session is
-	// done and will not try to publish anything more to the broker, and it is
-	// finally safe to exit and close the broker.
+	// Stage 3: wind down the meta session.
 	r.metaSess.EndRecv(shutdownGoodbye)
 	<-r.metaDone
 
-	// handleInboundMessages() and metaProcedureHandler() are the only things
-	// than can submit request to the broker and dealer, so now that these are
-	// finished there can be no more messages to broker and dealer.
-
-	// No new messages, so safe to close dealer and broker.
+	// Stage 4: stop dealer + broker actors. handleInboundMessages and
+	// metaProcedureHandler are the only paths that submit work to them;
+	// both have exited, so closing now drains any tail actions and
+	// terminates the actor goroutines.
 	r.dealer.close()
 	r.broker.close()
 
-	// Finally close realm's action channel.
+	// Stage 5: close the peers. Safe now because no goroutine in the
+	// realm can call trySend on any of these sessions anymore.
+	for _, c := range pendingClose {
+		c.Close()
+	}
+
+	// Finally close the realm's own action channel and wait for its run
+	// goroutine to exit.
 	close(r.actionChan)
 	<-r.stopped
 }
@@ -418,7 +437,15 @@ func (r *realm) handleSession(sess *wamp.Session) error {
 			}
 		}
 		r.onLeave(sess, shutdown, killAll)
-		sess.Close()
+		// On a non-shutdown exit (client disconnect, GOODBYE), close the
+		// peer here as before. On realm shutdown, the realm closes the
+		// peer in close() AFTER dealer.close/broker.close have stopped
+		// their actor goroutines, so an in-flight trySend cannot race
+		// against the peer's chan-close. Without that ordering the race
+		// detector flags it (and pre-trySend-recover code crashed).
+		if !shutdown {
+			sess.Close()
+		}
 		r.waitHandlers.Done()
 	}()
 
