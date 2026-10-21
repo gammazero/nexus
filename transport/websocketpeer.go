@@ -79,6 +79,10 @@ type websocketPeer struct {
 	serializer  serialize.Serializer
 	payloadType int
 
+	// keepAlive is the configured ping interval. Zero disables pings AND
+	// the read-deadline mechanism.
+	keepAlive time.Duration
+
 	// Used to signal the websocket is closed explicitly.
 	closed chan struct{}
 
@@ -93,6 +97,16 @@ type websocketPeer struct {
 	writerDone chan struct{}
 
 	log stdlog.StdLog
+}
+
+// readDeadliner is satisfied by gorilla/websocket.Conn and any other
+// WebsocketConnection implementation that exposes a read deadline. The
+// interface is type-asserted at runtime so adding read-deadline support
+// does not require a breaking change to the WebsocketConnection
+// interface; mocks and exotic transports that don't implement it simply
+// fall back to the pre-existing pong-counter keepalive.
+type readDeadliner interface {
+	SetReadDeadline(t time.Time) error
 }
 
 const (
@@ -189,6 +203,7 @@ func NewWebsocketPeer(conn WebsocketConnection, serializer serialize.Serializer,
 		conn:        conn,
 		serializer:  serializer,
 		payloadType: payloadType,
+		keepAlive:   keepAlive,
 		closed:      make(chan struct{}),
 		recvDone:    make(chan struct{}),
 		writerDone:  make(chan struct{}),
@@ -313,8 +328,26 @@ func (w *websocketPeer) sendHandlerKeepAlive(keepAlive time.Duration) {
 	defer close(w.writerDone)
 	defer w.cancelSender()
 
+	// readDeadlineExtend refreshes the underlying conn's read deadline.
+	// Called from the ping/pong handlers (which run on recvHandler's
+	// goroutine via ReadMessage) and from this goroutine on initial
+	// setup. If the conn doesn't support deadlines (test mocks etc.)
+	// this is a silent no-op and we fall back to pong-counter keepalive.
+	rd, _ := w.conn.(readDeadliner)
+	readDeadlineExtend := func() {
+		if rd == nil {
+			return
+		}
+		_ = rd.SetReadDeadline(time.Now().Add(2 * keepAlive))
+	}
+	readDeadlineExtend()
+
 	pongs := make(chan string, 1) // capacity must be >= 1
 	w.conn.SetPingHandler(func(m string) error {
+		// Incoming ping is a sign of life from the peer; refresh the
+		// read deadline so a chatty peer keeps the connection open even
+		// if our own pings are getting stuck.
+		readDeadlineExtend()
 		select {
 		case pongs <- m:
 		default:
@@ -324,6 +357,8 @@ func (w *websocketPeer) sendHandlerKeepAlive(keepAlive time.Duration) {
 
 	var pendingPongs atomic.Int32
 	w.conn.SetPongHandler(func(msg string) error {
+		// Pong response is also a sign of life; refresh the deadline.
+		readDeadlineExtend()
 		// Any response resets counter.
 		pendingPongs.Store(0)
 		return nil
@@ -394,6 +429,19 @@ func (w *websocketPeer) recvHandler() {
 				// exit without closing the write channel (in case writes still
 				// happening) and discard any queued messages.
 				w.cancelSender()
+				// Close the connection BEFORE waiting for the writer. If
+				// sendHandler is currently blocked inside WriteMessage —
+				// because the kernel-side send buffer is full and the peer
+				// has stopped reading, or the network has gone half-broken
+				// — it cannot react to ctxSender.Done() until the in-flight
+				// WriteMessage call returns. Closing the conn forces that
+				// call to return immediately, so writerDone actually fires.
+				// Without this, a slow/stuck remote peer can deadlock both
+				// the recv and send goroutines indefinitely. See
+				// gammazero/nexus#242. The deferred conn.Close() above is
+				// redundant here but kept for the err==nil-but-CloseMessage
+				// exit path below; double-close is a no-op.
+				_ = w.conn.Close()
 				// Wait for writer to exit before closing websocket.
 				<-w.writerDone
 			}
