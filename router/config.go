@@ -72,6 +72,16 @@ type RealmConfig struct {
 	// logic when it may not be needed otherwise.
 	EnableMetaModify bool `json:"enable_meta_modify"`
 
+	// StrictRequestIDs enforces WAMP §5.1.2: the client-allocated Request
+	// field on PUBLISH, SUBSCRIBE, UNSUBSCRIBE, REGISTER, UNREGISTER, and
+	// CALL messages must start at 1 and increment by 1 per session. A
+	// non-sequential ID terminates the session with an ABORT carrying
+	// wamp.error.protocol_violation. Default is false to preserve the
+	// historical relaxed behavior; clients that allocate random IDs (some
+	// non-Go WAMP libraries do) will only break under strict mode. Enable
+	// per realm when interop allows.
+	StrictRequestIDs bool `json:"strict_request_ids"`
+
 	TopicEventHistoryConfigs []*TopicEventHistoryConfig `json:"event_history"`
 
 	// PublishFilterFactory is a function used to create a PublishFilter to

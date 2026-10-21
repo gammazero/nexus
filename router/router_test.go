@@ -172,6 +172,112 @@ func TestProtocolViolation(t *testing.T) {
 	})
 }
 
+// newStrictIDsTestRouter creates a router with a single realm that has
+// StrictRequestIDs enabled, for tests that exercise the WAMP §5.1.2
+// request-ID sequence requirement.
+func newStrictIDsTestRouter(t *testing.T) Router {
+	t.Helper()
+	config := &Config{
+		RealmConfigs: []*RealmConfig{
+			{
+				URI:              testRealm,
+				StrictURI:        false,
+				AnonymousAuth:    true,
+				StrictRequestIDs: true,
+			},
+		},
+		Debug: debug,
+	}
+	r, err := NewRouter(config, logger)
+	require.NoError(t, err)
+	t.Cleanup(func() { r.Close() })
+	return r
+}
+
+// TestStrictRequestIDsAccepted pins gammazero/nexus#293: with
+// StrictRequestIDs=true, a client whose request IDs start at 1 and
+// increment by 1 must be accepted normally.
+func TestStrictRequestIDsAccepted(t *testing.T) {
+	synctest.Test(t, func(t *testing.T) {
+		r := newStrictIDsTestRouter(t)
+		cli := testClient(t, r)
+
+		// First request: id=1.
+		cli.Send() <- &wamp.Subscribe{Request: 1, Topic: testTopic}
+		msg, err := wamp.RecvTimeout(cli, time.Second)
+		require.NoError(t, err, "no SUBSCRIBED for id=1")
+		_, ok := msg.(*wamp.Subscribed)
+		require.True(t, ok, "expected SUBSCRIBED for in-sequence id=1, got %T", msg)
+
+		// Second request: id=2.
+		cli.Send() <- &wamp.Subscribe{Request: 2, Topic: testTopic + ".other"}
+		msg, err = wamp.RecvTimeout(cli, time.Second)
+		require.NoError(t, err, "no SUBSCRIBED for id=2")
+		_, ok = msg.(*wamp.Subscribed)
+		require.True(t, ok, "expected SUBSCRIBED for in-sequence id=2, got %T", msg)
+	})
+}
+
+// TestStrictRequestIDsRejectsOutOfSequence verifies that a
+// non-sequential request ID triggers ABORT(wamp.error.protocol_violation)
+// per WAMP §5.1.2.
+func TestStrictRequestIDsRejectsOutOfSequence(t *testing.T) {
+	synctest.Test(t, func(t *testing.T) {
+		r := newStrictIDsTestRouter(t)
+		cli := testClient(t, r)
+
+		// Skip id=1, start at 99 — protocol violation.
+		cli.Send() <- &wamp.Subscribe{Request: 99, Topic: testTopic}
+		msg, err := wamp.RecvTimeout(cli, time.Second)
+		require.NoError(t, err, "no ABORT after non-sequential id")
+		abort, ok := msg.(*wamp.Abort)
+		require.True(t, ok, "expected ABORT, got %T", msg)
+		require.Equal(t, wamp.ErrProtocolViolation, abort.Reason)
+	})
+}
+
+// TestStrictRequestIDsRejectsGap verifies a gap mid-sequence (1, 2, 4)
+// also triggers ABORT.
+func TestStrictRequestIDsRejectsGap(t *testing.T) {
+	synctest.Test(t, func(t *testing.T) {
+		r := newStrictIDsTestRouter(t)
+		cli := testClient(t, r)
+
+		cli.Send() <- &wamp.Subscribe{Request: 1, Topic: testTopic}
+		_, err := wamp.RecvTimeout(cli, time.Second)
+		require.NoError(t, err)
+
+		cli.Send() <- &wamp.Subscribe{Request: 2, Topic: testTopic + ".b"}
+		_, err = wamp.RecvTimeout(cli, time.Second)
+		require.NoError(t, err)
+
+		// Skip id=3, jump to 4 — protocol violation.
+		cli.Send() <- &wamp.Subscribe{Request: 4, Topic: testTopic + ".c"}
+		msg, err := wamp.RecvTimeout(cli, time.Second)
+		require.NoError(t, err)
+		abort, ok := msg.(*wamp.Abort)
+		require.True(t, ok, "expected ABORT after gap, got %T", msg)
+		require.Equal(t, wamp.ErrProtocolViolation, abort.Reason)
+	})
+}
+
+// TestStrictRequestIDsDisabledByDefault verifies the existing relaxed
+// behavior is preserved: with StrictRequestIDs=false (the default),
+// any request ID — including random ones — is accepted.
+func TestStrictRequestIDsDisabledByDefault(t *testing.T) {
+	synctest.Test(t, func(t *testing.T) {
+		r := newTestRouter(t) // no StrictRequestIDs
+		cli := testClient(t, r)
+
+		// Random ID, not 1: should still work in default mode.
+		cli.Send() <- &wamp.Subscribe{Request: 99999, Topic: testTopic}
+		msg, err := wamp.RecvTimeout(cli, time.Second)
+		require.NoError(t, err)
+		_, ok := msg.(*wamp.Subscribed)
+		require.True(t, ok, "default mode must still accept arbitrary ids; got %T", msg)
+	})
+}
+
 func TestRouterSubscribe(t *testing.T) {
 	synctest.Test(t, func(t *testing.T) {
 		r := newTestRouter(t)
