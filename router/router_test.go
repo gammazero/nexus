@@ -172,6 +172,72 @@ func TestProtocolViolation(t *testing.T) {
 	})
 }
 
+// TestRealmShutdownDrainsActorsBeforePeerClose pins the five-stage
+// realm.close ordering. Before this fix, broker/dealer actor goroutines
+// stayed alive while session-handler goroutines exited and closed their
+// peers — an in-flight trySend from the actor could race against the
+// peer's chan-close, panicking the router (caught by trySend's
+// defer/recover but flagged by the race detector and structurally wrong).
+//
+// The scenario:
+//   - Caller with a 1-slot outbound queue. After WELCOME, the queue is
+//     left to fill on its own — the test never drains it.
+//   - Two CALLs to a callee. Callee returns INVOCATION ERROR for each.
+//     The dealer's syncError calls trySend(caller, errMsg); the first
+//     fits in caller's queue, the second drops via select-default.
+//   - Test ends, t.Cleanup runs r.Close(). With the fix, dealer.close
+//     and broker.close are awaited BEFORE caller's peer is closed, so
+//     no actor can be in trySend when the peer closes.
+//
+// Verified clean under `go test -race` after the fix; without the fix
+// the same scenario reliably trips the race detector and (without
+// trySend's defer/recover) crashes with `send on closed channel`.
+func TestRealmShutdownDrainsActorsBeforePeerClose(t *testing.T) {
+	r := newTestRouter(t)
+
+	// Slow caller: 1-slot router→client queue.
+	callerClient, callerServer := transport.LinkedPeersQSize(1)
+	go func() {
+		callerClient.Send() <- &wamp.Hello{Realm: testRealm, Details: clientRoles}
+	}()
+	require.NoError(t, r.Attach(callerServer))
+	msg, err := wamp.RecvTimeout(callerClient, time.Second)
+	require.NoError(t, err)
+	_, ok := msg.(*wamp.Welcome)
+	require.True(t, ok, "expected WELCOME, got %T", msg)
+
+	callee := testClient(t, r)
+	const proc = wamp.URI("nexus.test.shutdownrace.proc")
+	callee.Send() <- &wamp.Register{Request: 1, Procedure: proc}
+	msg, err = wamp.RecvTimeout(callee, time.Second)
+	require.NoError(t, err)
+	_, ok = msg.(*wamp.Registered)
+	require.True(t, ok)
+
+	// Two CALL → INVOCATION ERROR exchanges, leaving caller's queue
+	// occupied by the first ERROR with the second drop-logged.
+	for i := 1; i <= 2; i++ {
+		callerClient.Send() <- &wamp.Call{Request: wamp.ID(i), Procedure: proc}
+		msg, err = wamp.RecvTimeout(callee, time.Second)
+		require.NoErrorf(t, err, "callee never received INVOCATION %d", i)
+		inv, ok := msg.(*wamp.Invocation)
+		require.True(t, ok, "expected INVOCATION %d, got %T", i, msg)
+		callee.Send() <- &wamp.Error{
+			Type: wamp.INVOCATION, Request: inv.Request,
+			Error: wamp.ErrInvalidArgument,
+		}
+	}
+
+	// t.Cleanup runs r.Close at this point — that's what triggers the
+	// shutdown ordering under test. The require here just ensures the
+	// callee remained responsive end-to-end before cleanup.
+	callee.Send() <- &wamp.Subscribe{Request: 100, Topic: testTopic}
+	msg, err = wamp.RecvTimeout(callee, time.Second)
+	require.NoError(t, err)
+	_, ok = msg.(*wamp.Subscribed)
+	require.True(t, ok, "callee not responsive before shutdown")
+}
+
 func TestRouterSubscribe(t *testing.T) {
 	synctest.Test(t, func(t *testing.T) {
 		r := newTestRouter(t)
@@ -253,6 +319,245 @@ func TestPublishNoAcknowledge(t *testing.T) {
 			require.Falsef(t, ok, "Sent acknowledge=false, but received PUBLISHED: %s", msg.MessageType())
 		}
 	})
+}
+
+// unauthSlowPeer attaches a fresh anonymous-auth client to the router with a
+// router-to-client outbound queue of `qsize`, drains the WELCOME, and returns
+// the client-side peer. Used by tests that need precise control over how
+// quickly the test side reads (or doesn't read) router-to-client traffic.
+func unauthSlowPeer(t *testing.T, r Router, qsize int) wamp.Peer {
+	t.Helper()
+	client, server := transport.LinkedPeersQSize(qsize)
+	go func() {
+		client.Send() <- &wamp.Hello{Realm: testRealm, Details: clientRoles}
+	}()
+	require.NoError(t, r.Attach(server))
+	msg, err := wamp.RecvTimeout(client, time.Second)
+	require.NoError(t, err, "no WELCOME on slow peer")
+	_, ok := msg.(*wamp.Welcome)
+	require.True(t, ok, "expected WELCOME, got %T", msg)
+	return client
+}
+
+// TestSlowSubscriberDoesNotBlockBroker pins the broker.trySend
+// non-blocking semantics: a subscriber whose outbound queue is full
+// must NOT stall fan-out to other subscribers. The slow subscriber's
+// EVENT is silently dropped (the broker logs a "Dropped EVENT" warning),
+// while the fast subscriber receives the event normally.
+//
+// Adjacent neighbor of #324: same broker fanout, different blocked party.
+func TestSlowSubscriberDoesNotBlockBroker(t *testing.T) {
+	r := newTestRouter(t)
+
+	// Slow subscriber: 1-slot queue, used up after SUBSCRIBED ack and
+	// then never drained again.
+	slow := unauthSlowPeer(t, r, 1)
+	slow.Send() <- &wamp.Subscribe{Request: 1, Topic: testTopic}
+	msg, err := wamp.RecvTimeout(slow, time.Second)
+	require.NoError(t, err)
+	_, ok := msg.(*wamp.Subscribed)
+	require.True(t, ok, "expected SUBSCRIBED on slow peer, got %T", msg)
+	// Slow peer no longer drains anything.
+
+	// Fast subscriber: normal queue.
+	fast := testClient(t, r)
+	fast.Send() <- &wamp.Subscribe{Request: 1, Topic: testTopic}
+	msg, err = wamp.RecvTimeout(fast, time.Second)
+	require.NoError(t, err)
+	_, ok = msg.(*wamp.Subscribed)
+	require.True(t, ok)
+
+	// Publisher.
+	pub := testClient(t, r)
+	pub.Send() <- &wamp.Publish{
+		Request: 1, Topic: testTopic,
+		Options:   wamp.Dict{wamp.OptAcknowledge: true},
+		Arguments: wamp.List{"hi"},
+	}
+
+	// Fast subscriber must still receive the EVENT promptly.
+	got := false
+	for !got {
+		select {
+		case msg := <-fast.Recv():
+			if _, isPublished := msg.(*wamp.Published); isPublished {
+				continue // publisher's PUBLISHED ack arrives interleaved
+			}
+			_, ok := msg.(*wamp.Event)
+			require.True(t, ok, "fast subscriber: expected EVENT, got %T", msg)
+			got = true
+		case <-time.After(time.Second):
+			t.Fatal("fast subscriber did not get EVENT — slow subscriber stalled fan-out?")
+		}
+	}
+}
+
+// TestSlowCallerOnInvocationError verifies that when a caller's outbound
+// queue is full and the callee returns an INVOCATION ERROR, the dealer's
+// non-blocking trySend drops the resulting CALL ERROR rather than
+// stalling the callee. Pins existing behavior; ensures the #324 fix
+// didn't introduce a parallel deadlock on the error path.
+//
+// Was previously deferred because it tripped the race detector via the
+// realm-shutdown ordering bug; now race-clean after the five-stage
+// realm.close fix.
+func TestSlowCallerOnInvocationError(t *testing.T) {
+	r := newTestRouter(t)
+
+	// Slow caller: 1-slot queue, never drained beyond WELCOME.
+	caller := unauthSlowPeer(t, r, 1)
+
+	callee := testClient(t, r)
+	const proc = wamp.URI("nexus.test.errproc")
+	callee.Send() <- &wamp.Register{Request: 1, Procedure: proc}
+	msg, err := wamp.RecvTimeout(callee, time.Second)
+	require.NoError(t, err)
+	_, ok := msg.(*wamp.Registered)
+	require.True(t, ok)
+
+	// Issue two CALLs; for each, callee returns INVOCATION ERROR.
+	// The slow caller's queue accepts the first ERROR and then blocks
+	// the second (drop via trySend).
+	for i := 1; i <= 2; i++ {
+		caller.Send() <- &wamp.Call{Request: wamp.ID(i), Procedure: proc}
+		msg, err = wamp.RecvTimeout(callee, time.Second)
+		require.NoErrorf(t, err, "callee never received INVOCATION %d", i)
+		inv, ok := msg.(*wamp.Invocation)
+		require.True(t, ok, "expected INVOCATION %d, got %T", i, msg)
+		callee.Send() <- &wamp.Error{
+			Type: wamp.INVOCATION, Request: inv.Request,
+			Error: wamp.ErrInvalidArgument,
+		}
+	}
+
+	// Sanity: callee remains responsive — neither blocked nor leaked
+	// state from the dropped ERROR.
+	callee.Send() <- &wamp.Subscribe{Request: 100, Topic: testTopic}
+	select {
+	case msg := <-callee.Recv():
+		_, ok := msg.(*wamp.Subscribed)
+		require.True(t, ok, "expected SUBSCRIBED, got %T", msg)
+	case <-time.After(time.Second):
+		t.Fatal("callee blocked despite slow caller on INVOCATION ERROR path")
+	}
+}
+
+// TestSlowCalleeRecoverableAfterDrain verifies the dealer's non-blocking
+// INVOCATION delivery (`syncCall`) handles a temporarily blocked callee
+// gracefully: the caller is told the call failed (network_failure),
+// dealer state is cleaned up, and once the callee drains its queue,
+// subsequent calls succeed normally.
+//
+// Adjacent to #324 — caller-side analog of the slow-caller scenario.
+// Race-clean after the realm-shutdown ordering fix.
+func TestSlowCalleeRecoverableAfterDrain(t *testing.T) {
+	r := newTestRouter(t)
+
+	// Callee with 1-slot queue.
+	callee := unauthSlowPeer(t, r, 1)
+	const proc = wamp.URI("nexus.test.slowcallee")
+	callee.Send() <- &wamp.Register{Request: 1, Procedure: proc}
+	msg, err := wamp.RecvTimeout(callee, time.Second)
+	require.NoError(t, err)
+	_, ok := msg.(*wamp.Registered)
+	require.True(t, ok)
+
+	caller := testClient(t, r)
+
+	// First call: fills callee's 1-slot queue with the INVOCATION. We
+	// intentionally do NOT drain it — keeping the queue full is the
+	// whole point of the next assertion.
+	caller.Send() <- &wamp.Call{Request: 1, Procedure: proc}
+	// Brief sleep gives the dealer's actor goroutine time to pick up
+	// the queued action and dispatch INVOCATION 1 onto callee's
+	// outbound channel before we issue CALL 2.
+	time.Sleep(100 * time.Millisecond)
+
+	// Second call: callee queue is now full. Dealer's syncCall must
+	// react with ERROR(network_failure) to the caller, not stall.
+	caller.Send() <- &wamp.Call{Request: 2, Procedure: proc}
+	select {
+	case msg := <-caller.Recv():
+		errMsg, ok := msg.(*wamp.Error)
+		require.True(t, ok, "expected ERROR for blocked-callee call, got %T", msg)
+		require.Equal(t, wamp.ErrNetworkFailure, errMsg.Error)
+		require.Equal(t, wamp.ID(2), errMsg.Request)
+	case <-time.After(time.Second):
+		t.Fatal("dealer did not return ERROR to caller despite blocked callee")
+	}
+
+	// Now drain INVOCATION 1 from callee.
+	msg, err = wamp.RecvTimeout(callee, time.Second)
+	require.NoError(t, err)
+	inv1, ok := msg.(*wamp.Invocation)
+	require.True(t, ok)
+
+	// Callee returns YIELD; caller gets RESULT.
+	callee.Send() <- &wamp.Yield{Request: inv1.Request, Arguments: wamp.List{"ok"}}
+	msg, err = wamp.RecvTimeout(caller, time.Second)
+	require.NoError(t, err)
+	_, ok = msg.(*wamp.Result)
+	require.True(t, ok, "expected RESULT for first call, got %T", msg)
+
+	// Third call: callee is responsive again, must succeed.
+	caller.Send() <- &wamp.Call{Request: 3, Procedure: proc}
+	msg, err = wamp.RecvTimeout(callee, time.Second)
+	require.NoError(t, err)
+	inv3, ok := msg.(*wamp.Invocation)
+	require.True(t, ok, "registration should still be live; expected INVOCATION, got %T", msg)
+	callee.Send() <- &wamp.Yield{Request: inv3.Request, Arguments: wamp.List{"third"}}
+	msg, err = wamp.RecvTimeout(caller, time.Second)
+	require.NoError(t, err)
+	_, ok = msg.(*wamp.Result)
+	require.True(t, ok, "third call should succeed after callee drained")
+}
+
+// TestCallerDisconnectMidCall verifies dealer cleanup when the caller
+// disconnects after sending CALL but before YIELD arrives. The dealer's
+// syncYield should observe the missing caller, log it, and clean up
+// without erroring or leaking. Callee remains functional afterwards.
+//
+// Adjacent to #324 — covers the inverse of the slow-caller leak: a
+// gone-caller, which is a more extreme version of "caller can't receive".
+func TestCallerDisconnectMidCall(t *testing.T) {
+	r := newTestRouter(t)
+
+	callee := testClient(t, r)
+	const proc = wamp.URI("nexus.test.midcall")
+	callee.Send() <- &wamp.Register{Request: 1, Procedure: proc}
+	msg, err := wamp.RecvTimeout(callee, time.Second)
+	require.NoError(t, err)
+	_, ok := msg.(*wamp.Registered)
+	require.True(t, ok)
+
+	caller := testClient(t, r)
+	caller.Send() <- &wamp.Call{Request: 1, Procedure: proc}
+	msg, err = wamp.RecvTimeout(callee, time.Second)
+	require.NoError(t, err)
+	inv, ok := msg.(*wamp.Invocation)
+	require.True(t, ok)
+
+	// Caller disconnects.
+	caller.Close()
+
+	// Give the realm time to process the leave (asynchronous via onLeave).
+	time.Sleep(100 * time.Millisecond)
+
+	// Callee returns YIELD for an orphaned call. Dealer must accept it
+	// without error and clean up state.
+	callee.Send() <- &wamp.Yield{
+		Request: inv.Request, Arguments: wamp.List{"result for nobody"},
+	}
+
+	// Sanity: callee remains responsive.
+	callee.Send() <- &wamp.Subscribe{Request: 100, Topic: testTopic}
+	select {
+	case msg := <-callee.Recv():
+		_, ok := msg.(*wamp.Subscribed)
+		require.True(t, ok, "expected SUBSCRIBED, got %T", msg)
+	case <-time.After(time.Second):
+		t.Fatal("callee not responsive after orphaned YIELD for disconnected caller")
+	}
 }
 
 func TestRouterCall(t *testing.T) {

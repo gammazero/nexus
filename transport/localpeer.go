@@ -1,6 +1,8 @@
 package transport
 
 import (
+	"sync"
+
 	"github.com/gammazero/nexus/v3/wamp"
 )
 
@@ -41,8 +43,9 @@ func LinkedPeersQSize(queueSize int) (wamp.Peer, wamp.Peer) {
 
 // localPeer implements Peer
 type localPeer struct {
-	rd <-chan wamp.Message
-	wr chan<- wamp.Message
+	rd        <-chan wamp.Message
+	wr        chan<- wamp.Message
+	closeOnce sync.Once
 }
 
 // IsLocal returns true is the wamp.Peer is a localPeer.
@@ -55,5 +58,9 @@ func (p *localPeer) Recv() <-chan wamp.Message { return p.rd }
 func (p *localPeer) Send() chan<- wamp.Message { return p.wr }
 
 // Close closes the outgoing channel, waking any readers waiting on data from
-// this peer.
-func (p *localPeer) Close() { close(p.wr) }
+// this peer. Safe to call concurrently and idempotent — a second call is a
+// no-op so the realm can defensively close peers that may already have been
+// closed by their session-handler goroutine.
+func (p *localPeer) Close() {
+	p.closeOnce.Do(func() { close(p.wr) })
+}
