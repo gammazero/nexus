@@ -5,6 +5,7 @@ package client
 
 import (
 	"context"
+	"encoding/base64"
 	"errors"
 	"fmt"
 	"strings"
@@ -25,6 +26,11 @@ const (
 	CBOR          = serialize.CBOR
 	WampPPTScheme = "wamp"
 	MqttPPTScheme = "mqtt"
+
+	// NativePPTSerializer is the ppt_serializer value indicating that the payload
+	// uses the same serializer as the WAMP message itself (spec §14.7). In this
+	// mode packPPTPayload does not envelope the args/kwargs.
+	NativePPTSerializer = "native"
 )
 
 const (
@@ -99,125 +105,171 @@ func isPPTSchemeValid(pptScheme string) bool {
 	return pptScheme == WampPPTScheme || pptScheme == MqttPPTScheme || strings.HasPrefix(pptScheme, "x_")
 }
 
-// In mqtt/custom scheme we need to encode payload with specified serializer (if provided)
-func packPPTPayload(options wamp.Dict, args wamp.List, kwargs wamp.Dict) (wamp.List, error) {
-	payload := &wamp.PassthruPayload{
-		Arguments:   args,
-		ArgumentsKw: kwargs,
+// pptSerializerName returns the ppt_serializer value in options or details, or
+// "" if there is none. A value that is not a string is invalid.
+func pptSerializerName(d wamp.Dict) (string, error) {
+	v, ok := d[wamp.OptPPTSerializer]
+	if !ok {
+		return "", nil
 	}
-
-	pptSerializerStr, ok := options[wamp.OptPPTSerializer].(string)
-	if ok && pptSerializerStr != "native" {
-
-		var serializer serialize.Serializer
-		pptSerializer, ok := PPTSerializers[pptSerializerStr]
-		if !ok {
-			return nil, ErrPPTSerializerInvalid
-		}
-
-		// Serializer is valid, need to encode payload with it before proceeding
-		switch pptSerializer {
-		case JSON:
-			serializer = &serialize.JSONSerializer{}
-		case MSGPACK:
-			serializer = &serialize.MessagePackSerializer{}
-		case CBOR:
-			serializer = &serialize.CBORSerializer{}
-			// In future should be extended with FlatBuffers
-		}
-
-		bin, err := serializer.SerializeDataItem(payload)
-		if err != nil {
-			return nil, ErrSerialization
-		}
-
-		return wamp.List{bin}, nil
+	name, ok := v.(string)
+	if !ok {
+		return "", ErrPPTSerializerInvalid
 	}
-
-	return wamp.List{payload}, nil
+	return name, nil
 }
 
-func unpackPPTPayload(details wamp.Dict, args wamp.List) (wamp.List, wamp.Dict, error) {
-	var payloadTyped *wamp.PassthruPayload
-	pptSerializerStr, ok := details[wamp.OptPPTSerializer]
-	if ok && pptSerializerStr != "native" {
-
-		var serializer serialize.Serializer
-		pptSerializer, ok := PPTSerializers[pptSerializerStr.(string)]
-		if !ok {
-			return nil, nil, ErrPPTSerializerInvalid
-		}
-
-		// Serializer is valid, need to encode payload with it before proceeding
-		switch pptSerializer {
-		case JSON:
-			serializer = &serialize.JSONSerializer{}
-		case MSGPACK:
-			serializer = &serialize.MessagePackSerializer{}
-		case CBOR:
-			serializer = &serialize.CBORSerializer{}
-			// In future should be extended with FlatBuffers
-		}
-
-		if err := serializer.DeserializeDataItem(args[0].([]byte), &payloadTyped); err != nil {
-			return nil, nil, ErrSerialization
-		}
-
-	} else {
-		payloadTyped = args[0].(*wamp.PassthruPayload)
-	}
-
-	return payloadTyped.Arguments, payloadTyped.ArgumentsKw, nil
-}
-
-// Preparing End-2-End Encrypted Payload
-func packE2EEPayload(options wamp.Dict, args wamp.List, kwargs wamp.Dict) (wamp.List, error) {
-	payload := &wamp.PassthruPayload{
-		Arguments:   args,
-		ArgumentsKw: kwargs,
-	}
-
-	var serializer serialize.Serializer
-	pptSerializer, ok := E2eeSerializers[options[wamp.OptPPTSerializer].(string)]
+// pptSerializerFor returns the serializer that ppt_serializer name selects in
+// table, which is PPTSerializers or E2eeSerializers.
+func pptSerializerFor(name string, table map[string]serialize.Serialization) (serialize.Serializer, error) { //nolint:lll
+	serialization, ok := table[name]
 	if !ok {
 		return nil, ErrPPTSerializerInvalid
 	}
-
-	// Serializer is valid, need to encode payload with it before proceeding
-	switch pptSerializer {
+	switch serialization {
+	case JSON:
+		return &serialize.JSONSerializer{}, nil
+	case MSGPACK:
+		return &serialize.MessagePackSerializer{}, nil
 	case CBOR:
-		serializer = &serialize.CBORSerializer{}
+		return &serialize.CBORSerializer{}, nil
 		// In future should be extended with FlatBuffers
 	}
+	return nil, ErrPPTSerializerInvalid
+}
 
-	bin, err := serializer.SerializeDataItem(payload)
+// encodePassthru serializes (args, kwargs) with serializer into a single
+// binary blob, returned as one-element arguments.
+func encodePassthru(serializer serialize.Serializer, args wamp.List, kwargs wamp.Dict) (wamp.List, error) {
+	bin, err := serializer.SerializeDataItem(&wamp.PassthruPayload{
+		Arguments:   args,
+		ArgumentsKw: kwargs,
+	})
 	if err != nil {
 		return nil, ErrSerialization
 	}
-
 	return wamp.List{bin}, nil
 }
 
-func unpackE2EEPayload(details wamp.Dict, args wamp.List) (wamp.List, wamp.Dict, error) {
-	var serializer serialize.Serializer
-	pptSerializer, ok := E2eeSerializers[details[wamp.OptPPTSerializer].(string)]
-	if !ok {
-		return nil, nil, ErrPPTSerializerInvalid
-	}
-
-	// Serializer is valid, need to encode payload with it before proceeding
-	switch pptSerializer {
-	case CBOR:
-		serializer = &serialize.CBORSerializer{}
-		// In future should be extended with FlatBuffers
-	}
-
-	var payloadTyped wamp.PassthruPayload
-	if err := serializer.DeserializeDataItem(args[0].([]byte), &payloadTyped); err != nil {
+// decodePassthru reverses encodePassthru. The blob from the remote peer is
+// checked before use, so that a malformed payload is an error and not a panic.
+func decodePassthru(serializer serialize.Serializer, args wamp.List) (wamp.List, wamp.Dict, error) {
+	if len(args) == 0 {
 		return nil, nil, ErrSerialization
 	}
+	bin, err := pptPayloadBytes(args[0])
+	if err != nil {
+		return nil, nil, err
+	}
+	var payload wamp.PassthruPayload
+	if err := serializer.DeserializeDataItem(bin, &payload); err != nil {
+		return nil, nil, ErrSerialization
+	}
+	return payload.Arguments, payload.ArgumentsKw, nil
+}
 
-	return payloadTyped.Arguments, payloadTyped.ArgumentsKw, nil
+// packPPTPayload prepares (args, kwargs) for transmission under WAMP Payload
+// Pass-Thru Mode (spec §14.7).
+//
+// When ppt_serializer is "native" or omitted, the payload is encoded with the
+// same serializer as the WAMP message itself, which the wire transport already
+// does, so args and kwargs are returned unchanged. The router still treats the
+// payload as opaque because ppt_scheme is set in options.
+//
+// When ppt_serializer is one of PPTSerializers, (args, kwargs) is serialized
+// into a single binary blob with that serializer, and returned as one-element
+// arguments with nil kwargs, which is what unpackPPTPayload expects on the
+// receive side.
+func packPPTPayload(options wamp.Dict, args wamp.List, kwargs wamp.Dict) (wamp.List, wamp.Dict, error) {
+	name, err := pptSerializerName(options)
+	if err != nil {
+		return nil, nil, err
+	}
+	if name == "" || name == NativePPTSerializer {
+		// Native (or unspecified): no envelope; rely on the wire serializer.
+		return args, kwargs, nil
+	}
+	serializer, err := pptSerializerFor(name, PPTSerializers)
+	if err != nil {
+		return nil, nil, err
+	}
+	payload, err := encodePassthru(serializer, args, kwargs)
+	if err != nil {
+		return nil, nil, err
+	}
+	return payload, nil, nil
+}
+
+// pptPayloadBytes extracts the binary PPT payload from args[0], accommodating
+// wire serializer quirks. With a msgpack or cbor wire, []byte round-trips as
+// []byte. With a JSON wire, ugorji's codec encodes []byte as a plain base64
+// string with no \x00 prefix, which decodes into interface{} as a Go string,
+// so it is base64-decoded here. The leading-NUL form used by
+// serialize.BinaryData is also accepted, in case a peer follows the WAMP JSON
+// binary convention (spec §3.2.1).
+func pptPayloadBytes(v any) ([]byte, error) {
+	switch b := v.(type) {
+	case []byte:
+		return b, nil
+	case string:
+		s := b
+		if len(s) > 0 && s[0] == '\x00' {
+			s = s[1:]
+		}
+		decoded, err := base64.StdEncoding.DecodeString(s)
+		if err != nil {
+			return nil, ErrSerialization
+		}
+		return decoded, nil
+	default:
+		return nil, ErrSerialization
+	}
+}
+
+// unpackPPTPayload reverses packPPTPayload on the receive side. With a native
+// ppt_serializer, it returns args and kwargs unchanged. Otherwise, it decodes
+// the binary payload in args[0] and returns the arguments and keyword
+// arguments inside it.
+func unpackPPTPayload(details wamp.Dict, args wamp.List, kwargs wamp.Dict) (wamp.List, wamp.Dict, error) {
+	name, err := pptSerializerName(details)
+	if err != nil {
+		return nil, nil, err
+	}
+	if name == "" || name == NativePPTSerializer {
+		return args, kwargs, nil
+	}
+	serializer, err := pptSerializerFor(name, PPTSerializers)
+	if err != nil {
+		return nil, nil, err
+	}
+	return decodePassthru(serializer, args)
+}
+
+// packE2EEPayload serializes (args, kwargs) for an end-to-end encrypted
+// payload, using the E2EE serializer named by ppt_serializer.
+func packE2EEPayload(options wamp.Dict, args wamp.List, kwargs wamp.Dict) (wamp.List, error) {
+	name, err := pptSerializerName(options)
+	if err != nil {
+		return nil, err
+	}
+	serializer, err := pptSerializerFor(name, E2eeSerializers)
+	if err != nil {
+		return nil, err
+	}
+	return encodePassthru(serializer, args, kwargs)
+}
+
+// unpackE2EEPayload reverses packE2EEPayload on the receive side.
+func unpackE2EEPayload(details wamp.Dict, args wamp.List) (wamp.List, wamp.Dict, error) {
+	name, err := pptSerializerName(details)
+	if err != nil {
+		return nil, nil, err
+	}
+	serializer, err := pptSerializerFor(name, E2eeSerializers)
+	if err != nil {
+		return nil, nil, err
+	}
+	return decodePassthru(serializer, args)
 }
 
 // NewClient takes a connected Peer, joins the realm specified in cfg, and if
@@ -496,20 +548,20 @@ func (c *Client) Publish(topic string, options wamp.Dict, args wamp.List, kwargs
 
 		// Broker supports PPT feature. Prepare payload based on ppt_*
 		// attributes provided
-		var payload wamp.List
 		var err error
 
 		if pptScheme == WampPPTScheme {
+			var payload wamp.List
 			payload, err = packE2EEPayload(options, args, kwargs)
+			message.Arguments = payload
+			message.ArgumentsKw = nil
 		} else {
-			payload, err = packPPTPayload(options, args, kwargs)
+			message.Arguments, message.ArgumentsKw, err = packPPTPayload(options, args, kwargs)
 		}
 
 		if err != nil {
 			return err
 		}
-
-		message.Arguments = payload
 
 	} else {
 		message.Arguments = args
@@ -1518,7 +1570,7 @@ func (c *Client) runHandleEvent(msg *wamp.Event) {
 		if pptScheme == WampPPTScheme {
 			args, kwargs, err = unpackE2EEPayload(msg.Details, msg.Arguments)
 		} else {
-			args, kwargs, err = unpackPPTPayload(msg.Details, msg.Arguments)
+			args, kwargs, err = unpackPPTPayload(msg.Details, msg.Arguments, msg.ArgumentsKw)
 		}
 
 		if err != nil {
@@ -1618,7 +1670,7 @@ func (c *Client) runHandleInvocation(msg *wamp.Invocation) {
 		if pptScheme == WampPPTScheme {
 			args, kwargs, err = unpackE2EEPayload(msg.Details, msg.Arguments)
 		} else {
-			args, kwargs, err = unpackPPTPayload(msg.Details, msg.Arguments)
+			args, kwargs, err = unpackPPTPayload(msg.Details, msg.Arguments, msg.ArgumentsKw)
 		}
 
 		if err != nil {
@@ -1836,9 +1888,7 @@ func (c *Client) runHandleInvocation(msg *wamp.Invocation) {
 						Details: wamp.Dict{
 							"error": ErrPPTSchemeInvalid.Error(),
 						},
-						Arguments:   result.Args,
-						ArgumentsKw: result.Kwargs,
-						Error:       wamp.ErrInvalidArgument,
+						Error: wamp.ErrInvalidArgument,
 					}
 					select {
 					case c.sess.Send() <- errMsg:
@@ -1849,13 +1899,15 @@ func (c *Client) runHandleInvocation(msg *wamp.Invocation) {
 
 				// Dealer supports PPT feature. Prepare payload based on ppt_*
 				// attributes provided
-				var payload wamp.List
 				var err error
 
 				if pptScheme == WampPPTScheme {
+					var payload wamp.List
 					payload, err = packE2EEPayload(options, result.Args, result.Kwargs)
+					message.Arguments = payload
+					message.ArgumentsKw = nil
 				} else {
-					payload, err = packPPTPayload(options, result.Args, result.Kwargs)
+					message.Arguments, message.ArgumentsKw, err = packPPTPayload(options, result.Args, result.Kwargs)
 				}
 
 				if err != nil {
@@ -1865,9 +1917,7 @@ func (c *Client) runHandleInvocation(msg *wamp.Invocation) {
 						Details: wamp.Dict{
 							"error": err.Error(),
 						},
-						Arguments:   result.Args,
-						ArgumentsKw: result.Kwargs,
-						Error:       wamp.ErrInvalidArgument,
+						Error: wamp.ErrInvalidArgument,
 					}
 					select {
 					case c.sess.Send() <- errMsg:
@@ -1875,8 +1925,6 @@ func (c *Client) runHandleInvocation(msg *wamp.Invocation) {
 					}
 					return
 				}
-
-				message.Arguments = payload
 
 			} else {
 				message.Arguments = result.Args
@@ -1945,19 +1993,19 @@ func (c *Client) prepareCallPayloadMessage(msg *wamp.Call, options wamp.Dict, ar
 		}
 
 		// Dealer supports PPT feature. Prepare payload based on ppt_* attributes provided.
-		var payload wamp.List
 		var err error
 		if pptScheme == WampPPTScheme {
+			var payload wamp.List
 			payload, err = packE2EEPayload(options, args, kwargs)
+			msg.Arguments = payload
+			msg.ArgumentsKw = nil
 		} else {
-			payload, err = packPPTPayload(options, args, kwargs)
+			msg.Arguments, msg.ArgumentsKw, err = packPPTPayload(options, args, kwargs)
 		}
 
 		if err != nil {
 			return err
 		}
-
-		msg.Arguments = payload
 
 	} else {
 		msg.Arguments = args
@@ -1997,7 +2045,7 @@ func (c *Client) prepareCallResultMessage(msg *wamp.Result) (*wamp.Abort, error)
 		if pptScheme == WampPPTScheme {
 			args, kwargs, err = unpackE2EEPayload(msg.Details, msg.Arguments)
 		} else {
-			args, kwargs, err = unpackPPTPayload(msg.Details, msg.Arguments)
+			args, kwargs, err = unpackPPTPayload(msg.Details, msg.Arguments, msg.ArgumentsKw)
 		}
 
 		if err != nil {
