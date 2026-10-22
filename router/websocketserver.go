@@ -363,7 +363,8 @@ func (s *WebsocketServer) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	s.handleWebsocket(conn, wamp.Dict{"auth": authDict})
+	peerDesc := peerDescription(r.RemoteAddr, r.Header.Values("X-Forwarded-For"))
+	s.handleWebsocket(conn, wamp.Dict{"auth": authDict}, peerDesc)
 }
 
 // addProtocol registers a serializer for protocol and payload type.
@@ -396,7 +397,9 @@ func (s *WebsocketServer) selectSubprotocol(r *http.Request) string {
 	return ""
 }
 
-func (s *WebsocketServer) handleWebsocket(conn transport.WebsocketConnection, transportDetails wamp.Dict) {
+// handleWebsocket attaches a websocket connection to the router. peerDesc
+// identifies the remote end in log lines.
+func (s *WebsocketServer) handleWebsocket(conn transport.WebsocketConnection, transportDetails wamp.Dict, peerDesc string) { //nolint:lll
 	var serializer serialize.Serializer
 	var payloadType int
 	// Get serializer and payload type for protocol.
@@ -430,7 +433,10 @@ func (s *WebsocketServer) handleWebsocket(conn transport.WebsocketConnection, tr
 	}
 	peer := transport.NewWebsocketPeer(conn, serializer, payloadType, s.router.Logger(), s.KeepAlive, qsize)
 	if err := s.router.AttachClient(peer, transportDetails); err != nil {
-		s.router.Logger().Println("Client cannot attach to router:", err)
+		// Name the remote end: without it a client stuck in a reconnect loop against a
+		// realm that does not exist is untraceable.
+		s.router.Logger().Printf("Client cannot attach to router: %v (peer %s)",
+			err, peerDesc)
 	}
 }
 

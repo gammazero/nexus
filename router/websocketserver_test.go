@@ -1,11 +1,16 @@
 package router //nolint:testpackage
 
 import (
+	"bytes"
 	"context"
 	"fmt"
+	"log"
 	"net/http"
 	"net/http/httptest"
+	"strings"
+	"sync"
 	"testing"
+	"time"
 
 	"github.com/gorilla/websocket"
 	"github.com/stretchr/testify/require"
@@ -417,4 +422,112 @@ func TestWSFailedUpgradeRepliesOnce(t *testing.T) {
 				"failed upgrade must not include a subprotocol")
 		})
 	}
+}
+
+// lockedBuffer is a bytes.Buffer safe for concurrent writes from the router's
+// logger goroutines and reads from the test.
+type lockedBuffer struct {
+	mu  sync.Mutex
+	buf bytes.Buffer
+}
+
+func (b *lockedBuffer) Write(p []byte) (int, error) {
+	b.mu.Lock()
+	defer b.mu.Unlock()
+	return b.buf.Write(p)
+}
+
+func (b *lockedBuffer) String() string {
+	b.mu.Lock()
+	defer b.mu.Unlock()
+	return b.buf.String()
+}
+
+// logLine returns the line of the log that contains substr, or "" if there is
+// none.
+func logLine(logBuf *lockedBuffer, substr string) string {
+	for line := range strings.Lines(logBuf.String()) {
+		if strings.Contains(line, substr) {
+			return line
+		}
+	}
+	return ""
+}
+
+// requireLogLine waits for a line containing substr to be logged, and returns
+// it.
+func requireLogLine(t *testing.T, logBuf *lockedBuffer, substr string) string {
+	t.Helper()
+	require.Eventually(t, func() bool { return logLine(logBuf, substr) != "" },
+		2*time.Second, 10*time.Millisecond, "no log line containing %q", substr)
+	return logLine(logBuf, substr)
+}
+
+// A HELLO for a realm the router does not have is ABORTed, and the log line
+// names the peer so the source of a reconnect loop can be traced. This works
+// without EnableRequestCapture, since that is off by default.
+func TestWSAttachFailureLogsPeer(t *testing.T) {
+	cases := []struct {
+		name         string
+		forwardedFor []string
+		wantPeer     string
+	}{
+		{
+			name:     "direct",
+			wantPeer: `\(peer 127\.0\.0\.1:\d+\)`,
+		},
+		{
+			name:         "behind proxy",
+			forwardedFor: []string{"203.0.113.9, 10.1.1.1"},
+			wantPeer: `\(peer 127\.0\.0\.1:\d+, ` +
+				`X-Forwarded-For "203\.0\.113\.9, 10\.1\.1\.1"\)`,
+		},
+	}
+
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			logBuf := &lockedBuffer{}
+			r, err := NewRouter(routerConfig, log.New(logBuf, "", 0))
+			require.NoError(t, err)
+			defer r.Close()
+
+			closer, err := NewWebsocketServer(r).ListenAndServe(wsAddr)
+			require.NoError(t, err)
+			defer closer.Close()
+
+			dialer := websocket.Dialer{Subprotocols: []string{jsonWebsocketProtocol}}
+			header := http.Header{"X-Forwarded-For": tc.forwardedFor}
+			conn, rsp, err := dialer.DialContext(context.Background(),
+				fmt.Sprintf("ws://%s/", wsAddr), header)
+			require.NoError(t, err)
+			defer conn.Close()
+			defer rsp.Body.Close()
+
+			hello := []byte(`[1,"realm-1-1-dev",{}]`)
+			require.NoError(t, conn.WriteMessage(websocket.TextMessage, hello))
+			_, msg, err := conn.ReadMessage()
+			require.NoError(t, err)
+			require.True(t, strings.HasPrefix(string(msg), "[3,"), "expected ABORT, got %s", msg)
+
+			line := requireLogLine(t, logBuf, "Client cannot attach to router")
+			require.Contains(t, line, `no realm "realm-1-1-dev" exists`)
+			require.Regexp(t, tc.wantPeer, line)
+		})
+	}
+}
+
+func TestPeerDescription(t *testing.T) {
+	require.Equal(t, "unknown", peerDescription("", nil))
+	require.Equal(t, "10.0.0.7:4321", peerDescription("10.0.0.7:4321", nil))
+	require.Equal(t, `10.0.0.7:4321, X-Forwarded-For "203.0.113.9, 10.1.1.1"`,
+		peerDescription("10.0.0.7:4321", []string{"203.0.113.9", "10.1.1.1"}))
+
+	// The header is supplied by the client, so it is quoted, which keeps it from
+	// passing as router output, and truncated.
+	got := peerDescription("10.0.0.7:4321", []string{`1.2.3.4) (peer "x"`})
+	require.Equal(t, `10.0.0.7:4321, X-Forwarded-For "1.2.3.4) (peer \"x\""`, got)
+
+	got = peerDescription("10.0.0.7:4321", []string{strings.Repeat("a", 10000)})
+	require.Equal(t, `10.0.0.7:4321, X-Forwarded-For "`+
+		strings.Repeat("a", maxForwardedForLog)+`..."`, got)
 }
