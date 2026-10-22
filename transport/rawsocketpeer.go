@@ -9,6 +9,7 @@ import (
 	"net"
 	"slices"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/gammazero/nexus/v3/stdlog"
@@ -35,6 +36,8 @@ type rawSocketPeer struct {
 	ctxSender    context.Context
 
 	writerDone chan struct{}
+
+	closeOnce sync.Once
 
 	log stdlog.StdLog
 }
@@ -180,27 +183,32 @@ func (rs *rawSocketPeer) IsLocal() bool { return false }
 // Close closes the rawsocket peer. This closes the local send channel, and
 // sends a close control message to the socket to tell the other side to close.
 //
+// Close is idempotent and safe to call concurrently; calls after the first
+// are no-ops.
+//
 // *** Do not call Send after calling Close. ***
 func (rs *rawSocketPeer) Close() {
-	// Tell sendHandler to exit, and discard any queued messages. Do not close
-	// wr channel in case there are incoming messages during close.
-	rs.cancelSender()
-	<-rs.writerDone
-drainLoop:
-	for {
-		select {
-		case <-rs.wr:
-		default:
-			break drainLoop
+	rs.closeOnce.Do(func() {
+		// Tell sendHandler to exit, and discard any queued messages. Do not close
+		// wr channel in case there are incoming messages during close.
+		rs.cancelSender()
+		<-rs.writerDone
+	drainLoop:
+		for {
+			select {
+			case <-rs.wr:
+			default:
+				break drainLoop
+			}
 		}
-	}
 
-	// Tell recvHandler to close.
-	close(rs.closed)
+		// Tell recvHandler to close.
+		close(rs.closed)
 
-	// Ignore errors since socket may have been closed by other side first in
-	// response to a goodbye message.
-	_ = rs.conn.Close()
+		// Ignore errors since socket may have been closed by other side first in
+		// response to a goodbye message.
+		_ = rs.conn.Close()
+	})
 }
 
 // sendHandler pulls messages from the write channel, and pushes them to the

@@ -172,6 +172,72 @@ func TestProtocolViolation(t *testing.T) {
 	})
 }
 
+// TestRealmShutdownDrainsActorsBeforePeerClose pins the five-stage
+// realm.close ordering. Before this fix, broker/dealer actor goroutines
+// stayed alive while session-handler goroutines exited and closed their
+// peers — an in-flight trySend from the actor could race against the
+// peer's chan-close, panicking the router (caught by trySend's
+// defer/recover but flagged by the race detector and structurally wrong).
+//
+// The scenario:
+//   - Caller with a 1-slot outbound queue. After WELCOME, the queue is
+//     left to fill on its own — the test never drains it.
+//   - Two CALLs to a callee. Callee returns INVOCATION ERROR for each.
+//     The dealer's syncError calls trySend(caller, errMsg); the first
+//     fits in caller's queue, the second drops via select-default.
+//   - Test ends, t.Cleanup runs r.Close(). With the fix, dealer.close
+//     and broker.close are awaited BEFORE caller's peer is closed, so
+//     no actor can be in trySend when the peer closes.
+//
+// Verified clean under `go test -race` after the fix; without the fix
+// the same scenario reliably trips the race detector and (without
+// trySend's defer/recover) crashes with `send on closed channel`.
+func TestRealmShutdownDrainsActorsBeforePeerClose(t *testing.T) {
+	r := newTestRouter(t)
+
+	// Slow caller: 1-slot router→client queue.
+	callerClient, callerServer := transport.LinkedPeersQSize(1)
+	go func() {
+		callerClient.Send() <- &wamp.Hello{Realm: testRealm, Details: clientRoles}
+	}()
+	require.NoError(t, r.Attach(callerServer))
+	msg, err := wamp.RecvTimeout(callerClient, time.Second)
+	require.NoError(t, err)
+	_, ok := msg.(*wamp.Welcome)
+	require.True(t, ok, "expected WELCOME, got %T", msg)
+
+	callee := testClient(t, r)
+	const proc = wamp.URI("nexus.test.shutdownrace.proc")
+	callee.Send() <- &wamp.Register{Request: 1, Procedure: proc}
+	msg, err = wamp.RecvTimeout(callee, time.Second)
+	require.NoError(t, err)
+	_, ok = msg.(*wamp.Registered)
+	require.True(t, ok)
+
+	// Two CALL → INVOCATION ERROR exchanges, leaving caller's queue
+	// occupied by the first ERROR with the second drop-logged.
+	for i := 1; i <= 2; i++ {
+		callerClient.Send() <- &wamp.Call{Request: wamp.ID(i), Procedure: proc}
+		msg, err = wamp.RecvTimeout(callee, time.Second)
+		require.NoErrorf(t, err, "callee never received INVOCATION %d", i)
+		inv, ok := msg.(*wamp.Invocation)
+		require.True(t, ok, "expected INVOCATION %d, got %T", i, msg)
+		callee.Send() <- &wamp.Error{
+			Type: wamp.INVOCATION, Request: inv.Request,
+			Error: wamp.ErrInvalidArgument,
+		}
+	}
+
+	// t.Cleanup runs r.Close at this point — that's what triggers the
+	// shutdown ordering under test. The require here just ensures the
+	// callee remained responsive end-to-end before cleanup.
+	callee.Send() <- &wamp.Subscribe{Request: 100, Topic: testTopic}
+	msg, err = wamp.RecvTimeout(callee, time.Second)
+	require.NoError(t, err)
+	_, ok = msg.(*wamp.Subscribed)
+	require.True(t, ok, "callee not responsive before shutdown")
+}
+
 func TestRouterSubscribe(t *testing.T) {
 	synctest.Test(t, func(t *testing.T) {
 		r := newTestRouter(t)

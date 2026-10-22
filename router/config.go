@@ -44,6 +44,18 @@ type RealmConfig struct {
 	Authenticators []auth.Authenticator
 	// Authorizer called for each message.
 	Authorizer Authorizer
+	// AuthorizeUnlocked calls the Authorizer with a shallow snapshot of the
+	// session details and WITHOUT holding the session lock. By default the
+	// session is write-locked for the duration of Authorize, because an
+	// Authorizer may alter the session details (see Authorizer). The broker
+	// also takes each subscriber's session lock while applying publish filters
+	// (eligible/exclude) on its realm-wide goroutine, so an Authorizer that
+	// blocks under the lock -- e.g. one that calls out to a remote
+	// authorization procedure -- stalls event delivery for the whole realm.
+	// Set this only when the Authorizer never alters the session details: with
+	// it set, changes to the snapshot are discarded. The message itself may
+	// still be altered.
+	AuthorizeUnlocked bool `json:"authorize_unlocked"`
 	// Require authentication for local clients. Normally local clients are
 	// always trusted. Setting this treats local clients the same as remote.
 	RequireLocalAuth bool `json:"require_local_auth"`

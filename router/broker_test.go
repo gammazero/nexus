@@ -26,6 +26,43 @@ func (p *testPeer) Close()                    {}
 
 func (p *testPeer) IsLocal() bool { return true }
 
+// closedSendPeer is a Peer whose Send channel is already closed. It models
+// the state of a session whose handler goroutine has exited and closed
+// the underlying transport, but whose pointer is still reachable from the
+// broker/dealer's internal maps for a brief window. trySend on such a
+// session must not panic.
+type closedSendPeer struct {
+	in chan wamp.Message
+}
+
+func newClosedSendPeer() *closedSendPeer {
+	ch := make(chan wamp.Message)
+	close(ch)
+	return &closedSendPeer{in: ch}
+}
+
+func (p *closedSendPeer) Recv() <-chan wamp.Message { return p.in }
+func (p *closedSendPeer) Send() chan<- wamp.Message { return p.in }
+func (p *closedSendPeer) Close()                    {}
+func (p *closedSendPeer) IsLocal() bool             { return true }
+
+// TestBrokerTrySendDoesNotPanicOnClosedSession pins the safety guarantee
+// added to broker.trySend: a session whose outbound channel was closed
+// concurrently (e.g. because the session-handler goroutine just exited
+// and ran sess.Close()) must result in a silent drop rather than a
+// process-killing panic. Race-prone scenario discovered via the B-group
+// backpressure tests; the underlying race is between
+// realm.handleSession's deferred sess.Close() and broker/dealer trySend
+// processing a still-queued action addressed at that session.
+func TestBrokerTrySendDoesNotPanicOnClosedSession(t *testing.T) {
+	b := newTestBroker(t, nil)
+	sess := &wamp.Session{Peer: newClosedSendPeer(), ID: 1}
+
+	require.NotPanics(t, func() {
+		b.trySend(sess, &wamp.Event{Subscription: 1})
+	}, "broker.trySend must not panic when session outbound is closed")
+}
+
 func newTestBroker(t *testing.T, eventCfgs []*TopicEventHistoryConfig) *broker {
 	b, err := newBroker(logger, false, true, debug, nil, eventCfgs)
 	require.NoError(t, err, "Can not initialize broker")
