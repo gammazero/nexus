@@ -36,7 +36,7 @@ func NewRawSocketServer(r Router) *RawSocketServer {
 // ListenAndServe listens on the specified endpoint and starts a goroutine that
 // accepts new client connections until the returned io.closer is closed.
 func (s *RawSocketServer) ListenAndServe(network, address string) (io.Closer, error) {
-	l, err := net.Listen(network, address)
+	l, err := listenRawSocket(network, address)
 	if err != nil {
 		return nil, err
 	}
@@ -69,10 +69,11 @@ func (s *RawSocketServer) ListenAndServeTLS(network, address string, tlscfg *tls
 		tlscfg.Certificates = append(tlscfg.Certificates, cert)
 	}
 
-	l, err := tls.Listen(network, address, tlscfg)
+	l, err := listenRawSocket(network, address)
 	if err != nil {
 		return nil, err
 	}
+	l = tls.NewListener(l, tlscfg)
 
 	// Start request handler loop.
 	go s.requestHandler(l)
