@@ -156,6 +156,73 @@ func TestWSCookieAttributes(t *testing.T) {
 
 }
 
+// TestWSSubprotocolClientPreference pins gammazero/nexus#282.
+//
+// Per RFC 6455 §4.2.2, the server "MUST select one of the values from the
+// [client's] Sec-WebSocket-Protocol field". The client lists protocols in
+// preference order; the server must walk the client's list and pick the
+// first one it supports — not walk its own list and pick the first the
+// client also offered.
+//
+// Concretely, nexus's WebsocketServer registers subprotocols in
+// addProtocol() order: json, msgpack, cbor. A client that offers
+// [cbor, json] should get cbor, but pre-fix it gets json because the
+// underlying gorilla.Upgrader iterates the server's list outermost.
+func TestWSSubprotocolClientPreference(t *testing.T) {
+	r, err := NewRouter(routerConfig, nil)
+	require.NoError(t, err)
+	defer r.Close()
+
+	closer, err := NewWebsocketServer(r).ListenAndServe(wsAddr)
+	require.NoError(t, err)
+	defer closer.Close()
+
+	// Cases: each row pairs the client's preference-ordered list with the
+	// subprotocol the server should select per RFC 6455.
+	cases := []struct {
+		name           string
+		clientOffers   []string
+		wantNegotiated string
+	}{
+		{
+			name:           "cbor preferred over json",
+			clientOffers:   []string{cborWebsocketProtocol, jsonWebsocketProtocol},
+			wantNegotiated: cborWebsocketProtocol,
+		},
+		{
+			name:           "msgpack preferred over json",
+			clientOffers:   []string{msgpackWebsocketProtocol, jsonWebsocketProtocol},
+			wantNegotiated: msgpackWebsocketProtocol,
+		},
+		{
+			name:           "json preferred over cbor",
+			clientOffers:   []string{jsonWebsocketProtocol, cborWebsocketProtocol},
+			wantNegotiated: jsonWebsocketProtocol,
+		},
+		{
+			name: "first supported wins when unsupported precedes supported",
+			clientOffers: []string{
+				"wamp.2.unknown", cborWebsocketProtocol, jsonWebsocketProtocol,
+			},
+			wantNegotiated: cborWebsocketProtocol,
+		},
+	}
+
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			dialer := websocket.Dialer{Subprotocols: tc.clientOffers}
+			conn, rsp, err := dialer.DialContext(
+				context.Background(), fmt.Sprintf("ws://%s/", wsAddr), nil)
+			require.NoError(t, err)
+			defer conn.Close()
+			defer rsp.Body.Close()
+
+			require.Equal(t, tc.wantNegotiated, conn.Subprotocol(),
+				"server picked a server-preferred protocol instead of a client-preferred one")
+		})
+	}
+}
+
 func TestAllowOrigins(t *testing.T) {
 	s := &WebsocketServer{
 		Upgrader: &websocket.Upgrader{},

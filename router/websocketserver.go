@@ -335,6 +335,17 @@ func (s *WebsocketServer) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		authDict["request"] = r
 	}
 
+	// Per RFC 6455 §4.2.2, the server selects the subprotocol from the
+	// client's Sec-WebSocket-Protocol header, where the client lists
+	// protocols in preference order. Pick the first client-listed protocol
+	// that we support and write it into the response header before Upgrade.
+	// The Upgrader's own Subprotocols field is left empty (see addProtocol)
+	// so gorilla's internal selection — which iterates the server's list
+	// outermost and would defeat client preference — does not run.
+	if proto := s.selectSubprotocol(r); proto != "" {
+		w.Header().Set("Sec-Websocket-Protocol", proto)
+	}
+
 	conn, err := s.Upgrader.Upgrade(w, r, w.Header())
 	if err != nil {
 		s.router.Logger().Println("Error upgrading to websocket connection:", err)
@@ -346,6 +357,12 @@ func (s *WebsocketServer) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 }
 
 // addProtocol registers a serializer for protocol and payload type.
+//
+// The Upgrader's own Subprotocols field is intentionally NOT populated here
+// — gorilla's default selection iterates the server list outermost, which
+// violates RFC 6455 §4.2.2 (client preference wins). selectSubprotocol
+// performs the correct client-first walk in ServeHTTP and writes the chosen
+// protocol into the response header before Upgrade is called.
 func (s *WebsocketServer) addProtocol(proto string, payloadType int, serializer serialize.Serializer) error {
 	if payloadType != websocket.TextMessage && payloadType != websocket.BinaryMessage {
 		return fmt.Errorf("invalid payload type: %d", payloadType)
@@ -354,8 +371,19 @@ func (s *WebsocketServer) addProtocol(proto string, payloadType int, serializer 
 		return errors.New("protocol already registered: " + proto)
 	}
 	s.protocols[proto] = protocol{payloadType, serializer}
-	s.Upgrader.Subprotocols = append(s.Upgrader.Subprotocols, proto)
 	return nil
+}
+
+// selectSubprotocol returns the first subprotocol from the client's
+// Sec-WebSocket-Protocol header (in client-preference order) that the
+// server supports, or "" if none match.
+func (s *WebsocketServer) selectSubprotocol(r *http.Request) string {
+	for _, p := range websocket.Subprotocols(r) {
+		if _, ok := s.protocols[p]; ok {
+			return p
+		}
+	}
+	return ""
 }
 
 func (s *WebsocketServer) handleWebsocket(conn transport.WebsocketConnection, transportDetails wamp.Dict) {
