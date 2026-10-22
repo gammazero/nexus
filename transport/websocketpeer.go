@@ -80,9 +80,11 @@ type websocketPeer struct {
 	payloadType int
 
 	// keepAlive is the interval between pings. If non-zero, the connection is
-	// closed when no message or pong arrives for 2*keepAlive, or a write does
-	// not complete within 2*keepAlive.
+	// closed when no message or pong arrives for 2*keepAlive.
 	keepAlive time.Duration
+
+	// writeTimeout is how long a write may take before it fails.
+	writeTimeout time.Duration
 
 	// Deadline support of conn, or nil if conn does not support deadlines.
 	readDeadliner  readDeadliner
@@ -139,6 +141,11 @@ const (
 // the connection to unblock a write that is stuck because the remote peer is
 // not reading.
 var senderStopTimeout = 5 * time.Second
+
+// defaultWriteTimeout is how long a write may take before it fails, when no
+// keepalive is configured. With a keepalive, the write timeout is 2 keepalive
+// intervals.
+const defaultWriteTimeout = 30 * time.Second
 
 // ConnectWebsocketPeer creates a new websocket client with the specified
 // config, connects the client to the websocket server at the specified URL,
@@ -219,9 +226,13 @@ func ConnectWebsocketPeer(ctx context.Context, routerURL string, serialization s
 // A non-zero keepAlive value configures a websocket "ping/pong" heartbeat,
 // sending websocket "pings" every keepAlive interval. If a "pong" response is
 // not received after 2 intervals have elapsed then the websocket is closed. If
-// conn supports read and write deadlines, as gorilla's websocket.Conn does,
-// then the websocket is also closed when nothing is received from the remote
-// peer for 2 intervals, or a write does not complete within 2 intervals.
+// conn supports read deadlines, as gorilla's websocket.Conn does, then the
+// websocket is also closed when nothing is received from the remote peer for 2
+// intervals.
+//
+// If conn supports write deadlines, as gorilla's websocket.Conn does, then a
+// write that does not complete within 2 keepAlive intervals, or 30 seconds if
+// keepAlive is zero, fails and the peer stops sending.
 func NewWebsocketPeer(conn WebsocketConnection, serializer serialize.Serializer, payloadType int, logger stdlog.StdLog, keepAlive time.Duration, outQueueSize int) wamp.Peer { //nolint:lll
 	w := &websocketPeer{
 		conn:        conn,
@@ -243,12 +254,14 @@ func NewWebsocketPeer(conn WebsocketConnection, serializer serialize.Serializer,
 		// messages to be put into an outbound queue that can grow.
 		wr: make(chan wamp.Message, outQueueSize),
 
-		pings:       make(chan string, 1), // capacity must be >= 1
-		stopTimeout: senderStopTimeout,
+		pings:        make(chan string, 1), // capacity must be >= 1
+		stopTimeout:  senderStopTimeout,
+		writeTimeout: defaultWriteTimeout,
 
 		log: logger,
 	}
 	w.ctxSender, w.cancelSender = context.WithCancel(context.Background())
+	w.writeDeadliner, _ = conn.(writeDeadliner)
 
 	// Set up reading before recvHandler starts, since gorilla does not allow
 	// the handlers or read deadline to be set concurrently with ReadMessage.
@@ -257,8 +270,8 @@ func NewWebsocketPeer(conn WebsocketConnection, serializer serialize.Serializer,
 		if keepAlive < time.Second {
 			w.log.Println("Warning: very short keepalive (< 1 second)")
 		}
+		w.writeTimeout = 2 * keepAlive
 		w.readDeadliner, _ = conn.(readDeadliner)
-		w.writeDeadliner, _ = conn.(writeDeadliner)
 		w.conn.SetPongHandler(w.handlePong)
 		w.extendReadDeadline()
 	}
@@ -309,11 +322,11 @@ func (w *websocketPeer) extendReadDeadline() {
 	}
 }
 
-// writeMessage writes a message to conn. With a keepalive, it fails if the
-// write does not complete within 2 keepalive intervals.
+// writeMessage writes a message to conn. It fails if the write does not
+// complete within writeTimeout.
 func (w *websocketPeer) writeMessage(messageType int, data []byte) error {
 	if w.writeDeadliner != nil {
-		err := w.writeDeadliner.SetWriteDeadline(time.Now().Add(2 * w.keepAlive))
+		err := w.writeDeadliner.SetWriteDeadline(time.Now().Add(w.writeTimeout))
 		if err != nil {
 			return err
 		}
