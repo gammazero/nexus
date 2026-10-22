@@ -11,6 +11,7 @@ import (
 
 	"github.com/gorilla/websocket"
 	"github.com/stretchr/testify/require"
+	"go.uber.org/goleak"
 
 	"github.com/gammazero/nexus/v3/transport"
 	"github.com/gammazero/nexus/v3/transport/serialize"
@@ -54,202 +55,358 @@ func TestCloseWebsocketPeer(t *testing.T) {
 	peer.Close()
 }
 
-// stuckWriteMockConn simulates a real-world scenario from gammazero/nexus#242:
-// the websocket connection's read side is broken (peer/network gone) so
-// ReadMessage returns an error, but the write side is still half-buffered —
-// e.g. peer FIN'd one direction but its kernel-side receive buffer is
-// still draining slowly, or middleware is silently sinking writes. In
-// that state WriteMessage can block for an arbitrary time.
-//
-// recvHandler's spontaneous-error branch calls w.cancelSender() and then
-// waits at <-w.writerDone, but the sendHandler can't react to the
-// cancellation while WriteMessage is in progress. Without the fix in this
-// commit, recvHandler is stuck waiting on writerDone forever, and the
-// deferred w.conn.Close() (which would unstick WriteMessage) never runs
-// because the function can't return. Both goroutines leak.
-type stuckWriteMockConn struct {
-	mu         sync.Mutex
-	readBlock  chan struct{} // close to make ReadMessage return an error
-	writeBlock chan struct{} // close to make WriteMessage return
-	closed     atomic.Bool
+var (
+	errClosed      = errors.New("use of closed network connection")
+	errReadFailed  = errors.New("simulated read error")
+	errTimeout     = errors.New("i/o timeout")
+	helloJSON      = []byte(`[1,"test",{}]`)
+	testKeepAlive  = 100 * time.Millisecond
+	shortStopDelay = 100 * time.Millisecond
+	testTimeout    = 2 * time.Second
+)
+
+// blockingConn is a WebsocketConnection whose reads and writes block until
+// the test releases them or the connection is closed. Closing the connection
+// unblocks both, as with a gorilla websocket.Conn.
+type blockingConn struct {
+	readErr      chan struct{} // close to make ReadMessage return an error
+	writeEntered chan struct{} // closed when WriteMessage is first called
+	writeRelease chan struct{} // close to let WriteMessage succeed
+	closeC       chan struct{} // closed by Close
+
+	enterOnce sync.Once
+	closeOnce sync.Once
+
+	completedWrites atomic.Int32
+	abortedWrites   atomic.Int32
 }
 
-func newStuckWriteMockConn() *stuckWriteMockConn {
-	return &stuckWriteMockConn{
-		readBlock:  make(chan struct{}),
-		writeBlock: make(chan struct{}),
+func newBlockingConn() *blockingConn {
+	return &blockingConn{
+		readErr:      make(chan struct{}),
+		writeEntered: make(chan struct{}),
+		writeRelease: make(chan struct{}),
+		closeC:       make(chan struct{}),
 	}
 }
 
-func (m *stuckWriteMockConn) ReadMessage() (int, []byte, error) {
-	<-m.readBlock
-	return 0, nil, errors.New("simulated read error")
+func (c *blockingConn) ReadMessage() (int, []byte, error) {
+	select {
+	case <-c.readErr:
+		return 0, nil, errReadFailed
+	case <-c.closeC:
+		return 0, nil, errClosed
+	}
 }
 
-func (m *stuckWriteMockConn) WriteMessage(int, []byte) error {
-	<-m.writeBlock
-	if m.closed.Load() {
-		return errors.New("write on closed conn")
+func (c *blockingConn) WriteMessage(int, []byte) error {
+	c.enterOnce.Do(func() { close(c.writeEntered) })
+	select {
+	case <-c.writeRelease:
+		c.completedWrites.Add(1)
+		return nil
+	case <-c.closeC:
+		c.abortedWrites.Add(1)
+		return errClosed
 	}
+}
+
+func (c *blockingConn) Close() error {
+	c.closeOnce.Do(func() { close(c.closeC) })
 	return nil
 }
 
-func (m *stuckWriteMockConn) Close() error {
-	if m.closed.Swap(true) {
+func (c *blockingConn) isClosed() bool {
+	select {
+	case <-c.closeC:
+		return true
+	default:
+		return false
+	}
+}
+
+func (c *blockingConn) WriteControl(int, []byte, time.Time) error { return nil }
+func (c *blockingConn) SetPongHandler(func(string) error)         {}
+func (c *blockingConn) SetPingHandler(func(string) error)         {}
+func (c *blockingConn) Subprotocol() string                       { return "" }
+
+// deadlineConn is a WebsocketConnection that supports read and write
+// deadlines. ReadMessage returns a HELLO message every dataEvery, or blocks if
+// dataEvery is zero, and fails once the read deadline passes. WriteMessage
+// succeeds immediately unless stuckWrites is set, in which case it blocks
+// until the write deadline passes.
+type deadlineConn struct {
+	dataEvery   time.Duration
+	stuckWrites bool
+	closeC      chan struct{}
+	closeOnce   sync.Once
+
+	mu            sync.Mutex
+	readDeadline  time.Time
+	writeDeadline time.Time
+	pongHandler   func(string) error
+	pingHandler   func(string) error
+
+	// State seen by the first call to ReadMessage.
+	firstRead         sync.Once
+	deadlineAtFirstRd bool
+	handlersAtFirstRd bool
+	writeTimedOut     atomic.Bool
+	readTimedOut      atomic.Bool
+}
+
+func newDeadlineConn() *deadlineConn {
+	return &deadlineConn{closeC: make(chan struct{})}
+}
+
+// wait waits for d or until the deadline passes or the connection closes.
+func (c *deadlineConn) wait(d time.Duration, deadline time.Time) error {
+	var dl <-chan time.Time
+	if !deadline.IsZero() {
+		dl = time.After(time.Until(deadline))
+	}
+	var tick <-chan time.Time
+	if d != 0 {
+		tick = time.After(d)
+	}
+	select {
+	case <-tick:
+		return nil
+	case <-dl:
+		return errTimeout
+	case <-c.closeC:
+		return errClosed
+	}
+}
+
+func (c *deadlineConn) ReadMessage() (int, []byte, error) {
+	c.mu.Lock()
+	c.firstRead.Do(func() {
+		c.deadlineAtFirstRd = !c.readDeadline.IsZero()
+		c.handlersAtFirstRd = c.pingHandler != nil && c.pongHandler != nil
+	})
+	deadline := c.readDeadline
+	c.mu.Unlock()
+
+	if err := c.wait(c.dataEvery, deadline); err != nil {
+		if errors.Is(err, errTimeout) {
+			c.readTimedOut.Store(true)
+		}
+		return 0, nil, err
+	}
+	return websocket.TextMessage, helloJSON, nil
+}
+
+func (c *deadlineConn) WriteMessage(int, []byte) error {
+	if !c.stuckWrites {
 		return nil
 	}
-	// Closing the underlying conn must unblock anything stuck in
-	// WriteMessage or ReadMessage — same contract as gorilla.Conn.
-	m.mu.Lock()
-	defer m.mu.Unlock()
-	select {
-	case <-m.readBlock:
-	default:
-		close(m.readBlock)
+	c.mu.Lock()
+	deadline := c.writeDeadline
+	c.mu.Unlock()
+	err := c.wait(0, deadline)
+	if errors.Is(err, errTimeout) {
+		c.writeTimedOut.Store(true)
 	}
-	select {
-	case <-m.writeBlock:
-	default:
-		close(m.writeBlock)
-	}
+	return err
+}
+
+func (c *deadlineConn) SetReadDeadline(t time.Time) error {
+	c.mu.Lock()
+	c.readDeadline = t
+	c.mu.Unlock()
 	return nil
 }
 
-func (m *stuckWriteMockConn) WriteControl(int, []byte, time.Time) error { return nil }
-func (m *stuckWriteMockConn) SetPongHandler(func(string) error)         {}
-func (m *stuckWriteMockConn) SetPingHandler(func(string) error)         {}
-func (m *stuckWriteMockConn) Subprotocol() string                       { return "" }
-
-// silentMockConn simulates a websocket whose underlying network has
-// gone silent in BOTH directions — no data, no FIN, no RST, no
-// kernel-side write completion. ReadMessage blocks until the read
-// deadline expires or the connection is closed. WriteMessage also
-// blocks indefinitely (until close), modelling a kernel send buffer
-// that has filled because the peer is no longer ACKing TCP segments.
-//
-// This is the leak vector from gammazero/nexus#242 that the existing
-// keepalive logic does NOT catch: the sender's ticker tries to send a
-// PING, WriteMessage hangs, the missed-pong counter never advances,
-// and recvHandler has no read deadline to bail it out either. Both
-// goroutines leak forever. The fix sets a read deadline (refreshed by
-// incoming ping/pong) so the receiver eventually times out and tears
-// the conn down, which then unsticks the sender.
-type silentMockConn struct {
-	mu       sync.Mutex
-	deadline time.Time
-	closeC   chan struct{}
-}
-
-func newSilentMockConn() *silentMockConn { return &silentMockConn{closeC: make(chan struct{})} }
-
-func (m *silentMockConn) ReadMessage() (int, []byte, error) {
-	for {
-		m.mu.Lock()
-		dl := m.deadline
-		m.mu.Unlock()
-		if !dl.IsZero() {
-			d := time.Until(dl)
-			if d <= 0 {
-				return 0, nil, errors.New("i/o timeout")
-			}
-			select {
-			case <-m.closeC:
-				return 0, nil, errors.New("use of closed network connection")
-			case <-time.After(d):
-				return 0, nil, errors.New("i/o timeout")
-			}
-		}
-		// Deadline not yet set — poll briefly.
-		select {
-		case <-m.closeC:
-			return 0, nil, errors.New("use of closed network connection")
-		case <-time.After(20 * time.Millisecond):
-		}
-	}
-}
-
-func (m *silentMockConn) WriteMessage(int, []byte) error {
-	<-m.closeC
-	return errors.New("write on closed conn")
-}
-
-func (m *silentMockConn) SetReadDeadline(t time.Time) error {
-	m.mu.Lock()
-	m.deadline = t
-	m.mu.Unlock()
-	return nil
-}
-func (m *silentMockConn) SetWriteDeadline(time.Time) error          { return nil }
-func (m *silentMockConn) WriteControl(int, []byte, time.Time) error { return nil }
-func (m *silentMockConn) SetPongHandler(func(string) error)         {}
-func (m *silentMockConn) SetPingHandler(func(string) error)         {}
-func (m *silentMockConn) Subprotocol() string                       { return "" }
-func (m *silentMockConn) Close() error {
-	select {
-	case <-m.closeC:
-	default:
-		close(m.closeC)
-	}
+func (c *deadlineConn) SetWriteDeadline(t time.Time) error {
+	c.mu.Lock()
+	c.writeDeadline = t
+	c.mu.Unlock()
 	return nil
 }
 
-// TestWSRecvHandlerExitsOnSilentReadDeadline pins the second half of
-// gammazero/nexus#242: with KeepAlive configured, recvHandler must NOT
-// block forever in ReadMessage when the peer has gone silent. The fix
-// sets a read deadline of 2× KeepAlive on the underlying conn (when it
-// supports SetReadDeadline) so an unresponsive peer triggers an i/o
-// timeout and recvHandler exits cleanly.
-func TestWSRecvHandlerExitsOnSilentReadDeadline(t *testing.T) {
-	mock := newSilentMockConn()
-	const keepAlive = 100 * time.Millisecond
-	peer := transport.NewWebsocketPeer(mock, &serialize.JSONSerializer{}, websocket.TextMessage, log.Default(), keepAlive, 0)
-	defer peer.Close()
-
-	// recvHandler closes the Recv channel via deferred close(w.rd) when it
-	// exits. With the fix this happens within ~2*keepAlive (initial deadline)
-	// + slack. Without the fix recvHandler stays blocked in ReadMessage.
-	select {
-	case _, ok := <-peer.Recv():
-		require.False(t, ok, "expected closed Recv channel; recvHandler should have exited")
-	case <-time.After(2 * time.Second):
-		t.Fatal("recvHandler did not exit despite silent peer + read-deadline support")
-	}
+func (c *deadlineConn) SetPongHandler(h func(string) error) {
+	c.mu.Lock()
+	c.pongHandler = h
+	c.mu.Unlock()
 }
 
-// TestWSRecvHandlerCleanupDoesNotDeadlock pins gammazero/nexus#242. With
-// the fix, after a spontaneous read error recvHandler must close the
-// connection before waiting for the writer, so a sendHandler stuck in
-// WriteMessage gets unblocked and writerDone fires. Without the fix the
-// peer's recvHandler hangs at <-w.writerDone forever.
-func TestWSRecvHandlerCleanupDoesNotDeadlock(t *testing.T) {
-	mock := newStuckWriteMockConn()
-	peer := transport.NewWebsocketPeer(mock, &serialize.JSONSerializer{}, websocket.TextMessage, log.Default(), 0, 0)
+func (c *deadlineConn) SetPingHandler(h func(string) error) {
+	c.mu.Lock()
+	c.pingHandler = h
+	c.mu.Unlock()
+}
 
-	// Park sendHandler in WriteMessage by queueing a message that the mock
-	// will accept onto wr but block when sendHandler tries to write it.
-	peer.Send() <- &wamp.Hello{Realm: "test"}
+func (c *deadlineConn) Close() error {
+	c.closeOnce.Do(func() { close(c.closeC) })
+	return nil
+}
 
-	// Give sendHandler a moment to actually pick the message off wr and
-	// enter WriteMessage where it'll block on writeBlock.
-	time.Sleep(50 * time.Millisecond)
+func (c *deadlineConn) WriteControl(int, []byte, time.Time) error { return nil }
+func (c *deadlineConn) Subprotocol() string                       { return "" }
 
-	// Spontaneous-error branch: ReadMessage returns an error, recvHandler
-	// goes into cleanup. With the fix it closes the conn, which unblocks
-	// the stuck WriteMessage. Without the fix it hangs.
-	close(mock.readBlock)
+func newTestPeer(conn transport.WebsocketConnection, keepAlive time.Duration) wamp.Peer {
+	return transport.NewWebsocketPeer(conn, &serialize.JSONSerializer{},
+		websocket.TextMessage, log.Default(), keepAlive, 0)
+}
 
-	// Wait for the peer to fully wind down. peer.Close() also waits for
-	// recvDone internally; if recvHandler deadlocked, this never returns
-	// and the test deadline trips.
+// requireCloses calls peer.Close and fails if it does not return within
+// testTimeout.
+func requireCloses(t *testing.T, peer wamp.Peer) {
+	t.Helper()
 	done := make(chan struct{})
 	go func() {
 		peer.Close()
 		close(done)
 	}()
-
 	select {
 	case <-done:
-	case <-time.After(2 * time.Second):
-		require.FailNow(t, "peer.Close() deadlocked — recvHandler is stuck waiting on writerDone")
+	case <-time.After(testTimeout):
+		require.FailNow(t, "peer.Close() deadlocked")
+	}
+}
+
+// requireRecvClosed fails if the peer's Recv channel is not closed within
+// testTimeout, meaning that recvHandler did not exit.
+func requireRecvClosed(t *testing.T, peer wamp.Peer) {
+	t.Helper()
+	timeout := time.After(testTimeout)
+	for {
+		select {
+		case _, ok := <-peer.Recv():
+			if !ok {
+				return
+			}
+		case <-timeout:
+			require.FailNow(t, "recvHandler did not exit")
+		}
+	}
+}
+
+// TestWSRecvErrorUnblocksStuckWrite pins gammazero/nexus#242. After a read
+// error, recvHandler waits for sendHandler to exit. If sendHandler is stuck in
+// WriteMessage, because the remote peer stopped reading, recvHandler must
+// close the connection to unblock it instead of waiting forever.
+func TestWSRecvErrorUnblocksStuckWrite(t *testing.T) {
+	defer goleak.VerifyNone(t, goleak.IgnoreCurrent())
+	defer transport.SetSenderStopTimeout(shortStopDelay)()
+
+	conn := newBlockingConn()
+	peer := newTestPeer(conn, 0)
+	peer.Send() <- &wamp.Hello{Realm: "test"}
+	<-conn.writeEntered
+
+	close(conn.readErr)
+	requireRecvClosed(t, peer)
+	requireCloses(t, peer)
+	require.Equal(t, int32(1), conn.abortedWrites.Load())
+}
+
+// TestWSCloseUnblocksStuckWrite verifies that Close does not wait forever for
+// a sendHandler that is stuck in WriteMessage.
+func TestWSCloseUnblocksStuckWrite(t *testing.T) {
+	defer goleak.VerifyNone(t, goleak.IgnoreCurrent())
+	defer transport.SetSenderStopTimeout(shortStopDelay)()
+
+	conn := newBlockingConn()
+	peer := newTestPeer(conn, 0)
+	peer.Send() <- &wamp.Hello{Realm: "test"}
+	<-conn.writeEntered
+
+	requireCloses(t, peer)
+	require.Equal(t, int32(1), conn.abortedWrites.Load())
+}
+
+// TestWSRecvErrorLetsInFlightWriteFinish verifies that a read error does not
+// cut off a write that completes within the sender stop timeout.
+func TestWSRecvErrorLetsInFlightWriteFinish(t *testing.T) {
+	defer goleak.VerifyNone(t, goleak.IgnoreCurrent())
+	defer transport.SetSenderStopTimeout(2 * time.Second)()
+
+	conn := newBlockingConn()
+	peer := newTestPeer(conn, 0)
+	peer.Send() <- &wamp.Hello{Realm: "test"}
+	<-conn.writeEntered
+
+	close(conn.readErr)
+	time.Sleep(50 * time.Millisecond)
+	require.False(t, conn.isClosed(), "connection closed while write in flight")
+	close(conn.writeRelease)
+
+	requireRecvClosed(t, peer)
+	requireCloses(t, peer)
+	require.Equal(t, int32(1), conn.completedWrites.Load())
+	require.Zero(t, conn.abortedWrites.Load())
+}
+
+// TestWSRecvHandlerExitsOnSilentReadDeadline pins the second half of
+// gammazero/nexus#242: with KeepAlive configured, recvHandler must not block
+// forever in ReadMessage when the remote peer has gone silent.
+func TestWSRecvHandlerExitsOnSilentReadDeadline(t *testing.T) {
+	defer goleak.VerifyNone(t, goleak.IgnoreCurrent())
+
+	conn := newDeadlineConn()
+	peer := newTestPeer(conn, testKeepAlive)
+
+	requireRecvClosed(t, peer)
+	require.True(t, conn.readTimedOut.Load(), "read should have timed out")
+	requireCloses(t, peer)
+}
+
+// TestWSDataKeepsConnectionAlive verifies that receiving data counts as a sign
+// of life, so a remote peer that keeps sending data is not disconnected when
+// its pongs are delayed.
+func TestWSDataKeepsConnectionAlive(t *testing.T) {
+	defer goleak.VerifyNone(t, goleak.IgnoreCurrent())
+
+	conn := newDeadlineConn()
+	conn.dataEvery = testKeepAlive / 4
+	peer := newTestPeer(conn, testKeepAlive)
+
+	// Receive data for well past both the 2*keepAlive read deadline and the
+	// two missed pongs that close the connection.
+	timeout := time.After(6 * testKeepAlive)
+recvLoop:
+	for {
+		select {
+		case _, ok := <-peer.Recv():
+			require.True(t, ok, "connection closed while receiving data")
+		case <-timeout:
+			break recvLoop
+		}
+	}
+	requireCloses(t, peer)
+}
+
+// TestWSWriteDeadline verifies that with KeepAlive configured, a write that
+// cannot complete times out instead of blocking forever.
+func TestWSWriteDeadline(t *testing.T) {
+	defer goleak.VerifyNone(t, goleak.IgnoreCurrent())
+
+	conn := newDeadlineConn()
+	conn.stuckWrites = true
+	peer := newTestPeer(conn, testKeepAlive)
+	peer.Send() <- &wamp.Hello{Realm: "test"}
+
+	require.Eventually(t, conn.writeTimedOut.Load, testTimeout,
+		10*time.Millisecond, "write should have timed out")
+	requireCloses(t, peer)
+}
+
+// TestWSReadSetupBeforeFirstRead verifies that the read deadline and the
+// ping and pong handlers are set before recvHandler starts reading, since
+// gorilla does not allow setting them concurrently with ReadMessage.
+func TestWSReadSetupBeforeFirstRead(t *testing.T) {
+	defer goleak.VerifyNone(t, goleak.IgnoreCurrent())
+
+	for range 20 {
+		conn := newDeadlineConn()
+		conn.dataEvery = time.Millisecond
+		peer := newTestPeer(conn, testKeepAlive)
+		<-peer.Recv()
+		requireCloses(t, peer)
+
+		require.True(t, conn.deadlineAtFirstRd, "read deadline not set")
+		require.True(t, conn.handlersAtFirstRd, "ping/pong handlers not set")
 	}
 }
