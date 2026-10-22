@@ -48,6 +48,9 @@ type WebsocketServer struct {
 	// Upgrader specifies parameters for upgrading an HTTP connection to a
 	// websocket connection. See:
 	// https://godoc.org/github.com/gorilla/websocket#Upgrader
+	//
+	// If Upgrader.Error is set, it must write the HTTP error response. The server
+	// does not write a response of its own when an upgrade fails.
 	Upgrader *websocket.Upgrader
 
 	// Serializer for text frames. Defaults to JSONSerializer.
@@ -335,27 +338,27 @@ func (s *WebsocketServer) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		authDict["request"] = r
 	}
 
-	// Per RFC 6455 §4.2.2, the server selects the subprotocol from the
-	// client's Sec-WebSocket-Protocol header, where the client lists
-	// protocols in preference order. Pick the first client-listed protocol
-	// that we support and write it into the response header before Upgrade.
-	// The Upgrader's own Subprotocols field is left empty (see addProtocol)
-	// so gorilla's internal selection — which iterates the server's list
-	// outermost and would defeat client preference — does not run.
+	// Per RFC 6455 §4.2.2, the server selects the subprotocol from the client's
+	// Sec-WebSocket-Protocol header, where the client lists protocols in
+	// preference order. Pick the first client-listed protocol that we support and
+	// pass it to Upgrade in the response header. The Upgrader's own Subprotocols
+	// field is left empty (see addProtocol) so gorilla's internal selection, which
+	// iterates the server's list outermost and would defeat client preference,
+	// does not run. The protocol goes in a copy of the response header, so that it
+	// is not sent with an error response if Upgrade fails.
+	respHeader := w.Header().Clone()
 	if proto := s.selectSubprotocol(r); proto != "" {
-		w.Header().Set("Sec-Websocket-Protocol", proto)
+		respHeader.Set("Sec-Websocket-Protocol", proto)
 	}
 
-	conn, err := s.Upgrader.Upgrade(w, r, w.Header())
+	conn, err := s.Upgrader.Upgrade(w, r, respHeader)
 	if err != nil {
-		// Upgrade has already replied: every handshake rejection goes
-		// through its returnError, which writes the status it chose (403
-		// for a disallowed origin, 405 for a non-GET, ...) or defers to
-		// Upgrader.Error. Its one remaining error path happens after the
-		// connection is hijacked, where the ResponseWriter can no longer
-		// be written to at all. Answering again here only produced a
-		// "superfluous response.WriteHeader call" from net/http, so log
-		// and return.
+		// Upgrade has already replied. Every error either comes after the connection
+		// is hijacked, when nothing more can be written to w, or is answered by
+		// Upgrade with the status it chose (403 for a disallowed origin, 405 for a
+		// non-GET, ...) or by calling Upgrader.Error. Answering again here only
+		// produced a "superfluous response.WriteHeader call" from net/http, so log and
+		// return.
 		s.router.Logger().Println("Error upgrading to websocket connection:", err)
 		return
 	}

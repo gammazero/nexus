@@ -320,25 +320,101 @@ func TestAllowOriginsWithPorts(t *testing.T) {
 }
 
 // TestWSFailedUpgradeRepliesOnce pins that a rejected handshake produces
-// exactly one HTTP error response. gorilla's Upgrade already replies via
-// its returnError before handing the error back; replying a second time
-// in ServeHTTP produced a "superfluous response.WriteHeader call" from
-// net/http and appended a second error body.
+// exactly one HTTP error response, and that the response does not include a
+// negotiated subprotocol. gorilla's Upgrade already replies before handing the
+// error back, so replying a second time in ServeHTTP produced a "superfluous
+// response.WriteHeader call" from net/http and appended a second error body.
 func TestWSFailedUpgradeRepliesOnce(t *testing.T) {
 	r, err := NewRouter(routerConfig, nil)
 	require.NoError(t, err)
 	defer r.Close()
 
-	s := NewWebsocketServer(r)
+	// handshake returns the headers of a valid websocket handshake that offers a
+	// supported subprotocol.
+	handshake := func() http.Header {
+		return http.Header{
+			"Connection":             {"Upgrade"},
+			"Upgrade":                {"websocket"},
+			"Sec-Websocket-Version":  {"13"},
+			"Sec-Websocket-Key":      {"dGhlIHNhbXBsZSBub25jZQ=="},
+			"Sec-Websocket-Protocol": {jsonWebsocketProtocol},
+		}
+	}
 
-	// A plain GET with no Upgrade/Connection headers: gorilla rejects the
-	// handshake with 400 and writes its own body.
-	req := httptest.NewRequest(http.MethodGet, "/ws", nil)
-	rec := httptest.NewRecorder()
-	s.ServeHTTP(rec, req)
+	cases := []struct {
+		name       string
+		method     string
+		header     http.Header
+		rejectAll  bool
+		upgradeErr func(http.ResponseWriter, *http.Request, int, error)
+		wantStatus int
+		wantBody   string
+	}{
+		{
+			name:       "not a websocket handshake",
+			method:     http.MethodGet,
+			header:     http.Header{},
+			wantStatus: http.StatusBadRequest,
+		},
+		{
+			name:       "method not GET",
+			method:     http.MethodPost,
+			header:     handshake(),
+			wantStatus: http.StatusMethodNotAllowed,
+		},
+		{
+			name:   "unsupported version",
+			method: http.MethodGet,
+			header: func() http.Header {
+				h := handshake()
+				h.Set("Sec-Websocket-Version", "8")
+				return h
+			}(),
+			wantStatus: http.StatusBadRequest,
+		},
+		{
+			name:       "origin not allowed",
+			method:     http.MethodGet,
+			header:     handshake(),
+			rejectAll:  true,
+			wantStatus: http.StatusForbidden,
+		},
+		{
+			name:      "custom Upgrader.Error",
+			method:    http.MethodGet,
+			header:    handshake(),
+			rejectAll: true,
+			upgradeErr: func(w http.ResponseWriter, _ *http.Request, _ int, _ error) {
+				http.Error(w, "custom rejection", http.StatusTeapot)
+			},
+			wantStatus: http.StatusTeapot,
+			wantBody:   "custom rejection\n",
+		},
+	}
 
-	require.Equal(t, http.StatusBadRequest, rec.Code)
-	// http.StatusText + "\n" is exactly what gorilla wrote. Anything more
-	// means ServeHTTP answered a request that was already answered.
-	require.Equal(t, http.StatusText(http.StatusBadRequest)+"\n", rec.Body.String())
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			s := NewWebsocketServer(r)
+			if tc.rejectAll {
+				s.Upgrader.CheckOrigin = func(*http.Request) bool { return false }
+			}
+			s.Upgrader.Error = tc.upgradeErr
+
+			req := httptest.NewRequest(tc.method, "/ws", nil)
+			req.Header = tc.header
+			rec := httptest.NewRecorder()
+			s.ServeHTTP(rec, req)
+
+			require.Equal(t, tc.wantStatus, rec.Code)
+			wantBody := tc.wantBody
+			if wantBody == "" {
+				// What gorilla writes by default. Anything more means that ServeHTTP answered
+				// a request that was already answered.
+				wantBody = http.StatusText(tc.wantStatus) + "\n"
+			}
+			require.Equal(t, wantBody, rec.Body.String())
+			require.Empty(t, rec.Header().Get("Sec-Websocket-Protocol"),
+				"failed upgrade must not include a subprotocol")
+		})
+	}
 }
