@@ -122,6 +122,7 @@ func (s *RawSocketServer) handleRawSocket(conn net.Conn) {
 	}
 
 	if err := s.router.Attach(peer); err != nil {
-		s.router.Logger().Println("Error attaching to router:", err)
+		s.router.Logger().Printf("Error attaching to router: %v (peer %s)", err,
+			peerDescription(conn.RemoteAddr().String(), nil))
 	}
 }
