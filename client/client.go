@@ -77,6 +77,12 @@ type Client struct {
 	// requests are sent in the order of their IDs.
 	reqLock sync.Mutex
 
+	// sendLock is held for reading to send to the router, and for writing to close
+	// the session, so that the session is never closed during a send. sessClosed
+	// is set when the session is closed. See send.
+	sendLock   sync.RWMutex
+	sessClosed bool
+
 	log   stdlog.StdLog
 	debug bool
 
@@ -870,8 +876,8 @@ func (c *Client) Call(ctx context.Context, procedure string, options wamp.Dict, 
 		abortMsg, err := c.prepareCallResultMessage(msg)
 		if err != nil {
 			if abortMsg != nil {
-				c.sess.Send() <- abortMsg
-				c.sess.Close()
+				_ = c.send(abortMsg)
+				c.closeSession()
 			}
 
 			return nil, err
@@ -967,10 +973,10 @@ func (c *Client) CallProgressive(ctx context.Context, procedure string, sendProg
 				cliOptions, args, kwargs, err := sendProg(ctx)
 
 				if err != nil {
-					c.sess.Send() <- &wamp.Cancel{
+					_ = c.send(&wamp.Cancel{
 						Request: id,
 						Options: wamp.SetOption(nil, wamp.OptMode, wamp.CancelModeKillNoWait),
-					}
+					})
 					return
 				}
 
@@ -994,14 +1000,16 @@ func (c *Client) CallProgressive(ctx context.Context, procedure string, sendProg
 				}
 
 				if err := c.prepareCallPayloadMessage(message, options, args, kwargs); err != nil {
-					c.sess.Send() <- &wamp.Cancel{
+					_ = c.send(&wamp.Cancel{
 						Request: id,
 						Options: wamp.SetOption(nil, wamp.OptMode, wamp.CancelModeKillNoWait),
-					}
+					})
 					return
 				}
 
-				c.sess.Send() <- message
+				if c.send(message) != nil {
+					return
+				}
 			}
 		}()
 	}
@@ -1025,8 +1033,8 @@ func (c *Client) CallProgressive(ctx context.Context, procedure string, sendProg
 		abortMsg, err := c.prepareCallResultMessage(msg)
 		if err != nil {
 			if abortMsg != nil {
-				c.sess.Send() <- abortMsg
-				c.sess.Close()
+				_ = c.send(abortMsg)
+				c.closeSession()
 			}
 
 			return nil, err
@@ -1117,8 +1125,7 @@ func (c *Client) Close() error {
 		}
 
 		var stopped bool
-		select {
-		case c.sess.Send() <- gmMsg:
+		if c.sendCtx(sendCtx, gmMsg) == nil {
 			// The router should respond with a GOODBYE message, which causes
 			// run() to exit. Wait for run() to exit, but only wait for
 			// whatever time remains on the context.
@@ -1127,7 +1134,6 @@ func (c *Client) Close() error {
 				stopped = true
 			case <-sendCtx.Done():
 			}
-		case <-sendCtx.Done():
 		}
 
 		if !stopped {
@@ -1138,7 +1144,7 @@ func (c *Client) Close() error {
 
 	// When for any running invocation handlers to finish.
 	c.activeInvHandlers.Wait()
-	c.sess.Close()
+	c.closeSession()
 
 	return nil
 }
@@ -1198,13 +1204,9 @@ func (c *Client) SendProgress(ctx context.Context, args wamp.List, kwArgs wamp.D
 		Arguments:   args,
 		ArgumentsKw: kwArgs,
 	}
-	select {
-	case c.sess.Send() <- yieldMsg:
-	case <-ctx.Done():
-		select {
-		case <-c.Done():
+	if err := c.sendCtx(ctx, yieldMsg); err != nil {
+		if errors.Is(err, ErrNotConn) {
 			return ErrNotConn
-		default:
 		}
 		// Caller is not accepting progressive results or call canceled.
 		return ErrCallerNoProg
@@ -1391,16 +1393,65 @@ func (c *Client) sendRequest(expectReply bool, newMsg func(id wamp.ID) wamp.Mess
 	if expectReply {
 		c.expectReply(id)
 	}
-	select {
-	case c.sess.Send() <- newMsg(id):
-		return id, nil
-	case <-c.ctx.Done():
+	if err := c.send(newMsg(id)); err != nil {
 		if expectReply {
 			c.sess.Lock()
 			delete(c.awaitingReply, id)
 			c.sess.Unlock()
 		}
-		return 0, ErrNotConn
+		return 0, err
+	}
+	return id, nil
+}
+
+// errSendStopped is returned by sendOrStop when it stops before sending.
+var errSendStopped = errors.New("send stopped")
+
+// send sends msg to the router. It returns ErrNotConn, without sending, if the
+// session is closed or the client stops before msg is sent.
+func (c *Client) send(msg wamp.Message) error {
+	return c.sendOrStop(msg, nil)
+}
+
+// sendCtx is like send, but also stops waiting to send when ctx is done, and
+// then returns ctx.Err().
+func (c *Client) sendCtx(ctx context.Context, msg wamp.Message) error {
+	err := c.sendOrStop(msg, ctx.Done())
+	if errors.Is(err, errSendStopped) {
+		return ctx.Err()
+	}
+	return err
+}
+
+// sendOrStop sends msg to the router, or returns errSendStopped if stop is
+// closed first. A nil stop never closes.
+//
+// Closing the session can close the channel that msg is sent on, so sends hold
+// sendLock for reading and closeSession takes it for writing.
+func (c *Client) sendOrStop(msg wamp.Message, stop <-chan struct{}) error {
+	c.sendLock.RLock()
+	defer c.sendLock.RUnlock()
+	if c.sessClosed {
+		return ErrNotConn
+	}
+	select {
+	case c.sess.Send() <- msg:
+		return nil
+	case <-c.ctx.Done():
+		return ErrNotConn
+	case <-stop:
+		return errSendStopped
+	}
+}
+
+// closeSession closes the session to the router once no send is in progress.
+// Sends after that return ErrNotConn.
+func (c *Client) closeSession() {
+	c.sendLock.Lock()
+	defer c.sendLock.Unlock()
+	if !c.sessClosed {
+		c.sessClosed = true
+		c.sess.Close()
 	}
 }
 
@@ -1483,10 +1534,10 @@ CollectResults:
 			c.log.Printf("Call to %q canceled by caller (mode=%s): %s",
 				procedure, c.cancelMode, err)
 		}
-		c.sess.Send() <- &wamp.Cancel{
+		_ = c.send(&wamp.Cancel{
 			Request: id,
 			Options: wamp.SetOption(nil, wamp.OptMode, c.cancelMode),
-		}
+		})
 		// Wait for the ERROR from the dealer.
 		timer := time.NewTimer(c.responseTimeout)
 	waitCancel:
@@ -1692,13 +1743,13 @@ func (c *Client) runHandleInvocation(msg *wamp.Invocation) {
 		// as ErrNoSuchProcedure, since the dealer has a procedure registered.
 		// It is reported as ErrInvalidArgument to denote that the client has a
 		// problem with the registration ID argument.
-		c.sess.Send() <- &wamp.Error{
+		_ = c.send(&wamp.Error{
 			Type:      wamp.INVOCATION,
 			Request:   reqID,
 			Details:   wamp.Dict{},
 			Error:     wamp.ErrInvalidArgument,
 			Arguments: wamp.List{errMsg},
-		}
+		})
 		c.log.Print(errMsg)
 		return
 	}
@@ -1708,13 +1759,13 @@ func (c *Client) runHandleInvocation(msg *wamp.Invocation) {
 	if pptScheme, _ := msg.Details[wamp.OptPPTScheme].(string); pptScheme != "" {
 		if !isPPTSchemeValid(pptScheme) {
 			c.sess.Unlock()
-			c.sess.Send() <- &wamp.Error{
+			_ = c.send(&wamp.Error{
 				Type:      wamp.INVOCATION,
 				Request:   reqID,
 				Details:   wamp.Dict{},
 				Error:     wamp.ErrInvalidArgument,
 				Arguments: wamp.List{ErrPPTSchemeInvalid.Error()},
-			}
+			})
 			c.log.Printf("cannot process invocation with invalid ppt schema %q: %v", pptScheme, ErrPPTSchemeInvalid)
 			return
 		}
@@ -1733,13 +1784,13 @@ func (c *Client) runHandleInvocation(msg *wamp.Invocation) {
 
 		if err != nil {
 			c.sess.Unlock()
-			c.sess.Send() <- &wamp.Error{
+			_ = c.send(&wamp.Error{
 				Type:      wamp.INVOCATION,
 				Request:   reqID,
 				Details:   wamp.Dict{},
 				Error:     wamp.ErrInvalidArgument,
 				Arguments: wamp.List{err.Error()},
-			}
+			})
 			c.log.Printf("cannot unpack invocation message: %v", err)
 			return
 		}
@@ -1903,10 +1954,7 @@ func (c *Client) runHandleInvocation(msg *wamp.Invocation) {
 					ArgumentsKw: result.Kwargs,
 					Error:       result.Err,
 				}
-				select {
-				case c.sess.Send() <- errMsg:
-				case <-c.ctx.Done():
-				}
+				_ = c.send(errMsg)
 				return
 			}
 
@@ -1934,8 +1982,8 @@ func (c *Client) runHandleInvocation(msg *wamp.Invocation) {
 							wamp.OptMessage: ErrPPTNotSupportedByPeer.Error(),
 						},
 					}
-					c.sess.Send() <- &abortMsg
-					c.sess.Close()
+					_ = c.send(&abortMsg)
+					c.closeSession()
 					return
 				}
 
@@ -1948,10 +1996,7 @@ func (c *Client) runHandleInvocation(msg *wamp.Invocation) {
 						},
 						Error: wamp.ErrInvalidArgument,
 					}
-					select {
-					case c.sess.Send() <- errMsg:
-					case <-c.ctx.Done():
-					}
+					_ = c.send(errMsg)
 					return
 				}
 
@@ -1977,10 +2022,7 @@ func (c *Client) runHandleInvocation(msg *wamp.Invocation) {
 						},
 						Error: wamp.ErrInvalidArgument,
 					}
-					select {
-					case c.sess.Send() <- errMsg:
-					case <-c.ctx.Done():
-					}
+					_ = c.send(errMsg)
 					return
 				}
 
@@ -1989,10 +2031,7 @@ func (c *Client) runHandleInvocation(msg *wamp.Invocation) {
 				message.ArgumentsKw = result.Kwargs
 			}
 
-			select {
-			case c.sess.Send() <- message:
-			case <-c.ctx.Done():
-			}
+			_ = c.send(message)
 		}()
 	}
 }
