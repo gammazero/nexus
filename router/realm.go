@@ -37,6 +37,8 @@ type testamentBucket struct {
 // authentication and authorization. WAMP messages are only routed within a
 // Realm.
 type realm struct {
+	uri wamp.URI
+
 	broker *broker
 	dealer *dealer
 
@@ -99,6 +101,7 @@ func newRealm(config *RealmConfig, broker *broker, dealer *dealer, logger stdlog
 	}
 
 	r := &realm{
+		uri:         config.URI,
 		broker:      broker,
 		dealer:      dealer,
 		authorizer:  config.Authorizer,
@@ -710,8 +713,18 @@ func (r *realm) authClient(sid wamp.ID, client wamp.Peer, details wamp.Dict) (*w
 		return nil, errors.New("could not authenticate with any method")
 	}
 
+	// Expose the target realm URI to the authenticator. The HELLO carries the
+	// realm as a separate message field from Details, so without this, dynamic
+	// authenticators that share one instance across multiple realms cannot tell
+	// which realm the client is requesting. It is added to a copy of details,
+	// since details become the session details that other clients see, and the
+	// client already knows the realm it joined.
+	authDetails := make(wamp.Dict, len(details)+1)
+	maps.Copy(authDetails, details)
+	authDetails[auth.RealmDetail] = string(r.uri)
+
 	// Return welcome message or error.
-	welcome, err := authr.Authenticate(sid, details, client)
+	welcome, err := authr.Authenticate(sid, authDetails, client)
 	if err != nil {
 		return nil, err
 	}
