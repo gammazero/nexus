@@ -463,13 +463,57 @@ func (d *dealer) syncRegister(callee *wamp.Session, msg *wamp.Register, match, i
 		reg = d.wcProcRegMap[msg.Procedure]
 	}
 
-	var created string
 	var regID wamp.ID
 	// If no existing registration found for the procedure, then create a new
 	// registration.
 	if reg == nil {
 		regID = d.idGen.Next()
-		created = wamp.NowISO8601()
+	} else {
+		// There is an existing registration(s) for this procedure. See if
+		// invocation policy allows another.
+
+		// Found an existing registration that has an invocation strategy that
+		// only allows a single callee on the given registration.
+		if reg.policy == "" || reg.policy == wamp.InvokeSingle {
+			d.log.Println("REGISTER for already registered procedure",
+				msg.Procedure, "from callee", callee)
+			d.trySend(callee, &wamp.Error{
+				Type:    msg.MessageType(),
+				Request: msg.Request,
+				Details: wamp.Dict{},
+				Error:   wamp.ErrProcedureAlreadyExists,
+			})
+			return metaPubs
+		}
+
+		// Found an existing registration that has an invocation strategy
+		// different from the one requested by the new callee.
+		if reg.policy != invokePolicy {
+			d.log.Println("REGISTER for already registered procedure",
+				msg.Procedure, "with conflicting invocation policy (has",
+				reg.policy, "and requested", invokePolicy)
+			d.trySend(callee, &wamp.Error{
+				Type:    msg.MessageType(),
+				Request: msg.Request,
+				Details: wamp.Dict{},
+				Error:   wamp.ErrProcedureAlreadyExists,
+			})
+			return metaPubs
+		}
+
+		regID = reg.id
+	}
+
+	// Queue the REGISTERED ack before creating the registration. If the ack cannot
+	// be queued, then the callee never learns the registration ID, and INVOCATIONs
+	// for it would be a protocol violation, so create nothing.
+	if !d.trySend(callee, &wamp.Registered{Request: msg.Request, Registration: regID}) {
+		d.log.Println("Registration of", msg.Procedure, "not created")
+		return metaPubs
+	}
+
+	if reg == nil {
+		created := wamp.NowISO8601()
 		reg = &registration{
 			id:             regID,
 			procedure:      msg.Procedure,
@@ -508,40 +552,6 @@ func (d *dealer) syncRegister(callee *wamp.Session, msg *wamp.Register, match, i
 			})
 		}
 	} else {
-		// There is an existing registration(s) for this procedure. See if
-		// invocation policy allows another.
-
-		// Found an existing registration that has an invocation strategy that
-		// only allows a single callee on the given registration.
-		if reg.policy == "" || reg.policy == wamp.InvokeSingle {
-			d.log.Println("REGISTER for already registered procedure",
-				msg.Procedure, "from callee", callee)
-			d.trySend(callee, &wamp.Error{
-				Type:    msg.MessageType(),
-				Request: msg.Request,
-				Details: wamp.Dict{},
-				Error:   wamp.ErrProcedureAlreadyExists,
-			})
-			return metaPubs
-		}
-
-		// Found an existing registration that has an invocation strategy
-		// different from the one requested by the new callee.
-		if reg.policy != invokePolicy {
-			d.log.Println("REGISTER for already registered procedure",
-				msg.Procedure, "with conflicting invocation policy (has",
-				reg.policy, "and requested", invokePolicy)
-			d.trySend(callee, &wamp.Error{
-				Type:    msg.MessageType(),
-				Request: msg.Request,
-				Details: wamp.Dict{},
-				Error:   wamp.ErrProcedureAlreadyExists,
-			})
-			return metaPubs
-		}
-
-		regID = reg.id
-
 		// Add callee for the registration.
 		reg.callees = append(reg.callees, callee)
 	}
@@ -556,10 +566,6 @@ func (d *dealer) syncRegister(callee *wamp.Session, msg *wamp.Register, match, i
 		d.log.Printf("Registered procedure %v (regID=%v) to callee %v",
 			msg.Procedure, regID, callee)
 	}
-	d.trySend(callee, &wamp.Registered{
-		Request:      msg.Request,
-		Registration: regID,
-	})
 
 	if !wampURI && d.metaPeer != nil {
 		// Publish wamp.registration.on_register meta event. Fired when a
@@ -1638,11 +1644,15 @@ func (d *dealer) regCountCallees(msg *wamp.Invocation) wamp.Message {
 	}
 }
 
-func (d *dealer) trySend(sess *wamp.Session, msg wamp.Message) {
+// trySend queues msg to sess without blocking, and reports whether it was
+// queued. If the outbound queue of sess is full, msg is dropped.
+func (d *dealer) trySend(sess *wamp.Session, msg wamp.Message) bool {
 	select {
 	case sess.Send() <- msg:
+		return true
 	default:
 		d.log.Printf("!!! Dropped %s to session %s: blocked", msg.MessageType(), sess)
+		return false
 	}
 }
 
