@@ -115,3 +115,50 @@ func TestCloseDuringProgressiveCall(t *testing.T) {
 		<-callerDone
 	}
 }
+
+// TestCloseWithSlowCaller checks that closing the router while the dealer is
+// sending to a slow caller neither panics nor races. Router shutdown used to
+// close a session while the dealer could still send to it, which the race
+// detector reported as a data race on the session's channel, and which could
+// panic with "send on closed channel".
+//
+// The caller has a 1-message queue that the test never reads. It makes two
+// calls, and the callee answers each with an ERROR. The first ERROR fills the
+// caller's queue, and the second is dropped. The router is then closed by
+// t.Cleanup.
+func TestCloseWithSlowCaller(t *testing.T) {
+	r := newTestRouter(t)
+
+	// Slow caller: 1-message router-to-client queue.
+	callerClient, callerServer := transport.LinkedPeersQSize(1)
+	go func() {
+		callerClient.Send() <- &wamp.Hello{Realm: testRealm, Details: clientRoles}
+	}()
+	require.NoError(t, r.Attach(callerServer))
+	msg, err := wamp.RecvTimeout(callerClient, time.Second)
+	require.NoError(t, err)
+	_, ok := msg.(*wamp.Welcome)
+	require.True(t, ok, "expected WELCOME, got %T", msg)
+
+	callee := testClient(t, r)
+	const proc = wamp.URI("nexus.test.shutdownrace.proc")
+	callee.Send() <- &wamp.Register{Request: 1, Procedure: proc}
+	recvType[*wamp.Registered](t, callee)
+
+	// Two CALL and INVOCATION ERROR exchanges. The first ERROR stays in the
+	// caller's queue, and the second is dropped.
+	for i := 1; i <= 2; i++ {
+		callerClient.Send() <- &wamp.Call{Request: wamp.ID(i), Procedure: proc}
+		inv := recvType[*wamp.Invocation](t, callee)
+		callee.Send() <- &wamp.Error{
+			Type:    wamp.INVOCATION,
+			Request: inv.Request,
+			Error:   wamp.ErrInvalidArgument,
+		}
+	}
+
+	// Check that the callee is still responsive before t.Cleanup closes the
+	// router, which is the shutdown under test.
+	callee.Send() <- &wamp.Subscribe{Request: 100, Topic: testTopic}
+	recvType[*wamp.Subscribed](t, callee)
+}
