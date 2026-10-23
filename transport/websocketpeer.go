@@ -142,9 +142,9 @@ const (
 	ctrlTimeout = 5 * time.Second
 )
 
-// senderStopTimeout is how long to wait for the sender to exit before closing
-// the connection to unblock a write that is stuck because the remote peer is
-// not reading.
+// senderStopTimeout is how long websocket and rawsocket peers wait for their
+// sender to exit before closing the connection, to unblock a write that is
+// stuck because the remote peer is not reading.
 var senderStopTimeout = 5 * time.Second
 
 // defaultWriteTimeout is how long a write may take before it fails, when no
