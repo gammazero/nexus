@@ -1,6 +1,8 @@
 package transport
 
 import (
+	"sync"
+
 	"github.com/gammazero/nexus/v3/wamp"
 )
 
@@ -43,6 +45,8 @@ func LinkedPeersQSize(queueSize int) (wamp.Peer, wamp.Peer) {
 type localPeer struct {
 	rd <-chan wamp.Message
 	wr chan<- wamp.Message
+
+	closeOnce sync.Once
 }
 
 // IsLocal returns true is the wamp.Peer is a localPeer.
@@ -55,5 +59,7 @@ func (p *localPeer) Recv() <-chan wamp.Message { return p.rd }
 func (p *localPeer) Send() chan<- wamp.Message { return p.wr }
 
 // Close closes the outgoing channel, waking any readers waiting on data from
-// this peer.
-func (p *localPeer) Close() { close(p.wr) }
+// this peer. Calling Close more than once, including concurrently, is safe.
+func (p *localPeer) Close() {
+	p.closeOnce.Do(func() { close(p.wr) })
+}

@@ -115,3 +115,14 @@ func BenchmarkRouterToClient(b *testing.B) {
 		<-c.Recv()
 	}
 }
+
+// TestCloseLocalPeerConcurrently checks that Close is idempotent and safe to
+// call concurrently. A second Close used to panic with "close of closed
+// channel".
+func TestCloseLocalPeerConcurrently(t *testing.T) {
+	for range 100 {
+		client, router := transport.LinkedPeers()
+		closeConcurrently(client.Close)
+		closeConcurrently(router.Close)
+	}
+}
