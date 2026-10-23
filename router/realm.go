@@ -4,6 +4,7 @@ import (
 	"errors"
 	"fmt"
 	"maps"
+	"reflect"
 	"slices"
 	"strconv"
 	"sync"
@@ -43,10 +44,6 @@ type realm struct {
 	dealer *dealer
 
 	authorizer Authorizer
-	// authorizeReadOnly calls the authorizer, passing it a copy of the
-	// session, and does not hold the session lock. See
-	// RealmConfig.AuthorizeReadOnly.
-	authorizeReadOnly bool
 
 	// authmethod -> Authenticator
 	authenticators map[string]auth.Authenticator
@@ -105,23 +102,22 @@ func newRealm(config *RealmConfig, broker *broker, dealer *dealer, logger stdlog
 	}
 
 	r := &realm{
-		uri:               config.URI,
-		broker:            broker,
-		dealer:            dealer,
-		authorizer:        config.Authorizer,
-		authorizeReadOnly: config.AuthorizeReadOnly,
-		clients:           map[wamp.ID]*wamp.Session{},
-		testaments:        map[wamp.ID]testamentBucket{},
-		actionChan:        make(chan func()),
-		stopped:           make(chan struct{}),
-		metaIDGen:         new(wamp.IDGen),
-		metaDone:          make(chan struct{}),
-		metaProcMap:       make(map[wamp.ID]func(*wamp.Invocation) wamp.Message, 9),
-		log:               logger,
-		debug:             debug,
-		localAuth:         config.RequireLocalAuth,
-		localAuthz:        config.RequireLocalAuthz,
-		metaStrict:        config.MetaStrict,
+		uri:         config.URI,
+		broker:      broker,
+		dealer:      dealer,
+		authorizer:  config.Authorizer,
+		clients:     map[wamp.ID]*wamp.Session{},
+		testaments:  map[wamp.ID]testamentBucket{},
+		actionChan:  make(chan func()),
+		stopped:     make(chan struct{}),
+		metaIDGen:   new(wamp.IDGen),
+		metaDone:    make(chan struct{}),
+		metaProcMap: make(map[wamp.ID]func(*wamp.Invocation) wamp.Message, 9),
+		log:         logger,
+		debug:       debug,
+		localAuth:   config.RequireLocalAuth,
+		localAuthz:  config.RequireLocalAuthz,
+		metaStrict:  config.MetaStrict,
 
 		enableMetaKill:   config.EnableMetaKill,
 		enableMetaModify: config.EnableMetaModify,
@@ -605,28 +601,24 @@ func (r *realm) authzMessage(sess *wamp.Session, msg wamp.Message) bool {
 		return true
 	}
 
-	var isAuthz bool
-	var err error
+	// Authorize a copy of the session details, without holding the session lock.
+	// The broker locks each subscriber's session while filtering a publish, so an
+	// Authorizer that blocks with the lock held, for example on a remote service,
+	// would stall event delivery for the whole realm. The Authorizer may change
+	// the session details, so its changes to the copy are applied to the session
+	// afterward. Authorize calls for a session run one at a time, on that
+	// session's goroutine.
+	sess.Lock()
+	before := copyDetails(sess.Details)
+	sess.Unlock()
+
 	// Create a safe session to prevent access to the session.Peer.
 	safeSession := &wamp.Session{
-		ID: sess.ID,
+		ID:      sess.ID,
+		Details: copyDetails(before),
 	}
-	if r.authorizeReadOnly {
-		// Copy session details while locked, then authorize without it, so a blocking
-		// Authorizer delays only this session's own messages and never the broker,
-		// which locks subscriber sessions while filtering.
-		sess.Lock()
-		safeSession.Details = maps.Clone(sess.Details)
-		sess.Unlock()
-		isAuthz, err = r.authorizer.Authorize(safeSession, msg)
-	} else {
-		safeSession.Details = sess.Details
-		// Write-lock the session, because there is no telling what the Authorizer will
-		// do to the session details.
-		sess.Lock()
-		isAuthz, err = r.authorizer.Authorize(safeSession, msg)
-		sess.Unlock()
-	}
+	isAuthz, err := r.authorizer.Authorize(safeSession, msg)
+	applyDetailChanges(sess, before, safeSession.Details)
 
 	if !isAuthz {
 		skipResponse := false
@@ -750,6 +742,29 @@ func (r *realm) authClient(sid wamp.ID, client wamp.Peer, details wamp.Dict) (*w
 		wamp.RoleDealer: r.dealer.role(),
 	}
 	return welcome, nil
+}
+
+// applyDetailChanges applies to the details of sess the changes from before to
+// after: the top-level keys that were added, changed or removed. The other
+// keys keep their current values, which may have been changed meanwhile, for
+// example by wamp.session.modify_details.
+func applyDetailChanges(sess *wamp.Session, before, after wamp.Dict) {
+	sess.Lock()
+	defer sess.Unlock()
+	for k, v := range after {
+		if old, ok := before[k]; ok && reflect.DeepEqual(old, v) {
+			continue
+		}
+		if sess.Details == nil {
+			sess.Details = wamp.Dict{}
+		}
+		sess.Details[k] = v
+	}
+	for k := range before {
+		if _, ok := after[k]; !ok {
+			delete(sess.Details, k)
+		}
+	}
 }
 
 // getAuthenticator finds the first authenticator registered for the methods.
@@ -1231,6 +1246,10 @@ func (r *realm) testamentFlush(msg *wamp.Invocation) wamp.Message {
 // cleanSessionDetails returns a dictionary that only contains allowed session
 // details. transport.auth is never allowed, because the data in transport.auth
 // may not be serializable and may expose auth information to session meta.
+//
+// The returned dictionary is always a copy, since it is sent to other sessions
+// and the session details may change after it is returned. Call this with the
+// session locked.
 func (r *realm) cleanSessionDetails(details wamp.Dict) wamp.Dict {
 	var clean wamp.Dict
 	// If in strict mode, only include allowed values.
@@ -1251,7 +1270,7 @@ func (r *realm) cleanSessionDetails(details wamp.Dict) wamp.Dict {
 			}
 		}
 	} else {
-		clean = details
+		clean = maps.Clone(details)
 	}
 
 	// If there is no transport detail, all done.
@@ -1264,12 +1283,6 @@ func (r *realm) cleanSessionDetails(details wamp.Dict) wamp.Dict {
 	authDict := wamp.DictChild(transDict, "auth")
 	if authDict == nil {
 		return clean
-	}
-
-	// If a copy was not previously needed, it is now.
-	if !r.metaStrict {
-		clean = make(wamp.Dict, len(details))
-		maps.Copy(clean, details)
 	}
 
 	// If details.transport.auth exists, then provide version of transport

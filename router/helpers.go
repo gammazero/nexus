@@ -40,3 +40,43 @@ func pptOptionsToDetails(options wamp.Dict, details wamp.Dict) {
 		details[wamp.OptPPTKeyId] = val.(string)
 	}
 }
+
+// copyDetails returns a deep copy of session details. Nested dicts and lists
+// are copied too, so that changing the copy, even in place, does not change
+// details. Other values, such as pointers, are shared.
+func copyDetails(details wamp.Dict) wamp.Dict {
+	if details == nil {
+		return nil
+	}
+	c := make(wamp.Dict, len(details))
+	for k, v := range details {
+		c[k] = copyDetailValue(v)
+	}
+	return c
+}
+
+func copyDetailValue(v any) any {
+	switch v := v.(type) {
+	case wamp.Dict:
+		return copyDetails(v)
+	case map[string]any:
+		return map[string]any(copyDetails(v))
+	case wamp.List:
+		return copyDetailList(v)
+	case []any:
+		return []any(copyDetailList(v))
+	default:
+		return v
+	}
+}
+
+func copyDetailList(l wamp.List) wamp.List {
+	if l == nil {
+		return nil
+	}
+	c := make(wamp.List, len(l))
+	for i, v := range l {
+		c[i] = copyDetailValue(v)
+	}
+	return c
+}
