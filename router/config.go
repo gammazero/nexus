@@ -72,6 +72,19 @@ type RealmConfig struct {
 	// logic when it may not be needed otherwise.
 	EnableMetaModify bool `json:"enable_meta_modify"`
 
+	// StrictRequestIDs enforces the WAMP rule for session scope IDs: the Request
+	// field of PUBLISH, SUBSCRIBE, UNSUBSCRIBE, REGISTER, UNREGISTER and CALL
+	// messages must start at 1 and increment by 1 per session, across all of these
+	// message types. A non-sequential ID terminates the session with an ABORT
+	// carrying wamp.error.protocol_violation. The CALL messages that continue a
+	// progressive call reuse the request ID of the first CALL, and are allowed
+	// while that call is in progress.
+	//
+	// Default is false to preserve the historical relaxed behavior. Clients that
+	// allocate random IDs, as some WAMP libraries do, break in strict mode. Enable
+	// per realm when all clients allocate sequential IDs.
+	StrictRequestIDs bool `json:"strict_request_ids"`
+
 	TopicEventHistoryConfigs []*TopicEventHistoryConfig `json:"event_history"`
 
 	// PublishFilterFactory is a function used to create a PublishFilter to

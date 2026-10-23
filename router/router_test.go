@@ -172,6 +172,217 @@ func TestProtocolViolation(t *testing.T) {
 	})
 }
 
+// newStrictIDsTestRouter creates a router with a single realm that has
+// StrictRequestIDs enabled, for tests of the requirement that session scope
+// request IDs start at 1 and increment by 1. authz may be nil.
+func newStrictIDsTestRouter(t *testing.T, authz Authorizer) Router {
+	t.Helper()
+	config := &Config{
+		RealmConfigs: []*RealmConfig{
+			{
+				URI:              testRealm,
+				StrictURI:        false,
+				AnonymousAuth:    true,
+				StrictRequestIDs: true,
+				Authorizer:       authz,
+				// Test sessions are local, so authorize them too.
+				RequireLocalAuthz: authz != nil,
+			},
+		},
+		Debug: debug,
+	}
+	r, err := NewRouter(config, logger)
+	require.NoError(t, err)
+	t.Cleanup(func() { r.Close() })
+	return r
+}
+
+// recvType receives the next message from cli and checks that it is a T.
+func recvType[T wamp.Message](t *testing.T, cli *wamp.Session) T {
+	t.Helper()
+	msg, err := wamp.RecvTimeout(cli, time.Second)
+	require.NoError(t, err)
+	m, ok := msg.(T)
+	require.True(t, ok, "expected %T, got %T: %+v", *new(T), msg, msg)
+	return m
+}
+
+// TestStrictRequestIDsAccepted pins gammazero/nexus#293: with
+// StrictRequestIDs=true, a client whose request IDs start at 1 and increment
+// by 1 across all message types that allocate one must be accepted.
+func TestStrictRequestIDsAccepted(t *testing.T) {
+	synctest.Test(t, func(t *testing.T) {
+		r := newStrictIDsTestRouter(t, nil)
+		cli := testClient(t, r)
+
+		cli.Send() <- &wamp.Subscribe{Request: 1, Topic: testTopic}
+		subscribed := recvType[*wamp.Subscribed](t, cli)
+
+		cli.Send() <- &wamp.Publish{Request: 2, Topic: testTopic,
+			Options: wamp.Dict{wamp.OptAcknowledge: true}}
+		recvType[*wamp.Published](t, cli)
+
+		cli.Send() <- &wamp.Register{Request: 3, Procedure: testProcedure}
+		registered := recvType[*wamp.Registered](t, cli)
+
+		cli.Send() <- &wamp.Call{Request: 4, Procedure: "nexus.test.nosuchproc"}
+		recvType[*wamp.Error](t, cli)
+
+		cli.Send() <- &wamp.Unsubscribe{Request: 5,
+			Subscription: subscribed.Subscription}
+		recvType[*wamp.Unsubscribed](t, cli)
+
+		cli.Send() <- &wamp.Unregister{Request: 6,
+			Registration: registered.Registration}
+		recvType[*wamp.Unregistered](t, cli)
+	})
+}
+
+// TestStrictRequestIDsRejectsOutOfSequence verifies that a non-sequential
+// request ID triggers ABORT(wamp.error.protocol_violation).
+func TestStrictRequestIDsRejectsOutOfSequence(t *testing.T) {
+	synctest.Test(t, func(t *testing.T) {
+		r := newStrictIDsTestRouter(t, nil)
+		cli := testClient(t, r)
+
+		// Skip id=1, start at 99: protocol violation.
+		cli.Send() <- &wamp.Subscribe{Request: 99, Topic: testTopic}
+		abort := recvType[*wamp.Abort](t, cli)
+		require.Equal(t, wamp.ErrProtocolViolation, abort.Reason)
+	})
+}
+
+// TestStrictRequestIDsRejectsGap verifies that a gap in the sequence (1, 2, 4)
+// triggers ABORT, also when the IDs come from different message types.
+func TestStrictRequestIDsRejectsGap(t *testing.T) {
+	synctest.Test(t, func(t *testing.T) {
+		r := newStrictIDsTestRouter(t, nil)
+		cli := testClient(t, r)
+
+		cli.Send() <- &wamp.Subscribe{Request: 1, Topic: testTopic}
+		recvType[*wamp.Subscribed](t, cli)
+
+		cli.Send() <- &wamp.Register{Request: 2, Procedure: testProcedure}
+		recvType[*wamp.Registered](t, cli)
+
+		// Skip id=3, jump to 4: protocol violation.
+		cli.Send() <- &wamp.Subscribe{Request: 4, Topic: testTopic + ".c"}
+		abort := recvType[*wamp.Abort](t, cli)
+		require.Equal(t, wamp.ErrProtocolViolation, abort.Reason)
+	})
+}
+
+// TestStrictRequestIDsExemptMessages verifies that YIELD and CANCEL, which
+// refer to an existing request instead of allocating an ID, do not advance the
+// sequence.
+func TestStrictRequestIDsExemptMessages(t *testing.T) {
+	synctest.Test(t, func(t *testing.T) {
+		r := newStrictIDsTestRouter(t, nil)
+		callee := testClient(t, r)
+		caller := testClient(t, r)
+
+		callee.Send() <- &wamp.Register{Request: 1, Procedure: testProcedure}
+		recvType[*wamp.Registered](t, callee)
+
+		caller.Send() <- &wamp.Call{Request: 1, Procedure: testProcedure}
+		inv := recvType[*wamp.Invocation](t, callee)
+		callee.Send() <- &wamp.Yield{Request: inv.Request}
+		recvType[*wamp.Result](t, caller)
+
+		// CANCEL refers to CALL 1, which has completed, so it is ignored.
+		caller.Send() <- &wamp.Cancel{Request: 1}
+
+		callee.Send() <- &wamp.Subscribe{Request: 2, Topic: testTopic}
+		recvType[*wamp.Subscribed](t, callee)
+		caller.Send() <- &wamp.Subscribe{Request: 2, Topic: testTopic}
+		recvType[*wamp.Subscribed](t, caller)
+	})
+}
+
+// TestStrictRequestIDsCountsDeniedRequests verifies that a request rejected by
+// the authorizer still uses up its ID, so the client's next request is not
+// mistaken for a gap.
+func TestStrictRequestIDsCountsDeniedRequests(t *testing.T) {
+	synctest.Test(t, func(t *testing.T) {
+		r := newStrictIDsTestRouter(t, &testAuthz{})
+		cli := testClient(t, r)
+
+		cli.Send() <- &wamp.Subscribe{Request: 1, Topic: denyTopic}
+		errMsg := recvType[*wamp.Error](t, cli)
+		require.Equal(t, wamp.ErrNotAuthorized, errMsg.Error)
+
+		cli.Send() <- &wamp.Subscribe{Request: 2, Topic: allowTopic}
+		recvType[*wamp.Subscribed](t, cli)
+	})
+}
+
+// TestStrictRequestIDsDiscardsUnknownContinuation verifies that a CALL reusing
+// an earlier request ID is treated as a continuation candidate of a
+// progressive call, not as a protocol violation. Since no progressive call
+// with that ID is in progress, the CALL is discarded, which the spec allows.
+func TestStrictRequestIDsDiscardsUnknownContinuation(t *testing.T) {
+	synctest.Test(t, func(t *testing.T) {
+		r := newStrictIDsTestRouter(t, nil)
+		cli := testClient(t, r)
+
+		cli.Send() <- &wamp.Call{Request: 1, Procedure: "nexus.test.nosuchproc"}
+		recvType[*wamp.Error](t, cli)
+
+		cli.Send() <- &wamp.Call{Request: 1, Procedure: "nexus.test.nosuchproc"}
+
+		// The discarded CALL produces no reply, so the next message is the reply to
+		// the next request.
+		cli.Send() <- &wamp.Subscribe{Request: 2, Topic: testTopic}
+		recvType[*wamp.Subscribed](t, cli)
+	})
+}
+
+// TestStrictRequestIDsDisabledByDefault verifies the existing relaxed behavior
+// is preserved: with StrictRequestIDs=false (the default), any request ID,
+// including a random one, is accepted.
+func TestStrictRequestIDsDisabledByDefault(t *testing.T) {
+	synctest.Test(t, func(t *testing.T) {
+		r := newTestRouter(t) // no StrictRequestIDs
+		cli := testClient(t, r)
+
+		// Random ID, not 1: should still work in default mode.
+		cli.Send() <- &wamp.Subscribe{Request: 99999, Topic: testTopic}
+		recvType[*wamp.Subscribed](t, cli)
+	})
+}
+
+func TestRequestIDSeq(t *testing.T) {
+	var seq requestIDSeq
+
+	_, err := seq.check(2, false)
+	require.Error(t, err, "sequence must start at 1")
+
+	for id := wamp.ID(1); id <= 3; id++ {
+		continuation, err := seq.check(id, false)
+		require.NoError(t, err)
+		require.False(t, continuation)
+	}
+
+	// A CALL with an earlier ID is a continuation candidate. Any other message
+	// with an earlier ID, or any message with a later ID, is not.
+	continuation, err := seq.check(2, true)
+	require.NoError(t, err)
+	require.True(t, continuation)
+	_, err = seq.check(2, false)
+	require.Error(t, err)
+	_, err = seq.check(5, true)
+	require.Error(t, err)
+
+	// The sequence wraps to 1 after MaxID.
+	seq = requestIDSeq{last: wamp.MaxID - 1}
+	_, err = seq.check(wamp.MaxID, false)
+	require.NoError(t, err)
+	_, err = seq.check(1, false)
+	require.NoError(t, err)
+	_, err = seq.check(3, false)
+	require.Error(t, err)
+}
+
 func TestRouterSubscribe(t *testing.T) {
 	synctest.Test(t, func(t *testing.T) {
 		r := newTestRouter(t)

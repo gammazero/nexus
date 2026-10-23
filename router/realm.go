@@ -78,6 +78,10 @@ type realm struct {
 
 	enableMetaKill   bool
 	enableMetaModify bool
+
+	// strictRequestIDs enforces sequential client-allocated request IDs. See
+	// RealmConfig.StrictRequestIDs.
+	strictRequestIDs bool
 }
 
 var (
@@ -113,6 +117,8 @@ func newRealm(config *RealmConfig, broker *broker, dealer *dealer, logger stdlog
 
 		enableMetaKill:   config.EnableMetaKill,
 		enableMetaModify: config.EnableMetaModify,
+
+		strictRequestIDs: config.StrictRequestIDs,
 	}
 
 	if debug {
@@ -425,6 +431,29 @@ func (r *realm) handleSession(sess *wamp.Session) error {
 	return nil
 }
 
+// clientAllocatedRequestID returns the session scope request ID of a message
+// that allocates one: PUBLISH, SUBSCRIBE, UNSUBSCRIBE, REGISTER, UNREGISTER or
+// CALL. Messages that only refer to an existing request, which are CANCEL
+// (CALL.Request), YIELD (INVOCATION.Request, allocated by the router) and
+// ERROR, return false.
+func clientAllocatedRequestID(msg wamp.Message) (wamp.ID, bool) {
+	switch m := msg.(type) {
+	case *wamp.Publish:
+		return m.Request, true
+	case *wamp.Subscribe:
+		return m.Request, true
+	case *wamp.Unsubscribe:
+		return m.Request, true
+	case *wamp.Register:
+		return m.Request, true
+	case *wamp.Unregister:
+		return m.Request, true
+	case *wamp.Call:
+		return m.Request, true
+	}
+	return 0, false
+}
+
 // handleInboundMessages handles the messages sent from a client session to the
 // router.
 func (r *realm) handleInboundMessages(sess *wamp.Session) (bool, bool, error) {
@@ -433,6 +462,16 @@ func (r *realm) handleInboundMessages(sess *wamp.Session) (bool, bool, error) {
 	}
 	recv := sess.Recv()
 	recvDone := sess.RecvDone()
+
+	// Client-allocated request IDs are session scope IDs, which must start at 1
+	// and increment by 1. Check them when StrictRequestIDs is enabled for this
+	// realm. The meta session is exempt because its ID generator is
+	// router-internal and trusted.
+	var reqIDs *requestIDSeq
+	if r.strictRequestIDs && sess != r.metaSess {
+		reqIDs = &requestIDSeq{}
+	}
+
 	for {
 		var msg wamp.Message
 		var open bool
@@ -474,6 +513,20 @@ func (r *realm) handleInboundMessages(sess *wamp.Session) (bool, bool, error) {
 				msg.MessageType(), msg)
 		}
 
+		// Check the request ID before authorization, so that a request that is not
+		// authorized still uses up its ID. Returning an error causes the caller to
+		// send an ABORT with wamp.error.protocol_violation and close the session.
+		var continuation bool
+		if reqIDs != nil {
+			if id, ok := clientAllocatedRequestID(msg); ok {
+				_, isCall := msg.(*wamp.Call)
+				var err error
+				if continuation, err = reqIDs.check(id, isCall); err != nil {
+					return false, false, err
+				}
+			}
+		}
+
 		// Note: meta session is always authorized.
 		if r.authorizer != nil && sess != r.metaSess && !r.authzMessage(sess, msg) {
 			// Not authorized; error response sent; do not process message.
@@ -486,7 +539,11 @@ func (r *realm) handleInboundMessages(sess *wamp.Session) (bool, bool, error) {
 		case *wamp.Yield:
 			r.dealer.yield(sess, msg)
 		case *wamp.Call:
-			r.dealer.call(sess, msg)
+			if continuation {
+				r.dealer.continueCall(sess, msg)
+			} else {
+				r.dealer.call(sess, msg)
+			}
 		case *wamp.Cancel:
 			r.dealer.cancel(sess, msg)
 		case *wamp.Subscribe:

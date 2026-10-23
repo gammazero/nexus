@@ -273,6 +273,28 @@ func (d *dealer) call(caller *wamp.Session, msg *wamp.Call) {
 	}
 }
 
+// continueCall handles a CALL whose request ID the caller already used, when
+// session scope request IDs are enforced. Such a CALL is valid only as the
+// continuation of a progressive call that is still in progress. Otherwise it
+// is discarded, which the WAMP spec allows for a continuation candidate that
+// does not match an active progressive call.
+func (d *dealer) continueCall(caller *wamp.Session, msg *wamp.Call) {
+	if caller == nil || msg == nil {
+		panic("dealer.continueCall with nil session or message")
+	}
+	d.actionChan <- func() {
+		callReqID := requestID{session: caller.ID, request: msg.Request}
+		if _, ok := d.invocationByCall[callReqID]; !ok {
+			if d.debug {
+				d.log.Printf("Discarding CALL %d from %s: not a progressive call in progress",
+					msg.Request, caller)
+			}
+			return
+		}
+		d.syncCall(caller, msg)
+	}
+}
+
 // cancel actively cancels a call that is in progress.
 //
 // Cancellation behaves differently depending on the mode:
