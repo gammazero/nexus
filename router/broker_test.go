@@ -196,7 +196,7 @@ func TestRemove(t *testing.T) {
 	rsp = <-sess.Recv()
 	subID2 := rsp.(*wamp.Subscribed).Subscription
 
-	broker.removeSession(sess)
+	broker.removeSession(sess, true)
 
 	// Wait for another subscriber as a way to wait for the RemoveSession to
 	// complete.

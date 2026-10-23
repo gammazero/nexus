@@ -397,12 +397,16 @@ func (d *dealer) error(callee *wamp.Session, msg *wamp.Error) {
 	}
 }
 
-// removeSessiom removes a callee's registrations. This is called when a client
-// leaves the realm by sending a GOODBYE message or by disconnecting from the
-// router. If there are any registrations for this session
+// removeSession removes a session's registrations, pending invocations, and
+// pending calls. This is called when a client leaves the realm by sending a
+// GOODBYE message, by disconnecting from the router, or by the realm shutting
+// down. If meta is true and there are any registrations for this session, then
 // wamp.registration.on_unregister and wamp.registration.on_delete meta events
 // are published for each.
-func (d *dealer) removeSession(sess *wamp.Session) {
+//
+// When removeSession returns, the dealer holds no reference to the session and
+// will not send it any more messages, so the session can be closed.
+func (d *dealer) removeSession(sess *wamp.Session, meta bool) {
 	if sess == nil {
 		// No session specified, no session removed.
 		return
@@ -418,6 +422,9 @@ func (d *dealer) removeSession(sess *wamp.Session) {
 		close(done)
 	}
 	<-done
+	if !meta {
+		return
+	}
 	for _, pub := range metaPubs {
 		d.metaPeer.Send() <- pub
 	}
