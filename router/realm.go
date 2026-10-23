@@ -43,6 +43,10 @@ type realm struct {
 	dealer *dealer
 
 	authorizer Authorizer
+	// authorizeReadOnly calls the authorizer, passing it a copy of the
+	// session, and does not hold the session lock. See
+	// RealmConfig.AuthorizeReadOnly.
+	authorizeReadOnly bool
 
 	// authmethod -> Authenticator
 	authenticators map[string]auth.Authenticator
@@ -101,22 +105,23 @@ func newRealm(config *RealmConfig, broker *broker, dealer *dealer, logger stdlog
 	}
 
 	r := &realm{
-		uri:         config.URI,
-		broker:      broker,
-		dealer:      dealer,
-		authorizer:  config.Authorizer,
-		clients:     map[wamp.ID]*wamp.Session{},
-		testaments:  map[wamp.ID]testamentBucket{},
-		actionChan:  make(chan func()),
-		stopped:     make(chan struct{}),
-		metaIDGen:   new(wamp.IDGen),
-		metaDone:    make(chan struct{}),
-		metaProcMap: make(map[wamp.ID]func(*wamp.Invocation) wamp.Message, 9),
-		log:         logger,
-		debug:       debug,
-		localAuth:   config.RequireLocalAuth,
-		localAuthz:  config.RequireLocalAuthz,
-		metaStrict:  config.MetaStrict,
+		uri:               config.URI,
+		broker:            broker,
+		dealer:            dealer,
+		authorizer:        config.Authorizer,
+		authorizeReadOnly: config.AuthorizeReadOnly,
+		clients:           map[wamp.ID]*wamp.Session{},
+		testaments:        map[wamp.ID]testamentBucket{},
+		actionChan:        make(chan func()),
+		stopped:           make(chan struct{}),
+		metaIDGen:         new(wamp.IDGen),
+		metaDone:          make(chan struct{}),
+		metaProcMap:       make(map[wamp.ID]func(*wamp.Invocation) wamp.Message, 9),
+		log:               logger,
+		debug:             debug,
+		localAuth:         config.RequireLocalAuth,
+		localAuthz:        config.RequireLocalAuthz,
+		metaStrict:        config.MetaStrict,
 
 		enableMetaKill:   config.EnableMetaKill,
 		enableMetaModify: config.EnableMetaModify,
@@ -600,17 +605,28 @@ func (r *realm) authzMessage(sess *wamp.Session, msg wamp.Message) bool {
 		return true
 	}
 
+	var isAuthz bool
+	var err error
 	// Create a safe session to prevent access to the session.Peer.
 	safeSession := &wamp.Session{
-		ID:      sess.ID,
-		Details: sess.Details,
+		ID: sess.ID,
 	}
-
-	// Write-lock the session, because there is no telling what the Authorizer
-	// will do to the session details.
-	sess.Lock()
-	isAuthz, err := r.authorizer.Authorize(safeSession, msg)
-	sess.Unlock()
+	if r.authorizeReadOnly {
+		// Copy session details while locked, then authorize without it, so a blocking
+		// Authorizer delays only this session's own messages and never the broker,
+		// which locks subscriber sessions while filtering.
+		sess.Lock()
+		safeSession.Details = maps.Clone(sess.Details)
+		sess.Unlock()
+		isAuthz, err = r.authorizer.Authorize(safeSession, msg)
+	} else {
+		safeSession.Details = sess.Details
+		// Write-lock the session, because there is no telling what the Authorizer will
+		// do to the session details.
+		sess.Lock()
+		isAuthz, err = r.authorizer.Authorize(safeSession, msg)
+		sess.Unlock()
+	}
 
 	if !isAuthz {
 		skipResponse := false

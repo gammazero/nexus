@@ -17,5 +17,8 @@ type Authorizer interface {
 	// change the sending session based on the intercepted message. This
 	// functionality may be used to set values in the session upon encountering
 	// certain messages sent by that session.
+	//
+	// A realm configured with AuthorizeReadOnly passes a details snapshot instead,
+	// so there session changes are discarded; see RealmConfig.AuthorizeReadOnly.
 	Authorize(*wamp.Session, wamp.Message) (bool, error)
 }
