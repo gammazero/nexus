@@ -55,8 +55,8 @@ func TestRealmExposesURIToAuthenticator(t *testing.T) {
 		},
 	}, logger)
 	require.NoError(t, err)
-	// Router shutdown also disposes attached peers; do NOT call peer.Close
-	// manually here, since localPeer panics on double-close.
+	// Router shutdown also closes attached peers, so there is no need to close
+	// them here.
 	t.Cleanup(func() { r.Close() })
 
 	client, server := transport.LinkedPeers()

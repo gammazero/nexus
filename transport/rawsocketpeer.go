@@ -9,6 +9,7 @@ import (
 	"net"
 	"slices"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/gammazero/nexus/v3/stdlog"
@@ -35,6 +36,7 @@ type rawSocketPeer struct {
 	ctxSender    context.Context
 
 	writerDone chan struct{}
+	closeOnce  sync.Once
 
 	log stdlog.StdLog
 }
@@ -179,9 +181,16 @@ func (rs *rawSocketPeer) IsLocal() bool { return false }
 
 // Close closes the rawsocket peer. This closes the local send channel, and
 // sends a close control message to the socket to tell the other side to close.
+// Calling Close more than once, including concurrently, is safe. Calls after
+// the first wait for it to finish, and then do nothing.
 //
 // *** Do not call Send after calling Close. ***
 func (rs *rawSocketPeer) Close() {
+	rs.closeOnce.Do(rs.close)
+}
+
+// close does the work of Close. It must be called only once.
+func (rs *rawSocketPeer) close() {
 	// Tell sendHandler to exit, and discard any queued messages. Do not close
 	// wr channel in case there are incoming messages during close.
 	rs.cancelSender()

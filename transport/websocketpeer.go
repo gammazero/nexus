@@ -7,6 +7,7 @@ import (
 	"net"
 	"net/http"
 	"net/url"
+	"sync"
 	"sync/atomic"
 	"time"
 
@@ -110,6 +111,7 @@ type websocketPeer struct {
 
 	recvDone   chan struct{}
 	writerDone chan struct{}
+	closeOnce  sync.Once
 
 	log stdlog.StdLog
 }
@@ -360,14 +362,16 @@ func (w *websocketPeer) IsLocal() bool { return false }
 // sends a close control message to the websocket to tell the other side to
 // close.
 //
+// Calling Close more than once, including concurrently, is safe. Calls after
+// the first wait for it to finish, and then do nothing.
+//
 // *** Do not call Send after calling Close. ***
 func (w *websocketPeer) Close() {
-	select {
-	case <-w.closed:
-		return
-	default:
-	}
+	w.closeOnce.Do(w.close)
+}
 
+// close does the work of Close. It must be called only once.
+func (w *websocketPeer) close() {
 	// Tell sendHandler to exit and discard any queued messages. Do not close
 	// wr channel in case there are incoming messages during close.
 	w.stopSender()
