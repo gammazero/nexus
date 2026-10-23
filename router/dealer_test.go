@@ -289,7 +289,7 @@ func TestRemovePeer(t *testing.T) {
 	checkMetaReg(t, metaClient, sess.ID)
 
 	// Test that removing the callee session removes the registration.
-	dealer.removeSession(sess)
+	dealer.removeSession(sess, true)
 
 	// Register as a way to sync with dealer.
 	sess2 := wamp.NewSession(callee, 0, nil, nil)
@@ -346,7 +346,7 @@ func TestCancelOnCalleeGone(t *testing.T) {
 	require.True(t, ok, "expected INVOCATION")
 
 	callee.Close()
-	dealer.removeSession(calleeSess)
+	dealer.removeSession(calleeSess, true)
 
 	// Check that caller receives the ERROR message.
 	rsp = <-caller.Recv()
@@ -868,7 +868,7 @@ func TestSharedRegistrationFirst(t *testing.T) {
 	require.Equal(t, wamp.ID(126), rslt.Request, "wrong request ID in RESULT")
 
 	// Remove callee1
-	dealer.removeSession(calleeSess1)
+	dealer.removeSession(calleeSess1, true)
 	checkMetaReg(t, metaClient, calleeSess1.ID)
 
 	// Test calling valid procedure
@@ -991,7 +991,7 @@ func TestSharedRegistrationLast(t *testing.T) {
 	require.Equal(t, wamp.ID(126), rslt.Request, "wrong request ID in RESULT")
 
 	// Remove callee2
-	dealer.removeSession(calleeSess2)
+	dealer.removeSession(calleeSess2, true)
 	checkMetaReg(t, metaClient, calleeSess2.ID)
 
 	// Test calling valid procedure

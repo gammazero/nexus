@@ -169,10 +169,11 @@ func (r *realm) run() {
 // realm and makes sure any clients already in the process of joining finish
 // joining.
 //
-// Next, each client session is killed, removing it from the broker and dealer,
-// triggering a GOODBYE message to the client, and causing the session's
-// message handler to exit. This ensures there are no messages remaining to be
-// sent to the router.
+// Next, each client session is killed, triggering a GOODBYE message to the
+// client, and causing the session's message handler to exit. Each handler
+// removes its session from the broker and dealer before closing the session,
+// since other sessions may still be routing messages to it. This ensures there
+// are no messages remaining to be sent to the router.
 //
 // After that, the meta client session is killed. This ensures there are no
 // more meta messages to sent to the router.
@@ -327,6 +328,11 @@ func (r *realm) onJoin(sess *wamp.Session) {
 // onLeave is called when a non-meta session leaves this realm. The session is
 // removed from the realm's clients and a meta event is published.
 //
+// The session is always removed from the broker and dealer, and this is done
+// before onLeave returns, so that the session can then be closed. During
+// shutdown, other sessions keep routing messages until their own handlers
+// exit, so the broker and dealer must not hold a session that is closed.
+//
 // If the session handler exited due to realm shutdown, then remove the session
 // from broker, dealer, and realm without generating meta events. If not
 // shutdown, then remove the session and generate meta events as appropriate.
@@ -348,12 +354,8 @@ func (r *realm) onLeave(sess *wamp.Session, shutdown, killAll bool) {
 			delete(r.testaments, sess.ID)
 		}
 
-		// If realm is shutdown, do not bother to remove session from broker
-		// and dealer. They will be closed after sessions are closed.
-		if !shutdown {
-			r.dealer.removeSession(sess)
-			r.broker.removeSession(sess)
-		}
+		r.dealer.removeSession(sess, !shutdown)
+		r.broker.removeSession(sess, !shutdown)
 		close(sync)
 	}
 	<-sync
