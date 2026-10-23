@@ -14,11 +14,20 @@ import (
 
 const defaultCRAuthTimeout = time.Minute
 
+// RealmDetail is the key, in the details passed to Authenticator.Authenticate,
+// whose value is the URI of the realm that the client is joining. It is an
+// implementation-specific key, so it follows the WAMP rule that such keys
+// match _[a-z0-9_]{3,}.
+const RealmDetail = "_nexus_realm"
+
 // Authenticator is implemented by a type that handles authentication using
 // only the HELLO message.
 type Authenticator interface {
 	// Authenticate takes HELLO details and returns a WELCOME message if
 	// successful, otherwise it returns an error.
+	//
+	// The URI of the realm that the client is joining is in details, under the
+	// RealmDetail key.
 	//
 	// If the client is a websocket peer, and request capture is enabled, then
 	// the HTTP request is stored in details. If cookie tracking is enabled,

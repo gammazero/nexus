@@ -717,11 +717,11 @@ func (r *realm) authClient(sid wamp.ID, client wamp.Peer, details wamp.Dict) (*w
 	// realm as a separate message field from Details, so without this, dynamic
 	// authenticators that share one instance across multiple realms cannot tell
 	// which realm the client is requesting. It is added to a copy of details,
-	// since details become the session details that other clients see, and
-	// "nexus.session.realm" is not a valid key there.
+	// since details become the session details that other clients see, and the
+	// client already knows the realm it joined.
 	authDetails := make(wamp.Dict, len(details)+1)
 	maps.Copy(authDetails, details)
-	authDetails["nexus.session.realm"] = string(r.uri)
+	authDetails[auth.RealmDetail] = string(r.uri)
 
 	// Return welcome message or error.
 	welcome, err := authr.Authenticate(sid, authDetails, client)

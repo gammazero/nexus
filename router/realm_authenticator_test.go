@@ -13,7 +13,8 @@ import (
 
 // captureRealmAuthenticator is a stub authenticator that records the details
 // dict it receives, then returns a WELCOME. Used to verify that the realm adds
-// "nexus.session.realm" to the details it passes to Authenticate.
+// the realm URI, under auth.RealmDetail, to the details it passes to
+// Authenticate.
 type captureRealmAuthenticator struct {
 	gotDetails wamp.Dict
 }
@@ -34,8 +35,8 @@ func (a *captureRealmAuthenticator) Authenticate(sid wamp.ID, details wamp.Dict,
 func (a *captureRealmAuthenticator) AuthMethod() string { return "capture-realm" }
 
 // TestRealmExposesURIToAuthenticator pins that realm.authClient passes the
-// target realm URI to the authenticator, under the "nexus.session.realm" key
-// of the details it gives Authenticate. Dynamic authenticators that share one
+// target realm URI to the authenticator, under the auth.RealmDetail key of the
+// details it gives Authenticate. Dynamic authenticators that share one
 // instance across multiple realms (e.g. a single auth-server delegate) rely on
 // this to route per-realm.
 func TestRealmExposesURIToAuthenticator(t *testing.T) {
@@ -80,15 +81,15 @@ func TestRealmExposesURIToAuthenticator(t *testing.T) {
 	}
 
 	require.NotNil(t, captor.gotDetails, "Authenticate was never called")
-	got, ok := captor.gotDetails["nexus.session.realm"]
-	require.True(t, ok, "nexus.session.realm missing from authenticator details (got: %v)", captor.gotDetails)
+	got, ok := captor.gotDetails[auth.RealmDetail]
+	require.True(t, ok, "%s missing from authenticator details (got: %v)",
+		auth.RealmDetail, captor.gotDetails)
 	require.Equal(t, string(realmURI), got,
-		"nexus.session.realm should equal the HELLO target realm")
+		"%s should equal the HELLO target realm", auth.RealmDetail)
 
-	// Sanity: the underscore-prefixed key from the previous internal shape is NOT
-	// what we use anymore, to guard against drift.
-	_, oldKey := captor.gotDetails["_realm"]
-	require.False(t, oldKey, "legacy _realm key should not be set")
+	// WAMP requires implementation-specific keys in details to match
+	// _[a-z0-9_]{3,}.
+	require.Regexp(t, `^_[a-z0-9_]{3,}$`, auth.RealmDetail)
 }
 
 // TestRealmURINotInSessionDetails pins that the realm URI given to the
@@ -143,6 +144,6 @@ func TestRealmURINotInSessionDetails(t *testing.T) {
 	require.True(t, ok, "expected EVENT, got %T", msg)
 	details, ok := wamp.AsDict(event.Arguments[0])
 	require.True(t, ok, "on_join payload is not a dict")
-	require.NotContains(t, details, "nexus.session.realm",
+	require.NotContains(t, details, auth.RealmDetail,
 		"realm URI for the authenticator leaked into session details")
 }
