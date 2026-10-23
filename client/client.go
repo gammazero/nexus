@@ -73,6 +73,10 @@ type Client struct {
 
 	activeInvHandlers sync.WaitGroup
 
+	// reqLock is held to allocate a request ID and send the request, so that
+	// requests are sent in the order of their IDs.
+	reqLock sync.Mutex
+
 	log   stdlog.StdLog
 	debug bool
 
@@ -371,12 +375,15 @@ func (c *Client) Subscribe(topic string, fn EventHandler, options wamp.Dict) err
 	if options == nil {
 		options = wamp.Dict{}
 	}
-	id := c.sess.IDGen.Next()
-	c.expectReply(id)
-	c.sess.Send() <- &wamp.Subscribe{
-		Request: id,
-		Options: options,
-		Topic:   wamp.URI(topic),
+	id, err := c.sendRequest(true, func(id wamp.ID) wamp.Message {
+		return &wamp.Subscribe{
+			Request: id,
+			Options: options,
+			Topic:   wamp.URI(topic),
+		}
+	})
+	if err != nil {
+		return err
 	}
 
 	// Wait to receive SUBSCRIBED message.
@@ -442,11 +449,14 @@ func (c *Client) Unsubscribe(topic string) error {
 		return ErrNotConn
 	}
 
-	id := c.sess.IDGen.Next()
-	c.expectReply(id)
-	c.sess.Send() <- &wamp.Unsubscribe{
-		Request:      id,
-		Subscription: subID,
+	id, err := c.sendRequest(true, func(id wamp.ID) wamp.Message {
+		return &wamp.Unsubscribe{
+			Request:      id,
+			Subscription: subID,
+		}
+	})
+	if err != nil {
+		return err
 	}
 
 	// Wait to receive UNSUBSCRIBED message.
@@ -511,21 +521,16 @@ func (c *Client) Publish(topic string, options wamp.Dict, args wamp.List, kwargs
 		return ErrNotConn
 	}
 
-	id := c.sess.IDGen.Next()
-
 	var pubAck bool
 	if options == nil {
 		options = wamp.Dict{}
 	} else {
 		// Check if the client is asking for a PUBLISHED response.
 		pubAck, _ = options[wamp.OptAcknowledge].(bool)
-		if pubAck {
-			c.expectReply(id)
-		}
 	}
 
+	// The request ID is set when the message is sent.
 	message := &wamp.Publish{
-		Request:     id,
 		Options:     options,
 		Topic:       wamp.URI(topic),
 		Arguments:   args,
@@ -568,10 +573,12 @@ func (c *Client) Publish(topic string, options wamp.Dict, args wamp.List, kwargs
 		message.ArgumentsKw = kwargs
 	}
 
-	c.sess.Send() <- message
-
-	if !pubAck {
-		return nil
+	id, err := c.sendRequest(pubAck, func(id wamp.ID) wamp.Message {
+		message.Request = id
+		return message
+	})
+	if err != nil || !pubAck {
+		return err
 	}
 
 	// Wait to receive PUBLISHED message.
@@ -627,15 +634,18 @@ func (c *Client) Register(procedure string, fn InvocationHandler, options wamp.D
 	if !c.Connected() {
 		return ErrNotConn
 	}
-	id := c.sess.IDGen.Next()
-	c.expectReply(id)
 	if options == nil {
 		options = wamp.Dict{}
 	}
-	c.sess.Send() <- &wamp.Register{
-		Request:   id,
-		Options:   options,
-		Procedure: wamp.URI(procedure),
+	id, err := c.sendRequest(true, func(id wamp.ID) wamp.Message {
+		return &wamp.Register{
+			Request:   id,
+			Options:   options,
+			Procedure: wamp.URI(procedure),
+		}
+	})
+	if err != nil {
+		return err
 	}
 
 	// Wait to receive REGISTERED message.
@@ -693,11 +703,14 @@ func (c *Client) Unregister(procedure string) error {
 		return ErrNotConn
 	}
 
-	id := c.sess.IDGen.Next()
-	c.expectReply(id)
-	c.sess.Send() <- &wamp.Unregister{
-		Request:      id,
-		Registration: procID,
+	id, err := c.sendRequest(true, func(id wamp.ID) wamp.Message {
+		return &wamp.Unregister{
+			Request:      id,
+			Registration: procID,
+		}
+	})
+	if err != nil {
+		return err
 	}
 
 	// Wait to receive UNREGISTERED message.
@@ -816,20 +829,27 @@ func (c *Client) Call(ctx context.Context, procedure string, options wamp.Dict, 
 		}()
 	}
 
-	id := c.sess.IDGen.Next()
-	c.expectReply(id)
+	// The request ID is set when the message is sent.
 	message := &wamp.Call{
-		Request:   id,
 		Procedure: wamp.URI(procedure),
 		Options:   options,
 	}
 
 	err := c.prepareCallPayloadMessage(message, options, args, kwargs)
+	var id wamp.ID
+	if err == nil {
+		id, err = c.sendRequest(true, func(id wamp.ID) wamp.Message {
+			message.Request = id
+			return message
+		})
+	}
 	if err != nil {
+		if progcb != nil {
+			close(progChan)
+			<-progDone
+		}
 		return nil, err
 	}
-
-	c.sess.Send() <- message
 
 	// Wait to receive RESULT message.
 	msg, err := c.waitForReplyWithCancel(ctx, id, procedure, progChan)
@@ -914,20 +934,28 @@ func (c *Client) CallProgressive(ctx context.Context, procedure string, sendProg
 		}()
 	}
 
-	id := c.sess.IDGen.Next()
-	c.expectReply(id)
+	// The request ID is set when the message is sent. The CALL messages that
+	// continue a progressive call reuse it.
 	message := &wamp.Call{
-		Request:   id,
 		Procedure: wamp.URI(procedure),
 		Options:   options,
 	}
 
 	err = c.prepareCallPayloadMessage(message, options, args, kwargs)
+	var id wamp.ID
+	if err == nil {
+		id, err = c.sendRequest(true, func(id wamp.ID) wamp.Message {
+			message.Request = id
+			return message
+		})
+	}
 	if err != nil {
+		if progcb != nil {
+			close(progChan)
+			<-progDone
+		}
 		return nil, err
 	}
-
-	c.sess.Send() <- message
 
 	callInProgress, _ := options[wamp.OptProgress].(bool)
 
@@ -1344,6 +1372,36 @@ func (c *Client) expectReply(id wamp.ID) {
 	c.sess.Lock()
 	c.awaitingReply[id] = wait
 	c.sess.Unlock()
+}
+
+// sendRequest allocates the next request ID, passes it to newMsg to create the
+// request, and sends the request. WAMP requires request IDs to increment by 1
+// in the order they are sent, so the ID is allocated and the request sent
+// under reqLock. Make all checks that can fail before calling sendRequest, so
+// that an ID is never allocated for a request that is not sent.
+//
+// If expectReply is true, a reply to the request is expected. It returns the
+// request ID, or ErrNotConn if the client is closed before the request is
+// sent.
+func (c *Client) sendRequest(expectReply bool, newMsg func(id wamp.ID) wamp.Message) (wamp.ID, error) {
+	c.reqLock.Lock()
+	defer c.reqLock.Unlock()
+
+	id := c.sess.IDGen.Next()
+	if expectReply {
+		c.expectReply(id)
+	}
+	select {
+	case c.sess.Send() <- newMsg(id):
+		return id, nil
+	case <-c.ctx.Done():
+		if expectReply {
+			c.sess.Lock()
+			delete(c.awaitingReply, id)
+			c.sess.Unlock()
+		}
+		return 0, ErrNotConn
+	}
 }
 
 // waitForReply waits for an expected reply from the router.
