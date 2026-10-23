@@ -29,11 +29,11 @@ func TestMetaEventRegOnCreateRegOnRegister(t *testing.T) {
 	require.Truef(t, has, "Dealer does not support %s", wamp.FeatureRegMetaAPI)
 
 	// Subscribe to event.
-	onCreateEvents := make(chan *wamp.Event)
+	onCreateEvents := make(chan *wamp.Event, eventChanSize)
 	err := subscriber.SubscribeChan(metaRegOnCreate, onCreateEvents, nil)
 	require.NoError(t, err)
 
-	onRegEvents := make(chan *wamp.Event)
+	onRegEvents := make(chan *wamp.Event, eventChanSize)
 	err = subscriber.SubscribeChan(metaOnRegister, onRegEvents, nil)
 	require.NoError(t, err)
 
@@ -136,12 +136,12 @@ func TestMetaEventRegOnUnregisterRegOnDelete(t *testing.T) {
 	subscriber := connectClient(t)
 
 	// Subscribe to on_unregister event.
-	onUnregEvents := make(chan *wamp.Event)
+	onUnregEvents := make(chan *wamp.Event, eventChanSize)
 	err := subscriber.SubscribeChan(metaOnUnregister, onUnregEvents, nil)
 	require.NoError(t, err)
 
 	// Subscribe to on_delete event.
-	onDelEvents := make(chan *wamp.Event)
+	onDelEvents := make(chan *wamp.Event, eventChanSize)
 	err = subscriber.SubscribeChan(metaRegOnDelete, onDelEvents, nil)
 	require.NoError(t, err)
 

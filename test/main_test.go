@@ -38,6 +38,12 @@ const (
 	keepAliveInterval = 5 * time.Second
 
 	clientResponseTimeout = 5 * time.Second
+
+	// eventChanSize is the buffer size of channels passed to SubscribeChan. The
+	// client cannot process any other message while it is blocked writing an event
+	// to such a channel, so an event that arrives before the test reads the
+	// channel, such as a session's own on_join, must not block it.
+	eventChanSize = 16
 )
 
 var (

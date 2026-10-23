@@ -25,7 +25,7 @@ func TestAddTestament(t *testing.T) {
 	has := subscriber.HasFeature(wamp.RoleDealer, wamp.FeatureTestamentMetaAPI)
 	require.Truef(t, has, "Dealer does not support %s", wamp.FeatureTestamentMetaAPI)
 
-	eventChan := make(chan *wamp.Event)
+	eventChan := make(chan *wamp.Event, eventChanSize)
 	err := subscriber.SubscribeChan("testament.test", eventChan, nil)
 	require.NoError(t, err)
 	sess := connectClient(t)
@@ -75,7 +75,7 @@ func TestAddFlushTestament(t *testing.T) {
 	// Connect subscriber session.
 	subscriber := connectClient(t)
 
-	eventChan := make(chan *wamp.Event)
+	eventChan := make(chan *wamp.Event, eventChanSize)
 	err := subscriber.SubscribeChan("testament.test", eventChan, nil)
 	require.NoError(t, err)
 	sess := connectClient(t)
