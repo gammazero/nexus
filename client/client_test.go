@@ -1495,3 +1495,83 @@ func TestRouterFeatures(t *testing.T) {
 	brokerFeatures := (*routerFeatures)["roles"].(wamp.Dict)[wamp.RoleBroker].(wamp.Dict)
 	require.GreaterOrEqual(t, len(brokerFeatures), 1, "broker features are missed")
 }
+
+// strictRequestIDsClients returns two clients connected to a realm with
+// StrictRequestIDs enabled, where a request ID out of sequence aborts the
+// session.
+func strictRequestIDsClients(t *testing.T) (*client.Client, *client.Client) {
+	r := getTestRouter(t, &router.RealmConfig{
+		URI:              wamp.URI(testRealm),
+		AnonymousAuth:    true,
+		StrictRequestIDs: true,
+	})
+	return newTestClient(t, r), newTestClient(t, r)
+}
+
+// TestStrictRequestIDsConcurrentRequests verifies that requests made
+// concurrently from one client reach the router in request ID order.
+func TestStrictRequestIDsConcurrentRequests(t *testing.T) {
+	c, _ := strictRequestIDsClients(t)
+
+	var wg sync.WaitGroup
+	errs := make(chan error, 100)
+	for i := range 50 {
+		wg.Go(func() {
+			errs <- c.Publish(testTopic, wamp.Dict{wamp.OptAcknowledge: true}, nil, nil)
+		})
+		wg.Go(func() {
+			errs <- c.Subscribe(fmt.Sprintf("%s.%d", testTopic, i), func(*wamp.Event) {}, nil)
+		})
+	}
+	wg.Wait()
+	close(errs)
+	for err := range errs {
+		require.NoError(t, err)
+	}
+	require.True(t, c.Connected())
+}
+
+// TestStrictRequestIDsRejectedRequestUsesNoID verifies that a request the
+// client rejects before sending does not use up a request ID, which would
+// leave a gap in the sequence.
+func TestStrictRequestIDsRejectedRequestUsesNoID(t *testing.T) {
+	c, _ := strictRequestIDsClients(t)
+
+	err := c.Publish(testTopic, wamp.Dict{wamp.OptPPTScheme: "bogus"}, nil, nil)
+	require.ErrorIs(t, err, client.ErrPPTSchemeInvalid)
+
+	err = c.Publish(testTopic, wamp.Dict{wamp.OptAcknowledge: true}, nil, nil)
+	require.NoError(t, err)
+}
+
+// TestStrictRequestIDsProgressiveCall verifies that the CALL messages that
+// continue a progressive call, which reuse the request ID of the first one,
+// are accepted.
+func TestStrictRequestIDsProgressiveCall(t *testing.T) {
+	callee, caller := strictRequestIDsClients(t)
+
+	const procName = "nexus.test.strictprog"
+	var sum int64
+	err := callee.Register(procName, func(ctx context.Context, inv *wamp.Invocation) client.InvokeResult {
+		n, _ := wamp.AsInt64(inv.Arguments[0])
+		sum += n
+		if progress, _ := inv.Details[wamp.OptProgress].(bool); progress {
+			return client.InvokeResult{Err: wamp.InternalProgressiveOmitResult}
+		}
+		return client.InvokeResult{Args: wamp.List{sum}}
+	}, nil)
+	require.NoError(t, err)
+
+	sends := 0
+	result, err := caller.CallProgressive(context.Background(), procName,
+		func(context.Context) (wamp.Dict, wamp.List, wamp.Dict, error) {
+			sends++
+			return wamp.Dict{wamp.OptProgress: sends < 3}, wamp.List{sends}, nil, nil
+		}, nil)
+	require.NoError(t, err)
+	got, _ := wamp.AsInt64(result.Arguments[0])
+	require.Equal(t, int64(6), got)
+
+	// The session must still be usable.
+	require.NoError(t, callee.Unregister(procName))
+}
