@@ -1,0 +1,60 @@
+name: caller-disclosure-via-disclose-me-includes-authid-authrole
+spec_section: "Advanced §14.3.5 — Caller Identification"
+realm: realm1
+serializer: json
+
+# Caller authenticates via ticket so its authid/authrole are
+# meaningful, then issues CALL with disclose_me=true. Callee declares
+# the caller_identification feature, so the dealer attaches caller +
+# caller_authid + caller_authrole to INVOCATION.Details (per
+# discloseCaller in dealer.go:1726).
+auth:
+  ticket:
+    users:
+      caller-user:
+        ticket: "caller-secret"
+        role: "caller-role"
+  anonymous:
+    role: "anonymous"
+
+peers:
+  - name: callee
+  - name: caller
+
+steps:
+  # Callee uses anonymous auth — only the caller's identity needs to be
+  # disclosable here. Callee must declare caller_identification feature.
+  - peer: callee
+    send: [1, "realm1", {authmethods: ["anonymous"], roles: {callee: {features: {caller_identification: true}}}}]
+  - peer: callee
+    expect: [2, "{{$callee_session:int}}", "_"]
+
+  - peer: callee
+    send: [64, 33001, {}, "spec.test.disclose.proc"]
+  - peer: callee
+    expect: [65, 33001, "{{$reg_id:int}}"]
+
+  # Caller authenticates via ticket → known authid/authrole.
+  - peer: caller
+    send: [1, "realm1", {authmethods: ["ticket"], authid: "caller-user", roles: {caller: {}}}]
+  - peer: caller
+    expect: [4, "ticket", "_"]
+  - peer: caller
+    send: [5, "caller-secret", {}]
+  - peer: caller
+    expect: [2, "{{$caller_session:int}}", {authid: "caller-user", authrole: "caller-role"}]
+
+  # CALL with disclose_me=true.
+  - peer: caller
+    send: [48, 33002, {disclose_me: true}, "spec.test.disclose.proc", []]
+  - peer: callee
+    expect:
+      - 68
+      - "{{$inv_id:int}}"
+      - "{{$reg_id:int}}"
+      - {caller: "{{$caller_session:int}}", caller_authid: "caller-user", caller_authrole: "caller-role"}
+
+  - peer: callee
+    send: [70, "{{$inv_id:int}}", {}, ["ok"]]
+  - peer: caller
+    expect: [50, 33002, "_", ["ok"]]

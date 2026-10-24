@@ -1,0 +1,40 @@
+name: standard-error-uri-matrix-without-auth
+spec_section: "Errors §13.6.2"
+realm: realm1
+serializer: json
+
+# Triggers each standard error URI that's reachable without auth setup.
+# Other URIs (not_authorized, authorization_failed, authentication_failed,
+# no_such_role, no_auth_method) need authenticator wiring at the router
+# and live in a separate plan once that lands.
+#
+# Already covered elsewhere:
+#   - wamp.error.invalid_uri        → 005
+#   - wamp.error.no_such_procedure  → 007
+#   - wamp.error.no_such_realm      → 002
+#   - wamp.error.canceled           → 015 / 016 / 017
+#
+# This plan adds the registry/subscription bookkeeping errors.
+steps:
+  - send: [1, "realm1", {roles: {callee: {}, subscriber: {}}}]
+  - expect: [2, "{{$session_id:int}}", "_"]
+
+  # ── procedure_already_exists ──────────────────────────────────────
+  # First REGISTER succeeds, second on the same URI without `invoke`
+  # set returns the standard "already exists" error.
+  - send: [64, 14001, {}, "spec.test.errmatrix.proc"]
+  - expect: [65, 14001, "{{$reg_id:int}}"]
+  - send: [64, 14002, {}, "spec.test.errmatrix.proc"]
+  - expect: [8, 64, 14002, "_", "wamp.error.procedure_already_exists"]
+    note: "ERROR for REGISTER (type 64) carries the standard URI"
+
+  # ── no_such_registration ──────────────────────────────────────────
+  # Unregister a registration ID that the router never assigned.
+  - send: [66, 14003, 99999999]
+  - expect: [8, 66, 14003, "_", "wamp.error.no_such_registration"]
+    note: "ERROR for UNREGISTER (type 66)"
+
+  # ── no_such_subscription ──────────────────────────────────────────
+  - send: [34, 14004, 88888888]
+  - expect: [8, 34, 14004, "_", "wamp.error.no_such_subscription"]
+    note: "ERROR for UNSUBSCRIBE (type 34)"

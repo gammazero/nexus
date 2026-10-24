@@ -1,0 +1,58 @@
+name: shared-registration-invoke-random-policy-accepted
+spec_section: "Advanced §14.3.9 — Shared Registration, invoke=random"
+realm: realm1
+serializer: json
+
+# Smoke test for the `invoke=random` policy. Two callees register
+# the same procedure with invoke=random; both REGISTERED responses
+# carry the SAME registration id (the dealer's shared-reg invariant).
+# A single CALL is then issued and immediately CANCELed in skip
+# mode — this avoids needing to know which callee the dealer's PRNG
+# picked (it's seeded from time.Now().Unix()), since cancel-mode-skip
+# replies to the caller without involving the chosen callee.
+#
+# Full distribution coverage (verifying calls actually spread across
+# callees) needs either deterministic seeding or an `expect_any_peer`
+# step in the runner; tracked separately. The Go-level test in
+# test/rpc_shared_test.go (TestRPCSharedRandom) exercises distribution
+# statistically using the client library.
+peers:
+  - name: callee1
+  - name: callee2
+  - name: caller
+
+steps:
+  - peer: callee1
+    send: [1, "realm1", {roles: {callee: {features: {shared_registration: true, call_canceling: true}}}}]
+  - peer: callee1
+    expect: [2, "{{$c1_session:int}}", "_"]
+  - peer: callee1
+    send: [64, 26001, {invoke: "random"}, "spec.test.shared.random"]
+  - peer: callee1
+    expect: [65, 26001, "{{$reg_id:int}}"]
+
+  - peer: callee2
+    send: [1, "realm1", {roles: {callee: {features: {shared_registration: true, call_canceling: true}}}}]
+  - peer: callee2
+    expect: [2, "{{$c2_session:int}}", "_"]
+  - peer: callee2
+    send: [64, 26002, {invoke: "random"}, "spec.test.shared.random"]
+  - peer: callee2
+    expect: [65, 26002, "{{$reg_id:int}}"]
+    note: "Same registration id pinned by reuse of the {{$reg_id}} placeholder"
+
+  # Caller fires one CALL and immediately cancels. We don't assert
+  # which callee received the INVOCATION — the cancel-skip path
+  # replies to the caller without waiting on the callee.
+  - peer: caller
+    send: [1, "realm1", {roles: {caller: {features: {call_canceling: true}}}}]
+  - peer: caller
+    expect: [2, "{{$caller_session:int}}", "_"]
+
+  - peer: caller
+    send: [48, 26101, {}, "spec.test.shared.random", []]
+  - peer: caller
+    send: [49, 26101, {mode: "skip"}]
+  - peer: caller
+    expect: [8, 48, 26101, "_", "wamp.error.canceled"]
+    note: "Routed and cancellable — proves invoke=random is accepted as a shared-reg policy"

@@ -1,0 +1,29 @@
+name: wampcra-auth-with-wrong-signature-aborts
+spec_section: "Authentication §13.4 — Challenge-Response (WAMP-CRA)"
+realm: realm1
+serializer: json
+
+# Same authenticator setup as 031, but the AUTHENTICATE message
+# carries an HMAC computed against the WRONG secret. The router
+# verifies and rejects → ABORT(wamp.error.authentication_failed).
+auth:
+  wampcra:
+    users:
+      alice:
+        secret: "alice-secret"
+        role: "user"
+
+steps:
+  - send: [1, "realm1", {authmethods: ["wampcra"], authid: "alice", roles: {publisher: {}}}]
+  - expect: [4, "wampcra", {challenge: "{{$challenge:string}}"}]
+
+  # Sign with the WRONG secret on purpose.
+  - compute:
+      wampcra_sign:
+        challenge: "{{$challenge}}"
+        secret: "wrong-secret"
+        capture: signature
+
+  - send: [5, "{{$signature}}", {}]
+  - expect: [3, "_", "wamp.error.authentication_failed"]
+    note: "ABORT — invalid signature"

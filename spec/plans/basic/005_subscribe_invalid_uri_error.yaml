@@ -1,0 +1,12 @@
+name: subscribe-with-invalid-uri-yields-error
+spec_section: "Basic Profile §3.6.2"
+realm: realm1
+serializer: json
+steps:
+  - send: [1, "realm1", {roles: {subscriber: {}}}]
+  - expect: [2, "{{$session_id:int}}", "_"]
+
+  - send: [32, 3001, {}, "trailing.dot."]
+    note: "SUBSCRIBE with malformed topic URI"
+  - expect: [8, 32, 3001, "_", "wamp.error.invalid_uri", "_"]
+    note: "ERROR for SUBSCRIBE (msg type 32) carrying invalid_uri; trailing list element is Arguments with the router's human-readable detail message"

@@ -1,0 +1,50 @@
+name: register-call-invocation-yield-result-roundtrip
+spec_section: "Basic Profile §3.7"
+realm: realm1
+serializer: json
+
+# Two sessions: a callee that registers a procedure, and a caller that
+# invokes it. The router routes CALL → INVOCATION on the callee and
+# YIELD → RESULT back to the caller.
+peers:
+  - name: callee
+  - name: caller
+
+steps:
+  # Callee handshake.
+  - peer: callee
+    send: [1, "realm1", {roles: {callee: {}}}]
+    note: "HELLO"
+  - peer: callee
+    expect: [2, "{{$callee_session:int}}", "_"]
+    note: "WELCOME"
+
+  # Caller handshake.
+  - peer: caller
+    send: [1, "realm1", {roles: {caller: {}}}]
+  - peer: caller
+    expect: [2, "{{$caller_session:int}}", "_"]
+
+  # Callee REGISTER → REGISTERED.
+  - peer: callee
+    send: [64, 2001, {}, "spec.test.proc"]
+    note: "REGISTER request_id=2001"
+  - peer: callee
+    expect: [65, 2001, "{{$reg_id:int}}"]
+    note: "REGISTERED carries registration id"
+
+  # Caller CALL → callee gets INVOCATION.
+  - peer: caller
+    send: [48, 2002, {}, "spec.test.proc", [1, 2]]
+    note: "CALL request_id=2002 with positional args [1,2]"
+  - peer: callee
+    expect: [68, "{{$inv_id:int}}", "{{$reg_id:int}}", "_", [1, 2]]
+    note: "INVOCATION delivered to callee, args preserved"
+
+  # Callee YIELD → caller gets RESULT.
+  - peer: callee
+    send: [70, "{{$inv_id:int}}", {}, [3]]
+    note: "YIELD invocation_id, result=[3]"
+  - peer: caller
+    expect: [50, 2002, "_", [3]]
+    note: "RESULT for request_id=2002 carries the yielded value"

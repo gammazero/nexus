@@ -1,0 +1,57 @@
+name: progressive-call-results-stream
+spec_section: "Advanced §14.3.1 — Progressive Call Results"
+realm: realm1
+serializer: json
+
+# Caller issues a CALL with receive_progress=true. The callee yields
+# two progressive YIELDs (progress=true), then a final non-progress
+# YIELD. The caller observes two progressive RESULTs followed by the
+# terminal RESULT.
+peers:
+  - name: callee
+  - name: caller
+
+steps:
+  - peer: callee
+    send: [1, "realm1", {roles: {callee: {features: {progressive_call_results: true}}}}]
+    # SPEC-STRICT: Per WAMP §14.3.1.2 the callee only needs to declare
+    # progressive_call_results for the dealer to forward receive_progress.
+    # The dealer must not additionally require call_canceling.
+  - peer: callee
+    expect: [2, "{{$callee_session:int}}", "_"]
+
+  - peer: callee
+    send: [64, 13001, {}, "spec.test.progressive"]
+  - peer: callee
+    expect: [65, 13001, "{{$reg_id:int}}"]
+
+  - peer: caller
+    send: [1, "realm1", {roles: {caller: {}}}]
+  - peer: caller
+    expect: [2, "{{$caller_session:int}}", "_"]
+
+  - peer: caller
+    send: [48, 13002, {receive_progress: true}, "spec.test.progressive"]
+    note: "CALL with receive_progress=true"
+  - peer: callee
+    expect: [68, "{{$inv_id:int}}", "{{$reg_id:int}}", {receive_progress: true}]
+    note: "INVOCATION carries receive_progress"
+
+  # Progressive YIELD #1.
+  - peer: callee
+    send: [70, "{{$inv_id:int}}", {progress: true}, ["chunk1"]]
+  - peer: caller
+    expect: [50, 13002, {progress: true}, ["chunk1"]]
+
+  # Progressive YIELD #2.
+  - peer: callee
+    send: [70, "{{$inv_id:int}}", {progress: true}, ["chunk2"]]
+  - peer: caller
+    expect: [50, 13002, {progress: true}, ["chunk2"]]
+
+  # Final non-progress YIELD terminates the stream.
+  - peer: callee
+    send: [70, "{{$inv_id:int}}", {}, ["final"]]
+  - peer: caller
+    expect: [50, 13002, "_", ["final"]]
+    note: "Terminal RESULT — details dict need not carry progress=false explicitly"

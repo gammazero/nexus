@@ -1,0 +1,23 @@
+name: ticket-auth-with-wrong-ticket-aborts
+spec_section: "Authentication §13.5 — Ticket"
+realm: realm1
+serializer: json
+
+# Same authenticator as 029, but the AUTHENTICATE message carries the
+# wrong ticket value. The router must respond with ABORT and the
+# wamp.error.authentication_failed (or .not_authorized) URI rather
+# than WELCOME.
+auth:
+  ticket:
+    users:
+      tester:
+        ticket: "ticket-X-1234"
+        role: "user"
+
+steps:
+  - send: [1, "realm1", {authmethods: ["ticket"], authid: "tester", roles: {publisher: {}}}]
+  - expect: [4, "ticket", "_"]
+
+  - send: [5, "WRONG-TICKET", {}]
+  - expect: [3, {message: "invalid ticket"}, "wamp.error.authentication_failed"]
+    note: "ABORT carries authentication_failed + a human-readable details.message"

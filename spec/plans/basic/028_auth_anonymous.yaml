@@ -1,0 +1,17 @@
+name: anonymous-auth-with-explicit-method-and-role
+spec_section: "Authentication §13.2 — Anonymous"
+realm: realm1
+serializer: json
+
+# When the plan declares `auth.anonymous`, the router enables anonymous
+# auth on the realm. Clients that HELLO with `authmethods: [anonymous]`
+# get assigned the configured role (defaults to "anonymous"). The role
+# shows up in the WELCOME details under `authrole`.
+auth:
+  anonymous:
+    role: anonymous
+
+steps:
+  - send: [1, "realm1", {authmethods: ["anonymous"], roles: {publisher: {}}}]
+  - expect: [2, "{{$session_id:int}}", {authrole: "anonymous", authmethod: "anonymous"}]
+    note: "WELCOME details carry the assigned authrole + authmethod"

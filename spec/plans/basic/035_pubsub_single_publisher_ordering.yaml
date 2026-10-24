@@ -1,0 +1,80 @@
+name: events-from-single-publisher-arrive-at-subscriber-in-publish-order
+spec_section: "Basic Profile §3.5 / Advanced §14.4 — message ordering"
+realm: realm1
+serializer: json
+
+# WAMP §14.4: events from a single publisher session must be delivered
+# to any given subscriber in the order they were published. Pinned here
+# by publishing 10 sequence-numbered events fire-and-forget, then
+# reading the subscriber's queue in order. The matcher fails on the
+# first out-of-order payload because the runner reads peer queues
+# strictly FIFO.
+peers:
+  - name: subscriber
+  - name: publisher
+
+steps:
+  - peer: subscriber
+    send: [1, "realm1", {roles: {subscriber: {}}}]
+  - peer: subscriber
+    expect: [2, "{{$sub_session:int}}", "_"]
+
+  - peer: subscriber
+    send: [32, 35001, {}, "spec.test.order"]
+  - peer: subscriber
+    expect: [33, 35001, "{{$sub_id:int}}"]
+
+  - peer: publisher
+    send: [1, "realm1", {roles: {publisher: {}}}]
+  - peer: publisher
+    expect: [2, "{{$pub_session:int}}", "_"]
+
+  # Fire 10 PUBLISHes back-to-back without acknowledge. The publisher's
+  # outbound channel is FIFO, the broker processes messages from one
+  # client in receive order, and the subscriber's inbound is FIFO —
+  # together these chain a per-publisher order guarantee.
+  - peer: publisher
+    send: [16, 35101, {}, "spec.test.order", ["seq", 1]]
+  - peer: publisher
+    send: [16, 35102, {}, "spec.test.order", ["seq", 2]]
+  - peer: publisher
+    send: [16, 35103, {}, "spec.test.order", ["seq", 3]]
+  - peer: publisher
+    send: [16, 35104, {}, "spec.test.order", ["seq", 4]]
+  - peer: publisher
+    send: [16, 35105, {}, "spec.test.order", ["seq", 5]]
+  - peer: publisher
+    send: [16, 35106, {}, "spec.test.order", ["seq", 6]]
+  - peer: publisher
+    send: [16, 35107, {}, "spec.test.order", ["seq", 7]]
+  - peer: publisher
+    send: [16, 35108, {}, "spec.test.order", ["seq", 8]]
+  - peer: publisher
+    send: [16, 35109, {}, "spec.test.order", ["seq", 9]]
+  - peer: publisher
+    send: [16, 35110, {}, "spec.test.order", ["seq", 10]]
+
+  # Read events back in strict order. Each EVENT has a distinct
+  # publication id (captured under unique placeholder names so the
+  # matcher confirms they're all integers) and the payload sequence
+  # number must match the publish order.
+  - peer: subscriber
+    expect: [36, "{{$sub_id:int}}", "{{$pub1:int}}",  "_", ["seq", 1]]
+  - peer: subscriber
+    expect: [36, "{{$sub_id:int}}", "{{$pub2:int}}",  "_", ["seq", 2]]
+  - peer: subscriber
+    expect: [36, "{{$sub_id:int}}", "{{$pub3:int}}",  "_", ["seq", 3]]
+  - peer: subscriber
+    expect: [36, "{{$sub_id:int}}", "{{$pub4:int}}",  "_", ["seq", 4]]
+  - peer: subscriber
+    expect: [36, "{{$sub_id:int}}", "{{$pub5:int}}",  "_", ["seq", 5]]
+  - peer: subscriber
+    expect: [36, "{{$sub_id:int}}", "{{$pub6:int}}",  "_", ["seq", 6]]
+  - peer: subscriber
+    expect: [36, "{{$sub_id:int}}", "{{$pub7:int}}",  "_", ["seq", 7]]
+  - peer: subscriber
+    expect: [36, "{{$sub_id:int}}", "{{$pub8:int}}",  "_", ["seq", 8]]
+  - peer: subscriber
+    expect: [36, "{{$sub_id:int}}", "{{$pub9:int}}",  "_", ["seq", 9]]
+  - peer: subscriber
+    expect: [36, "{{$sub_id:int}}", "{{$pub10:int}}", "_", ["seq", 10]]

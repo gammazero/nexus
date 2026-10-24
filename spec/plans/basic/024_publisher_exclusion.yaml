@@ -1,0 +1,40 @@
+name: publisher-exclusion-default-true-and-explicit-false
+spec_section: "Advanced §14.4.5 — Publisher Exclusion"
+realm: realm1
+serializer: json
+
+# Publisher and subscriber are the same session. WAMP defaults
+# `exclude_me=true`, so by default the publisher does NOT receive its
+# own events. Setting `exclude_me=false` opts back in.
+#
+# Verification trick (no `expect_silence` step in the runner): publish
+# 3 events in this order, all on the same topic:
+#   E1 — exclude_me=false → publisher RECEIVES
+#   E2 — default            → publisher does NOT receive
+#   E3 — exclude_me=false → publisher RECEIVES
+# After E1 we expect E1 on the wire; after E3 we expect E3. If E2 had
+# leaked, the next read on the publisher's queue would surface E2's
+# payload instead of E3's, and the matcher would fail.
+steps:
+  - send: [1, "realm1", {roles: {publisher: {features: {publisher_exclusion: true}}, subscriber: {}}}]
+  - expect: [2, "{{$session_id:int}}", "_"]
+
+  - send: [32, 24001, {}, "spec.test.exclude_me"]
+  - expect: [33, 24001, "{{$sub_id:int}}"]
+
+  # E1: exclude_me=false → self-receive.
+  - send: [16, 24101, {acknowledge: true, exclude_me: false}, "spec.test.exclude_me", ["E1"]]
+  - expect: [17, 24101, "{{$e1_pubid:int}}"]
+  - expect: [36, "{{$sub_id:int}}", "{{$e1_pubid:int}}", "_", ["E1"]]
+
+  # E2: default exclude_me=true → no self-event. We only expect the
+  # PUBLISHED ack here, not an EVENT.
+  - send: [16, 24102, {acknowledge: true}, "spec.test.exclude_me", ["E2"]]
+  - expect: [17, 24102, "{{$e2_pubid:int}}"]
+
+  # E3: exclude_me=false again → self-receive. If E2 had leaked, the
+  # next message read here would carry "E2" not "E3" and the match
+  # would fail on the payload.
+  - send: [16, 24103, {acknowledge: true, exclude_me: false}, "spec.test.exclude_me", ["E3"]]
+  - expect: [17, 24103, "{{$e3_pubid:int}}"]
+  - expect: [36, "{{$sub_id:int}}", "{{$e3_pubid:int}}", "_", ["E3"]]

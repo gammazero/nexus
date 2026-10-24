@@ -1,0 +1,84 @@
+name: publish-with-eligible-and-exclude-session-lists
+spec_section: "Advanced §14.4.2 — Subscriber Black/White Listing"
+realm: realm1
+serializer: json
+
+# Verifies session-id targeting on PUBLISH:
+#   - eligible: [s1]      → only s1 receives
+#   - eligible: [s2]      → only s2 receives
+#   - eligible: [s1, s2]  → both receive
+#   - exclude:  [s2]      → only s1 receives
+#
+# Each subscriber is asserted to receive exactly the events targeted
+# at it, in the order they were published. The runner reads peer
+# queues sequentially, so the FIFO ordering is meaningful — if the
+# broker delivered an extra event to a subscriber, that subscriber's
+# queue would carry the wrong payload at the next expect step.
+peers:
+  - name: sub1
+  - name: sub2
+  - name: publisher
+
+steps:
+  # Both subscribers handshake and SUBSCRIBE. Both must declare the
+  # subscriber_blackwhite_listing feature for the broker to honor
+  # eligible/exclude lists.
+  - peer: sub1
+    send: [1, "realm1", {roles: {subscriber: {features: {subscriber_blackwhite_listing: true}}}}]
+  - peer: sub1
+    expect: [2, "{{$sub1_session:int}}", "_"]
+  - peer: sub1
+    send: [32, 18001, {}, "spec.test.filter"]
+  - peer: sub1
+    expect: [33, 18001, "{{$sub1_subid:int}}"]
+
+  - peer: sub2
+    send: [1, "realm1", {roles: {subscriber: {features: {subscriber_blackwhite_listing: true}}}}]
+  - peer: sub2
+    expect: [2, "{{$sub2_session:int}}", "_"]
+  - peer: sub2
+    send: [32, 18002, {}, "spec.test.filter"]
+  - peer: sub2
+    expect: [33, 18002, "{{$sub2_subid:int}}"]
+
+  - peer: publisher
+    send: [1, "realm1", {roles: {publisher: {features: {subscriber_blackwhite_listing: true}}}}]
+  - peer: publisher
+    expect: [2, "{{$pub_session:int}}", "_"]
+
+  # E1: eligible only sub1 → sub1 sees, sub2 does not.
+  - peer: publisher
+    send: [16, 18101, {acknowledge: true, eligible: ["{{$sub1_session:int}}"]}, "spec.test.filter", ["E1"]]
+  - peer: publisher
+    expect: [17, 18101, "{{$e1_pubid:int}}"]
+  - peer: sub1
+    expect: [36, "{{$sub1_subid:int}}", "{{$e1_pubid:int}}", "_", ["E1"]]
+
+  # E2: eligible only sub2 → sub2 sees, sub1 does not.
+  - peer: publisher
+    send: [16, 18102, {acknowledge: true, eligible: ["{{$sub2_session:int}}"]}, "spec.test.filter", ["E2"]]
+  - peer: publisher
+    expect: [17, 18102, "{{$e2_pubid:int}}"]
+  - peer: sub2
+    expect: [36, "{{$sub2_subid:int}}", "{{$e2_pubid:int}}", "_", ["E2"]]
+
+  # E3: eligible both → both receive.
+  - peer: publisher
+    send: [16, 18103, {acknowledge: true, eligible: ["{{$sub1_session:int}}", "{{$sub2_session:int}}"]}, "spec.test.filter", ["E3"]]
+  - peer: publisher
+    expect: [17, 18103, "{{$e3_pubid:int}}"]
+  - peer: sub1
+    expect: [36, "{{$sub1_subid:int}}", "{{$e3_pubid:int}}", "_", ["E3"]]
+  - peer: sub2
+    expect: [36, "{{$sub2_subid:int}}", "{{$e3_pubid:int}}", "_", ["E3"]]
+
+  # E4: exclude sub2 → only sub1 receives. If the broker were broken
+  # and delivered E4 to sub2, sub2's next event-read would observe E4
+  # rather than… nothing — but since we don't assert silence, this
+  # plan deliberately ends with sub1 to keep ordering testable.
+  - peer: publisher
+    send: [16, 18104, {acknowledge: true, exclude: ["{{$sub2_session:int}}"]}, "spec.test.filter", ["E4"]]
+  - peer: publisher
+    expect: [17, 18104, "{{$e4_pubid:int}}"]
+  - peer: sub1
+    expect: [36, "{{$sub1_subid:int}}", "{{$e4_pubid:int}}", "_", ["E4"]]

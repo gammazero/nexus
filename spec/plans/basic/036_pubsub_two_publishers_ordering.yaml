@@ -1,0 +1,88 @@
+name: per-publisher-ordering-preserved-across-two-publishers
+spec_section: "Basic Profile §3.5 / Advanced §14.4 — message ordering"
+realm: realm1
+serializer: json
+
+# Stronger ordering guarantee: with two distinct publishers writing to
+# the same topic, the WAMP spec only mandates per-publisher order
+# (A1 < A2 < … from publisher A, B1 < B2 < … from publisher B), not
+# any cross-publisher interleaving.
+#
+# To make this deterministically testable in the wire harness, we
+# alternate publishes with `acknowledge: true` and wait for PUBLISHED
+# before issuing the next. That serializes the broker's processing
+# through one publish-cycle at a time, so the subscriber's queue ends
+# up in the publish-completion order: A1, B1, A2, B2, A3, B3.
+# This still verifies the strong contract (each publisher's stream
+# arrives in order) and additionally pins the broker's FIFO behavior.
+peers:
+  - name: subscriber
+  - name: pubA
+  - name: pubB
+
+steps:
+  - peer: subscriber
+    send: [1, "realm1", {roles: {subscriber: {}}}]
+  - peer: subscriber
+    expect: [2, "{{$sub_session:int}}", "_"]
+  - peer: subscriber
+    send: [32, 36001, {}, "spec.test.order.multi"]
+  - peer: subscriber
+    expect: [33, 36001, "{{$sub_id:int}}"]
+
+  - peer: pubA
+    send: [1, "realm1", {roles: {publisher: {}}}]
+  - peer: pubA
+    expect: [2, "{{$a_session:int}}", "_"]
+
+  - peer: pubB
+    send: [1, "realm1", {roles: {publisher: {}}}]
+  - peer: pubB
+    expect: [2, "{{$b_session:int}}", "_"]
+
+  # Round 1.
+  - peer: pubA
+    send: [16, 36101, {acknowledge: true}, "spec.test.order.multi", ["A", 1]]
+  - peer: pubA
+    expect: [17, 36101, "{{$a1:int}}"]
+
+  - peer: pubB
+    send: [16, 36201, {acknowledge: true}, "spec.test.order.multi", ["B", 1]]
+  - peer: pubB
+    expect: [17, 36201, "{{$b1:int}}"]
+
+  # Round 2.
+  - peer: pubA
+    send: [16, 36102, {acknowledge: true}, "spec.test.order.multi", ["A", 2]]
+  - peer: pubA
+    expect: [17, 36102, "{{$a2:int}}"]
+
+  - peer: pubB
+    send: [16, 36202, {acknowledge: true}, "spec.test.order.multi", ["B", 2]]
+  - peer: pubB
+    expect: [17, 36202, "{{$b2:int}}"]
+
+  # Round 3.
+  - peer: pubA
+    send: [16, 36103, {acknowledge: true}, "spec.test.order.multi", ["A", 3]]
+  - peer: pubA
+    expect: [17, 36103, "{{$a3:int}}"]
+
+  - peer: pubB
+    send: [16, 36203, {acknowledge: true}, "spec.test.order.multi", ["B", 3]]
+  - peer: pubB
+    expect: [17, 36203, "{{$b3:int}}"]
+
+  # Subscriber reads in publish-completion order.
+  - peer: subscriber
+    expect: [36, "{{$sub_id:int}}", "{{$a1:int}}", "_", ["A", 1]]
+  - peer: subscriber
+    expect: [36, "{{$sub_id:int}}", "{{$b1:int}}", "_", ["B", 1]]
+  - peer: subscriber
+    expect: [36, "{{$sub_id:int}}", "{{$a2:int}}", "_", ["A", 2]]
+  - peer: subscriber
+    expect: [36, "{{$sub_id:int}}", "{{$b2:int}}", "_", ["B", 2]]
+  - peer: subscriber
+    expect: [36, "{{$sub_id:int}}", "{{$a3:int}}", "_", ["A", 3]]
+  - peer: subscriber
+    expect: [36, "{{$sub_id:int}}", "{{$b3:int}}", "_", ["B", 3]]

@@ -1,0 +1,20 @@
+name: subscribe-publish-event-roundtrip
+spec_section: "Basic Profile §3.5.4"
+realm: realm1
+serializer: json
+steps:
+  - send: [1, "realm1", {roles: {subscriber: {}, publisher: {}}}]
+  - expect: [2, "{{$session_id:int}}", "_"]
+    note: "WELCOME — capture session id"
+
+  - send: [32, 1001, {}, "spec.test.topic"]
+    note: "SUBSCRIBE request_id=1001"
+  - expect: [33, 1001, "{{$sub_id:int}}"]
+    note: "SUBSCRIBED carries subscription id"
+
+  - send: [16, 1002, {acknowledge: true, exclude_me: false}, "spec.test.topic", ["payload"]]
+    note: "PUBLISH with acknowledge=true and exclude_me=false so we receive our own event"
+  - expect: [17, 1002, "{{$pub_id:int}}"]
+    note: "PUBLISHED ack"
+  - expect: [36, "{{$sub_id:int}}", "{{$ev_pub_id:int}}", "_", ["payload"]]
+    note: "EVENT delivered to the subscribing session"

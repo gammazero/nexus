@@ -1,0 +1,9 @@
+name: hello-to-non-existent-realm-yields-abort
+spec_section: "Basic Profile §3.4.4"
+realm: realm1
+serializer: json
+steps:
+  - send: [1, "no.such.realm.exists", {roles: {publisher: {}}}]
+    note: "HELLO with unknown realm URI"
+  - expect: [3, "{{$details:dict}}", "wamp.error.no_such_realm"]
+    note: "ABORT with no_such_realm reason URI"

@@ -1,0 +1,55 @@
+name: publisher-disclosure-via-disclose-me-includes-authid-authrole
+spec_section: "Advanced §14.4.4 — Publisher Identification"
+realm: realm1
+serializer: json
+
+# Publisher authenticates via ticket so its authid/authrole are real
+# values, then PUBLISHes with disclose_me=true. Subscriber declares
+# the publisher_identification feature; broker attaches publisher +
+# publisher_authid + publisher_authrole to EVENT.Details (per
+# disclosePublisher in broker.go:803).
+auth:
+  ticket:
+    users:
+      pub-user:
+        ticket: "pub-secret"
+        role: "pub-role"
+  anonymous:
+    role: "anonymous"
+
+peers:
+  - name: subscriber
+  - name: publisher
+
+steps:
+  - peer: subscriber
+    send: [1, "realm1", {authmethods: ["anonymous"], roles: {subscriber: {features: {publisher_identification: true}}}}]
+  - peer: subscriber
+    expect: [2, "{{$sub_session:int}}", "_"]
+
+  - peer: subscriber
+    send: [32, 34001, {}, "spec.test.disclose.topic"]
+  - peer: subscriber
+    expect: [33, 34001, "{{$sub_id:int}}"]
+
+  - peer: publisher
+    send: [1, "realm1", {authmethods: ["ticket"], authid: "pub-user", roles: {publisher: {}}}]
+  - peer: publisher
+    expect: [4, "ticket", "_"]
+  - peer: publisher
+    send: [5, "pub-secret", {}]
+  - peer: publisher
+    expect: [2, "{{$pub_session:int}}", {authid: "pub-user", authrole: "pub-role"}]
+
+  - peer: publisher
+    send: [16, 34002, {acknowledge: true, disclose_me: true}, "spec.test.disclose.topic", ["x"]]
+  - peer: publisher
+    expect: [17, 34002, "{{$pub_id:int}}"]
+
+  - peer: subscriber
+    expect:
+      - 36
+      - "{{$sub_id:int}}"
+      - "{{$pub_id:int}}"
+      - {publisher: "{{$pub_session:int}}", publisher_authid: "pub-user", publisher_authrole: "pub-role"}
+      - ["x"]

@@ -1,0 +1,64 @@
+name: shared-registration-invoke-last-always-routes-to-last-registrant
+spec_section: "Advanced §14.3.9 — Shared Registration, invoke=last"
+realm: realm1
+serializer: json
+
+# Mirror of 022 for invoke=last: every call routes to the
+# most-recently-registered callee (registration-order [N-1]) — see
+# dealer.go:832-833.
+peers:
+  - name: callee1
+  - name: callee2
+  - name: caller
+
+steps:
+  - peer: callee1
+    send: [1, "realm1", {roles: {callee: {features: {shared_registration: true}}}}]
+  - peer: callee1
+    expect: [2, "{{$c1_session:int}}", "_"]
+  - peer: callee1
+    send: [64, 23001, {invoke: "last"}, "spec.test.shared.last"]
+  - peer: callee1
+    expect: [65, 23001, "{{$reg_id:int}}"]
+
+  - peer: callee2
+    send: [1, "realm1", {roles: {callee: {features: {shared_registration: true}}}}]
+  - peer: callee2
+    expect: [2, "{{$c2_session:int}}", "_"]
+  - peer: callee2
+    send: [64, 23002, {invoke: "last"}, "spec.test.shared.last"]
+  - peer: callee2
+    expect: [65, 23002, "{{$reg_id:int}}"]
+
+  - peer: caller
+    send: [1, "realm1", {roles: {caller: {}}}]
+  - peer: caller
+    expect: [2, "{{$caller_session:int}}", "_"]
+
+  # All calls land on callee2 (the last registrant).
+  - peer: caller
+    send: [48, 23101, {}, "spec.test.shared.last", [1]]
+  - peer: callee2
+    expect: [68, "{{$inv1:int}}", "{{$reg_id:int}}", "_", [1]]
+  - peer: callee2
+    send: [70, "{{$inv1:int}}", {}, ["a"]]
+  - peer: caller
+    expect: [50, 23101, "_", ["a"]]
+
+  - peer: caller
+    send: [48, 23102, {}, "spec.test.shared.last", [2]]
+  - peer: callee2
+    expect: [68, "{{$inv2:int}}", "{{$reg_id:int}}", "_", [2]]
+  - peer: callee2
+    send: [70, "{{$inv2:int}}", {}, ["b"]]
+  - peer: caller
+    expect: [50, 23102, "_", ["b"]]
+
+  - peer: caller
+    send: [48, 23103, {}, "spec.test.shared.last", [3]]
+  - peer: callee2
+    expect: [68, "{{$inv3:int}}", "{{$reg_id:int}}", "_", [3]]
+  - peer: callee2
+    send: [70, "{{$inv3:int}}", {}, ["c"]]
+  - peer: caller
+    expect: [50, 23103, "_", ["c"]]

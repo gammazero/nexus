@@ -1,0 +1,36 @@
+name: pattern-based-wildcard-registration
+spec_section: "Advanced §14.3.7 — Pattern-based Registration"
+realm: realm1
+serializer: json
+
+# Wildcard registration: each empty URI segment matches any single
+# component. "spec.test..proc" matches "spec.test.<anything>.proc".
+peers:
+  - name: callee
+  - name: caller
+
+steps:
+  - peer: callee
+    send: [1, "realm1", {roles: {callee: {features: {pattern_based_registration: true}}}}]
+  - peer: callee
+    expect: [2, "{{$callee_session:int}}", "_"]
+
+  - peer: callee
+    send: [64, 20001, {match: "wildcard"}, "spec.test..proc"]
+  - peer: callee
+    expect: [65, 20001, "{{$reg_id:int}}"]
+
+  - peer: caller
+    send: [1, "realm1", {roles: {caller: {}}}]
+  - peer: caller
+    expect: [2, "{{$caller_session:int}}", "_"]
+
+  - peer: caller
+    send: [48, 20002, {}, "spec.test.alarm.proc", ["y"]]
+  - peer: callee
+    expect: [68, "{{$inv_id:int}}", "{{$reg_id:int}}", {procedure: "spec.test.alarm.proc"}, ["y"]]
+
+  - peer: callee
+    send: [70, "{{$inv_id:int}}", {}, ["ok"]]
+  - peer: caller
+    expect: [50, 20002, "_", ["ok"]]

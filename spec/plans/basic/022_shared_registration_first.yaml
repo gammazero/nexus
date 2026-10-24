@@ -1,0 +1,66 @@
+name: shared-registration-invoke-first-always-routes-to-first-registrant
+spec_section: "Advanced §14.3.9 — Shared Registration, invoke=first"
+realm: realm1
+serializer: json
+
+# Two callees register the same procedure with invoke=first. Every
+# call routes to the first registrant (registration-order [0]) until
+# it disconnects. With both alive, callee2 should never see an
+# INVOCATION — we issue 3 sequential calls and assert all three land
+# on callee1.
+peers:
+  - name: callee1
+  - name: callee2
+  - name: caller
+
+steps:
+  - peer: callee1
+    send: [1, "realm1", {roles: {callee: {features: {shared_registration: true}}}}]
+  - peer: callee1
+    expect: [2, "{{$c1_session:int}}", "_"]
+  - peer: callee1
+    send: [64, 22001, {invoke: "first"}, "spec.test.shared.first"]
+  - peer: callee1
+    expect: [65, 22001, "{{$reg_id:int}}"]
+
+  - peer: callee2
+    send: [1, "realm1", {roles: {callee: {features: {shared_registration: true}}}}]
+  - peer: callee2
+    expect: [2, "{{$c2_session:int}}", "_"]
+  - peer: callee2
+    send: [64, 22002, {invoke: "first"}, "spec.test.shared.first"]
+  - peer: callee2
+    expect: [65, 22002, "{{$reg_id:int}}"]
+
+  - peer: caller
+    send: [1, "realm1", {roles: {caller: {}}}]
+  - peer: caller
+    expect: [2, "{{$caller_session:int}}", "_"]
+
+  # 3 calls in sequence — every one goes to callee1.
+  - peer: caller
+    send: [48, 22101, {}, "spec.test.shared.first", [1]]
+  - peer: callee1
+    expect: [68, "{{$inv1:int}}", "{{$reg_id:int}}", "_", [1]]
+  - peer: callee1
+    send: [70, "{{$inv1:int}}", {}, ["a"]]
+  - peer: caller
+    expect: [50, 22101, "_", ["a"]]
+
+  - peer: caller
+    send: [48, 22102, {}, "spec.test.shared.first", [2]]
+  - peer: callee1
+    expect: [68, "{{$inv2:int}}", "{{$reg_id:int}}", "_", [2]]
+  - peer: callee1
+    send: [70, "{{$inv2:int}}", {}, ["b"]]
+  - peer: caller
+    expect: [50, 22102, "_", ["b"]]
+
+  - peer: caller
+    send: [48, 22103, {}, "spec.test.shared.first", [3]]
+  - peer: callee1
+    expect: [68, "{{$inv3:int}}", "{{$reg_id:int}}", "_", [3]]
+  - peer: callee1
+    send: [70, "{{$inv3:int}}", {}, ["c"]]
+  - peer: caller
+    expect: [50, 22103, "_", ["c"]]

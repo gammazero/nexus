@@ -1,0 +1,83 @@
+name: shared-registration-roundrobin-distributes-calls
+spec_section: "Advanced §14.3.9 — Shared Registration"
+realm: realm1
+serializer: json
+
+# Two callees register the same procedure with invoke=roundrobin. Caller
+# issues 4 CALLs; the dealer rotates: call 1 → callee1, call 2 → callee2,
+# call 3 → callee1, call 4 → callee2. Confirms roundrobin distribution
+# in registration order (matches dealer.go's nextCallee policy).
+peers:
+  - name: callee1
+  - name: callee2
+  - name: caller
+
+steps:
+  # Callee 1 handshake + REGISTER (first registrant — index 0).
+  - peer: callee1
+    send: [1, "realm1", {roles: {callee: {}}}]
+  - peer: callee1
+    expect: [2, "{{$c1_session:int}}", "_"]
+
+  - peer: callee1
+    send: [64, 12001, {invoke: "roundrobin"}, "spec.test.shared"]
+  - peer: callee1
+    expect: [65, 12001, "{{$reg_id:int}}"]
+    note: "Both callees share the same registration id"
+
+  # Callee 2 handshake + REGISTER (second registrant — index 1).
+  - peer: callee2
+    send: [1, "realm1", {roles: {callee: {}}}]
+  - peer: callee2
+    expect: [2, "{{$c2_session:int}}", "_"]
+
+  - peer: callee2
+    send: [64, 12002, {invoke: "roundrobin"}, "spec.test.shared"]
+  - peer: callee2
+    expect: [65, 12002, "{{$reg_id:int}}"]
+
+  # Caller handshake.
+  - peer: caller
+    send: [1, "realm1", {roles: {caller: {}}}]
+  - peer: caller
+    expect: [2, "{{$caller_session:int}}", "_"]
+
+  # CALL #1 → callee1.
+  - peer: caller
+    send: [48, 12101, {}, "spec.test.shared", [1]]
+  - peer: callee1
+    expect: [68, "{{$inv1:int}}", "{{$reg_id:int}}", "_", [1]]
+  - peer: callee1
+    send: [70, "{{$inv1:int}}", {}, ["one"]]
+  - peer: caller
+    expect: [50, 12101, "_", ["one"]]
+
+  # CALL #2 → callee2.
+  - peer: caller
+    send: [48, 12102, {}, "spec.test.shared", [2]]
+  - peer: callee2
+    expect: [68, "{{$inv2:int}}", "{{$reg_id:int}}", "_", [2]]
+  - peer: callee2
+    send: [70, "{{$inv2:int}}", {}, ["two"]]
+  - peer: caller
+    expect: [50, 12102, "_", ["two"]]
+
+  # CALL #3 → callee1 (rotation wraps).
+  - peer: caller
+    send: [48, 12103, {}, "spec.test.shared", [3]]
+  - peer: callee1
+    expect: [68, "{{$inv3:int}}", "{{$reg_id:int}}", "_", [3]]
+  - peer: callee1
+    send: [70, "{{$inv3:int}}", {}, ["three"]]
+  - peer: caller
+    expect: [50, 12103, "_", ["three"]]
+
+  # CALL #4 → callee2.
+  - peer: caller
+    send: [48, 12104, {}, "spec.test.shared", [4]]
+  - peer: callee2
+    expect: [68, "{{$inv4:int}}", "{{$reg_id:int}}", "_", [4]]
+  - peer: callee2
+    send: [70, "{{$inv4:int}}", {}, ["four"]]
+  - peer: caller
+    expect: [50, 12104, "_", ["four"]]

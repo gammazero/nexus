@@ -1,0 +1,46 @@
+name: call-timeout-fires-router-side-when-callee-does-not-yield
+spec_section: "Advanced §14.3.3 — Call Timeouts"
+realm: realm1
+serializer: json
+
+# Caller sets options.timeout=200 (ms). Callee declares call_canceling
+# (so the dealer will deliver INTERRUPT) but does NOT declare
+# call_timeout — the dealer therefore handles the timeout locally.
+# When 200ms elapses without a YIELD, dealer fires syncCancel with
+# mode=killnowait and reason=wamp.error.timeout: caller gets ERROR
+# immediately, callee gets INTERRUPT.
+peers:
+  - name: callee
+  - name: caller
+
+steps:
+  - peer: callee
+    send: [1, "realm1", {roles: {callee: {features: {call_canceling: true}}}}]
+  - peer: callee
+    expect: [2, "{{$callee_session:int}}", "_"]
+
+  - peer: callee
+    send: [64, 21001, {}, "spec.test.timeout.proc"]
+  - peer: callee
+    expect: [65, 21001, "{{$reg_id:int}}"]
+
+  - peer: caller
+    send: [1, "realm1", {roles: {caller: {features: {call_timeout: true}}}}]
+  - peer: caller
+    expect: [2, "{{$caller_session:int}}", "_"]
+
+  # CALL with timeout=200ms — callee will not respond, dealer fires.
+  - peer: caller
+    send: [48, 21002, {timeout: 200}, "spec.test.timeout.proc", []]
+  - peer: callee
+    expect: [68, "{{$inv_id:int}}", "{{$reg_id:int}}", "_"]
+
+  # After ~200ms the dealer cancels in killnowait mode: caller gets
+  # ERROR immediately, callee gets INTERRUPT independently.
+  - peer: caller
+    expect: [8, 48, 21002, "_", "wamp.error.timeout", ["call timeout"]]
+    timeout_ms: 1500
+    note: "Dealer attaches errArgs=['call timeout'] when firing the timer (dealer.go:1064)"
+  - peer: callee
+    expect: [69, "{{$inv_id:int}}", "_"]
+    timeout_ms: 1500
