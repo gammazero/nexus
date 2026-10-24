@@ -33,7 +33,7 @@ func TestMetaEventOnJoin(t *testing.T) {
 	require.Truef(t, has, "Dealer does not support %s", wamp.FeatureSessionMetaAPI)
 
 	// Subscribe to event.
-	onJoinEvents := make(chan *wamp.Event)
+	onJoinEvents := make(chan *wamp.Event, eventChanSize)
 	err := subscriber.SubscribeChan(metaOnJoin, onJoinEvents, nil)
 	require.NoError(t, err)
 
@@ -136,10 +136,10 @@ func TestMetaProcSessionCount(t *testing.T) {
 	subscriber := connectClient(t)
 
 	// Subscribe to on_join and on_leave events.
-	onJoinEvents := make(chan *wamp.Event)
+	onJoinEvents := make(chan *wamp.Event, eventChanSize)
 	err := subscriber.SubscribeChan(metaOnJoin, onJoinEvents, nil)
 	require.NoError(t, err)
-	onLeaveEvents := make(chan *wamp.Event)
+	onLeaveEvents := make(chan *wamp.Event, eventChanSize)
 	err = subscriber.SubscribeChan(metaOnLeave, onLeaveEvents, nil)
 	require.NoError(t, err)
 
@@ -204,7 +204,7 @@ func TestMetaProcSessionList(t *testing.T) {
 	subscriber := connectClient(t)
 
 	// Subscribe to on_leave event.
-	eventChan := make(chan *wamp.Event)
+	eventChan := make(chan *wamp.Event, eventChanSize)
 	err := subscriber.SubscribeChan(metaOnLeave, eventChan, nil)
 	require.NoError(t, err)
 
@@ -271,7 +271,7 @@ func TestMetaProcSessionGet(t *testing.T) {
 	subscriber := connectClient(t)
 
 	// Subscribe to on_leave event.
-	eventChan := make(chan *wamp.Event)
+	eventChan := make(chan *wamp.Event, eventChanSize)
 	err := subscriber.SubscribeChan(metaOnLeave, eventChan, nil)
 	require.NoError(t, err)
 

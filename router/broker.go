@@ -323,19 +323,20 @@ func (b *broker) unsubscribe(sub *wamp.Session, msg *wamp.Unsubscribe) {
 
 // removeSession removes all subscriptions of the subscriber. This is called
 // when a client leaves the realm by sending a GOODBYE message, by
-// disconnecting from the router, or by the realm shutting down. If meta is
+// disconnecting from the router, or by the realm shutting down. If notify is
 // true and there are any subscriptions for this session, then a
-// wamp.subscription.on_delete meta event is published for each.
+// wamp.subscription.on_delete meta event is published for each. If notify is
+// false, as when the realm shuts down, no meta events are published.
 //
 // When removeSession returns, the broker holds no reference to the session and
 // will not send it any more events, so the session can be closed.
-func (b *broker) removeSession(sess *wamp.Session, meta bool) {
+func (b *broker) removeSession(sess *wamp.Session, notify bool) {
 	if sess == nil {
 		return
 	}
 	done := make(chan struct{})
 	b.actionChan <- func() {
-		b.syncRemoveSession(sess, meta)
+		b.syncRemoveSession(sess, notify)
 		close(done)
 	}
 	<-done
@@ -555,7 +556,7 @@ func (b *broker) syncUnsubscribe(subscriber *wamp.Session, msg *wamp.Unsubscribe
 }
 
 // syncRemoveSession removes all subscriptions for the session.
-func (b *broker) syncRemoveSession(subscriber *wamp.Session, meta bool) {
+func (b *broker) syncRemoveSession(subscriber *wamp.Session, notify bool) {
 	subIDSet, ok := b.sessionSubIDSet[subscriber]
 	if !ok {
 		return
@@ -579,7 +580,7 @@ func (b *broker) syncRemoveSession(subscriber *wamp.Session, meta bool) {
 			b.syncDelSubscription(sub)
 			// Fired when a subscription is deleted after the last session
 			// attached to it has been removed.
-			if meta {
+			if notify {
 				b.syncPubSubMeta(wamp.MetaEventSubOnDelete, subscriber.ID, subID)
 			}
 		}

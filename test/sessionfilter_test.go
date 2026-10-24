@@ -18,7 +18,7 @@ func TestWhitelistAttribute(t *testing.T) {
 		ResponseTimeout: time.Second,
 	}
 	subscriber1 := connectClientCfg(t, cfg)
-	sub1Events := make(chan *wamp.Event)
+	sub1Events := make(chan *wamp.Event, eventChanSize)
 	err := subscriber1.SubscribeChan(testTopic, sub1Events, nil)
 	require.NoError(t, err)
 
@@ -28,7 +28,7 @@ func TestWhitelistAttribute(t *testing.T) {
 		HelloDetails: wamp.Dict{"org_id": "other"},
 	}
 	subscriber2 := connectClientCfg(t, cfg)
-	sub2Events := make(chan *wamp.Event)
+	sub2Events := make(chan *wamp.Event, eventChanSize)
 	err = subscriber2.SubscribeChan(testTopic, sub2Events, nil)
 	require.NoError(t, err)
 
@@ -104,7 +104,7 @@ func TestBlacklistAttribute(t *testing.T) {
 	has := subscriber1.HasFeature(wamp.RoleBroker, wamp.FeatureSubBlackWhiteListing)
 	require.Truef(t, has, "Broker does not support %s", wamp.FeatureSubBlackWhiteListing)
 
-	sub1Events := make(chan *wamp.Event)
+	sub1Events := make(chan *wamp.Event, eventChanSize)
 	err := subscriber1.SubscribeChan(testTopic, sub1Events, nil)
 	require.NoError(t, err)
 
@@ -114,7 +114,7 @@ func TestBlacklistAttribute(t *testing.T) {
 		HelloDetails: wamp.Dict{"org_id": "other"},
 	}
 	subscriber2 := connectClientCfg(t, cfg)
-	sub2Events := make(chan *wamp.Event)
+	sub2Events := make(chan *wamp.Event, eventChanSize)
 	err = subscriber2.SubscribeChan(testTopic, sub2Events, nil)
 	require.NoError(t, err)
 

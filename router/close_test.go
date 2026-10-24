@@ -162,3 +162,45 @@ func TestCloseWithSlowCaller(t *testing.T) {
 	callee.Send() <- &wamp.Subscribe{Request: 100, Topic: testTopic}
 	recvType[*wamp.Subscribed](t, callee)
 }
+
+// TestCloseSendsNoCalleeGone checks that closing the router while a call is in
+// progress does not tell the caller that the callee is gone. The callee and
+// caller are both disconnected because the router is closing, so the caller
+// must only see the router's GOODBYE. Removing the callee from the dealer
+// during shutdown used to send the caller ERROR wamp.error.canceled "callee
+// gone", racing with its disconnect.
+func TestCloseSendsNoCalleeGone(t *testing.T) {
+	const procName = wamp.URI("nexus.test.closeproc")
+	for range 50 {
+		r, err := NewRouter(&Config{
+			RealmConfigs: []*RealmConfig{{URI: testRealm, AnonymousAuth: true}},
+		}, logger)
+		require.NoError(t, err)
+
+		callee := testClient(t, r)
+		caller := testClient(t, r)
+
+		callee.Send() <- &wamp.Register{Request: 1, Procedure: procName}
+		recvType[*wamp.Registered](t, callee)
+		caller.Send() <- &wamp.Call{Request: 1, Procedure: procName}
+		recvType[*wamp.Invocation](t, callee)
+
+		calleeDone := drain(callee)
+		var callerMsgs []wamp.Message
+		callerDone := make(chan struct{})
+		go func() {
+			defer close(callerDone)
+			for msg := range caller.Recv() {
+				callerMsgs = append(callerMsgs, msg)
+			}
+		}()
+
+		r.Close()
+		<-calleeDone
+		<-callerDone
+		for _, msg := range callerMsgs {
+			_, isErr := msg.(*wamp.Error)
+			require.False(t, isErr, "caller got %+v during router shutdown", msg)
+		}
+	}
+}

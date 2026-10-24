@@ -400,13 +400,18 @@ func (d *dealer) error(callee *wamp.Session, msg *wamp.Error) {
 // removeSession removes a session's registrations, pending invocations, and
 // pending calls. This is called when a client leaves the realm by sending a
 // GOODBYE message, by disconnecting from the router, or by the realm shutting
-// down. If meta is true and there are any registrations for this session, then
-// wamp.registration.on_unregister and wamp.registration.on_delete meta events
-// are published for each.
+// down.
+//
+// If notify is true, then other sessions are told that the session left: for
+// each of its registrations, wamp.registration.on_unregister and
+// wamp.registration.on_delete meta events are published, and the caller of
+// each pending invocation of the session is sent an ERROR. If notify is false,
+// as when the realm shuts down and every session is being disconnected, none
+// of this is sent.
 //
 // When removeSession returns, the dealer holds no reference to the session and
 // will not send it any more messages, so the session can be closed.
-func (d *dealer) removeSession(sess *wamp.Session, meta bool) {
+func (d *dealer) removeSession(sess *wamp.Session, notify bool) {
 	if sess == nil {
 		// No session specified, no session removed.
 		return
@@ -418,11 +423,11 @@ func (d *dealer) removeSession(sess *wamp.Session, meta bool) {
 	var metaPubs []*wamp.Publish
 	done := make(chan struct{})
 	d.actionChan <- func() {
-		metaPubs = d.syncRemoveSession(sess)
+		metaPubs = d.syncRemoveSession(sess, notify)
 		close(done)
 	}
 	<-done
-	if !meta {
+	if !notify {
 		return
 	}
 	for _, pub := range metaPubs {
@@ -1294,7 +1299,7 @@ func (d *dealer) syncError(callee *wamp.Session, msg *wamp.Error) {
 	})
 }
 
-func (d *dealer) syncRemoveSession(sess *wamp.Session) []*wamp.Publish {
+func (d *dealer) syncRemoveSession(sess *wamp.Session, notify bool) []*wamp.Publish {
 	var metaPubs []*wamp.Publish
 	// Remove any remaining registrations for the removed session.
 	for regID := range d.calleeRegIDSet[sess] {
@@ -1338,6 +1343,16 @@ func (d *dealer) syncRemoveSession(sess *wamp.Session) []*wamp.Publish {
 		}
 		caller, ok := d.calls[invk.callID]
 		if !ok {
+			continue
+		}
+		if !notify {
+			// Drop the call without telling the caller, who is also being disconnected.
+			if invk.timerCancel != nil {
+				invk.timerCancel()
+			}
+			delete(d.calls, invk.callID)
+			delete(d.invocationByCall, invk.callID)
+			delete(d.invocations, iid)
 			continue
 		}
 		// Stop any call timeout timer.

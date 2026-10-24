@@ -31,12 +31,12 @@ func TestMetaEventOnCreateOnSubscribe(t *testing.T) {
 	require.Truef(t, has, "Broker does not support %s", wamp.FeatureSubMetaAPI)
 
 	// Subscribe to on_create meta event.
-	onCreateEvents := make(chan *wamp.Event)
+	onCreateEvents := make(chan *wamp.Event, eventChanSize)
 	err := subscriber.SubscribeChan(metaOnCreate, onCreateEvents, nil)
 	require.NoError(t, err)
 
 	// Subscribe to on_subscribe meta event.
-	onSubEvents := make(chan *wamp.Event)
+	onSubEvents := make(chan *wamp.Event, eventChanSize)
 	err = subscriber.SubscribeChan(metaOnSubscribe, onSubEvents, nil)
 	require.NoError(t, err)
 
@@ -136,12 +136,12 @@ func TestMetaEventOnUnsubscribeOnDelete(t *testing.T) {
 	subscriber := connectClient(t)
 
 	// Subscribe to on_unsubscribe event.
-	onUnsubEvents := make(chan *wamp.Event)
+	onUnsubEvents := make(chan *wamp.Event, eventChanSize)
 	err := subscriber.SubscribeChan(metaOnUnsubscribe, onUnsubEvents, nil)
 	require.NoError(t, err)
 
 	// Subscribe to on_delete event.
-	onDelEvents := make(chan *wamp.Event)
+	onDelEvents := make(chan *wamp.Event, eventChanSize)
 	err = subscriber.SubscribeChan(metaOnDelete, onDelEvents, nil)
 	require.NoError(t, err)
 
