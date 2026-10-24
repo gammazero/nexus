@@ -612,7 +612,60 @@ func (b *broker) syncRemoveSession(subscriber *wamp.Session, notify bool) {
 
 // syncPubEvent sends an event to all subscribers that are not excluded from
 // receiving the event.
+//
+// Hot-path optimization: build the EVENT message ONCE per subscription group
+// and share the pointer across all non-disclosed subscribers. Each session's
+// send goroutine then serializes the same struct independently — the only
+// concurrent access is reads of the embedded args / argsKw / details, which
+// are not mutated after dispatch and therefore safe to share.
+//
+// Per-subscriber allocation only happens when publisher-identity disclosure
+// applies for that specific subscriber (their details dict gets the
+// publisher identity stamped in, so it must be a fresh map).
 func (b *broker) syncPubEvent(pub *wamp.Session, msg *wamp.Publish, pubID wamp.ID, sub *subscription, excludePublisher, sendTopic, disclose bool, filter PublishFilter, eventDetails wamp.Dict) { //nolint:lll
+	// Build the shared base details ONCE. eventDetails comes from the
+	// caller; sendTopic stamps the original publish topic for pattern
+	// matchers — both are constant across the group, so the resulting
+	// dict is reused. Allocate +1 cap headroom for the topic stamp.
+	var baseDetails wamp.Dict
+	if eventDetails != nil {
+		baseDetails = make(wamp.Dict, len(eventDetails)+1)
+		maps.Copy(baseDetails, eventDetails)
+	} else {
+		baseDetails = wamp.Dict{}
+	}
+	if sendTopic {
+		baseDetails[detailTopic] = msg.Topic
+	}
+
+	// Args and argsKw come straight from the publisher's PUBLISH and are
+	// never mutated downstream — sharing the references avoids two
+	// allocations + copies per subscriber. Concurrent reads of these maps
+	// from multiple per-session serializer goroutines are safe.
+	args := msg.Arguments
+	argsKw := msg.ArgumentsKw
+
+	// Shared event used for every NON-LOCAL subscriber that does not
+	// trigger per-subscriber disclosure. Pointer is reused across
+	// recipients whose send path serializes to bytes — those goroutines
+	// only READ the struct (encode + write), never mutate, so concurrent
+	// reads of the embedded args / argsKw / details are safe.
+	//
+	// Local subscribers (in-process Go clients) read the struct directly
+	// in their event handlers and may mutate it (TestEventContentSafety
+	// pins this contract). Sharing across local subscribers would let
+	// one subscriber's mutation become visible to another. So local
+	// subscribers always get a per-subscriber Event with deep-copied
+	// args / argsKw / details — same isolation prepareEvent gave before
+	// this optimization.
+	sharedEvent := &wamp.Event{
+		Publication:  pubID,
+		Subscription: sub.id,
+		Arguments:    args,
+		ArgumentsKw:  argsKw,
+		Details:      baseDetails,
+	}
+
 	for subscriber := range sub.subscribers {
 		// Do not send event to publisher.
 		if subscriber == pub && excludePublisher {
@@ -634,7 +687,40 @@ func (b *broker) syncPubEvent(pub *wamp.Session, msg *wamp.Publish, pubID wamp.I
 			}
 		}
 
-		event := prepareEvent(pub, msg, pubID, sub, sendTopic, disclose, eventDetails, subscriber)
+		needPerSub := subscriber.IsLocal() ||
+			(disclose && subscriber.HasFeature(wamp.RoleSubscriber, wamp.FeaturePubIdent))
+
+		var event *wamp.Event
+		if !needPerSub {
+			event = sharedEvent
+		} else {
+			// Per-subscriber copy: isolates mutation from the local-handler
+			// path, and carries the publisher-identity disclosure when
+			// that's enabled for this subscriber.
+			perSubDetails := make(wamp.Dict, len(baseDetails)+3)
+			maps.Copy(perSubDetails, baseDetails)
+			if disclose && subscriber.HasFeature(wamp.RoleSubscriber, wamp.FeaturePubIdent) {
+				disclosePublisher(pub, perSubDetails)
+			}
+			perSubArgs := args
+			if args != nil {
+				perSubArgs = make(wamp.List, len(args))
+				copy(perSubArgs, args)
+			}
+			perSubArgsKw := argsKw
+			if argsKw != nil {
+				perSubArgsKw = make(wamp.Dict, len(argsKw))
+				maps.Copy(perSubArgsKw, argsKw)
+			}
+			event = &wamp.Event{
+				Publication:  pubID,
+				Subscription: sub.id,
+				Arguments:    perSubArgs,
+				ArgumentsKw:  perSubArgsKw,
+				Details:      perSubDetails,
+			}
+		}
+
 		b.trySend(subscriber, event)
 	}
 
@@ -650,6 +736,8 @@ func (b *broker) syncPubEvent(pub *wamp.Session, msg *wamp.Publish, pubID wamp.I
 		if _, ok := msg.Options["eligible"]; ok {
 			return
 		}
+		// History gets its own event copy because it may be retained long
+		// after the in-flight live events have been serialized + sent.
 		event := prepareEvent(pub, msg, pubID, sub, sendTopic, disclose, eventDetails, nil)
 		b.syncSaveEvent(eventStore, msg, event)
 	}
