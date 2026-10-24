@@ -966,21 +966,25 @@ func TestSubscriptionMetaProcedures(t *testing.T) {
 		require.Equal(t, sessID, idList[0], "Wrong subscriber session ID")
 
 		// ----- Test wamp.subscription.count_subscribers meta procedure -----
-		callID = wamp.GlobalID()
-		caller.Send() <- &wamp.Call{
-			Request:   callID,
-			Procedure: wamp.MetaProcSubCountSubscribers,
-			Arguments: wamp.List{subscriptionID},
+		// The spec name, and the misspelled legacy alias.
+		require.Equal(t, wamp.URI("wamp.subscription.count_subscribers"), wamp.MetaProcSubCountSubscribers)
+		for _, proc := range []wamp.URI{wamp.MetaProcSubCountSubscribers, wamp.URI("wamp.subscription.count_suscribers")} { //nolint:staticcheck // the deprecated alias must keep working
+			callID = wamp.GlobalID()
+			caller.Send() <- &wamp.Call{
+				Request:   callID,
+				Procedure: proc,
+				Arguments: wamp.List{subscriptionID},
+			}
+			msg, err = wamp.RecvTimeout(caller, time.Second)
+			require.NoError(t, err, "Timed out waiting for RESULT")
+			result, ok = msg.(*wamp.Result)
+			require.True(t, ok, "expected RESULT from %s, got %v", proc, msg)
+			require.Equal(t, callID, result.Request, "wrong result ID")
+			require.NotZero(t, result.Arguments, "missing expected arguemnt")
+			count, ok := wamp.AsInt64(result.Arguments[0])
+			require.True(t, ok, "Argument is not an int")
+			require.Equal(t, int64(1), count, "Wring number of subscribers")
 		}
-		msg, err = wamp.RecvTimeout(caller, time.Second)
-		require.NoError(t, err, "Timed out waiting for RESULT")
-		result, ok = msg.(*wamp.Result)
-		require.True(t, ok, "expected RESULT")
-		require.Equal(t, callID, result.Request, "wrong result ID")
-		require.NotZero(t, result.Arguments, "missing expected arguemnt")
-		count, ok := wamp.AsInt64(result.Arguments[0])
-		require.True(t, ok, "Argument is not an int")
-		require.Equal(t, int64(1), count, "Wring number of subscribers")
 	})
 }
 

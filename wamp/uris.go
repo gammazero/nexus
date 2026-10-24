@@ -223,7 +223,7 @@ const (
 	MetaProcSubListSubscribers = URI("wamp.subscription.list_subscribers")
 
 	// Obtains the number of sessions currently attached to the subscription.
-	MetaProcSubCountSubscribers = URI("wamp.subscription.count_suscribers")
+	MetaProcSubCountSubscribers = URI("wamp.subscription.count_subscribers")
 
 	// Retrieves events history for subscription
 	MetaProcEventHistory = URI("wamp.subscription.get_events")
