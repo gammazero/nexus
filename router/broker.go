@@ -414,45 +414,55 @@ func (b *broker) syncSaveEvent(eventStore *historyStore, pub *wamp.Publish, even
 	eventStore.entries.PushBack(item)
 }
 
-func (b *broker) syncInitSubscription(topic wamp.URI, match string, subscriber *wamp.Session) (sub *subscription, existingSub bool) {
-
+// syncFindSubscription returns the subscription to topic with the given match
+// policy, or nil if there is none.
+func (b *broker) syncFindSubscription(topic wamp.URI, match string) *subscription {
 	switch match {
 	case wamp.MatchPrefix:
-		// Subscribe to any topic that matches by the given prefix URI
-		sub, existingSub = b.pfxTopicSubscription[topic]
-		if !existingSub {
-			// Create a new prefix subscription.
-			sub = newSubscription(b.idGen.Next(), subscriber, topic, match)
-			b.pfxTopicSubscription[topic] = sub
-		}
+		return b.pfxTopicSubscription[topic]
+	case wamp.MatchWildcard:
+		return b.wcTopicSubscription[topic]
+	default:
+		return b.topicSubscription[topic]
+	}
+}
+
+// syncAddSubscription creates the subscription to topic with the given ID and
+// match policy, with subscriber as its first subscriber if not nil.
+func (b *broker) syncAddSubscription(id wamp.ID, topic wamp.URI, match string, subscriber *wamp.Session) *subscription { //nolint:lll
+	sub := newSubscription(id, subscriber, topic, match)
+	switch match {
+	case wamp.MatchPrefix:
+		// Subscribe to any topic that matches by the given prefix URI.
+		b.pfxTopicSubscription[topic] = sub
 	case wamp.MatchWildcard:
 		// Subscribe to any topic that matches by the given wildcard URI.
-		sub, existingSub = b.wcTopicSubscription[topic]
-		if !existingSub {
-			// Create a new wildcard subscription.
-			sub = newSubscription(b.idGen.Next(), subscriber, topic, match)
-			b.wcTopicSubscription[topic] = sub
-		}
+		b.wcTopicSubscription[topic] = sub
 	default:
 		// Subscribe to the topic that exactly matches the given URI.
-		sub, existingSub = b.topicSubscription[topic]
-		if !existingSub {
-			// Create a new subscription.
-			sub = newSubscription(b.idGen.Next(), subscriber, topic, match)
-			b.topicSubscription[topic] = sub
-		}
+		b.topicSubscription[topic] = sub
 	}
-	b.subscriptions[sub.id] = sub
+	b.subscriptions[id] = sub
+	return sub
+}
 
-	return sub, existingSub
+// syncInitSubscription returns the subscription to topic with the given match
+// policy, creating it if there is none. existingSub is true if it existed.
+func (b *broker) syncInitSubscription(topic wamp.URI, match string, subscriber *wamp.Session) (sub *subscription, existingSub bool) { //nolint:lll
+	if sub = b.syncFindSubscription(topic, match); sub != nil {
+		return sub, true
+	}
+	return b.syncAddSubscription(b.idGen.Next(), topic, match, subscriber), false
 }
 
 func (b *broker) syncSubscribe(subscriber *wamp.Session, msg *wamp.Subscribe, match string) {
-	sub, existingSub := b.syncInitSubscription(msg.Topic, match, subscriber)
+	sub := b.syncFindSubscription(msg.Topic, match)
+	existingSub := sub != nil
 
-	// If the topic already has subscribers, then see if the session requesting
-	// a subscription is already subscribed to the topic.
+	var subID wamp.ID
 	if existingSub {
+		// See if the session requesting a subscription is already subscribed to the
+		// topic.
 		if _, already := sub.subscribers[subscriber]; already {
 			// Already subscribed; send existing subscription ID.
 			b.trySend(subscriber, &wamp.Subscribed{
@@ -461,8 +471,24 @@ func (b *broker) syncSubscribe(subscriber *wamp.Session, msg *wamp.Subscribe, ma
 			})
 			return
 		}
+		subID = sub.id
+	} else {
+		subID = b.idGen.Next()
+	}
+
+	// Queue the SUBSCRIBED ack before creating the subscription. If the ack cannot
+	// be queued, then the subscriber never learns the subscription ID, and EVENTs
+	// for it would be a protocol violation, so create nothing.
+	if !b.trySend(subscriber, &wamp.Subscribed{Request: msg.Request, Subscription: subID}) {
+		b.log.Println("Subscription to", msg.Topic, "not created")
+		return
+	}
+
+	if existingSub {
 		// Add subscriber to existing subscription.
 		sub.subscribers[subscriber] = struct{}{}
+	} else {
+		sub = b.syncAddSubscription(subID, msg.Topic, match, subscriber)
 	}
 
 	// Add the subscription ID to the set of subscriptions for the subscriber.
@@ -473,9 +499,6 @@ func (b *broker) syncSubscribe(subscriber *wamp.Session, msg *wamp.Subscribe, ma
 		b.sessionSubIDSet[subscriber] = subIdSet
 	}
 	subIdSet[sub.id] = struct{}{}
-
-	// Tell sender the new subscription ID.
-	b.trySend(subscriber, &wamp.Subscribed{Request: msg.Request, Subscription: sub.id})
 
 	if !existingSub {
 		b.syncPubSubCreateMeta(subscriber.ID, sub)
@@ -747,11 +770,15 @@ func (b *broker) syncPubSubCreateMeta(subSessID wamp.ID, sub *subscription) {
 	})
 }
 
-func (b *broker) trySend(sess *wamp.Session, msg wamp.Message) {
+// trySend queues msg to sess without blocking, and reports whether it was
+// queued. If the outbound queue of sess is full, msg is dropped.
+func (b *broker) trySend(sess *wamp.Session, msg wamp.Message) bool {
 	select {
 	case sess.Send() <- msg:
+		return true
 	default:
 		b.log.Printf("!!! Dropped %s to session %s: blocked", msg.MessageType(), sess)
+		return false
 	}
 }
 

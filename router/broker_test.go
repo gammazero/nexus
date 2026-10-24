@@ -45,6 +45,7 @@ func TestBasicSubscribe(t *testing.T) {
 
 	// Test that subscriber received SUBSCRIBED message
 	rsp := <-sess.Recv()
+	waitBroker(broker)
 	subMsg, ok := rsp.(*wamp.Subscribed)
 	require.True(t, ok, "expected SUBSCRIBED")
 	subID := subMsg.Subscription
@@ -66,6 +67,7 @@ func TestBasicSubscribe(t *testing.T) {
 	broker.subscribe(sess, &wamp.Subscribe{Request: 123, Topic: testTopic})
 	// Test that subscriber received SUBSCRIBED message
 	rsp = <-sess.Recv()
+	waitBroker(broker)
 	subMsg, ok = rsp.(*wamp.Subscribed)
 	require.True(t, ok, "expected SUBSCRIBED")
 	// Should get same subscription ID.
@@ -84,6 +86,7 @@ func TestBasicSubscribe(t *testing.T) {
 	broker.subscribe(sess, &wamp.Subscribe{Request: 123, Topic: testTopic2})
 	// Test that subscriber received SUBSCRIBED message
 	rsp = <-sess.Recv()
+	waitBroker(broker)
 	subMsg, ok = rsp.(*wamp.Subscribed)
 	require.True(t, ok, "expected SUBSCRIBED")
 	subID2 = subMsg.Subscription
@@ -109,6 +112,7 @@ func TestUnsubscribe(t *testing.T) {
 	sess1 := wamp.NewSession(subscriber, 0, nil, nil)
 	broker.subscribe(sess1, &wamp.Subscribe{Request: 123, Topic: testTopic})
 	rsp := <-sess1.Recv()
+	waitBroker(broker)
 	subID := rsp.(*wamp.Subscribed).Subscription
 
 	// Subscribe session2 to topic
@@ -116,6 +120,7 @@ func TestUnsubscribe(t *testing.T) {
 	sess2 := wamp.NewSession(subscriber2, 0, nil, nil)
 	broker.subscribe(sess2, &wamp.Subscribe{Request: 567, Topic: testTopic})
 	rsp = <-sess2.Recv()
+	waitBroker(broker)
 	subID2 := rsp.(*wamp.Subscribed).Subscription
 	require.Equal(t, subID2, subID, "subscribe to same topic resulted in different subscriptions")
 
@@ -189,11 +194,13 @@ func TestRemove(t *testing.T) {
 	testTopic := wamp.URI("nexus.test.topic")
 	broker.subscribe(sess, &wamp.Subscribe{Request: 123, Topic: testTopic})
 	rsp := <-sess.Recv()
+	waitBroker(broker)
 	subID := rsp.(*wamp.Subscribed).Subscription
 
 	testTopic2 := wamp.URI("nexus.test.topic2")
 	broker.subscribe(sess, &wamp.Subscribe{Request: 456, Topic: testTopic2})
 	rsp = <-sess.Recv()
+	waitBroker(broker)
 	subID2 := rsp.(*wamp.Subscribed).Subscription
 
 	broker.removeSession(sess, true)
@@ -204,6 +211,7 @@ func TestRemove(t *testing.T) {
 	broker.subscribe(sess2,
 		&wamp.Subscribe{Request: 789, Topic: wamp.URI("nexus.test.sync")})
 	<-sess2.Recv()
+	waitBroker(broker)
 
 	// Check the broker removed subscription.
 	_, ok := broker.subscriptions[subID]
@@ -231,6 +239,7 @@ func TestBasicPubSub(t *testing.T) {
 
 	// Test that subscriber received SUBSCRIBED message
 	rsp := <-sess.Recv()
+	waitBroker(broker)
 	_, ok := rsp.(*wamp.Subscribed)
 	require.True(t, ok, "expected SUBSCRIBED")
 
@@ -263,6 +272,7 @@ func TestAdvancedPubSub(t *testing.T) {
 
 	// Test that subscriber received SUBSCRIBED message
 	rsp := <-sess.Recv()
+	waitBroker(broker)
 	_, ok := rsp.(*wamp.Error)
 	require.True(t, ok, "expected ERROR")
 
@@ -275,6 +285,7 @@ func TestAdvancedPubSub(t *testing.T) {
 
 	// Test that subscriber received SUBSCRIBED message
 	rsp = <-sess.Recv()
+	waitBroker(broker)
 	_, ok = rsp.(*wamp.Subscribed)
 	require.True(t, ok, "expected SUBSCRIBED")
 
@@ -305,6 +316,7 @@ func TestPPTPubSub(t *testing.T) {
 
 	// Test that subscriber received SUBSCRIBED message
 	rsp := <-sess.Recv()
+	waitBroker(broker)
 	subMsg, ok := rsp.(*wamp.Subscribed)
 	require.True(t, ok, "expected SUBSCRIBED")
 	subID := subMsg.Subscription
@@ -369,6 +381,7 @@ func TestPrefixPatternBasedSubscription(t *testing.T) {
 
 	// Test that subscriber received SUBSCRIBED message
 	rsp := <-sess.Recv()
+	waitBroker(broker)
 	subMsg, ok := rsp.(*wamp.Subscribed)
 	require.True(t, ok, "expected SUBSCRIBED")
 	subID := subMsg.Subscription
@@ -413,6 +426,7 @@ func TestWildcardPatternBasedSubscription(t *testing.T) {
 
 	// Test that subscriber received SUBSCRIBED message
 	rsp := <-sess.Recv()
+	waitBroker(broker)
 	subMsg, ok := rsp.(*wamp.Subscribed)
 	require.True(t, ok, "expected SUBSCRIBED")
 	subID := subMsg.Subscription
@@ -459,6 +473,7 @@ func TestSubscriberBlackWhiteListing(t *testing.T) {
 
 		// Test that subscriber received SUBSCRIBED message
 		rsp := <-sess.Recv()
+		waitBroker(broker)
 		_, ok := rsp.(*wamp.Subscribed)
 		require.True(t, ok, "expected SUBSCRIBED")
 
@@ -622,6 +637,7 @@ func TestPublisherIdentification(t *testing.T) {
 
 	// Test that subscriber received SUBSCRIBED message
 	rsp := <-sess.Recv()
+	waitBroker(broker)
 	_, ok := rsp.(*wamp.Subscribed)
 	require.True(t, ok, "expected SUBSCRIBED")
 
@@ -978,4 +994,94 @@ func TestEventHistory(t *testing.T) {
 	wErr, ok := msg.(*wamp.Error)
 	require.Truef(t, ok, "MetaRPC subEventHistory for topic %s should return Error message", topic)
 	require.Equal(t, wamp.ErrInvalidArgument, wErr.Error, "Error URI must be ErrInvalidArgument when MetaRPC subEventHistory called without arguments")
+}
+
+// blockedSession returns a session whose single-slot outbound queue is already
+// full, so that nothing more can be queued to it.
+func blockedSession() (*wamp.Session, *testPeer) {
+	peer := newTestPeer()
+	peer.Send() <- &wamp.Hello{}
+	return wamp.NewSession(peer, 0, nil, nil), peer
+}
+
+// requireOnlyHello checks that peer holds only the message blockedSession
+// queued to it.
+func requireOnlyHello(t *testing.T, peer *testPeer) {
+	t.Helper()
+	require.IsType(t, &wamp.Hello{}, <-peer.Recv())
+	select {
+	case msg := <-peer.Recv():
+		require.FailNow(t, "blocked session must not receive anything", "got %T", msg)
+	default:
+	}
+}
+
+// TestSubscribeUndeliverableAckCreatesNoSubscription checks that when the
+// SUBSCRIBED ack cannot be queued, the broker does not create the
+// subscription. A subscription the subscriber never learned about receives
+// EVENTs for an unknown subscription ID, which is a protocol violation that
+// makes some clients drop the connection.
+func TestSubscribeUndeliverableAckCreatesNoSubscription(t *testing.T) {
+	broker := newTestBroker(t, nil)
+	testTopic := wamp.URI("nexus.test.topic")
+
+	blockedSess, blocked := blockedSession()
+	broker.subscribe(blockedSess, &wamp.Subscribe{Request: 1, Topic: testTopic})
+
+	// The broker handles actions in order, so once a later subscribe is answered,
+	// the first one has been handled.
+	sess := wamp.NewSession(newTestPeer(), 0, nil, nil)
+	broker.subscribe(sess, &wamp.Subscribe{Request: 2, Topic: testTopic})
+	subMsg, ok := (<-sess.Recv()).(*wamp.Subscribed)
+	waitBroker(broker)
+	require.True(t, ok, "expected SUBSCRIBED")
+
+	sub, ok := broker.topicSubscription[testTopic]
+	require.True(t, ok, "broker missing subscription for topic")
+	require.Equal(t, subMsg.Subscription, sub.id)
+	require.Equal(t, map[*wamp.Session]struct{}{sess: {}}, sub.subscribers,
+		"subscriber whose ack was dropped must not be subscribed")
+	_, ok = broker.sessionSubIDSet[blockedSess]
+	require.False(t, ok, "failed subscribe must not be tracked against the subscriber")
+	requireOnlyHello(t, blocked)
+}
+
+// TestSubscribeJoinUndeliverableAckNotAdded is the variant for joining an
+// existing subscription: a subscriber whose SUBSCRIBED ack cannot be queued
+// must not be added to it.
+func TestSubscribeJoinUndeliverableAckNotAdded(t *testing.T) {
+	broker := newTestBroker(t, nil)
+	testTopic := wamp.URI("nexus.test.topic")
+	otherTopic := wamp.URI("nexus.test.other")
+
+	sess := wamp.NewSession(newTestPeer(), 0, nil, nil)
+	broker.subscribe(sess, &wamp.Subscribe{Request: 1, Topic: testTopic})
+	subMsg, ok := (<-sess.Recv()).(*wamp.Subscribed)
+	waitBroker(broker)
+	require.True(t, ok, "expected SUBSCRIBED")
+
+	blockedSess, blocked := blockedSession()
+	broker.subscribe(blockedSess, &wamp.Subscribe{Request: 2, Topic: testTopic})
+
+	// Wait until the blocked subscribe has been handled.
+	broker.subscribe(sess, &wamp.Subscribe{Request: 3, Topic: otherTopic})
+	_, ok = (<-sess.Recv()).(*wamp.Subscribed)
+	waitBroker(broker)
+	require.True(t, ok, "expected SUBSCRIBED")
+
+	sub, ok := broker.subscriptions[subMsg.Subscription]
+	require.True(t, ok, "existing subscription must remain")
+	require.Equal(t, map[*wamp.Session]struct{}{sess: {}}, sub.subscribers,
+		"subscriber whose ack was dropped must not join the subscription")
+	_, ok = broker.sessionSubIDSet[blockedSess]
+	require.False(t, ok, "failed join must not be tracked against the subscriber")
+	requireOnlyHello(t, blocked)
+}
+
+// waitBroker waits until broker has handled every action queued before it, so
+// that the test can then read the broker's state.
+func waitBroker(broker *broker) {
+	done := make(chan struct{})
+	broker.actionChan <- func() { close(done) }
+	<-done
 }
