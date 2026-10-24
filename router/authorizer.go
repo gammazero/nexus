@@ -17,5 +17,11 @@ type Authorizer interface {
 	// change the sending session based on the intercepted message. This
 	// functionality may be used to set values in the session upon encountering
 	// certain messages sent by that session.
+	//
+	// Authorize is called with a copy of the session details, and without the
+	// session locked, so that a slow Authorize does not stall other sessions.
+	// Changes it makes to the copy, including to nested values, are applied to the
+	// session after Authorize returns. They are applied per top-level key, so a
+	// change made to another key meanwhile is kept.
 	Authorize(*wamp.Session, wamp.Message) (bool, error)
 }
