@@ -385,11 +385,11 @@ func (r *realm) onLeave(sess *wamp.Session, shutdown, killAll bool) {
 // Routing occurs only between WAMP Sessions that have joined the same Realm.
 //
 // welcome, if not nil, is queued to the session before the session becomes
-// visible to the rest of the realm (onJoin), so it is always the first
-// message the client receives. Anything that reacts to the join -- a
-// wamp.session.kill triggered by wamp.session.on_join, an event --
-// queues behind it. If the realm is closed the welcome is not sent and an
-// error is returned, so the caller can still ABORT the handshake.
+// visible to the rest of the realm (onJoin), so it is always the first message
+// the client receives. Anything that reacts to the join, such as a
+// wamp.session.kill triggered by wamp.session.on_join or an event, queues
+// behind it. If the realm is closed the welcome is not sent and an error is
+// returned, so the caller can still ABORT the handshake.
 func (r *realm) handleSession(sess *wamp.Session, welcome wamp.Message) error {
 	// The lock is held in mutual exclusion with the closing of the realm. This
 	// ensures that no new session handler can start once the realm is closing,
