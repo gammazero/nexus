@@ -76,10 +76,22 @@ func ConnectRawSocketPeer(ctx context.Context, network, addr string, serializati
 	}
 
 	var d net.Dialer
-	conn, err := d.DialContext(ctx, network, addr)
+	netConn, err := d.DialContext(ctx, network, addr)
 	if err != nil {
 		return nil, err
 	}
+
+	// Close the connection if ctx is done before the TLS and rawsocket handshakes
+	// complete, since neither stops otherwise. Once connected, ctx no longer
+	// affects the connection.
+	stop := context.AfterFunc(ctx, func() { _ = netConn.Close() })
+
+	// conn is the connection that the rawsocket handshake and the peer use:
+	// netConn, or with TLS the TLS connection wrapping it. The AfterFunc closes
+	// netConn and not conn, since conn is reassigned below and reading it from the
+	// AfterFunc would race, and since closing the underlying connection is what
+	// unblocks either handshake.
+	conn := netConn
 
 	if tlsConfig != nil {
 		colonPos := strings.LastIndex(addr, ":")
@@ -96,27 +108,29 @@ func ConnectRawSocketPeer(ctx context.Context, network, addr string, serializati
 			tlsConfig = c
 		}
 
-		tlsConn := tls.Client(conn, tlsConfig)
-		errChannel := make(chan error, 1)
-		go func() {
-			errChannel <- tlsConn.Handshake()
-		}()
-
-		// Wait for TLS handshake to complete or context to expire.
-		select {
-		case err = <-errChannel:
-			if err != nil {
-				_ = conn.Close()
-				return nil, err
+		tlsConn := tls.Client(netConn, tlsConfig)
+		err = tlsConn.Handshake()
+		if err != nil {
+			stop()
+			_ = netConn.Close()
+			if ctx.Err() != nil {
+				return nil, fmt.Errorf("%w: %w", ctx.Err(), err)
 			}
-		case <-ctx.Done():
-			_ = conn.Close()
-			return nil, ctx.Err()
+			return nil, err
 		}
 		conn = tlsConn
 	}
 
 	peer, err := clientHandshake(conn, logger, protocol, recvLimit)
+	if !stop() {
+		// ctx was done before the handshake completed, so the connection was closed,
+		// or is being closed.
+		if err == nil {
+			peer.Close()
+			return nil, ctx.Err()
+		}
+		return nil, fmt.Errorf("%w: %w", ctx.Err(), err)
+	}
 	if err != nil {
 		_ = conn.Close()
 		return nil, err

@@ -73,6 +73,9 @@ func (e *WebsocketError) Error() string {
 	return fmt.Sprintf("%s: %s", e.Err, e.Response.Status)
 }
 
+// Unwrap returns the error that caused the failure to connect.
+func (e *WebsocketError) Unwrap() error { return e.Err }
+
 // websocketPeer implements the Peer interface, connecting the Send and Recv
 // methods to a websocket.
 type websocketPeer struct {
@@ -184,8 +187,13 @@ func ConnectWebsocketPeer(ctx context.Context, routerURL string, serialization s
 
 	var keepAlive time.Duration = 0
 
+	netDial := (&net.Dialer{}).DialContext
 	if wsCfg != nil {
-		dialer.NetDial = wsCfg.Dial
+		if wsCfg.Dial != nil {
+			netDial = func(_ context.Context, network, addr string) (net.Conn, error) {
+				return wsCfg.Dial(network, addr)
+			}
+		}
 		if wsCfg.ProxyURL != "" {
 			proxyURL, err := url.Parse(wsCfg.ProxyURL)
 			if err != nil {
@@ -198,7 +206,44 @@ func ConnectWebsocketPeer(ctx context.Context, routerURL string, serialization s
 		keepAlive = wsCfg.KeepAlive
 	}
 
+	// The dialer does not stop the opening handshake when ctx is canceled, so
+	// close the connection if ctx is done before the handshake completes. Once
+	// connected, ctx no longer affects the connection.
+	var connMu sync.Mutex
+	var netConn net.Conn
+	dialer.NetDialContext = func(ctx context.Context, network, addr string) (net.Conn, error) {
+		c, err := netDial(ctx, network, addr)
+		if err != nil {
+			return nil, err
+		}
+		connMu.Lock()
+		defer connMu.Unlock()
+		if ctx.Err() != nil {
+			// ctx was done before the connection could be recorded.
+			_ = c.Close()
+			return nil, ctx.Err()
+		}
+		netConn = c
+		return c, nil
+	}
+	stop := context.AfterFunc(ctx, func() {
+		connMu.Lock()
+		defer connMu.Unlock()
+		if netConn != nil {
+			_ = netConn.Close()
+		}
+	})
+
 	conn, rsp, err := dialer.DialContext(ctx, routerURL, nil)
+	if !stop() {
+		// ctx was done before the handshake completed, so the connection was closed,
+		// or is being closed.
+		if err == nil {
+			_ = conn.Close()
+			return nil, &WebsocketError{Err: ctx.Err(), Response: rsp}
+		}
+		return nil, &WebsocketError{Err: fmt.Errorf("%w: %w", ctx.Err(), err), Response: rsp}
+	}
 	if err != nil {
 		return nil, &WebsocketError{
 			Err:      err,
