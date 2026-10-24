@@ -757,7 +757,7 @@ func TestSubscriptionMetaProcedures(t *testing.T) {
 		// ----- Test wamp.subscription.count_subscribers meta procedure -----
 		// The spec name, and the misspelled legacy alias.
 		require.Equal(t, wamp.URI("wamp.subscription.count_subscribers"), wamp.MetaProcSubCountSubscribers)
-		for _, proc := range []wamp.URI{wamp.MetaProcSubCountSubscribers, wamp.MetaProcSubCountSuscribers} { //nolint:staticcheck // the deprecated alias must keep working
+		for _, proc := range []wamp.URI{wamp.MetaProcSubCountSubscribers, wamp.URI("wamp.subscription.count_suscribers")} { //nolint:staticcheck // the deprecated alias must keep working
 			callID = wamp.GlobalID()
 			caller.Send() <- &wamp.Call{
 				Request:   callID,
