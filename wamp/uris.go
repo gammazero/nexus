@@ -225,11 +225,6 @@ const (
 	// Obtains the number of sessions currently attached to the subscription.
 	MetaProcSubCountSubscribers = URI("wamp.subscription.count_subscribers")
 
-	// Deprecated: misspelled name this procedure was registered under before
-	// the spec name MetaProcSubCountSubscribers. Still registered as an alias
-	// so clients that call it keep working.
-	MetaProcSubCountSuscribers = URI("wamp.subscription.count_suscribers")
-
 	// Retrieves events history for subscription
 	MetaProcEventHistory = URI("wamp.subscription.get_events")
 
