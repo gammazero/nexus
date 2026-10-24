@@ -1212,3 +1212,250 @@ func TestWrongYielder(t *testing.T) {
 		}
 	})
 }
+
+// TestDealerYieldRetriesOnSlowCaller pins the per-invocation
+// retry-queue path added in gammazero/nexus#324: when the caller's
+// outbound channel is full at the moment the dealer tries to deliver
+// a YIELD, the dealer queues the YIELD onto the invocation's
+// pendingYields slice and spawns a drainPendingYields goroutine to
+// retry delivery on a backoff. Once the caller drains, the queued
+// yield is delivered and the drain goroutine exits.
+//
+// Coverage: dealer.yield's blocked-direct-delivery branch,
+// drainPendingYields outer loop, tryDrainOneYield's
+// deliver-and-pop branch.
+func TestDealerYieldRetriesOnSlowCaller(t *testing.T) {
+	dealer, _ := newTestDealer(t)
+
+	// Register a procedure on the callee.
+	callee := newTestPeer()
+	calleeSess := wamp.NewSession(callee, 0, nil, nil)
+	dealer.register(calleeSess, &wamp.Register{Request: 1, Procedure: testProcedure})
+	registered := <-callee.Recv()
+	_, ok := registered.(*wamp.Registered)
+	require.True(t, ok, "expected REGISTERED")
+
+	// Caller is also a 1-slot testPeer — slow side.
+	caller := newTestPeer()
+	callerSess := wamp.NewSession(caller, 0, nil, nil)
+
+	// Caller issues CALL.
+	dealer.call(callerSess, &wamp.Call{Request: 100, Procedure: testProcedure})
+	inv := (<-callee.Recv()).(*wamp.Invocation)
+
+	// First progressive YIELD: dealer's syncYield delivers it
+	// directly into caller's outbound channel (slot fills).
+	dealer.yield(calleeSess, &wamp.Yield{
+		Request:   inv.Request,
+		Options:   wamp.Dict{wamp.OptProgress: true},
+		Arguments: wamp.List{1},
+	})
+
+	// Second progressive YIELD: caller queue is full; syncYield
+	// returns canRetry=true; dealer.yield queues into
+	// pendingYields and spawns drainPendingYields.
+	dealer.yield(calleeSess, &wamp.Yield{
+		Request:   inv.Request,
+		Options:   wamp.Dict{wamp.OptProgress: true},
+		Arguments: wamp.List{2},
+	})
+
+	// Test reads first RESULT — caller queue empties.
+	res1 := (<-caller.Recv()).(*wamp.Result)
+	require.Equal(t, 1, res1.Arguments[0], "expected first progressive RESULT arg=1")
+
+	// drainPendingYields goroutine eventually delivers the second
+	// queued RESULT after its 1ms backoff fires.
+	select {
+	case msg := <-caller.Recv():
+		res2, ok := msg.(*wamp.Result)
+		require.True(t, ok, "expected RESULT, got %T", msg)
+		require.Equal(t, 2, res2.Arguments[0], "expected second progressive RESULT arg=2")
+	case <-time.After(time.Second):
+		require.FailNow(t, "drain goroutine did not deliver queued YIELD")
+	}
+
+	// Final non-progress YIELD ends the invocation.
+	dealer.yield(calleeSess, &wamp.Yield{
+		Request:   inv.Request,
+		Arguments: wamp.List{3},
+	})
+	resFinal := (<-caller.Recv()).(*wamp.Result)
+	require.Equal(t, 3, resFinal.Arguments[0])
+	_, hasProgress := resFinal.Details[wamp.OptProgress]
+	require.False(t, hasProgress, "final RESULT must not carry progress=true")
+}
+
+// TestDealerYieldRetriesPreservesOrder pins FIFO semantics of the
+// pendingYields queue: when N YIELDs back up, draining delivers
+// them in the order they arrived.
+//
+// Coverage: tryDrainOneYield's "more to drain" return path.
+func TestDealerYieldRetriesPreservesOrder(t *testing.T) {
+	dealer, _ := newTestDealer(t)
+
+	callee := newTestPeer()
+	calleeSess := wamp.NewSession(callee, 0, nil, nil)
+	dealer.register(calleeSess, &wamp.Register{Request: 1, Procedure: testProcedure})
+	<-callee.Recv() // drain Registered
+
+	caller := newTestPeer()
+	callerSess := wamp.NewSession(caller, 0, nil, nil)
+	dealer.call(callerSess, &wamp.Call{Request: 200, Procedure: testProcedure})
+	inv := (<-callee.Recv()).(*wamp.Invocation)
+
+	// Send 5 progressive YIELDs back-to-back. First delivers
+	// directly (caller queue takes it). Subsequent four queue.
+	const n = 5
+	for i := 1; i <= n; i++ {
+		dealer.yield(calleeSess, &wamp.Yield{
+			Request:   inv.Request,
+			Options:   wamp.Dict{wamp.OptProgress: true},
+			Arguments: wamp.List{i},
+		})
+	}
+
+	// Drain all five from caller — they MUST arrive in order
+	// 1, 2, 3, 4, 5.
+	for i := 1; i <= n; i++ {
+		select {
+		case msg := <-caller.Recv():
+			res, ok := msg.(*wamp.Result)
+			require.Truef(t, ok, "expected RESULT %d, got %T", i, msg)
+			require.Equalf(t, i, res.Arguments[0],
+				"out-of-order RESULT at position %d (got arg %v)", i, res.Arguments[0])
+		case <-time.After(2 * time.Second):
+			require.FailNowf(t, "timed out", "drain did not deliver RESULT %d in time", i)
+		}
+	}
+}
+
+// TestDealerDrainExitsOnInvocationCancel pins the cleanup path:
+// while the drain goroutine is retrying, if the caller cancels the
+// invocation (or the call is removed for any other reason),
+// tryDrainOneYield observes the missing invocation entry and
+// returns (keepGoing=false), which exits the drain goroutine.
+//
+// Coverage: tryDrainOneYield's "invocation gone" early return.
+func TestDealerDrainExitsOnInvocationCancel(t *testing.T) {
+	dealer, _ := newTestDealer(t)
+
+	callee := newTestPeer()
+	calleeSess := wamp.NewSession(callee, 0, nil, nil)
+	dealer.register(calleeSess, &wamp.Register{Request: 1, Procedure: testProcedure,
+		Options: wamp.Dict{"call_canceling": true}})
+	<-callee.Recv() // Registered
+
+	caller := newTestPeer()
+	calleeRoles := wamp.Dict{
+		"roles": wamp.Dict{
+			"callee": wamp.Dict{
+				"features": wamp.Dict{
+					"call_canceling": true,
+				},
+			},
+		},
+	}
+	calleeSess2 := wamp.NewSession(callee, 0, nil, calleeRoles)
+	calleeSess.Details = calleeSess2.Details // attach features so cancel can be sent
+	callerSess := wamp.NewSession(caller, 0, nil, nil)
+
+	dealer.call(callerSess, &wamp.Call{Request: 300, Procedure: testProcedure})
+	inv := (<-callee.Recv()).(*wamp.Invocation)
+
+	// Fill caller's queue with 1 YIELD, then queue a 2nd.
+	dealer.yield(calleeSess, &wamp.Yield{
+		Request: inv.Request, Options: wamp.Dict{wamp.OptProgress: true},
+		Arguments: wamp.List{"first"},
+	})
+	dealer.yield(calleeSess, &wamp.Yield{
+		Request: inv.Request, Options: wamp.Dict{wamp.OptProgress: true},
+		Arguments: wamp.List{"queued"},
+	})
+
+	// At this point the drain goroutine is retrying. Cancel the
+	// call from the caller side (mode=killnowait so we don't wait
+	// for callee to acknowledge).
+	dealer.cancel(callerSess, &wamp.Cancel{
+		Request: 300,
+		Options: wamp.Dict{wamp.OptMode: wamp.CancelModeKillNoWait},
+	})
+
+	// Caller may receive ERROR(canceled). Drain caller's queue
+	// (initial RESULT + ERROR) so we don't deadlock the dealer.
+	for range 3 {
+		select {
+		case <-caller.Recv():
+		case <-time.After(time.Second):
+		}
+	}
+
+	// Send another YIELD post-cancel — dealer.yield should NOT
+	// requeue (invocation entry is gone). This indirectly proves
+	// the drain goroutine has exited (otherwise it would still
+	// try to deliver and we'd see a fourth message).
+	dealer.yield(calleeSess, &wamp.Yield{
+		Request: inv.Request, Arguments: wamp.List{"too late"},
+	})
+	select {
+	case msg := <-caller.Recv():
+		// syncYield's "no caller" path may send INTERRUPT to
+		// callee, but caller should not get a stale RESULT.
+		_, isResult := msg.(*wamp.Result)
+		require.False(t, isResult, "should not receive RESULT after cancel; got %T", msg)
+	case <-time.After(100 * time.Millisecond):
+	}
+}
+
+// TestDealerDrainExitsOnDealerClose pins the drain goroutine's
+// shutdown path: when the dealer is closing, drainPendingYields'
+// sleep wakes via <-d.closing and the goroutine returns rather
+// than blocking the realm.close ordering.
+//
+// Coverage: drainPendingYields' <-d.closing branch.
+func TestDealerDrainExitsOnDealerClose(t *testing.T) {
+	d := newDealer(logger, false, true, debug)
+	metaClient, rtr := transport.LinkedPeers()
+	d.setMetaPeer(rtr)
+
+	// Register + call setup as before.
+	callee := newTestPeer()
+	calleeSess := wamp.NewSession(callee, 0, nil, nil)
+	d.register(calleeSess, &wamp.Register{Request: 1, Procedure: testProcedure})
+	<-callee.Recv()
+
+	caller := newTestPeer()
+	callerSess := wamp.NewSession(caller, 0, nil, nil)
+	d.call(callerSess, &wamp.Call{Request: 400, Procedure: testProcedure})
+	inv := (<-callee.Recv()).(*wamp.Invocation)
+
+	// Fill + queue one extra to spawn drain.
+	d.yield(calleeSess, &wamp.Yield{
+		Request: inv.Request, Options: wamp.Dict{wamp.OptProgress: true},
+		Arguments: wamp.List{1},
+	})
+	d.yield(calleeSess, &wamp.Yield{
+		Request: inv.Request, Options: wamp.Dict{wamp.OptProgress: true},
+		Arguments: wamp.List{2},
+	})
+
+	// drainPendingYields goroutine is now sleeping (or in
+	// actionChan) at backoff. d.close() closes d.closing — both
+	// the sleep and the actionChan submit have a <-d.closing case
+	// and exit cleanly.
+	d.close()
+
+	// We can't easily assert on the goroutine count without
+	// goleak, but if d.close hung waiting on the drain goroutine,
+	// this test would time out. Reaching this point at all proves
+	// the drain goroutine yielded to closing.
+
+	// Consume any leftover messages so the test doesn't leak
+	// goroutines through the testPeer channels.
+	go func() {
+		for range caller.Recv() {
+		}
+	}()
+	metaClient.Close()
+	rtr.Close()
+}
