@@ -335,8 +335,15 @@ func (msg *Unregister) MessageType() MessageType { return UNREGISTER }
 // the Callee:
 //
 // [UNREGISTERED, UNREGISTER.Request|id]
+//
+// The Dealer also sends UNREGISTERED unsolicited when a registration is
+// revoked (e.g. force_reregister); the extended form carries a Details dict
+// with "registration" and "reason":
+//
+// [UNREGISTERED, 0, Details|dict]
 type Unregistered struct {
 	Request ID
+	Details Dict `wamp:"omitempty"`
 }
 
 func (msg *Unregistered) MessageType() MessageType { return UNREGISTERED }

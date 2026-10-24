@@ -23,6 +23,7 @@ const (
 	OptPPTKeyId        = "ppt_keyid"
 	OptSticky          = "sticky"
 	OptForwardTimeout  = "forward_timeout"
+	OptForceReregister = "force_reregister"
 
 	// Values for URI matching mode.
 	MatchExact    = "exact"

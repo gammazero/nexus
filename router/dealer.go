@@ -33,6 +33,7 @@ var dealerRole = wamp.Dict{ //nolint:gochecknoglobals
 		wamp.FeatureProgCallInvocations: true,
 		wamp.FeatureSessionMetaAPI:      true,
 		wamp.FeatureSharedReg:           true,
+		wamp.FeatureForceReregister:     true,
 		wamp.FeatureRegMetaAPI:          true,
 		wamp.FeatureTestamentMetaAPI:    true,
 		wamp.FeaturePayloadPassthruMode: true,
@@ -233,10 +234,11 @@ func (d *dealer) register(callee *wamp.Session, msg *wamp.Register) {
 
 	invoke, _ := wamp.AsString(msg.Options[wamp.OptInvoke])
 	forwardTimeout, _ := msg.Options[wamp.OptForwardTimeout].(bool)
+	forceReregister, _ := msg.Options[wamp.OptForceReregister].(bool)
 	var metaPubs []*wamp.Publish
 	done := make(chan struct{})
 	d.actionChan <- func() {
-		metaPubs = d.syncRegister(callee, msg, match, invoke, disclose, forwardTimeout, wampURI)
+		metaPubs = d.syncRegister(callee, msg, match, invoke, disclose, forwardTimeout, forceReregister, wampURI)
 		close(done)
 	}
 	<-done
@@ -451,7 +453,7 @@ func (d *dealer) run() {
 	close(d.stopped)
 }
 
-func (d *dealer) syncRegister(callee *wamp.Session, msg *wamp.Register, match, invokePolicy string, disclose, forwardTimeout, wampURI bool) []*wamp.Publish { //nolint:lll
+func (d *dealer) syncRegister(callee *wamp.Session, msg *wamp.Register, match, invokePolicy string, disclose, forwardTimeout, forceReregister, wampURI bool) []*wamp.Publish { //nolint:lll
 	var metaPubs []*wamp.Publish
 	var reg *registration
 	switch match {
@@ -461,6 +463,15 @@ func (d *dealer) syncRegister(callee *wamp.Session, msg *wamp.Register, match, i
 		reg = d.pfxProcRegMap[msg.Procedure]
 	case wamp.MatchWildcard:
 		reg = d.wcProcRegMap[msg.Procedure]
+	}
+
+	// force_reregister lets a new callee forcibly take over a procedure
+	// currently held under invoke=single. Evict the prior callee(s), send
+	// them an unsolicited UNREGISTERED, fire meta events, then fall through
+	// to the fresh-registration branch below.
+	if reg != nil && forceReregister && (reg.policy == "" || reg.policy == wamp.InvokeSingle) {
+		metaPubs = append(metaPubs, d.syncEvictRegistration(reg, wampURI)...)
+		reg = nil
 	}
 
 	var created string
@@ -1390,6 +1401,63 @@ func (d *dealer) syncRemoveSession(sess *wamp.Session, notify bool) []*wamp.Publ
 			delete(d.invocationByCall, req)
 			delete(d.invocations, invkID)
 		}
+	}
+	return metaPubs
+}
+
+// syncEvictRegistration tears down an existing registration on behalf of a
+// force_reregister request. It sends an unsolicited UNREGISTERED message to
+// every callee currently attached to reg, drops reg from all dealer indexes
+// and per-callee reg sets, and returns the meta events that should be
+// published (one on_unregister per callee, plus a single on_delete).
+//
+// Callers run on the dealer actor goroutine.
+func (d *dealer) syncEvictRegistration(reg *registration, wampURI bool) []*wamp.Publish {
+	var metaPubs []*wamp.Publish
+	prevRegID := reg.id
+	for _, prev := range reg.callees {
+		d.trySend(prev, &wamp.Unregistered{
+			Details: wamp.Dict{
+				"registration": prevRegID,
+				"reason":       string(wamp.ErrUnregistered),
+			},
+		})
+		if set, ok := d.calleeRegIDSet[prev]; ok {
+			delete(set, prevRegID)
+			if len(set) == 0 {
+				delete(d.calleeRegIDSet, prev)
+			}
+		}
+		if !wampURI && d.metaPeer != nil {
+			metaPubs = append(metaPubs, &wamp.Publish{
+				Request:   wamp.GlobalID(),
+				Topic:     wamp.MetaEventRegOnUnregister,
+				Arguments: wamp.List{prev.ID, prevRegID},
+			})
+		}
+	}
+	delete(d.registrations, prevRegID)
+	switch reg.match {
+	default:
+		delete(d.procRegMap, reg.procedure)
+	case wamp.MatchPrefix:
+		delete(d.pfxProcRegMap, reg.procedure)
+	case wamp.MatchWildcard:
+		delete(d.wcProcRegMap, reg.procedure)
+	}
+	if !wampURI && d.metaPeer != nil && len(reg.callees) > 0 {
+		// on_delete uses the last callee's session ID, mirroring the order
+		// upstream uses elsewhere (see syncRemoveSession).
+		last := reg.callees[len(reg.callees)-1]
+		metaPubs = append(metaPubs, &wamp.Publish{
+			Request:   wamp.GlobalID(),
+			Topic:     wamp.MetaEventRegOnDelete,
+			Arguments: wamp.List{last.ID, prevRegID},
+		})
+	}
+	if d.debug {
+		d.log.Printf("Evicted registration %v for procedure %v (force_reregister)",
+			prevRegID, reg.procedure)
 	}
 	return metaPubs
 }

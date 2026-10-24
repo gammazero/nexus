@@ -1212,3 +1212,152 @@ func TestWrongYielder(t *testing.T) {
 		}
 	})
 }
+
+// TestForceReregister pins the WAMP advanced-profile force_reregister
+// behavior: a second REGISTER for the same procedure with
+// force_reregister=true must evict the prior callee, send it an
+// unsolicited UNREGISTERED with Details.{registration,reason}, fire the
+// matching meta events, and install the new callee.
+func TestForceReregister(t *testing.T) {
+	dealer, metaClient := newTestDealer(t)
+
+	// Callee1 registers normally (default invoke=single).
+	callee1 := newTestPeer()
+	sess1 := wamp.NewSession(callee1, 0, nil, nil)
+	dealer.register(sess1, &wamp.Register{Request: 1, Procedure: testProcedure})
+	regID1 := (<-callee1.Recv()).(*wamp.Registered).Registration
+	checkMetaReg(t, metaClient, sess1.ID) // on_create
+	checkMetaReg(t, metaClient, sess1.ID) // on_register
+
+	// Without force_reregister, a second REGISTER must fail.
+	callee2 := newTestPeer()
+	sess2 := wamp.NewSession(callee2, 0, nil, nil)
+	dealer.register(sess2, &wamp.Register{Request: 2, Procedure: testProcedure})
+	errMsg, ok := (<-callee2.Recv()).(*wamp.Error)
+	require.True(t, ok, "expected ERROR without force_reregister")
+	require.Equal(t, wamp.ErrProcedureAlreadyExists, errMsg.Error)
+
+	// Now with force_reregister=true: callee2 should win.
+	dealer.register(sess2, &wamp.Register{
+		Request:   3,
+		Procedure: testProcedure,
+		Options:   wamp.SetOption(nil, wamp.OptForceReregister, true),
+	})
+
+	// Callee1 receives an unsolicited UNREGISTERED carrying revocation details.
+	rev, ok := (<-callee1.Recv()).(*wamp.Unregistered)
+	require.True(t, ok, "evicted callee should receive UNREGISTERED")
+	require.Equal(t, wamp.ID(0), rev.Request, "revocation UNREGISTERED has Request=0")
+	require.NotNil(t, rev.Details, "revocation UNREGISTERED must carry Details")
+	revRegID, _ := wamp.AsID(rev.Details["registration"])
+	require.Equal(t, regID1, revRegID, "revocation Details.registration must match evicted regID")
+	require.Equal(t, string(wamp.ErrUnregistered), rev.Details["reason"])
+
+	// Callee2 receives a fresh REGISTERED.
+	reg2, ok := (<-callee2.Recv()).(*wamp.Registered)
+	require.True(t, ok, "callee2 should receive REGISTERED")
+	require.NotEqual(t, regID1, reg2.Registration,
+		"force_reregister should produce a new registration ID")
+
+	// Meta events: on_unregister for the evicted callee, on_delete for
+	// the torn-down registration, then on_create + on_register for the new
+	// registration installed for callee2.
+	checkMetaReg(t, metaClient, sess1.ID) // on_unregister (evicted)
+	checkMetaReg(t, metaClient, sess1.ID) // on_delete (last-seen sess id)
+	checkMetaReg(t, metaClient, sess2.ID) // on_create
+	checkMetaReg(t, metaClient, sess2.ID) // on_register
+
+	// Dealer state: only callee2 should own the procedure now.
+	reg, ok := dealer.procRegMap[testProcedure]
+	require.True(t, ok, "procedure registration missing after force_reregister")
+	require.Equal(t, reg2.Registration, reg.id)
+	require.Equal(t, 1, len(reg.callees))
+	require.Same(t, sess2, reg.callees[0])
+
+	// Callee1 must no longer appear in the dealer's reg-set bookkeeping.
+	_, stillHasCallee1 := dealer.calleeRegIDSet[sess1]
+	require.False(t, stillHasCallee1, "evicted callee should be removed from calleeRegIDSet")
+
+	// Calls should now invoke callee2.
+	caller := newTestPeer()
+	callerSess := wamp.NewSession(caller, 0, nil, nil)
+	dealer.call(callerSess, &wamp.Call{Request: 99, Procedure: testProcedure})
+	select {
+	case msg := <-callee2.Recv():
+		_, ok := msg.(*wamp.Invocation)
+		require.True(t, ok, "expected INVOCATION on callee2")
+	case <-callee1.Recv():
+		require.FailNow(t, "evicted callee1 must not receive INVOCATION")
+	case <-time.After(time.Second):
+		require.FailNow(t, "timed out waiting for INVOCATION")
+	}
+}
+
+// TestForceReregisterIgnoredForSharedRegistration confirms force_reregister
+// does not tear down a registration whose invocation policy is shared
+// (anything other than single). The new caller should fall through to the
+// normal policy-conflict / shared-add path.
+func TestForceReregisterIgnoredForSharedRegistration(t *testing.T) {
+	dealer, metaClient := newTestDealer(t)
+
+	calleeRoles := wamp.Dict{
+		"roles": wamp.Dict{
+			"callee": wamp.Dict{
+				"features": wamp.Dict{
+					"shared_registration": true,
+				},
+			},
+		},
+	}
+
+	// Callee1 holds a roundrobin shared registration.
+	callee1 := newTestPeer()
+	sess1 := wamp.NewSession(callee1, 0, nil, calleeRoles)
+	dealer.register(sess1, &wamp.Register{
+		Request:   1,
+		Procedure: testProcedure,
+		Options:   wamp.SetOption(nil, wamp.OptInvoke, wamp.InvokeRoundRobin),
+	})
+	regID1 := (<-callee1.Recv()).(*wamp.Registered).Registration
+	checkMetaReg(t, metaClient, sess1.ID)
+	checkMetaReg(t, metaClient, sess1.ID)
+
+	// Callee2 requests force_reregister=true but invoke=single — the
+	// existing registration is shared, so eviction must be skipped and
+	// the policy-conflict error must fire.
+	callee2 := newTestPeer()
+	sess2 := wamp.NewSession(callee2, 0, nil, calleeRoles)
+	opts := wamp.SetOption(nil, wamp.OptForceReregister, true)
+	opts = wamp.SetOption(opts, wamp.OptInvoke, wamp.InvokeSingle)
+	dealer.register(sess2, &wamp.Register{
+		Request:   2,
+		Procedure: testProcedure,
+		Options:   opts,
+	})
+	errMsg, ok := (<-callee2.Recv()).(*wamp.Error)
+	require.True(t, ok, "expected ERROR — force_reregister must not evict shared regs")
+	require.Equal(t, wamp.ErrProcedureAlreadyExists, errMsg.Error)
+
+	// Original registration must still exist with callee1 attached.
+	reg, ok := dealer.registrations[regID1]
+	require.True(t, ok, "original shared registration was unexpectedly removed")
+	require.Equal(t, 1, len(reg.callees))
+	require.Same(t, sess1, reg.callees[0])
+
+	// Callee1 should not have received any UNREGISTERED.
+	select {
+	case msg := <-callee1.Recv():
+		require.FailNow(t, "callee1 should not receive any message",
+			"got %T", msg)
+	default:
+	}
+}
+
+// TestForceReregisterAdvertisedFeature ensures the dealer announces
+// force_reregister in its role features so clients can discover support.
+func TestForceReregisterAdvertisedFeature(t *testing.T) {
+	features, ok := dealerRole["features"].(wamp.Dict)
+	require.True(t, ok, "dealer role missing features dict")
+	supported, _ := features[wamp.FeatureForceReregister].(bool)
+	require.True(t, supported, "dealer must advertise force_reregister=true")
+}
