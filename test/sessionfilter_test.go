@@ -160,7 +160,7 @@ func TestSpecFilterEligibleSessionID(t *testing.T) {
 
 	select {
 	case <-ev1:
-	case <-time.After(500 * time.Millisecond):
+	case <-time.After(clientResponseTimeout):
 		t.Fatal("eligible-listed subscriber did not receive event")
 	}
 	select {
@@ -192,7 +192,7 @@ func TestSpecFilterExcludeSessionID(t *testing.T) {
 
 	select {
 	case <-ev1:
-	case <-time.After(500 * time.Millisecond):
+	case <-time.After(clientResponseTimeout):
 		t.Fatal("non-excluded subscriber did not receive event")
 	}
 	select {
@@ -227,7 +227,7 @@ func TestSpecFilterEligibleAndExclude(t *testing.T) {
 
 	select {
 	case <-ev1:
-	case <-time.After(500 * time.Millisecond):
+	case <-time.After(clientResponseTimeout):
 		t.Fatal("eligible subscriber did not receive event")
 	}
 	select {
@@ -241,8 +241,8 @@ func TestSpecFilterEligibleAndExclude(t *testing.T) {
 }
 
 // TestSpecFilterEligibleAuthRole verifies eligible_authrole filtering using
-// the auth realm where wampcra-authenticated clients get authrole=user and
-// the publisher's anonymous role is filtered out.
+// the auth realm where wampcra-authenticated clients get authrole=user and the
+// publisher's anonymous role is filtered out.
 func TestSpecFilterEligibleAuthRole(t *testing.T) {
 	checkGoLeaks(t)
 
@@ -272,7 +272,7 @@ func TestSpecFilterEligibleAuthRole(t *testing.T) {
 
 	select {
 	case <-evAuthed:
-	case <-time.After(500 * time.Millisecond):
+	case <-time.After(clientResponseTimeout):
 		t.Fatal("subscriber with authrole=user did not receive event")
 	}
 	select {

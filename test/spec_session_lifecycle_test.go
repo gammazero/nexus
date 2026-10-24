@@ -2,6 +2,11 @@ package test_test
 
 import (
 	"context"
+	"crypto/tls"
+	"fmt"
+	"net"
+	"os"
+	"path/filepath"
 	"testing"
 	"time"
 
@@ -52,8 +57,8 @@ func TestSpecSessionWelcomeFeatures(t *testing.T) {
 	}
 }
 
-// TestSpecSessionConnectNonExistentRealm verifies HELLO to an unknown realm
-// is rejected. Per WAMP spec §3.4.4 the router responds with ABORT carrying
+// TestSpecSessionConnectNonExistentRealm verifies HELLO to an unknown realm is
+// rejected. Per WAMP spec §3.4.4 the router responds with ABORT carrying
 // wamp.error.no_such_realm; the client surfaces it as a connect error.
 func TestSpecSessionConnectNonExistentRealm(t *testing.T) {
 	checkGoLeaks(t)
@@ -93,9 +98,9 @@ func TestSpecSessionGoodbyeRoundTrip(t *testing.T) {
 	require.ErrorIs(t, cli.Close(), client.ErrAlreadyClosed)
 }
 
-// TestSpecSessionReconnectAfterGoodbye exercises that a clean session
-// teardown does not poison subsequent connections (port/socket reuse,
-// router state cleanup).
+// TestSpecSessionReconnectAfterGoodbye exercises that a clean session teardown
+// does not poison subsequent connections (port/socket reuse, router state
+// cleanup).
 func TestSpecSessionReconnectAfterGoodbye(t *testing.T) {
 	checkGoLeaks(t)
 
@@ -123,15 +128,14 @@ func TestSpecSessionWelcomeDetails(t *testing.T) {
 	authmethod, _ := wamp.AsString(details["authmethod"])
 	require.NotEmpty(t, authmethod, "WELCOME details missing authmethod")
 	// Local in-process connections set authmethod=local; networked anonymous
-	// connections set authmethod=anonymous. Both are valid for the default
-	// test realm which has AnonymousAuth=true.
+	// connections set authmethod=anonymous. Both are valid for the default test
+	// realm which has AnonymousAuth=true.
 	require.Contains(t, []string{"anonymous", "local"}, authmethod,
 		"unexpected authmethod %q", authmethod)
 }
 
-// TestSpecSessionRouterRoleAdvertised verifies the WELCOME roles dict has
-// both broker and dealer entries — required for a full WAMP router per
-// spec §3.2.
+// TestSpecSessionRouterRoleAdvertised verifies the WELCOME roles dict has both
+// broker and dealer entries, which a full WAMP router requires per spec §3.2.
 func TestSpecSessionRouterRoleAdvertised(t *testing.T) {
 	checkGoLeaks(t)
 	cli := connectClient(t)
@@ -147,21 +151,67 @@ func TestSpecSessionRouterRoleAdvertised(t *testing.T) {
 	require.True(t, hasDealer, "router did not advertise dealer role")
 }
 
-// TestSpecSessionContextCancelDuringConnect verifies an in-progress connect
-// honors context cancellation and surfaces the cancellation error.
+// TestSpecSessionContextCancelDuringConnect checks that canceling the context
+// while ConnectNet waits for the router makes it return the cancellation
+// error. The test listens on its own socket, accepts the connection and never
+// answers, so the connect can only end by being canceled.
 func TestSpecSessionContextCancelDuringConnect(t *testing.T) {
 	if scheme == "" {
-		t.Skip("local in-process connect ignores context cancellation")
+		t.Skip("an in-process connection has no network connect to cancel")
 	}
 	checkGoLeaks(t)
 
-	ctx, cancel := context.WithCancel(context.Background())
-	cancel()
+	network, address := "tcp", "127.0.0.1:0"
+	if scheme == "unix" {
+		// t.TempDir() can exceed the 104-byte Unix socket path limit on macOS.
+		dir, err := os.MkdirTemp("/tmp", "nexus-test-")
+		require.NoError(t, err)
+		t.Cleanup(func() { _ = os.RemoveAll(dir) })
+		network, address = "unix", filepath.Join(dir, "silent.sock")
+	}
+	l, err := net.Listen(network, address)
+	require.NoError(t, err)
+	defer l.Close()
+	accepted := make(chan net.Conn, 1)
+	go func() {
+		if conn, err := l.Accept(); err == nil {
+			accepted <- conn
+		}
+	}()
 
+	url := fmt.Sprintf("%s://%s/", scheme, l.Addr())
+	if scheme == "unix" {
+		url = fmt.Sprintf("unix://%s", l.Addr())
+	}
 	cfg := client.Config{
 		Realm:           testRealm,
 		ResponseTimeout: clientResponseTimeout,
 	}
-	_, err := client.ConnectNet(ctx, "ws://127.0.0.1:1/", cfg)
-	require.Error(t, err)
+	if scheme == "wss" || scheme == "tcps" {
+		cfg.TlsCfg = &tls.Config{InsecureSkipVerify: true} //nolint:gosec
+	}
+
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	errChan := make(chan error, 1)
+	go func() {
+		_, err := client.ConnectNet(ctx, url, cfg)
+		errChan <- err
+	}()
+
+	// Cancel only once the connect is under way.
+	select {
+	case conn := <-accepted:
+		defer conn.Close()
+	case <-time.After(clientResponseTimeout):
+		require.FailNow(t, "connection was never accepted")
+	}
+	cancel()
+
+	select {
+	case err := <-errChan:
+		require.ErrorIs(t, err, context.Canceled)
+	case <-time.After(clientResponseTimeout):
+		require.FailNow(t, "ConnectNet did not return after its context was canceled")
+	}
 }

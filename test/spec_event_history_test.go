@@ -51,8 +51,9 @@ func historyConnect(t *testing.T, r router.Router) *client.Client {
 	return cli
 }
 
-// TestSpecEventHistoryReturnsRecentEvents verifies that wamp.subscription.get_events
-// returns events published before the subscription was made (spec §14.4.6).
+// TestSpecEventHistoryReturnsRecentEvents verifies that
+// wamp.subscription.get_events returns events published before the
+// subscription was made (spec §14.4.6).
 func TestSpecEventHistoryReturnsRecentEvents(t *testing.T) {
 	if scheme != "" {
 		t.Skip("dedicated router; runs only on local in-process scheme")
@@ -69,7 +70,7 @@ func TestSpecEventHistoryReturnsRecentEvents(t *testing.T) {
 			wamp.List{int64(i)}, nil))
 	}
 
-	// Subscribe AFTER publishing — proves we're reading from history.
+	// Subscribe AFTER publishing, which proves we're reading from history.
 	sub := historyConnect(t, r)
 	subID := wamp.ID(0)
 	require.NoError(t, sub.Subscribe(string(topic), func(_ *wamp.Event) {}, nil))
@@ -89,8 +90,8 @@ func TestSpecEventHistoryReturnsRecentEvents(t *testing.T) {
 	require.NoError(t, sub.Unsubscribe(string(topic)))
 }
 
-// TestSpecEventHistoryLimitOption verifies the limit kwarg restricts how
-// many events are returned.
+// TestSpecEventHistoryLimitOption verifies the limit kwarg restricts how many
+// events are returned.
 func TestSpecEventHistoryLimitOption(t *testing.T) {
 	if scheme != "" {
 		t.Skip("dedicated router; runs only on local in-process scheme")

@@ -245,8 +245,8 @@ func TestSpecRPCSharedSingleConflict(t *testing.T) {
 	require.NoError(t, callee1.Unregister(procName))
 }
 
-// TestSpecRPCSharedPolicyMismatch verifies registering with a different
-// invoke policy than the existing registration is rejected.
+// TestSpecRPCSharedPolicyMismatch verifies registering with a different invoke
+// policy than the existing registration is rejected.
 func TestSpecRPCSharedPolicyMismatch(t *testing.T) {
 	checkGoLeaks(t)
 	const procName = "shared.spec.mismatch"

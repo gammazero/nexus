@@ -395,11 +395,12 @@ func TestRPCProgressiveCallTimeout(t *testing.T) {
 	}
 }
 
-// TestSpecRPCProgressiveCallInvocations exercises progressive call
-// INVOCATIONS over the parameterized transport matrix (the equivalent test
-// in client/client_test.go only runs over the local in-process transport).
-// Per WAMP spec §14.3.2 the caller may send multiple INVOCATION-bearing
-// frames on the same call ID with progress=true, ending with progress=false.
+// TestSpecRPCProgressiveCallInvocations exercises progressive call invocations
+// over the parameterized transport matrix (the equivalent test in
+// client/client_test.go only runs over the local in-process transport). Per
+// WAMP spec §14.3.2 the caller may send several CALL messages with the same
+// request ID and progress=true, ending with progress=false, and the dealer
+// forwards each to the callee as an INVOCATION.
 func TestSpecRPCProgressiveCallInvocations(t *testing.T) {
 	checkGoLeaks(t)
 	const procName = "spec.progressive.invocations"

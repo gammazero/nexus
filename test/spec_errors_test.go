@@ -22,15 +22,15 @@ func errMsgContains(err error, s string) bool {
 
 // TestSpecErrorURIMatrix is a single table-driven test that exercises every
 // standard error URI defined in wamp/uris.go (interaction subset) and pins
-// each trigger scenario to the URI the router currently returns. This is
-// the regression net for the §1.2 dispatch-seam refactor: any subtly wrong
-// URI mapping shows up here.
+// each trigger scenario to the URI the router currently returns. This is the
+// regression net for the §1.2 dispatch-seam refactor: any subtly wrong URI
+// mapping shows up here.
 //
 // For cases where the high-level client API maps the URI to a human-readable
 // message before surfacing the error to Go callers, the test pins the
-// substring so the message contract is at least locked in. Restoring
-// URI-level pinning across all cases is captured as future work for the
-// spec/ wire-frame harness (Track B).
+// substring so the message contract is at least locked in. Restoring URI-level
+// pinning across all cases is captured as future work for the spec/ wire-frame
+// harness (Track B).
 //
 // Per spec §13.6.2.
 func TestSpecErrorURIMatrix(t *testing.T) {
@@ -119,10 +119,9 @@ func TestSpecErrorURIMatrix(t *testing.T) {
 			name:      "authentication_failed/bad_signature",
 			errSubstr: "invalid signature",
 			trigger: func(t *testing.T) error {
-				// Bad password for known user produces "invalid signature"
-				// at the CRA verification step. Pin behavior; the WAMP URI
-				// underneath is wamp.error.authentication_failed, not
-				// surfaced through the Go client API.
+				// Bad password for known user produces "invalid signature" at the CRA
+				// verification step. Pin behavior; the WAMP URI underneath is
+				// wamp.error.authentication_failed, not surfaced through the Go client API.
 				_, err := connectClientCfgErr(client.Config{
 					Realm: testAuthRealm,
 					HelloDetails: wamp.Dict{
@@ -154,9 +153,9 @@ func TestSpecErrorURIMatrix(t *testing.T) {
 			name:   "canceled",
 			errURI: wamp.ErrCanceled,
 			trigger: func(t *testing.T) error {
-				// Callee returns the canceled URI directly so the caller's
-				// RPCError surfaces it (context-cancellation path returns
-				// context.Canceled instead, which doesn't mention the URI).
+				// Callee returns the canceled URI directly so the caller's RPCError surfaces
+				// it (context-cancellation path returns context.Canceled instead, which
+				// doesn't mention the URI).
 				const proc = "spec.errs.cancel"
 				callee := connectClient(t)
 				require.NoError(t, callee.Register(proc, func(_ context.Context, _ *wamp.Invocation) client.InvokeResult {

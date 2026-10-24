@@ -41,9 +41,9 @@ func (k *cryptosignKeyStore) AuthRole(authid string) (string, error) {
 func (k *cryptosignKeyStore) PasswordInfo(string) (string, int, int) { return "", 0, 0 }
 func (k *cryptosignKeyStore) Provider() string                       { return "test-cryptosign" }
 
-// newCryptosignRouter spins up a dedicated router with a cryptosign realm
-// for use by these tests. Returns the router and the private key.
-// Close is registered as a t.Cleanup so it runs AFTER client cleanups (LIFO).
+// newCryptosignRouter spins up a dedicated router with a cryptosign realm for
+// use by these tests. Returns the router and the private key. Close is
+// registered as a t.Cleanup so it runs AFTER client cleanups (LIFO).
 func newCryptosignRouter(t *testing.T, authid, authrole string) (router.Router, *[64]byte) {
 	t.Helper()
 
@@ -71,8 +71,8 @@ func newCryptosignRouter(t *testing.T, authid, authrole string) (router.Router, 
 }
 
 // signCryptosignChallenge takes the hex-encoded challenge string from the
-// CHALLENGE message and returns the hex-encoded signed message expected in
-// the AUTHENTICATE response (per the router's verifySignature contract).
+// CHALLENGE message and returns the hex-encoded signed message expected in the
+// AUTHENTICATE response (per the router's verifySignature contract).
 func signCryptosignChallenge(t *testing.T, c *wamp.Challenge, priv *[64]byte) string {
 	t.Helper()
 	chHex, _ := wamp.AsString(c.Extra["challenge"])
@@ -82,8 +82,8 @@ func signCryptosignChallenge(t *testing.T, c *wamp.Challenge, priv *[64]byte) st
 	return hex.EncodeToString(signed)
 }
 
-// TestSpecAuthCryptoSignSucceeds exercises the cryptosign happy path
-// (spec §14.6.5). Pin: previously untested in the integration suite.
+// TestSpecAuthCryptoSignSucceeds exercises the cryptosign happy path (spec
+// §14.6.5). Pin: previously untested in the integration suite.
 func TestSpecAuthCryptoSignSucceeds(t *testing.T) {
 	if scheme != "" {
 		t.Skip("dedicated router; runs only on local in-process scheme")
@@ -120,8 +120,8 @@ func TestSpecAuthCryptoSignSucceeds(t *testing.T) {
 	require.Equal(t, testAuthrole, authrole)
 }
 
-// TestSpecAuthCryptoSignBadSignature verifies an invalid signature is
-// rejected with an authentication failure.
+// TestSpecAuthCryptoSignBadSignature verifies an invalid signature is rejected
+// with an authentication failure.
 func TestSpecAuthCryptoSignBadSignature(t *testing.T) {
 	if scheme != "" {
 		t.Skip("dedicated router; runs only on local in-process scheme")

@@ -11,9 +11,8 @@ import (
 	"github.com/gammazero/nexus/v3/wamp"
 )
 
-// TestSpecPatternSubscribePrefix verifies SUBSCRIBE with match=prefix
-// receives events on any topic that starts with the registered prefix
-// (spec §14.4.7).
+// TestSpecPatternSubscribePrefix verifies SUBSCRIBE with match=prefix receives
+// events on any topic that starts with the registered prefix (spec §14.4.7).
 func TestSpecPatternSubscribePrefix(t *testing.T) {
 	checkGoLeaks(t)
 
@@ -40,7 +39,7 @@ func TestSpecPatternSubscribePrefix(t *testing.T) {
 		select {
 		case topic := <-got:
 			seen[topic] = true
-		case <-time.After(500 * time.Millisecond):
+		case <-time.After(clientResponseTimeout):
 			t.Fatal("did not receive expected prefix event")
 		}
 	}
@@ -85,7 +84,7 @@ func TestSpecPatternSubscribeWildcard(t *testing.T) {
 		select {
 		case topic := <-got:
 			seen[topic] = true
-		case <-time.After(500 * time.Millisecond):
+		case <-time.After(clientResponseTimeout):
 			t.Fatal("did not receive expected wildcard event")
 		}
 	}
@@ -124,9 +123,8 @@ func TestSpecPatternSubscribeExactDoesNotPrefixMatch(t *testing.T) {
 	require.NoError(t, sub.Unsubscribe("com.app"))
 }
 
-// TestSpecPatternRegisterPrefix verifies REGISTER with match=prefix
-// dispatches calls for any procedure starting with the prefix
-// (spec §14.3.7).
+// TestSpecPatternRegisterPrefix verifies REGISTER with match=prefix dispatches
+// calls for any procedure starting with the prefix (spec §14.3.7).
 func TestSpecPatternRegisterPrefix(t *testing.T) {
 	checkGoLeaks(t)
 

@@ -81,8 +81,8 @@ func TestSpecDiscloseCaller(t *testing.T) {
 	require.NoError(t, callee.Unregister(procName))
 }
 
-// TestSpecDiscloseCallerAbsentByDefault verifies that without disclose_me
-// the INVOCATION does NOT carry the caller field.
+// TestSpecDiscloseCallerAbsentByDefault verifies that without disclose_me the
+// INVOCATION does NOT carry the caller field.
 func TestSpecDiscloseCallerAbsentByDefault(t *testing.T) {
 	if scheme != "" {
 		t.Skip("dedicated router; runs only on local in-process scheme")

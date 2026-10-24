@@ -164,8 +164,8 @@ func TestSubscribeBurst(t *testing.T) {
 	}
 }
 
-// TestSpecPubSubSubscribeInvalidURI verifies SUBSCRIBE with a malformed
-// URI is rejected per spec §3.6.2 with wamp.error.invalid_uri.
+// TestSpecPubSubSubscribeInvalidURI verifies SUBSCRIBE with a malformed URI is
+// rejected per spec §3.6.2 with wamp.error.invalid_uri.
 func TestSpecPubSubSubscribeInvalidURI(t *testing.T) {
 	checkGoLeaks(t)
 	sub := connectClient(t)
@@ -207,7 +207,7 @@ func TestSpecPubSubExcludeMeFalse(t *testing.T) {
 
 	select {
 	case <-gotEvent:
-	case <-time.After(500 * time.Millisecond):
+	case <-time.After(clientResponseTimeout):
 		t.Fatal("publisher with exclude_me=false did not receive own event")
 	}
 
@@ -240,9 +240,9 @@ func TestSpecPubSubExcludeMeDefault(t *testing.T) {
 	require.NoError(t, pub.Unsubscribe("nexus.test.self.default"))
 }
 
-// TestSpecPubSubArgsRoundTrip verifies arguments and argumentskw survive
-// the broker untouched. This catches serializer/deserializer bugs at the
-// router boundary.
+// TestSpecPubSubArgsRoundTrip verifies arguments and argumentskw survive the
+// broker untouched. This catches serializer/deserializer bugs at the router
+// boundary.
 func TestSpecPubSubArgsRoundTrip(t *testing.T) {
 	checkGoLeaks(t)
 	sub := connectClient(t)
@@ -272,7 +272,7 @@ func TestSpecPubSubArgsRoundTrip(t *testing.T) {
 		require.Equal(t, "value", g.kw["key"])
 		n, _ := wamp.AsInt64(g.kw["n"])
 		require.Equal(t, int64(42), n)
-	case <-time.After(500 * time.Millisecond):
+	case <-time.After(clientResponseTimeout):
 		t.Fatal("event with args+kwargs not delivered")
 	}
 

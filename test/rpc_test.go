@@ -237,8 +237,8 @@ func TestRPCTimeoutCall(t *testing.T) {
 }
 
 // TestSpecRPCRegisterDuplicate verifies REGISTER on an already-registered
-// procedure (without shared registration) yields wamp.error.procedure_already_exists
-// per spec §3.7.7.
+// procedure (without shared registration) yields
+// wamp.error.procedure_already_exists per spec §3.7.7.
 func TestSpecRPCRegisterDuplicate(t *testing.T) {
 	checkGoLeaks(t)
 	const procName = "spec.duplicate.proc"
@@ -271,8 +271,8 @@ func TestSpecRPCRegisterInvalidURI(t *testing.T) {
 }
 
 // TestSpecRPCInvocationErrorPropagation verifies a callee that returns an
-// InvokeResult.Err produces a CALL ERROR with the same URI/args/kwargs to
-// the caller per spec §3.7.4.
+// InvokeResult.Err produces a CALL ERROR with the same URI/args/kwargs to the
+// caller per spec §3.7.4.
 func TestSpecRPCInvocationErrorPropagation(t *testing.T) {
 	checkGoLeaks(t)
 	const procName = "spec.failing.proc"
@@ -310,10 +310,12 @@ func TestSpecRPCCancelModeKill(t *testing.T) {
 	const procName = "spec.cancel.kill"
 
 	callee := connectClient(t)
-	caleeReceived := make(chan struct{}, 1)
+	calleeStarted := make(chan struct{}, 1)
+	calleeInterrupted := make(chan struct{}, 1)
 	require.NoError(t, callee.Register(procName, func(ctx context.Context, _ *wamp.Invocation) client.InvokeResult {
+		calleeStarted <- struct{}{}
 		<-ctx.Done()
-		caleeReceived <- struct{}{}
+		calleeInterrupted <- struct{}{}
 		return client.InvokeResult{Err: wamp.ErrCanceled}
 	}, nil))
 
@@ -327,12 +329,18 @@ func TestSpecRPCCancelModeKill(t *testing.T) {
 		errChan <- e
 	}()
 
-	time.Sleep(100 * time.Millisecond)
+	// Cancel only once the callee is handling the invocation, so that there is an
+	// invocation for the router to interrupt.
+	select {
+	case <-calleeStarted:
+	case <-time.After(clientResponseTimeout):
+		t.Fatal("callee did not receive INVOCATION")
+	}
 	cancel()
 
 	select {
-	case <-caleeReceived:
-	case <-time.After(time.Second):
+	case <-calleeInterrupted:
+	case <-time.After(clientResponseTimeout):
 		t.Fatal("callee did not see INTERRUPT")
 	}
 

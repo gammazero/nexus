@@ -208,10 +208,10 @@ func TestSpecAuthCRABadAuthMethod(t *testing.T) {
 	require.Error(t, err, "expected error with unsupported authmethod")
 }
 
-// TestSpecAuthTicketSucceeds verifies the ticket-auth flow works against
-// the testAuthRealm using the existing serverKeyStore (which already
-// recognizes the ticket "ticketforjoe1234" for authid jdoe).
-// Pin: this path was previously untested in the integration suite.
+// TestSpecAuthTicketSucceeds verifies the ticket-auth flow works against the
+// testAuthRealm using the existing serverKeyStore (which already recognizes
+// the ticket "ticketforjoe1234" for authid jdoe). Pin: this path was
+// previously untested in the integration suite.
 func TestSpecAuthTicketSucceeds(t *testing.T) {
 	checkGoLeaks(t)
 
@@ -239,8 +239,8 @@ func TestSpecAuthTicketSucceeds(t *testing.T) {
 	require.Equal(t, "ticket", authmethod)
 }
 
-// TestSpecAuthTicketBad verifies an invalid ticket value is rejected with
-// an authentication failure (spec §14.6.4).
+// TestSpecAuthTicketBad verifies an invalid ticket value is rejected with an
+// authentication failure (spec §14.6.4).
 func TestSpecAuthTicketBad(t *testing.T) {
 	checkGoLeaks(t)
 
