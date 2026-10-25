@@ -49,6 +49,9 @@ type rawSocketPeer struct {
 	pongDropped bool
 	pongReady   chan struct{}
 
+	// How long to wait for the sender to exit before closing conn.
+	stopTimeout time.Duration
+
 	log stdlog.StdLog
 }
 
@@ -188,9 +191,10 @@ func newRawSocketPeer(conn net.Conn, serializer serialize.Serializer, logger std
 		sendLimit:  sendLimit,
 		recvLimit:  recvLimit,
 
-		closed:     make(chan struct{}),
-		writerDone: make(chan struct{}),
-		pongReady:  make(chan struct{}, 1),
+		closed:      make(chan struct{}),
+		writerDone:  make(chan struct{}),
+		pongReady:   make(chan struct{}, 1),
+		stopTimeout: senderStopTimeout,
 
 		// The router will read from this channel and immediately dispatch the
 		// message to the broker or dealer. Therefore this channel can be
@@ -234,8 +238,7 @@ func (rs *rawSocketPeer) Close() {
 func (rs *rawSocketPeer) close() {
 	// Tell sendHandler to exit, and discard any queued messages. Do not close
 	// wr channel in case there are incoming messages during close.
-	rs.cancelSender()
-	<-rs.writerDone
+	rs.stopSender()
 drainLoop:
 	for {
 		select {
@@ -251,6 +254,22 @@ drainLoop:
 	// Ignore errors since socket may have been closed by other side first in
 	// response to a goodbye message.
 	_ = rs.conn.Close()
+}
+
+// stopSender tells the sender to exit and waits for it. If the sender does not
+// exit within stopTimeout, because it is stuck writing to a remote peer that
+// is not reading, then conn is closed to unblock the write.
+func (rs *rawSocketPeer) stopSender() {
+	rs.cancelSender()
+	timer := time.NewTimer(rs.stopTimeout)
+	defer timer.Stop()
+	select {
+	case <-rs.writerDone:
+	case <-timer.C:
+		rs.log.Print("rawsocket write not completing, closing socket")
+		_ = rs.conn.Close()
+		<-rs.writerDone
+	}
 }
 
 // sendHandler pulls messages from the write channel, and pushes them to the
@@ -350,9 +369,9 @@ MsgLoop:
 			default:
 				// Peer received control message to close. Cause sendHandler to
 				// exit without closing the write channel (in case writes still
-				// happening) and discard any queued messages.
-				rs.cancelSender()
-				<-rs.writerDone
+				// happening) and discard any queued messages. Do not wait
+				// forever for a write that is stuck.
+				rs.stopSender()
 
 				// Close socket connection.
 				_ = rs.conn.Close()
