@@ -10,6 +10,7 @@ import (
 	"sync"
 	"time"
 
+	"github.com/gammazero/deque"
 	"github.com/gammazero/nexus/v3/stdlog"
 	"github.com/gammazero/nexus/v3/wamp"
 )
@@ -75,10 +76,10 @@ type invocation struct {
 
 	// pendingYields holds the YIELDs for this call that could not yet be
 	// delivered because the caller is blocked, in the order they arrived, so
-	// that progressive results stay in order. A pendingYields goroutine
-	// delivers them while retrying is true. Accessed only from the dealer
-	// goroutine.
-	pendingYields []pendingYield
+	// that progressive results stay in order. A deliverPendingYields
+	// goroutine delivers them while retrying is true. Accessed only from the
+	// dealer goroutine.
+	pendingYields deque.Deque[pendingYield]
 	retrying      bool
 	// retryDeadline is when the dealer gives up on a caller that has not read
 	// any of the queued results, and cancels the call. It is moved forward
@@ -423,10 +424,10 @@ func (d *dealer) yield(callee *wamp.Session, msg *wamp.Yield) {
 func (d *dealer) syncQueueYield(callee *wamp.Session, invkReqID requestID, msg *wamp.Yield, progress bool) (full, startRetry bool) { //nolint:lll
 	invk, ok := d.invocations[invkReqID]
 	if ok && invk.retrying {
-		if len(invk.pendingYields) >= maxPendingYields {
+		if invk.pendingYields.Len() >= maxPendingYields {
 			return true, false
 		}
-		invk.pendingYields = append(invk.pendingYields, pendingYield{msg, progress})
+		invk.pendingYields.PushBack(pendingYield{msg, progress})
 		return false, false
 	}
 	if !d.syncYield(callee, msg, progress, true) {
@@ -434,7 +435,7 @@ func (d *dealer) syncQueueYield(callee *wamp.Session, invkReqID requestID, msg *
 	}
 	// The caller is blocked, and syncYield kept the invocation.
 	invk = d.invocations[invkReqID]
-	invk.pendingYields = append(invk.pendingYields, pendingYield{msg, progress})
+	invk.pendingYields.PushBack(pendingYield{msg, progress})
 	invk.retrying = true
 	invk.retryDeadline = time.Now().Add(sendResultDeadline)
 	return false, true
@@ -495,11 +496,11 @@ func (d *dealer) syncDeliverPendingYield(callee *wamp.Session, invkReqID request
 		// The call was canceled, timed out, or one side left.
 		return false, false
 	}
-	if len(invk.pendingYields) == 0 {
+	if invk.pendingYields.Len() == 0 {
 		invk.retrying = false
 		return false, false
 	}
-	head := invk.pendingYields[0]
+	head := invk.pendingYields.Front()
 	canRetry := time.Now().Before(invk.retryDeadline)
 	if d.syncYield(callee, head.msg, head.progress, canRetry) {
 		// Still blocked.
@@ -507,14 +508,12 @@ func (d *dealer) syncDeliverPendingYield(callee *wamp.Session, invkReqID request
 	}
 	// Delivered, or the call was canceled at the deadline. A final YIELD also
 	// removes the invocation.
-	invk.pendingYields[0] = pendingYield{}
-	invk.pendingYields = invk.pendingYields[1:]
+	invk.pendingYields.PopFront()
 	invk.retryDeadline = time.Now().Add(sendResultDeadline)
 	if _, ok = d.invocations[invkReqID]; !ok {
 		return false, true
 	}
-	if len(invk.pendingYields) == 0 {
-		invk.pendingYields = nil
+	if invk.pendingYields.Len() == 0 {
 		invk.retrying = false
 		return false, true
 	}

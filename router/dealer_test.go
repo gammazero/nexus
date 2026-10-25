@@ -1402,7 +1402,7 @@ func TestDealerYieldQueueBounded(t *testing.T) {
 		require.Equal(t, int32(maxPendingYields+1), sent.Load(), "yields not held back")
 		queued := make(chan int)
 		d.actionChan <- func() {
-			queued <- len(d.invocations[requestID{callee.ID, inv.Request}].pendingYields)
+			queued <- d.invocations[requestID{callee.ID, inv.Request}].pendingYields.Len()
 		}
 		require.Equal(t, maxPendingYields, <-queued)
 
