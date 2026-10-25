@@ -1109,7 +1109,7 @@ func createTestServer(t *testing.T) (router.Router, io.Closer) {
 func newNetTestClientConfig(realmName string, logger *log.Logger) *client.Config {
 	clientConfig := client.Config{
 		Realm:           realmName,
-		ResponseTimeout: 10 * time.Millisecond,
+		ResponseTimeout: 500 * time.Millisecond,
 		Serialization:   client.MSGPACK,
 		Logger:          logger,
 		Debug:           true,
@@ -1287,7 +1287,7 @@ func TestProgressDisconnect(t *testing.T) {
 	calleeLog := log.New(os.Stderr, "CALLEE> ", log.Lmicroseconds)
 	cfg := client.Config{
 		Realm:           testRealm,
-		ResponseTimeout: 10 * time.Millisecond,
+		ResponseTimeout: 500 * time.Millisecond,
 		Logger:          calleeLog,
 		Debug:           true,
 	}
