@@ -2,6 +2,8 @@ package router
 
 import (
 	"fmt"
+	"math"
+	"reflect"
 	"strings"
 
 	"github.com/gammazero/nexus/v3/wamp"
@@ -39,4 +41,28 @@ func pptOptionsToDetails(options wamp.Dict, details wamp.Dict) {
 	if val, ok := options[wamp.OptPPTKeyId]; ok {
 		details[wamp.OptPPTKeyId] = val.(string)
 	}
+}
+
+// sameDetailValue reports whether a and b are the same session detail value.
+// Maps, slices, pointers and channels are the same only if they are the same
+// object, whatever they hold, so that comparing them is cheap. Functions are
+// the same if they have the same code. Other values are the same if they are
+// equal, and a NaN is the same as itself.
+func sameDetailValue(a, b any) bool {
+	va, vb := reflect.ValueOf(a), reflect.ValueOf(b)
+	if !va.IsValid() || !vb.IsValid() {
+		return va.IsValid() == vb.IsValid()
+	}
+	if va.Type() != vb.Type() {
+		return false
+	}
+	switch va.Kind() {
+	case reflect.Map, reflect.Pointer, reflect.Chan, reflect.Func, reflect.UnsafePointer:
+		return va.UnsafePointer() == vb.UnsafePointer()
+	case reflect.Slice:
+		return va.UnsafePointer() == vb.UnsafePointer() && va.Len() == vb.Len()
+	case reflect.Float32, reflect.Float64:
+		return math.Float64bits(va.Float()) == math.Float64bits(vb.Float())
+	}
+	return va.Comparable() && va.Equal(vb)
 }

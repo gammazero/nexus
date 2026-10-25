@@ -617,17 +617,29 @@ func (r *realm) authzMessage(sess *wamp.Session, msg wamp.Message) bool {
 		return true
 	}
 
+	// Authorize a copy of the session details, without holding the session lock.
+	// The broker locks each subscriber's session while filtering a publish, so an
+	// Authorizer that blocks with the lock held, for example on a remote service,
+	// would stall event delivery for the whole realm. The Authorizer may change
+	// the session details, so its changes to the copy are applied to the session
+	// afterward. Authorize calls for a session run one at a time, on that
+	// session's goroutine.
+	//
+	// The copy is shallow, so nested values are shared with the session. The
+	// Authorizer must replace a nested value to change it, not change it in
+	// place, as documented on Authorizer.
+	sess.Lock()
+	before := maps.Clone(sess.Details)
+	sess.Unlock()
+	details := maps.Clone(before)
+
 	// Create a safe session to prevent access to the session.Peer.
 	safeSession := &wamp.Session{
 		ID:      sess.ID,
-		Details: sess.Details,
+		Details: details,
 	}
-
-	// Write-lock the session, because there is no telling what the Authorizer
-	// will do to the session details.
-	sess.Lock()
 	isAuthz, err := r.authorizer.Authorize(safeSession, msg)
-	sess.Unlock()
+	applyDetailChanges(sess, before, details)
 
 	if !isAuthz {
 		skipResponse := false
@@ -751,6 +763,44 @@ func (r *realm) authClient(sid wamp.ID, client wamp.Peer, details wamp.Dict) (*w
 		wamp.RoleDealer: r.dealer.role(),
 	}
 	return welcome, nil
+}
+
+// applyDetailChanges applies to the details of sess the changes from before to
+// after: the top-level keys that were added, removed, or set to a different
+// value. A value counts as different only if it is not the same value, for
+// example a new map rather than the same map changed in place. The other keys
+// keep their current values, which may have been changed meanwhile, for
+// example by wamp.session.modify_details.
+func applyDetailChanges(sess *wamp.Session, before, after wamp.Dict) {
+	var set wamp.Dict
+	for k, v := range after {
+		if old, ok := before[k]; ok && sameDetailValue(old, v) {
+			continue
+		}
+		if set == nil {
+			set = wamp.Dict{}
+		}
+		set[k] = v
+	}
+	var removed []string
+	for k := range before {
+		if _, ok := after[k]; !ok {
+			removed = append(removed, k)
+		}
+	}
+	if set == nil && removed == nil {
+		return
+	}
+
+	sess.Lock()
+	defer sess.Unlock()
+	if sess.Details == nil {
+		sess.Details = wamp.Dict{}
+	}
+	maps.Copy(sess.Details, set)
+	for _, k := range removed {
+		delete(sess.Details, k)
+	}
 }
 
 // getAuthenticator finds the first authenticator registered for the methods.
@@ -1232,6 +1282,10 @@ func (r *realm) testamentFlush(msg *wamp.Invocation) wamp.Message {
 // cleanSessionDetails returns a dictionary that only contains allowed session
 // details. transport.auth is never allowed, because the data in transport.auth
 // may not be serializable and may expose auth information to session meta.
+//
+// The returned dictionary is always a copy, since it is sent to other sessions
+// and the session details may change after it is returned. Call this with the
+// session locked.
 func (r *realm) cleanSessionDetails(details wamp.Dict) wamp.Dict {
 	var clean wamp.Dict
 	// If in strict mode, only include allowed values.
@@ -1252,7 +1306,7 @@ func (r *realm) cleanSessionDetails(details wamp.Dict) wamp.Dict {
 			}
 		}
 	} else {
-		clean = details
+		clean = maps.Clone(details)
 	}
 
 	// If there is no transport detail, all done.
@@ -1265,12 +1319,6 @@ func (r *realm) cleanSessionDetails(details wamp.Dict) wamp.Dict {
 	authDict := wamp.DictChild(transDict, "auth")
 	if authDict == nil {
 		return clean
-	}
-
-	// If a copy was not previously needed, it is now.
-	if !r.metaStrict {
-		clean = make(wamp.Dict, len(details))
-		maps.Copy(clean, details)
 	}
 
 	// If details.transport.auth exists, then provide version of transport
