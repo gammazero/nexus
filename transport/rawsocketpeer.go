@@ -247,15 +247,7 @@ sendLoop:
 					rs.sendLimit)
 				continue sendLoop
 			}
-			lenBytes := intToBytes(len(b))
-			header := []byte{0x0, lenBytes[0], lenBytes[1], lenBytes[2]}
-			if _, err = rs.conn.Write(header); err != nil {
-				if !wamp.IsGoodbyeAck(msg) {
-					rs.log.Println("Error writing header:", err)
-				}
-				continue sendLoop
-			}
-			if _, err = rs.conn.Write(b); err != nil {
+			if err = rs.writeMessage(b); err != nil {
 				if !wamp.IsGoodbyeAck(msg) {
 					rs.log.Println("Error writing message:", msg, err)
 				}
@@ -265,6 +257,44 @@ sendLoop:
 			return
 		}
 	}
+}
+
+// writeMessage writes a WAMP message frame holding the serialized message b to
+// the socket.
+func (rs *rawSocketPeer) writeMessage(b []byte) error {
+	lenBytes := intToBytes(len(b))
+	header := []byte{0x0, lenBytes[0], lenBytes[1], lenBytes[2]}
+	if _, err := rs.conn.Write(header); err != nil {
+		return err
+	}
+	_, err := rs.conn.Write(b)
+	return err
+}
+
+// abort sends the remote peer an ABORT for the message that could not be
+// deserialized, and closes the socket. It stops sendHandler first, so that the
+// ABORT is not written in the middle of another message. A write deadline
+// keeps a remote peer that is not reading from blocking this, or the stopping
+// sendHandler, for longer than abortTimeout.
+func (rs *rawSocketPeer) abort(deserializeErr error) {
+	select {
+	case <-rs.closed:
+		// Peer was closed explicitly, and sendHandler has already exited.
+		_ = rs.conn.Close()
+		return
+	default:
+	}
+	_ = rs.conn.SetWriteDeadline(time.Now().Add(abortTimeout))
+	rs.cancelSender()
+	<-rs.writerDone
+
+	b, err := rs.serializer.Serialize(deserializeAbort(deserializeErr))
+	if err == nil && len(b) <= rs.sendLimit {
+		if err = rs.writeMessage(b); err != nil {
+			rs.log.Println("Error writing ABORT:", err)
+		}
+	}
+	_ = rs.conn.Close()
 }
 
 // recvHandler pulls messages from the socket and pushes them to the read
@@ -314,12 +344,10 @@ MsgLoop:
 			}
 			msg, err = rs.serializer.Deserialize(buf)
 			if err != nil {
-				// A malformed payload is a protocol violation per
-				// WAMP §5.3.1; abort the connection rather than
-				// silently skipping the frame. Same teardown shape
-				// as the io.ReadFull error path above.
+				// WAMP treats a message that cannot be deserialized as a
+				// protocol violation, so abort instead of skipping it.
 				rs.log.Println("Cannot deserialize peer message:", err)
-				_ = rs.conn.Close()
+				rs.abort(err)
 				return
 			}
 		case 1: // PING

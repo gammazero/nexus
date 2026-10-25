@@ -4,300 +4,243 @@ import (
 	"io"
 	"log"
 	"net"
-	"sync"
 	"testing"
 	"time"
 
 	"github.com/stretchr/testify/require"
+	"go.uber.org/goleak"
 
 	"github.com/gammazero/nexus/v3/transport"
 	"github.com/gammazero/nexus/v3/transport/serialize"
 	"github.com/gammazero/nexus/v3/wamp"
 )
 
-// rawSocketMagic is the RawSocket protocol magic byte (spec §5.4.1).
-const rawSocketMagic = 0x7f
+// RawSocket frame types, in the first byte of a frame header.
+const (
+	rawSocketMagic = 0x7f
+	frameMessage   = 0x00
+	framePing      = 0x01
+	framePong      = 0x02
+)
 
-// newPipedRawSocket sets up a server-side rawSocketPeer backed by a
-// net.Pipe(). The client side of the pipe is returned to the caller
-// for raw-byte-level driving of test scenarios. The handshake bytes
-// (4 bytes each direction) are exchanged before this returns, so the
-// caller is at the message-frame boundary.
-//
-// The recvLimit is rounded UP to the nearest power-of-2 ≥ 512; pass
-// 1 to get the smallest available limit (512).
-func newPipedRawSocket(t *testing.T, recvLimit int) (clientConn net.Conn, peer wamp.Peer) {
+// verifyNoLeaks checks, when the test ends, that it left no goroutines
+// running. Call it before anything else in the test, so that the check runs
+// after all other cleanups.
+func verifyNoLeaks(t *testing.T) {
+	t.Helper()
+	ignore := goleak.IgnoreCurrent()
+	t.Cleanup(func() { goleak.VerifyNone(t, ignore) })
+}
+
+// newPipedRawSocket returns a server-side rawsocket peer on one end of a
+// net.Pipe, and the other end, from which the test plays the client. The
+// handshake is done, with JSON serialization. recvLimit is the most bytes the
+// peer accepts in a message, rounded up to a power of two of at least 512.
+// The peer and the client end are closed when the test ends.
+func newPipedRawSocket(t *testing.T, recvLimit int) (net.Conn, wamp.Peer) {
 	t.Helper()
 	client, server := net.Pipe()
+	t.Cleanup(func() { _ = client.Close() })
 
-	// Client-side handshake: magic + (sendLimit<<4 | json) + 0 + 0.
-	// We pick sendLimit=0 (which becomes 2^9=512) and serialization=1 (JSON).
-	handshakeDone := make(chan struct{})
+	handshakeErr := make(chan error, 1)
 	go func() {
-		defer close(handshakeDone)
-		if _, err := client.Write([]byte{rawSocketMagic, 0<<4 | 1, 0, 0}); err != nil {
-			t.Errorf("client handshake write: %v", err)
+		// Magic byte, then the client's max length of 2^9 and JSON.
+		if _, err := client.Write([]byte{rawSocketMagic, 0x01, 0, 0}); err != nil {
+			handshakeErr <- err
 			return
 		}
 		var resp [4]byte
-		if _, err := io.ReadFull(client, resp[:]); err != nil {
-			t.Errorf("client handshake read: %v", err)
-			return
-		}
-		if resp[0] != rawSocketMagic {
-			t.Errorf("client handshake: got magic %#x, want %#x", resp[0], rawSocketMagic)
-		}
+		_, err := io.ReadFull(client, resp[:])
+		handshakeErr <- err
 	}()
 
-	logger := log.New(io.Discard, "", 0)
-	peer, err := transport.AcceptRawSocket(server, logger, recvLimit, 0)
+	peer, err := transport.AcceptRawSocket(server, log.New(io.Discard, "", 0), recvLimit, 0)
 	require.NoError(t, err)
-
-	select {
-	case <-handshakeDone:
-	case <-time.After(time.Second):
-		require.FailNow(t, "client handshake did not complete")
-	}
+	t.Cleanup(peer.Close)
+	require.NoError(t, <-handshakeErr, "client handshake failed")
 	return client, peer
 }
 
-// writeFrame writes a 4-byte length prefix + body to conn. The first
-// byte of the prefix is the WAMP rawsocket type byte (0=msg, 1=ping,
-// 2=pong); the next 3 bytes are the body length in big-endian.
+// writeFrame writes a frame of the given type holding body to conn.
 func writeFrame(t *testing.T, conn net.Conn, frameType byte, body []byte) {
 	t.Helper()
-	header := []byte{
-		frameType,
-		byte((len(body) >> 16) & 0xff),
-		byte((len(body) >> 8) & 0xff),
-		byte(len(body) & 0xff),
-	}
-	if _, err := conn.Write(header); err != nil {
-		t.Fatalf("write header: %v", err)
-	}
-	if len(body) > 0 {
-		if _, err := conn.Write(body); err != nil {
-			t.Fatalf("write body: %v", err)
-		}
-	}
-}
-
-// TestRawSocketC3_EOFAfterHandshake verifies that the rawSocketPeer
-// recvHandler/sendHandler exit cleanly when the remote side closes
-// the connection immediately after the handshake — no goroutine leak.
-// Adjacent to gammazero/nexus#242, which fixed two similar leak
-// vectors on the websocket peer.
-func TestRawSocketC3_EOFAfterHandshake(t *testing.T) {
-	client, peer := newPipedRawSocket(t, 1)
-	t.Cleanup(func() { peer.Close() })
-
-	// Remote drops the connection without sending any WAMP frame.
-	require.NoError(t, client.Close())
-
-	// recvHandler should observe EOF, defer-close peer.Recv(), and
-	// the router-side observer (us) reads zero/closed.
-	select {
-	case msg, ok := <-peer.Recv():
-		require.False(t, ok, "expected closed Recv, got msg %v", msg)
-	case <-time.After(time.Second):
-		require.FailNow(t, "peer.Recv() did not close after remote EOF")
-	}
-}
-
-// TestRawSocketC1_OversizedFrame verifies that the rawSocketPeer
-// rejects a frame whose declared length exceeds the negotiated
-// recvLimit. The spec (§5.4) allows the receiver to close the
-// connection on protocol violation.
-func TestRawSocketC1_OversizedFrame(t *testing.T) {
-	const recvLimit = 1 // → 2^9 = 512 bytes
-	client, peer := newPipedRawSocket(t, recvLimit)
-	t.Cleanup(func() { peer.Close() })
-
-	// Declare a body length of 2048 — bigger than the 512-byte limit.
-	// Don't bother sending the body; recvHandler should reject on the
-	// header alone.
-	header := []byte{0x00, 0x00, 0x08, 0x00}
-	_, err := client.Write(header)
+	n := len(body)
+	_, err := conn.Write([]byte{frameType, byte(n >> 16), byte(n >> 8), byte(n)})
 	require.NoError(t, err)
-
-	// recvHandler should close the connection. peer.Recv() should
-	// close as a result.
-	select {
-	case msg, ok := <-peer.Recv():
-		require.False(t, ok, "expected closed Recv, got msg %v", msg)
-	case <-time.After(time.Second):
-		require.FailNow(t, "peer.Recv() did not close after oversized frame")
+	if n != 0 {
+		_, err = conn.Write(body)
+		require.NoError(t, err)
 	}
-	_ = client.Close()
 }
 
-// TestRawSocketC2_TruncatedFrame verifies that the rawSocketPeer
-// handles a frame whose body is short of the declared length. The
-// underlying io.ReadFull should return ErrUnexpectedEOF; recvHandler
-// logs and exits.
-func TestRawSocketC2_TruncatedFrame(t *testing.T) {
-	client, peer := newPipedRawSocket(t, 4) // 2^13 = 8192
-	t.Cleanup(func() { peer.Close() })
+// readFrame reads a frame from conn, and returns its type and body.
+func readFrame(conn net.Conn) (byte, []byte, error) {
+	var header [4]byte
+	if _, err := io.ReadFull(conn, header[:]); err != nil {
+		return 0, nil, err
+	}
+	body := make([]byte, int(header[1])<<16|int(header[2])<<8|int(header[3]))
+	if _, err := io.ReadFull(conn, body); err != nil {
+		return 0, nil, err
+	}
+	return header[0], body, nil
+}
 
-	// Declare a body length of 100, then send only 50 bytes before
-	// closing the conn. recvHandler will block in io.ReadFull
-	// expecting 100 and observe the EOF after 50.
-	header := []byte{0x00, 0x00, 0x00, 100}
-	_, err := client.Write(header)
+// writeHello writes a HELLO message frame to conn.
+func writeHello(t *testing.T, conn net.Conn) {
+	t.Helper()
+	b, err := (&serialize.JSONSerializer{}).Serialize(&wamp.Hello{Realm: "test", Details: wamp.Dict{}})
+	require.NoError(t, err)
+	writeFrame(t, conn, frameMessage, b)
+}
+
+// requireRecvHello fails if the next message from peer is not a HELLO.
+func requireRecvHello(t *testing.T, peer wamp.Peer) {
+	t.Helper()
+	select {
+	case msg, ok := <-peer.Recv():
+		require.True(t, ok, "Recv closed")
+		_, ok = msg.(*wamp.Hello)
+		require.True(t, ok, "expected HELLO, got %T", msg)
+	case <-time.After(testTimeout):
+		require.FailNow(t, "HELLO not delivered")
+	}
+}
+
+// requireRecvDone fails if the peer's Recv channel is not closed, without any
+// message, within testTimeout.
+func requireRecvDone(t *testing.T, peer wamp.Peer) {
+	t.Helper()
+	select {
+	case msg, ok := <-peer.Recv():
+		require.False(t, ok, "expected closed Recv, got %T", msg)
+	case <-time.After(testTimeout):
+		require.FailNow(t, "Recv not closed")
+	}
+}
+
+// TestRawSocketEOFAfterHandshake verifies that the peer stops, and leaks no
+// goroutines, when the remote peer closes the connection right after the
+// handshake.
+func TestRawSocketEOFAfterHandshake(t *testing.T) {
+	verifyNoLeaks(t)
+	client, peer := newPipedRawSocket(t, 0)
+
+	require.NoError(t, client.Close())
+	requireRecvDone(t, peer)
+}
+
+// TestRawSocketOversizedFrame verifies that the peer closes the connection
+// when a frame header declares a length over the receive limit, without
+// reading the body.
+func TestRawSocketOversizedFrame(t *testing.T) {
+	verifyNoLeaks(t)
+	client, peer := newPipedRawSocket(t, 512)
+
+	// Declare a 2048-byte body, over the 512-byte limit, and send no body.
+	_, err := client.Write([]byte{frameMessage, 0x00, 0x08, 0x00})
+	require.NoError(t, err)
+	requireRecvDone(t, peer)
+}
+
+// TestRawSocketTruncatedFrame verifies that the peer stops when the
+// connection closes before the whole body of a frame has arrived.
+func TestRawSocketTruncatedFrame(t *testing.T) {
+	verifyNoLeaks(t)
+	client, peer := newPipedRawSocket(t, 512)
+
+	_, err := client.Write([]byte{frameMessage, 0, 0, 100})
 	require.NoError(t, err)
 	_, err = client.Write(make([]byte, 50))
 	require.NoError(t, err)
 	require.NoError(t, client.Close())
-
-	select {
-	case msg, ok := <-peer.Recv():
-		require.False(t, ok, "expected closed Recv, got msg %v", msg)
-	case <-time.After(time.Second):
-		require.FailNow(t, "peer.Recv() did not close after truncated frame")
-	}
+	requireRecvDone(t, peer)
 }
 
-// TestRawSocketC5_DeserializerErrorAborts pins WAMP §5.3.1 strict
-// behavior: when a frame's body is well-framed but its payload fails
-// deserialization, recvHandler logs the error, closes the connection,
-// and exits — same teardown as a torn read. The peer's Recv channel
-// closes; no further frames are processed even if more arrive on the
-// wire.
-//
-// Prior to the recvHandler fix in this commit, recvHandler silently
-// skipped the bad frame (`continue MsgLoop`) and kept reading —
-// permissive but at odds with the spec.
-func TestRawSocketC5_DeserializerErrorAborts(t *testing.T) {
-	client, peer := newPipedRawSocket(t, 4) // 2^13 = 8192
-	t.Cleanup(func() { peer.Close() })
+// TestRawSocketDeserializeErrorAborts verifies that a message that cannot be
+// deserialized is answered with ABORT wamp.error.protocol_violation, and that
+// the connection is then closed instead of reading further messages.
+func TestRawSocketDeserializeErrorAborts(t *testing.T) {
+	verifyNoLeaks(t)
+	client, peer := newPipedRawSocket(t, 512)
 
-	// First (and only) frame the server processes: body is
-	// `not valid json {` — well-framed but fails JSON
-	// deserialization.
-	writeFrame(t, client, 0x00, []byte("not valid json {"))
+	writeFrame(t, client, frameMessage, []byte("not valid json {"))
 
-	// peer.Recv() must close (recvHandler returned via the new
-	// abort-on-deserialize-error path). A subsequent frame is
-	// irrelevant — we already proved recvHandler stopped.
-	select {
-	case msg, ok := <-peer.Recv():
-		require.False(t, ok, "expected closed Recv after malformed frame, got msg %v", msg)
-	case <-time.After(time.Second):
-		require.FailNow(t, "peer.Recv() did not close after malformed frame")
-	}
-	_ = client.Close()
+	frameType, body, err := readFrame(client)
+	require.NoError(t, err)
+	require.Equal(t, byte(frameMessage), frameType)
+	msg, err := (&serialize.JSONSerializer{}).Deserialize(body)
+	require.NoError(t, err)
+	abort, ok := msg.(*wamp.Abort)
+	require.True(t, ok, "expected ABORT, got %T", msg)
+	require.Equal(t, wamp.ErrProtocolViolation, abort.Reason)
+
+	_, _, err = readFrame(client)
+	require.ErrorIs(t, err, io.EOF, "connection not closed after ABORT")
+	requireRecvDone(t, peer)
 }
 
-// TestRawSocketC9_PingStorm verifies the rawSocketPeer handles a
-// rapid burst of PING frames inline (no per-ping goroutine spawn,
-// no memory growth, connection stays responsive). After the storm,
-// a regular WAMP message must still be delivered.
-func TestRawSocketC9_PingStorm(t *testing.T) {
-	client, peer := newPipedRawSocket(t, 6) // 2^15 = 32768
-	t.Cleanup(func() { peer.Close() })
+// TestRawSocketPingStorm verifies that the peer answers each of many PINGs
+// with a PONG holding the same body, and still delivers a message afterward.
+func TestRawSocketPingStorm(t *testing.T) {
+	verifyNoLeaks(t)
+	client, peer := newPipedRawSocket(t, 512)
 
-	const pingCount = 1000
-
-	// Concurrently consume PONGs from the server side so the
-	// client's send buffer doesn't fill up (net.Pipe is unbuffered).
-	pongDone := make(chan struct{})
+	const pings = 1000
+	pongErr := make(chan error, 1)
 	go func() {
-		defer close(pongDone)
-		for range pingCount {
-			var resp [4]byte
-			if _, err := io.ReadFull(client, resp[:]); err != nil {
-				return
+		for i := 1; i <= pings; i++ {
+			frameType, body, err := readFrame(client)
+			if err == nil && (frameType != framePong || len(body) != i%64+1) {
+				err = io.ErrUnexpectedEOF
 			}
-			if resp[0] != 0x02 {
-				t.Errorf("expected PONG (type 0x02), got %#x", resp[0])
+			if err != nil {
+				pongErr <- err
 				return
-			}
-			length := int(resp[1])<<16 | int(resp[2])<<8 | int(resp[3])
-			if length > 0 {
-				if _, err := io.CopyN(io.Discard, client, int64(length)); err != nil {
-					return
-				}
 			}
 		}
+		pongErr <- nil
 	}()
 
-	// Burst PINGs of varying sizes (1, 2, ..., pingCount bytes
-	// modulo a small max so we stay well within recvLimit).
-	for i := 1; i <= pingCount; i++ {
-		size := (i % 64) + 1
-		writeFrame(t, client, 0x01, make([]byte, size))
+	for i := 1; i <= pings; i++ {
+		writeFrame(t, client, framePing, make([]byte, i%64+1))
 	}
-
-	// Wait for all PONGs.
 	select {
-	case <-pongDone:
+	case err := <-pongErr:
+		require.NoError(t, err, "wrong or missing PONG")
 	case <-time.After(5 * time.Second):
-		require.FailNow(t, "PING storm did not produce expected PONG count")
+		require.FailNow(t, "PONGs not received")
 	}
 
-	// Connection must still be responsive: send a HELLO and observe
-	// it delivered to peer.Recv().
-	hello := wamp.Hello{Realm: "test", Details: wamp.Dict{}}
-	helloBytes, err := (&serialize.JSONSerializer{}).Serialize(&hello)
-	require.NoError(t, err)
-	writeFrame(t, client, 0x00, helloBytes)
-
-	select {
-	case msg, ok := <-peer.Recv():
-		require.True(t, ok, "Recv closed unexpectedly after PING storm")
-		_, isHello := msg.(*wamp.Hello)
-		require.True(t, isHello, "expected HELLO after PING storm, got %T", msg)
-	case <-time.After(time.Second):
-		require.FailNow(t, "peer.Recv() did not deliver post-storm HELLO")
-	}
-	_ = client.Close()
+	writeHello(t, client)
+	requireRecvHello(t, peer)
 }
 
-// TestRawSocketC9_PingPong verifies that PONG frames received from
-// the remote side are silently consumed (per spec §5.4.4): the
-// peer's recvHandler discards the body and continues. This is the
-// inverse of the PING test — exercises the case 2 branch.
-func TestRawSocketC9_PingPong(t *testing.T) {
-	client, peer := newPipedRawSocket(t, 4)
-	t.Cleanup(func() { peer.Close() })
+// TestRawSocketPong verifies that the peer discards a PONG and keeps
+// delivering messages.
+func TestRawSocketPong(t *testing.T) {
+	verifyNoLeaks(t)
+	client, peer := newPipedRawSocket(t, 512)
 
-	// Send a PONG frame followed by a HELLO.
-	writeFrame(t, client, 0x02, []byte("opaque pong payload"))
-	hello := wamp.Hello{Realm: "test", Details: wamp.Dict{}}
-	helloBytes, err := (&serialize.JSONSerializer{}).Serialize(&hello)
-	require.NoError(t, err)
-	writeFrame(t, client, 0x00, helloBytes)
-
-	select {
-	case msg, ok := <-peer.Recv():
-		require.True(t, ok, "Recv closed after PONG")
-		_, isHello := msg.(*wamp.Hello)
-		require.True(t, isHello, "expected HELLO after PONG discard, got %T", msg)
-	case <-time.After(time.Second):
-		require.FailNow(t, "peer.Recv() did not deliver post-PONG HELLO")
-	}
-	_ = client.Close()
+	writeFrame(t, client, framePong, []byte("opaque pong payload"))
+	writeHello(t, client)
+	requireRecvHello(t, peer)
 }
 
-// TestRawSocketC3_HandshakeFailureDoesNotLeak verifies that when the
-// server-side handshake itself fails (e.g. client sends garbage in
-// the magic byte), AcceptRawSocket returns an error and no peer is
-// constructed — no goroutines started, nothing to leak.
-func TestRawSocketC3_HandshakeFailureDoesNotLeak(t *testing.T) {
+// TestRawSocketHandshakeFailure verifies that AcceptRawSocket fails, closes
+// the connection, and leaks no goroutines, when the client sends a bad magic
+// byte.
+func TestRawSocketHandshakeFailure(t *testing.T) {
+	verifyNoLeaks(t)
 	client, server := net.Pipe()
 	defer client.Close()
 
-	var wg sync.WaitGroup
-	wg.Add(1)
-	go func() {
-		defer wg.Done()
-		// Garbage in magic byte → server should error out.
-		_, _ = client.Write([]byte{0x00, 0x00, 0x00, 0x00})
-	}()
+	go func() { _, _ = client.Write([]byte{0x00, 0x00, 0x00, 0x00}) }()
 
-	logger := log.New(io.Discard, "", 0)
-	_, err := transport.AcceptRawSocket(server, logger, 1, 0)
-	require.Error(t, err, "expected handshake error on bad magic")
+	_, err := transport.AcceptRawSocket(server, log.New(io.Discard, "", 0), 0, 0)
+	require.Error(t, err)
 
-	wg.Wait()
+	// The server end is closed, so the client sees EOF.
+	_, err = client.Read(make([]byte, 1))
+	require.ErrorIs(t, err, io.EOF)
 }
