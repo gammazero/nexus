@@ -159,7 +159,9 @@ func TestSessionKillByAuthrole(t *testing.T) {
 	synctest.Test(t, func(t *testing.T) {
 		r := newTestRouter(t)
 
-		cli1 := testClient(t, r) // caller — all three default to authrole "anonymous"
+		// All three clients have the authrole "anonymous", and cli1 is the
+		// caller.
+		cli1 := testClient(t, r)
 		cli2 := testClient(t, r)
 		cli3 := testClient(t, r)
 

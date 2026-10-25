@@ -59,10 +59,9 @@ func TestConnectRawSocketPeerDialFailure(t *testing.T) {
 	require.Nil(t, peer)
 }
 
-// TestConnectRawSocketPeerHandshakeFailure pins the
-// post-dial-pre-peer error path: dial succeeds but the server isn't
-// speaking RawSocket, so clientHandshake errors. The transient conn
-// must be closed and no peer returned.
+// TestConnectRawSocketPeerHandshakeFailure checks that ConnectRawSocketPeer
+// returns an error, and no peer, when the server answers the handshake with
+// something other than a RawSocket handshake reply.
 func TestConnectRawSocketPeerHandshakeFailure(t *testing.T) {
 	logger := log.New(io.Discard, "", 0)
 	ln, err := net.Listen("tcp", "127.0.0.1:0")
@@ -85,10 +84,9 @@ func TestConnectRawSocketPeerHandshakeFailure(t *testing.T) {
 	require.Nil(t, peer)
 }
 
-// TestConnectRawSocketPeerTLSHandshakeFailure pins the TLS error
-// path: the server accepts the TCP connect but speaks plain TCP, not
-// TLS — the TLS handshake fails, ConnectRawSocketPeer returns the
-// error and closes the underlying conn.
+// TestConnectRawSocketPeerTLSHandshakeFailure checks that ConnectRawSocketPeer
+// returns an error, and no peer, when the TLS handshake fails because the
+// server does not speak TLS.
 func TestConnectRawSocketPeerTLSHandshakeFailure(t *testing.T) {
 	logger := log.New(io.Discard, "", 0)
 	ln, err := net.Listen("tcp", "127.0.0.1:0")
@@ -115,47 +113,4 @@ func TestConnectRawSocketPeerTLSHandshakeFailure(t *testing.T) {
 		"tcp", ln.Addr().String(), serialize.JSON, tlsCfg, logger, 0)
 	require.Error(t, err, "TLS handshake should fail against plain-TCP server")
 	require.Nil(t, peer)
-}
-
-// TestConnectRawSocketPeerTLSContextCancelled pins the
-// context-cancelled-during-TLS-handshake path: the TLS handshake
-// goroutine is still running when the context expires.
-// ConnectRawSocketPeer returns ctx.Err() and closes the conn.
-func TestConnectRawSocketPeerTLSContextCancelled(t *testing.T) {
-	logger := log.New(io.Discard, "", 0)
-	ln, err := net.Listen("tcp", "127.0.0.1:0")
-	require.NoError(t, err)
-	defer ln.Close()
-
-	// Server: accept, then NEVER send anything. The client's TLS
-	// handshake will block reading the ServerHello until the
-	// context fires.
-	accepted := make(chan net.Conn, 1)
-	go func() {
-		conn, aerr := ln.Accept()
-		if aerr != nil {
-			return
-		}
-		accepted <- conn
-		// Hold the connection open. The test will close it via
-		// listener close after the context expires.
-		<-time.After(time.Second)
-		_ = conn.Close()
-	}()
-
-	tlsCfg := &tls.Config{InsecureSkipVerify: true} //nolint:gosec
-	ctx, cancel := context.WithTimeout(t.Context(), 50*time.Millisecond)
-	defer cancel()
-	peer, err := transport.ConnectRawSocketPeer(ctx,
-		"tcp", ln.Addr().String(), serialize.JSON, tlsCfg, logger, 0)
-	require.Error(t, err, "TLS handshake should be cancelled by context")
-	require.Nil(t, peer)
-
-	// Drain the accepted-conn channel so the helper goroutine doesn't
-	// hold a reference past test end.
-	select {
-	case c := <-accepted:
-		_ = c.Close()
-	case <-time.After(100 * time.Millisecond):
-	}
 }

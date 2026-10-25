@@ -5,6 +5,7 @@ import (
 	"encoding/hex"
 	"errors"
 	"testing"
+	"testing/synctest"
 	"time"
 
 	"github.com/stretchr/testify/require"
@@ -15,11 +16,8 @@ import (
 	"github.com/gammazero/nexus/v3/wamp"
 )
 
-// cryptoSignKeyStore is a test KeyStore that maps a single authid to a
-// known ed25519 public key. It supports the two methods the
-// CryptoSignAuthenticator calls: AuthRole and AuthKey(authid,
-// "cryptosign"). The pubkey returned must be the 32-byte raw ed25519
-// public key.
+// cryptoSignKeyStore is a test KeyStore that knows a single authid, whose
+// cryptosign key is publicKey.
 type cryptoSignKeyStore struct {
 	authid    string
 	authrole  string
@@ -46,66 +44,85 @@ func (ks *cryptoSignKeyStore) AuthRole(authid string) (string, error) {
 func (ks *cryptoSignKeyStore) PasswordInfo(string) (string, int, int) { return "", 0, 0 }
 func (ks *cryptoSignKeyStore) Provider() string                       { return "test-cryptosign" }
 
-// signChallenge takes the hex-encoded challenge from a wamp.Challenge
-// message's `Extra["challenge"]` field, signs it with privateKey via
-// nacl/sign (yielding signature(64) + message(32) = 96 bytes), and
-// returns the hex-encoded result — exactly what AUTHENTICATE.Signature
-// must carry per WAMP §14.6.5 (cryptosign).
-func signChallenge(t *testing.T, ch *wamp.Challenge, privateKey *[64]byte) string {
+// newCryptoSignKeyStore returns a keystore for the authid "alice", with a new
+// key pair, and the private key of that pair.
+func newCryptoSignKeyStore(t *testing.T) (*cryptoSignKeyStore, *[64]byte) {
 	t.Helper()
-	hexChallenge, ok := ch.Extra["challenge"].(string)
-	require.True(t, ok, "Challenge.Extra missing 'challenge' string")
-	challenge, err := hex.DecodeString(hexChallenge)
-	require.NoError(t, err)
-	require.Len(t, challenge, 32, "challenge must be 32 bytes")
-
-	signed := sign.Sign(nil, challenge, privateKey)
-	require.Len(t, signed, 96, "nacl-signed payload must be 96 bytes (sig+msg)")
-	return hex.EncodeToString(signed)
-}
-
-// TestCryptoSignAuthMethod is a trivial getter test, but pulls
-// `(*CryptoSignAuthenticator).AuthMethod` into coverage and pins the
-// canonical method name from spec §14.6.5.
-func TestCryptoSignAuthMethod(t *testing.T) {
-	a := auth.NewCryptoSignAuthenticator(&cryptoSignKeyStore{}, time.Second)
-	require.Equal(t, "cryptosign", a.AuthMethod())
-}
-
-// TestCryptoSignAuthenticateValidSignature drives the happy path:
-// a client signs the challenge with the private key whose public
-// half is in the KeyStore, the authenticator verifies, and returns
-// a WELCOME with authmethod=cryptosign and the configured authrole.
-func TestCryptoSignAuthenticateValidSignature(t *testing.T) {
 	pub, priv, err := sign.GenerateKey(rand.Reader)
 	require.NoError(t, err)
-
 	ks := &cryptoSignKeyStore{
 		authid:    "alice",
 		authrole:  "users",
 		publicKey: pub,
 	}
-	a := auth.NewCryptoSignAuthenticator(ks, time.Second)
+	return ks, priv
+}
 
+// signChallenge signs the challenge in ch with privateKey, and returns the
+// signature that AUTHENTICATE carries: the hex encoding of the 64-byte
+// signature followed by the 32-byte challenge.
+func signChallenge(t *testing.T, ch *wamp.Challenge, privateKey *[64]byte) string {
+	t.Helper()
+	hexChallenge, ok := ch.Extra["challenge"].(string)
+	require.True(t, ok, "CHALLENGE missing challenge string")
+	challenge, err := hex.DecodeString(hexChallenge)
+	require.NoError(t, err)
+	require.Len(t, challenge, 32)
+
+	signed := sign.Sign(nil, challenge, privateKey)
+	require.Len(t, signed, 96)
+	return hex.EncodeToString(signed)
+}
+
+// authenticate runs a.Authenticate for the client details. If respond is not
+// nil, the client waits for the CHALLENGE and answers it with the message that
+// respond returns. Otherwise the client never answers.
+func authenticate(t *testing.T, a *auth.CryptoSignAuthenticator, details wamp.Dict, respond func(*wamp.Challenge) wamp.Message) (*wamp.Welcome, error) { //nolint:lll
+	t.Helper()
 	cp, rp := transport.LinkedPeers()
 	defer cp.Close()
 	defer rp.Close()
 
-	// Client-side responder: receive CHALLENGE, sign, send AUTHENTICATE.
+	type result struct {
+		welcome *wamp.Welcome
+		err     error
+	}
+	done := make(chan result, 1)
 	go func() {
-		msg, ok := <-cp.Recv()
-		if !ok {
-			return
-		}
-		ch, ok := msg.(*wamp.Challenge)
-		if !ok {
-			return
-		}
-		cp.Send() <- &wamp.Authenticate{Signature: signChallenge(t, ch, priv)}
+		welcome, err := a.Authenticate(wamp.ID(42), details, rp)
+		done <- result{welcome, err}
 	}()
 
-	welcome, err := a.Authenticate(wamp.ID(42), wamp.Dict{"authid": "alice"}, rp)
-	require.NoError(t, err, "Authenticate should succeed for valid signature")
+	if respond != nil {
+		msg, err := wamp.RecvTimeout(cp, time.Second)
+		require.NoError(t, err, "no CHALLENGE")
+		ch, ok := msg.(*wamp.Challenge)
+		require.True(t, ok, "expected CHALLENGE, got %T", msg)
+		require.Equal(t, "cryptosign", ch.AuthMethod)
+		cp.Send() <- respond(ch)
+	}
+
+	res := <-done
+	return res.welcome, res.err
+}
+
+func TestCryptoSignAuthMethod(t *testing.T) {
+	a := auth.NewCryptoSignAuthenticator(&cryptoSignKeyStore{}, time.Second)
+	require.Equal(t, "cryptosign", a.AuthMethod())
+}
+
+// TestCryptoSignAuthenticateValidSignature checks that a client that signs the
+// challenge with the private key, whose public key is in the keystore, is
+// welcomed with the keystore's authrole and provider.
+func TestCryptoSignAuthenticateValidSignature(t *testing.T) {
+	ks, priv := newCryptoSignKeyStore(t)
+	a := auth.NewCryptoSignAuthenticator(ks, time.Second)
+
+	welcome, err := authenticate(t, a, wamp.Dict{"authid": "alice"},
+		func(ch *wamp.Challenge) wamp.Message {
+			return &wamp.Authenticate{Signature: signChallenge(t, ch, priv)}
+		})
+	require.NoError(t, err)
 	require.NotNil(t, welcome)
 	require.Equal(t, "cryptosign", welcome.Details["authmethod"])
 	require.Equal(t, "users", welcome.Details["authrole"])
@@ -113,231 +130,123 @@ func TestCryptoSignAuthenticateValidSignature(t *testing.T) {
 	require.Equal(t, "test-cryptosign", welcome.Details["authprovider"])
 }
 
-// TestCryptoSignAuthenticateBadSignature uses a DIFFERENT keypair to
-// sign than what the KeyStore advertises: nacl.Open returns false →
-// authenticator returns "invalid signature".
+// TestCryptoSignAuthenticateBadSignature checks that a challenge signed with a
+// key other than the one in the keystore is rejected.
 func TestCryptoSignAuthenticateBadSignature(t *testing.T) {
-	correctPub, _, err := sign.GenerateKey(rand.Reader)
-	require.NoError(t, err)
+	ks, _ := newCryptoSignKeyStore(t)
 	_, wrongPriv, err := sign.GenerateKey(rand.Reader)
 	require.NoError(t, err)
-
-	ks := &cryptoSignKeyStore{
-		authid:    "alice",
-		authrole:  "users",
-		publicKey: correctPub,
-	}
 	a := auth.NewCryptoSignAuthenticator(ks, time.Second)
 
-	cp, rp := transport.LinkedPeers()
-	defer cp.Close()
-	defer rp.Close()
-
-	go func() {
-		msg, ok := <-cp.Recv()
-		if !ok {
-			return
-		}
-		ch, ok := msg.(*wamp.Challenge)
-		if !ok {
-			return
-		}
-		// Sign with the wrong key — verifySignature must reject.
-		cp.Send() <- &wamp.Authenticate{Signature: signChallenge(t, ch, wrongPriv)}
-	}()
-
-	welcome, err := a.Authenticate(wamp.ID(43), wamp.Dict{"authid": "alice"}, rp)
-	require.Error(t, err, "Authenticate must reject signature from wrong key")
+	welcome, err := authenticate(t, a, wamp.Dict{"authid": "alice"},
+		func(ch *wamp.Challenge) wamp.Message {
+			return &wamp.Authenticate{Signature: signChallenge(t, ch, wrongPriv)}
+		})
+	require.ErrorContains(t, err, "invalid signature")
 	require.Nil(t, welcome)
-	require.Contains(t, err.Error(), "invalid signature")
 }
 
-// TestCryptoSignAuthenticateMalformedSignature pins the format-check
-// branch in verifySignature: a signature of the wrong length (not 96
-// bytes) is rejected before nacl.Open even runs.
+// TestCryptoSignAuthenticateMalformedSignature checks that a signature that is
+// not 96 bytes long is rejected.
 func TestCryptoSignAuthenticateMalformedSignature(t *testing.T) {
-	pub, _, err := sign.GenerateKey(rand.Reader)
-	require.NoError(t, err)
-
-	ks := &cryptoSignKeyStore{
-		authid:    "alice",
-		authrole:  "users",
-		publicKey: pub,
-	}
+	ks, _ := newCryptoSignKeyStore(t)
 	a := auth.NewCryptoSignAuthenticator(ks, time.Second)
 
-	cp, rp := transport.LinkedPeers()
-	defer cp.Close()
-	defer rp.Close()
-
-	go func() {
-		msg, ok := <-cp.Recv()
-		if !ok {
-			return
-		}
-		_, isChallenge := msg.(*wamp.Challenge)
-		if !isChallenge {
-			return
-		}
-		// Signature is well-formed hex but only 32 bytes — wrong length.
-		cp.Send() <- &wamp.Authenticate{
-			Signature: hex.EncodeToString(make([]byte, 32)),
-		}
-	}()
-
-	welcome, err := a.Authenticate(wamp.ID(44), wamp.Dict{"authid": "alice"}, rp)
-	require.Error(t, err)
+	welcome, err := authenticate(t, a, wamp.Dict{"authid": "alice"},
+		func(*wamp.Challenge) wamp.Message {
+			return &wamp.Authenticate{Signature: hex.EncodeToString(make([]byte, 32))}
+		})
+	require.ErrorContains(t, err, "invalid length")
 	require.Nil(t, welcome)
-	require.Contains(t, err.Error(), "invalid length")
 }
 
-// TestCryptoSignAuthenticateNonHexSignature pins the hex-decode error
-// path: a signature string that isn't valid hex fails before length
-// or signature checks.
+// TestCryptoSignAuthenticateNonHexSignature checks that a signature that is
+// not hex is rejected.
 func TestCryptoSignAuthenticateNonHexSignature(t *testing.T) {
-	pub, _, err := sign.GenerateKey(rand.Reader)
-	require.NoError(t, err)
-
-	ks := &cryptoSignKeyStore{
-		authid:    "alice",
-		authrole:  "users",
-		publicKey: pub,
-	}
+	ks, _ := newCryptoSignKeyStore(t)
 	a := auth.NewCryptoSignAuthenticator(ks, time.Second)
 
-	cp, rp := transport.LinkedPeers()
-	defer cp.Close()
-	defer rp.Close()
-
-	go func() {
-		msg, ok := <-cp.Recv()
-		if !ok {
-			return
-		}
-		_, isChallenge := msg.(*wamp.Challenge)
-		if !isChallenge {
-			return
-		}
-		cp.Send() <- &wamp.Authenticate{Signature: "not-valid-hex!"}
-	}()
-
-	welcome, err := a.Authenticate(wamp.ID(45), wamp.Dict{"authid": "alice"}, rp)
-	require.Error(t, err)
+	welcome, err := authenticate(t, a, wamp.Dict{"authid": "alice"},
+		func(*wamp.Challenge) wamp.Message {
+			return &wamp.Authenticate{Signature: "not-valid-hex!"}
+		})
+	var hexErr hex.InvalidByteError
+	require.ErrorAs(t, err, &hexErr)
 	require.Nil(t, welcome)
 }
 
-// TestCryptoSignAuthenticateUnknownAuthid pins the KeyStore-miss path
-// for AuthRole: HELLO carries an authid the KeyStore doesn't know,
-// authenticator rejects before challenging.
-func TestCryptoSignAuthenticateUnknownAuthid(t *testing.T) {
-	pub, _, err := sign.GenerateKey(rand.Reader)
-	require.NoError(t, err)
-
-	ks := &cryptoSignKeyStore{
-		authid:    "alice",
-		authrole:  "users",
-		publicKey: pub,
-	}
-	a := auth.NewCryptoSignAuthenticator(ks, time.Second)
-
-	_, rp := transport.LinkedPeers()
-	defer rp.Close()
-
-	welcome, err := a.Authenticate(wamp.ID(46), wamp.Dict{"authid": "mallory"}, rp)
-	require.Error(t, err, "must reject unknown authid")
-	require.Nil(t, welcome)
-}
-
-// TestCryptoSignAuthenticateMissingAuthid pins the empty-authid early
-// rejection.
-func TestCryptoSignAuthenticateMissingAuthid(t *testing.T) {
-	pub, _, err := sign.GenerateKey(rand.Reader)
-	require.NoError(t, err)
-	ks := &cryptoSignKeyStore{authid: "alice", authrole: "users", publicKey: pub}
-	a := auth.NewCryptoSignAuthenticator(ks, time.Second)
-
-	_, rp := transport.LinkedPeers()
-	defer rp.Close()
-
-	welcome, err := a.Authenticate(wamp.ID(47), wamp.Dict{}, rp)
-	require.Error(t, err)
-	require.Nil(t, welcome)
-	require.Contains(t, err.Error(), "missing authid")
-}
-
-// TestCryptoSignAuthenticateTimeout pins the read-timeout path: the
-// client receives the CHALLENGE but never sends AUTHENTICATE.
-// Authenticate's wamp.RecvTimeout returns an error.
-func TestCryptoSignAuthenticateTimeout(t *testing.T) {
-	pub, _, err := sign.GenerateKey(rand.Reader)
-	require.NoError(t, err)
-	ks := &cryptoSignKeyStore{authid: "alice", authrole: "users", publicKey: pub}
-	// 50ms timeout so the test runs fast.
-	a := auth.NewCryptoSignAuthenticator(ks, 50*time.Millisecond)
-
-	cp, rp := transport.LinkedPeers()
-	defer cp.Close()
-	defer rp.Close()
-
-	// Client-side: drain CHALLENGE but DON'T respond.
-	go func() {
-		<-cp.Recv()
-	}()
-
-	welcome, err := a.Authenticate(wamp.ID(48), wamp.Dict{"authid": "alice"}, rp)
-	require.Error(t, err, "Authenticate must time out without AUTHENTICATE response")
-	require.Nil(t, welcome)
-}
-
-// TestCryptoSignAuthenticateUnexpectedMessageType pins the
-// not-an-AUTHENTICATE path: client responds with the wrong message
-// type after CHALLENGE.
+// TestCryptoSignAuthenticateUnexpectedMessageType checks that a client that
+// answers the CHALLENGE with something other than AUTHENTICATE is rejected.
 func TestCryptoSignAuthenticateUnexpectedMessageType(t *testing.T) {
-	pub, _, err := sign.GenerateKey(rand.Reader)
-	require.NoError(t, err)
-	ks := &cryptoSignKeyStore{authid: "alice", authrole: "users", publicKey: pub}
+	ks, _ := newCryptoSignKeyStore(t)
 	a := auth.NewCryptoSignAuthenticator(ks, time.Second)
 
-	cp, rp := transport.LinkedPeers()
-	defer cp.Close()
-	defer rp.Close()
-
-	go func() {
-		msg, ok := <-cp.Recv()
-		if !ok {
-			return
-		}
-		_, isChallenge := msg.(*wamp.Challenge)
-		if !isChallenge {
-			return
-		}
-		// Send GOODBYE instead of AUTHENTICATE.
-		cp.Send() <- &wamp.Goodbye{Reason: wamp.ErrCloseRealm}
-	}()
-
-	welcome, err := a.Authenticate(wamp.ID(49), wamp.Dict{"authid": "alice"}, rp)
-	require.Error(t, err)
+	welcome, err := authenticate(t, a, wamp.Dict{"authid": "alice"},
+		func(*wamp.Challenge) wamp.Message {
+			return &wamp.Goodbye{Reason: wamp.ErrCloseRealm}
+		})
+	require.ErrorContains(t, err, "unexpected")
 	require.Nil(t, welcome)
-	require.Contains(t, err.Error(), "unexpected")
 }
 
-// TestCryptoSignNewAuthenticatorDefaultTimeout pins the constructor's
-// zero-timeout fallback: passing 0 must select the package default,
-// not block forever.
+// TestCryptoSignAuthenticateUnknownAuthid checks that an authid that the
+// keystore does not know is rejected without a CHALLENGE.
+func TestCryptoSignAuthenticateUnknownAuthid(t *testing.T) {
+	ks, _ := newCryptoSignKeyStore(t)
+	a := auth.NewCryptoSignAuthenticator(ks, time.Second)
+
+	welcome, err := authenticate(t, a, wamp.Dict{"authid": "mallory"}, nil)
+	require.ErrorContains(t, err, "no such user")
+	require.Nil(t, welcome)
+}
+
+// TestCryptoSignAuthenticateMissingAuthid checks that a client without an
+// authid is rejected without a CHALLENGE.
+func TestCryptoSignAuthenticateMissingAuthid(t *testing.T) {
+	ks, _ := newCryptoSignKeyStore(t)
+	a := auth.NewCryptoSignAuthenticator(ks, time.Second)
+
+	welcome, err := authenticate(t, a, wamp.Dict{}, nil)
+	require.ErrorContains(t, err, "missing authid")
+	require.Nil(t, welcome)
+}
+
+// TestCryptoSignAuthenticateTimeout checks that Authenticate gives up when the
+// client does not answer the CHALLENGE within the timeout.
+func TestCryptoSignAuthenticateTimeout(t *testing.T) {
+	synctest.Test(t, func(t *testing.T) {
+		ks, _ := newCryptoSignKeyStore(t)
+		a := auth.NewCryptoSignAuthenticator(ks, time.Second)
+
+		start := time.Now()
+		welcome, err := authenticate(t, a, wamp.Dict{"authid": "alice"}, nil)
+		require.Error(t, err)
+		require.Nil(t, welcome)
+		require.Equal(t, time.Second, time.Since(start))
+	})
+}
+
+// TestCryptoSignNewAuthenticatorDefaultTimeout checks that a zero timeout
+// selects the default timeout of one minute, so that a client that answers
+// after 30 seconds is still welcomed.
 func TestCryptoSignNewAuthenticatorDefaultTimeout(t *testing.T) {
-	a := auth.NewCryptoSignAuthenticator(&cryptoSignKeyStore{}, 0)
-	require.NotNil(t, a)
-	// We can't introspect timeout directly (unexported); the
-	// behavioral guarantee is that Authenticate doesn't loop
-	// indefinitely with a zero timeout. Covered by the timeout
-	// test above when paired with a non-responding client; we
-	// just need the constructor not to panic on zero.
+	synctest.Test(t, func(t *testing.T) {
+		ks, priv := newCryptoSignKeyStore(t)
+		a := auth.NewCryptoSignAuthenticator(ks, 0)
+
+		welcome, err := authenticate(t, a, wamp.Dict{"authid": "alice"},
+			func(ch *wamp.Challenge) wamp.Message {
+				time.Sleep(30 * time.Second)
+				return &wamp.Authenticate{Signature: signChallenge(t, ch, priv)}
+			})
+		require.NoError(t, err)
+		require.NotNil(t, welcome)
+	})
 }
 
-// bypassCryptoSignKeyStore implements both KeyStore and
-// BypassKeyStore: when AlreadyAuth returns true (e.g. trusted
-// transport, cookie session), the authenticator skips the
-// challenge/response entirely and returns WELCOME directly.
+// bypassCryptoSignKeyStore is a BypassKeyStore that, when alreadyAuth is set,
+// reports the client as already authenticated, so that Authenticate welcomes
+// it without a CHALLENGE.
 type bypassCryptoSignKeyStore struct {
 	cryptoSignKeyStore
 	alreadyAuth bool
@@ -356,55 +265,37 @@ func (ks *bypassCryptoSignKeyStore) OnWelcome(_ string, welcome *wamp.Welcome, _
 	return nil
 }
 
-// TestCryptoSignAuthenticateBypassSuccess pins the BypassKeyStore
-// fast-path: a KeyStore that signals AlreadyAuth=true short-circuits
-// the cryptosign challenge/response and returns a WELCOME with
-// whatever extras OnWelcome adds.
+// TestCryptoSignAuthenticateBypassSuccess checks that a client the keystore
+// reports as already authenticated is welcomed without a CHALLENGE, with the
+// details that OnWelcome adds.
 func TestCryptoSignAuthenticateBypassSuccess(t *testing.T) {
-	pub, _, err := sign.GenerateKey(rand.Reader)
-	require.NoError(t, err)
-
-	ks := &bypassCryptoSignKeyStore{
-		cryptoSignKeyStore: cryptoSignKeyStore{
-			authid: "alice", authrole: "users", publicKey: pub,
-		},
-		alreadyAuth: true,
-		onWelcomeOK: true,
+	ks, _ := newCryptoSignKeyStore(t)
+	bks := &bypassCryptoSignKeyStore{
+		cryptoSignKeyStore: *ks,
+		alreadyAuth:        true,
+		onWelcomeOK:        true,
 	}
-	a := auth.NewCryptoSignAuthenticator(ks, time.Second)
+	a := auth.NewCryptoSignAuthenticator(bks, time.Second)
 
-	_, rp := transport.LinkedPeers()
-	defer rp.Close()
-
-	// No client-side responder — bypass path skips CHALLENGE entirely.
-	welcome, err := a.Authenticate(wamp.ID(50), wamp.Dict{"authid": "alice"}, rp)
+	welcome, err := authenticate(t, a, wamp.Dict{"authid": "alice"}, nil)
 	require.NoError(t, err)
 	require.NotNil(t, welcome)
 	require.Equal(t, "cryptosign", welcome.Details["authmethod"])
 	require.Equal(t, true, welcome.Details["authbycookie"])
 }
 
-// TestCryptoSignAuthenticateBypassOnWelcomeError pins the
-// OnWelcome-error branch of the bypass path: if OnWelcome returns
-// an error, Authenticate propagates it and returns no WELCOME.
+// TestCryptoSignAuthenticateBypassOnWelcomeError checks that an error from
+// OnWelcome rejects a client the keystore reports as already authenticated.
 func TestCryptoSignAuthenticateBypassOnWelcomeError(t *testing.T) {
-	pub, _, err := sign.GenerateKey(rand.Reader)
-	require.NoError(t, err)
-
-	ks := &bypassCryptoSignKeyStore{
-		cryptoSignKeyStore: cryptoSignKeyStore{
-			authid: "alice", authrole: "users", publicKey: pub,
-		},
-		alreadyAuth: true,
-		onWelcomeOK: false,
+	ks, _ := newCryptoSignKeyStore(t)
+	bks := &bypassCryptoSignKeyStore{
+		cryptoSignKeyStore: *ks,
+		alreadyAuth:        true,
+		onWelcomeOK:        false,
 	}
-	a := auth.NewCryptoSignAuthenticator(ks, time.Second)
+	a := auth.NewCryptoSignAuthenticator(bks, time.Second)
 
-	_, rp := transport.LinkedPeers()
-	defer rp.Close()
-
-	welcome, err := a.Authenticate(wamp.ID(51), wamp.Dict{"authid": "alice"}, rp)
-	require.Error(t, err)
+	welcome, err := authenticate(t, a, wamp.Dict{"authid": "alice"}, nil)
+	require.ErrorContains(t, err, "OnWelcome refused")
 	require.Nil(t, welcome)
-	require.Contains(t, err.Error(), "OnWelcome refused")
 }
