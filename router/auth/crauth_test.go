@@ -82,10 +82,14 @@ func (ks *testKeyStore) OnWelcome(authid string, welcome *wamp.Welcome, details 
 	return nil
 }
 
-var tks = &testKeyStore{
-	provider: "static",
-	secret:   goodSecret,
-	ticket:   goodTicket,
+// newTestKeyStore returns a keystore with good credentials. Each test gets its
+// own, since tests change the credentials and the tracking cookie.
+func newTestKeyStore() *testKeyStore {
+	return &testKeyStore{
+		provider: "static",
+		secret:   goodSecret,
+		ticket:   goodTicket,
+	}
 }
 
 func cliRsp(p wamp.Peer) {
@@ -122,6 +126,7 @@ func TestTicketAuth(t *testing.T) {
 	defer rp.Close()
 	go cliRsp(cp)
 
+	tks := newTestKeyStore()
 	ticketAuth := auth.NewTicketAuthenticator(tks, time.Second)
 	sid := wamp.ID(212)
 
@@ -179,6 +184,7 @@ func TestCRAuth(t *testing.T) {
 	defer rp.Close()
 	go cliRsp(cp)
 
+	tks := newTestKeyStore()
 	crAuth := auth.NewCRAuthenticator(tks, time.Second)
 	sid := wamp.ID(212)
 
