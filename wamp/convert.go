@@ -63,11 +63,15 @@ func AsInt64(v any) (int64, bool) {
 	return 0, false
 }
 
-// AsFloat64 is an extended type assertion for float64.
+// AsFloat64 is an extended type assertion for float64. It also accepts a value
+// with a Float64() float64 method, such as the serialize.Decimal that the CBOR
+// serializer decodes a decimal fraction to.
 func AsFloat64(v any) (float64, bool) {
 	switch v := v.(type) {
 	case float64:
 		return v, true
+	case interface{ Float64() float64 }:
+		return v.Float64(), true
 	case float32:
 		return float64(v), true
 	case int64:

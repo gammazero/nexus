@@ -14,6 +14,12 @@ var ch *codec.CborHandle //nolint:gochecknoglobals
 func init() {
 	ch = &codec.CborHandle{}
 	ch.MapType = reflect.TypeFor[map[string]any]()
+	// Without this, decimal fractions are decoded as the nearest float64, or
+	// as a wrong value when the mantissa is a bignum.
+	err := ch.SetInterfaceExt(reflect.TypeFor[Decimal](), cborTagDecimalFraction, decimalExt{})
+	if err != nil {
+		panic(err)
+	}
 }
 
 // CBORSerializer is an implementation of Serializer that handles
