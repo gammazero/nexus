@@ -656,6 +656,85 @@ func TestPublisherIdentification(t *testing.T) {
 	require.Equal(t, pubSess.ID, pub.(wamp.ID), "incorrect publisher ID disclosed")
 }
 
+// remoteTestPeer is a testPeer that the broker treats as a remote peer.
+type remoteTestPeer struct {
+	*testPeer
+}
+
+func (remoteTestPeer) IsLocal() bool { return false }
+
+// TestRemoteSubscribersShareEvent checks that the broker sends one EVENT to
+// all remote subscribers that do not get the publisher's identity, and a
+// separate EVENT to each local subscriber and each subscriber that the
+// publisher's identity is disclosed to.
+func TestRemoteSubscribersShareEvent(t *testing.T) {
+	broker := newTestBroker(t, nil)
+	pubIdentDetails := wamp.Dict{
+		"roles": wamp.Dict{
+			"subscriber": wamp.Dict{
+				"features": wamp.Dict{
+					"publisher_identification": true,
+				},
+			},
+		},
+	}
+	subscribe := func(peer wamp.Peer, details wamp.Dict) *wamp.Session {
+		sess := wamp.NewSession(peer, wamp.GlobalID(), nil, details)
+		broker.subscribe(sess, &wamp.Subscribe{
+			Request: 1,
+			Topic:   wamp.URI("nexus.test"),
+			Options: wamp.Dict{wamp.OptMatch: wamp.MatchPrefix},
+		})
+		rsp := <-sess.Recv()
+		_, ok := rsp.(*wamp.Subscribed)
+		require.True(t, ok, "expected SUBSCRIBED")
+		return sess
+	}
+	remote1 := subscribe(remoteTestPeer{newTestPeer()}, nil)
+	remote2 := subscribe(remoteTestPeer{newTestPeer()}, nil)
+	remoteIdent := subscribe(remoteTestPeer{newTestPeer()}, pubIdentDetails)
+	local := subscribe(newTestPeer(), nil)
+	waitBroker(broker)
+
+	testTopic := wamp.URI("nexus.test.topic")
+	pubSess := wamp.NewSession(newTestPeer(), wamp.GlobalID(), nil, nil)
+	broker.publish(pubSess, &wamp.Publish{
+		Request:   2,
+		Topic:     testTopic,
+		Options:   wamp.Dict{"disclose_me": true},
+		Arguments: wamp.List{"hello"},
+	})
+	recvEvent := func(sess *wamp.Session) *wamp.Event {
+		rsp := <-sess.Recv()
+		evt, ok := rsp.(*wamp.Event)
+		require.True(t, ok, "expected EVENT")
+		require.Equal(t, testTopic, evt.Details[detailTopic])
+		require.Equal(t, wamp.List{"hello"}, evt.Arguments)
+		return evt
+	}
+	evt1 := recvEvent(remote1)
+	evt2 := recvEvent(remote2)
+	evtIdent := recvEvent(remoteIdent)
+	evtLocal := recvEvent(local)
+
+	require.Same(t, evt1, evt2, "remote subscribers did not share EVENT")
+	require.NotSame(t, evt1, evtIdent)
+	require.NotSame(t, evt1, evtLocal)
+
+	for _, evt := range []*wamp.Event{evt1, evtLocal} {
+		_, ok := evt.Details[wamp.RolePublisher]
+		require.False(t, ok, "publisher disclosed without publisher_identification")
+	}
+	require.Equal(t, pubSess.ID, evtIdent.Details[wamp.RolePublisher])
+
+	// A local handler changing its EVENT must not change the shared one.
+	evtLocal.Arguments[0] = "changed"
+	evtLocal.Details["changed"] = true
+	require.Equal(t, wamp.List{"hello"}, evt1.Arguments)
+	_, ok := evt1.Details["changed"]
+	require.False(t, ok)
+}
+
 func TestEventHistory(t *testing.T) {
 	eventHistoryConfig := []*TopicEventHistoryConfig{
 		{
