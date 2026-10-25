@@ -612,7 +612,16 @@ func (b *broker) syncRemoveSession(subscriber *wamp.Session, notify bool) {
 
 // syncPubEvent sends an event to all subscribers that are not excluded from
 // receiving the event.
+//
+// Remote subscribers that do not get the publisher's identity all share one
+// EVENT message. Their sessions only read it to serialize it, so sharing it is
+// safe, and it saves allocating a details map and an EVENT for each of them.
+// Local subscribers each get their own EVENT, since a local client's handler
+// may change it, as does a subscriber that the publisher's identity is
+// disclosed to.
 func (b *broker) syncPubEvent(pub *wamp.Session, msg *wamp.Publish, pubID wamp.ID, sub *subscription, excludePublisher, sendTopic, disclose bool, filter PublishFilter, eventDetails wamp.Dict) { //nolint:lll
+	var sharedEvent *wamp.Event
+
 	for subscriber := range sub.subscribers {
 		// Do not send event to publisher.
 		if subscriber == pub && excludePublisher {
@@ -634,7 +643,17 @@ func (b *broker) syncPubEvent(pub *wamp.Session, msg *wamp.Publish, pubID wamp.I
 			}
 		}
 
-		event := prepareEvent(pub, msg, pubID, sub, sendTopic, disclose, eventDetails, subscriber)
+		var event *wamp.Event
+		if subscriber.IsLocal() ||
+			(disclose && subscriber.HasFeature(wamp.RoleSubscriber, wamp.FeaturePubIdent)) {
+			event = prepareEvent(pub, msg, pubID, sub, sendTopic, disclose, eventDetails, subscriber)
+		} else {
+			if sharedEvent == nil {
+				sharedEvent = prepareEvent(pub, msg, pubID, sub, sendTopic, false, eventDetails, nil)
+			}
+			event = sharedEvent
+		}
+
 		b.trySend(subscriber, event)
 	}
 
@@ -650,6 +669,8 @@ func (b *broker) syncPubEvent(pub *wamp.Session, msg *wamp.Publish, pubID wamp.I
 		if _, ok := msg.Options["eligible"]; ok {
 			return
 		}
+		// History gets its own event copy because it may be retained long
+		// after the live events have been serialized and sent.
 		event := prepareEvent(pub, msg, pubID, sub, sendTopic, disclose, eventDetails, nil)
 		b.syncSaveEvent(eventStore, msg, event)
 	}
