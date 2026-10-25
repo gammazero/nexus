@@ -512,7 +512,7 @@ func TestDealerYieldDoesNotBlockCalleeOnSlowCaller(t *testing.T) {
 	// First call: RESULT 1 fills caller's 1-slot queue (test never reads it).
 	deliverYield(1)
 
-	// Second call: RESULT 2 cannot be queued — caller is now blocked.
+	// Second call: RESULT 2 cannot be queued, since the caller is blocked.
 	// dealer.yield enters its retry loop. With the bug, this retry runs on
 	// the callee's session goroutine and blocks it.
 	deliverYield(2)
@@ -527,7 +527,7 @@ func TestDealerYieldDoesNotBlockCalleeOnSlowCaller(t *testing.T) {
 		_, ok := msg.(*wamp.Subscribed)
 		require.True(t, ok, "expected SUBSCRIBED, got %T", msg)
 	case <-time.After(time.Second):
-		t.Fatal("callee blocked for >1s while caller's queue is full — see #324")
+		t.Fatal("callee blocked for >1s while caller's queue is full, see #324")
 	}
 }
 
