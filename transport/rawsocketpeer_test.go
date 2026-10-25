@@ -1,9 +1,11 @@
 package transport_test
 
 import (
+	"fmt"
 	"io"
 	"log"
 	"net"
+	"strings"
 	"testing"
 	"time"
 
@@ -212,6 +214,121 @@ func TestRawSocketPingStorm(t *testing.T) {
 		require.FailNow(t, "PONGs not received")
 	}
 
+	writeHello(t, client)
+	requireRecvHello(t, peer)
+}
+
+// TestRawSocketPingDuringSend verifies that PONGs do not interleave with
+// message frames. The peer sends a stream of large messages while the remote
+// peer sends PINGs, and every frame the remote peer reads must be whole: each
+// message deserializes, in order, and each PONG holds the body of its PING.
+func TestRawSocketPingDuringSend(t *testing.T) {
+	verifyNoLeaks(t)
+	client, peer := newPipedRawSocket(t, 512)
+
+	const (
+		messages = 1000
+		pings    = 1000
+	)
+	// Each message is close to the remote peer's 512-byte limit.
+	arg := strings.Repeat("x", 400)
+
+	// A corrupt stream can leave the remote peer waiting for bytes that never
+	// come, and then the peer blocked writing to it. The deadline unblocks both
+	// sides so that the test fails instead of hanging. Closing the client end
+	// before the peer unblocks a peer that is still writing to it.
+	require.NoError(t, client.SetDeadline(time.Now().Add(5*time.Second)))
+	t.Cleanup(func() { _ = client.Close() })
+
+	readErr := make(chan error, 1)
+	go func() {
+		var serializer serialize.JSONSerializer
+		var gotMsgs, gotPongs int
+		for gotMsgs < messages || gotPongs < pings {
+			frameType, body, err := readFrame(client)
+			if err != nil {
+				readErr <- err
+				return
+			}
+			switch frameType {
+			case frameMessage:
+				msg, err := serializer.Deserialize(body)
+				if err != nil {
+					readErr <- fmt.Errorf("message %d: %w", gotMsgs, err)
+					return
+				}
+				event, ok := msg.(*wamp.Event)
+				if !ok || event.Publication != wamp.ID(gotMsgs) {
+					readErr <- fmt.Errorf("message %d: unexpected %v", gotMsgs, msg)
+					return
+				}
+				gotMsgs++
+			case framePong:
+				if want := fmt.Sprint("ping-", gotPongs); string(body) != want {
+					readErr <- fmt.Errorf("PONG %d: got body %q", gotPongs, body)
+					return
+				}
+				gotPongs++
+			default:
+				readErr <- fmt.Errorf("unexpected frame type %#x", frameType)
+				return
+			}
+		}
+		readErr <- nil
+	}()
+
+	stopSend := make(chan struct{})
+	sendDone := make(chan struct{})
+	go func() {
+		defer close(sendDone)
+		for i := range messages {
+			msg := &wamp.Event{
+				Publication: wamp.ID(i),
+				Details:     wamp.Dict{},
+				Arguments:   wamp.List{arg},
+			}
+			select {
+			case peer.Send() <- msg:
+			case <-stopSend:
+				return
+			}
+		}
+	}()
+	defer func() {
+		close(stopSend)
+		<-sendDone
+	}()
+
+	// Report a malformed frame, which can stop the PINGs, over the write error.
+	var pingErr error
+	for i := 0; i < pings && pingErr == nil; i++ {
+		body := fmt.Sprint("ping-", i)
+		header := []byte{framePing, 0, 0, byte(len(body))}
+		if _, pingErr = client.Write(header); pingErr == nil {
+			_, pingErr = client.Write([]byte(body))
+		}
+	}
+	require.NoError(t, <-readErr, "malformed frame")
+	require.NoError(t, pingErr)
+}
+
+// TestRawSocketPingFloodNotRead verifies that a remote peer that sends many
+// PINGs, and reads none of the PONGs, does not stop the peer from reading its
+// messages.
+func TestRawSocketPingFloodNotRead(t *testing.T) {
+	verifyNoLeaks(t)
+	client, peer := newPipedRawSocket(t, 512)
+
+	// The deadline fails the test if the peer stops reading. Closing the client
+	// end before the peer unblocks the peer writing PONGs to it.
+	require.NoError(t, client.SetDeadline(time.Now().Add(5*time.Second)))
+	t.Cleanup(func() { _ = client.Close() })
+
+	// Send more PING bodies than the peer queues PONGs for.
+	body := make([]byte, 256)
+	for range 1000 {
+		writeFrame(t, client, framePing, body)
+	}
 	writeHello(t, client)
 	requireRecvHello(t, peer)
 }
