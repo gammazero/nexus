@@ -610,6 +610,7 @@ func (b *broker) syncPubEvent(pub *wamp.Session, msg *wamp.Publish, pubID wamp.I
 			}
 		}
 
+		var event *wamp.Event
 		if subscriber.IsLocal() ||
 			(disclose && subscriber.HasFeature(wamp.RoleSubscriber, wamp.FeaturePubIdent)) {
 			 event = prepareEvent(pub, msg, pubID, sub, sendTopic, disclose, eventDetails, subscriber)
