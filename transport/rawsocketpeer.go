@@ -38,6 +38,17 @@ type rawSocketPeer struct {
 	writerDone chan struct{}
 	closeOnce  sync.Once
 
+	// PONG bodies queued by recvHandler, for sendHandler to write, so that only
+	// sendHandler writes frames. pongBytes is the size of the queued frames, and
+	// pongReady is signaled when a PONG is queued. pongDropped is set when a
+	// PONG is dropped, so that a flood of PINGs is logged once each time the
+	// queue fills.
+	pongMu      sync.Mutex
+	pongs       [][]byte
+	pongBytes   int
+	pongDropped bool
+	pongReady   chan struct{}
+
 	log stdlog.StdLog
 }
 
@@ -50,6 +61,21 @@ const (
 
 	// RawSocket header ID.
 	magic = 0x7f
+
+	// Frame types, in the low 3 bits of the first byte of a frame header.
+	frameMessage = 0
+	framePing    = 1
+	framePong    = 2
+
+	// frameHeaderSize is the size of a frame header.
+	frameHeaderSize = 4
+
+	// maxQueuedPongBytes limits the size of the PONG frames queued for
+	// sendHandler. A PONG for a PING that arrives when the queue is full is
+	// dropped, so that a remote peer that sends PINGs faster than it reads
+	// PONGs cannot grow the queue without bound. A PONG is always queued when
+	// the queue is empty, however large its body.
+	maxQueuedPongBytes = 64 << 10
 )
 
 // ConnectRawSocketPeer creates a new rawSocketPeer with the specified config,
@@ -164,6 +190,7 @@ func newRawSocketPeer(conn net.Conn, serializer serialize.Serializer, logger std
 
 		closed:     make(chan struct{}),
 		writerDone: make(chan struct{}),
+		pongReady:  make(chan struct{}, 1),
 
 		// The router will read from this channel and immediately dispatch the
 		// message to the broker or dealer. Therefore this channel can be
@@ -227,7 +254,9 @@ drainLoop:
 }
 
 // sendHandler pulls messages from the write channel, and pushes them to the
-// socket.
+// socket. It also writes the PONGs that recvHandler queues. It is the only
+// goroutine that writes frames while it runs, so that frames do not
+// interleave.
 func (rs *rawSocketPeer) sendHandler() {
 	defer close(rs.writerDone)
 	defer rs.cancelSender()
@@ -247,11 +276,18 @@ sendLoop:
 					rs.sendLimit)
 				continue sendLoop
 			}
-			if err = rs.writeMessage(b); err != nil {
+			if err = rs.writeFrame(frameMessage, b); err != nil {
 				if !wamp.IsGoodbyeAck(msg) {
 					rs.log.Println("Error writing message:", msg, err)
 				}
 				continue sendLoop
+			}
+		case <-rs.pongReady:
+			for _, body := range rs.takePongs() {
+				if err := rs.writeFrame(framePong, body); err != nil {
+					rs.log.Println("Error responding to PING:", err)
+					break
+				}
 			}
 		case <-senderDone:
 			return
@@ -259,11 +295,10 @@ sendLoop:
 	}
 }
 
-// writeMessage writes a WAMP message frame holding the serialized message b to
-// the socket.
-func (rs *rawSocketPeer) writeMessage(b []byte) error {
+// writeFrame writes a frame of the given type, holding body b, to the socket.
+func (rs *rawSocketPeer) writeFrame(frameType byte, b []byte) error {
 	lenBytes := intToBytes(len(b))
-	header := []byte{0x0, lenBytes[0], lenBytes[1], lenBytes[2]}
+	header := []byte{frameType, lenBytes[0], lenBytes[1], lenBytes[2]}
 	if _, err := rs.conn.Write(header); err != nil {
 		return err
 	}
@@ -290,7 +325,7 @@ func (rs *rawSocketPeer) abort(deserializeErr error) {
 
 	b, err := rs.serializer.Serialize(deserializeAbort(deserializeErr))
 	if err == nil && len(b) <= rs.sendLimit {
-		if err = rs.writeMessage(b); err != nil {
+		if err = rs.writeFrame(frameMessage, b); err != nil {
 			rs.log.Println("Error writing ABORT:", err)
 		}
 	}
@@ -334,7 +369,7 @@ MsgLoop:
 
 		var msg wamp.Message
 		switch header[0] & 0x07 {
-		case 0: // WAMP message
+		case frameMessage:
 			buf := make([]byte, length)
 			_, err = io.ReadFull(rs.conn, buf)
 			if err != nil {
@@ -350,20 +385,16 @@ MsgLoop:
 				rs.abort(err)
 				return
 			}
-		case 1: // PING
-			header[0] = 0x02
-			if _, err = rs.conn.Write(header[:]); err != nil {
-				rs.log.Println("Error writing header responding to PING:", err)
+		case framePing:
+			body := make([]byte, length)
+			if _, err = io.ReadFull(rs.conn, body); err != nil {
+				rs.log.Println("Error reading PING:", err)
 				_ = rs.conn.Close()
 				return
 			}
-			if _, err = io.CopyN(rs.conn, rs.conn, int64(length)); err != nil {
-				rs.log.Println("Error responding to PING:", err)
-				_ = rs.conn.Close()
-				return
-			}
+			rs.queuePong(body)
 			continue MsgLoop
-		case 2: // PONG
+		case framePong:
 			_, err = io.CopyN(io.Discard, rs.conn, int64(length))
 			if err != nil {
 				rs.log.Println("Error reading PONG:", err)
@@ -395,6 +426,47 @@ MsgLoop:
 			return
 		}
 	}
+}
+
+// queuePong queues a PONG holding body, the body of a PING from the remote
+// peer, for sendHandler to write. It does not block, so that reading from the
+// remote peer does not wait for writing to it. The PONG is dropped if the
+// queue is full, or if it is over the remote peer's receive limit.
+func (rs *rawSocketPeer) queuePong(body []byte) {
+	if len(body) > rs.sendLimit {
+		rs.log.Println("PONG size", len(body), "exceeds limit of", rs.sendLimit)
+		return
+	}
+	size := frameHeaderSize + len(body)
+	rs.pongMu.Lock()
+	if len(rs.pongs) != 0 && rs.pongBytes+size > maxQueuedPongBytes {
+		logDrop := !rs.pongDropped
+		rs.pongDropped = true
+		rs.pongMu.Unlock()
+		if logDrop {
+			rs.log.Print("Too many PINGs waiting for PONG, dropping PINGs")
+		}
+		return
+	}
+	rs.pongs = append(rs.pongs, body)
+	rs.pongBytes += size
+	rs.pongMu.Unlock()
+
+	select {
+	case rs.pongReady <- struct{}{}:
+	default:
+	}
+}
+
+// takePongs removes and returns the queued PONG bodies.
+func (rs *rawSocketPeer) takePongs() [][]byte {
+	rs.pongMu.Lock()
+	defer rs.pongMu.Unlock()
+	pongs := rs.pongs
+	rs.pongs = nil
+	rs.pongBytes = 0
+	rs.pongDropped = false
+	return pongs
 }
 
 // clientHandshake handles the client-side of a RawSocket transport handshake.
