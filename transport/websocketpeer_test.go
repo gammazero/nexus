@@ -410,3 +410,100 @@ func TestWSReadSetupBeforeFirstRead(t *testing.T) {
 		require.True(t, conn.handlersAtFirstRd, "ping/pong handlers not set")
 	}
 }
+
+// recordingConn is a WebsocketConnection whose writes succeed and are
+// recorded, and whose reads return the messages in reads and then block until
+// the connection is closed. It never calls the pong handler, like a remote
+// peer that has gone silent.
+type recordingConn struct {
+	*blockingConn
+	reads [][]byte
+
+	mu     sync.Mutex
+	writes []recordedWrite
+}
+
+type recordedWrite struct {
+	messageType int
+	data        []byte
+}
+
+func newRecordingConn(reads ...[]byte) *recordingConn {
+	return &recordingConn{blockingConn: newBlockingConn(), reads: reads}
+}
+
+func (c *recordingConn) ReadMessage() (int, []byte, error) {
+	c.mu.Lock()
+	if len(c.reads) != 0 {
+		b := c.reads[0]
+		c.reads = c.reads[1:]
+		c.mu.Unlock()
+		return websocket.TextMessage, b, nil
+	}
+	c.mu.Unlock()
+	return c.blockingConn.ReadMessage()
+}
+
+func (c *recordingConn) WriteMessage(messageType int, data []byte) error {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	if c.isClosed() {
+		return errClosed
+	}
+	c.writes = append(c.writes, recordedWrite{messageType, data})
+	return nil
+}
+
+// written returns the writes of the given message type.
+func (c *recordingConn) written(messageType int) [][]byte {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	var out [][]byte
+	for _, w := range c.writes {
+		if w.messageType == messageType {
+			out = append(out, w.data)
+		}
+	}
+	return out
+}
+
+// TestWSKeepAliveMissedPongs verifies that a remote peer that does not answer
+// two keepalive pings is disconnected. The connection has no read deadline, so
+// only the missed pongs can close it.
+func TestWSKeepAliveMissedPongs(t *testing.T) {
+	defer goleak.VerifyNone(t, goleak.IgnoreCurrent())
+
+	conn := newRecordingConn()
+	peer := newTestPeer(conn, testKeepAlive)
+
+	requireRecvClosed(t, peer)
+	require.True(t, conn.isClosed(), "connection not closed")
+	require.Len(t, conn.written(websocket.PingMessage), 2)
+	requireCloses(t, peer)
+}
+
+// TestWSDeserializeErrorAborts verifies that a message that cannot be
+// deserialized is answered with ABORT wamp.error.protocol_violation, and that
+// the connection is then closed instead of reading further messages.
+func TestWSDeserializeErrorAborts(t *testing.T) {
+	defer goleak.VerifyNone(t, goleak.IgnoreCurrent())
+
+	conn := newRecordingConn([]byte("not valid json {"), helloJSON)
+	peer := newTestPeer(conn, 0)
+
+	select {
+	case msg, ok := <-peer.Recv():
+		require.False(t, ok, "got %T after malformed message", msg)
+	case <-time.After(testTimeout):
+		require.FailNow(t, "recvHandler did not exit")
+	}
+	require.True(t, conn.isClosed(), "connection not closed")
+	writes := conn.written(websocket.TextMessage)
+	require.Len(t, writes, 1)
+	msg, err := (&serialize.JSONSerializer{}).Deserialize(writes[0])
+	require.NoError(t, err)
+	abort, ok := msg.(*wamp.Abort)
+	require.True(t, ok, "expected ABORT, got %T", msg)
+	require.Equal(t, wamp.ErrProtocolViolation, abort.Reason)
+	requireCloses(t, peer)
+}

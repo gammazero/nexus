@@ -397,6 +397,31 @@ func (w *websocketPeer) stopSender() {
 	}
 }
 
+// abort sends the remote peer an ABORT for the message that could not be
+// deserialized. recvHandler closes the websocket when it returns. abort stops
+// the sender first, since gorilla does not allow concurrent writes, and gives
+// up on the ABORT if it is not written within abortTimeout.
+func (w *websocketPeer) abort(deserializeErr error) {
+	select {
+	case <-w.closed:
+		// Peer was closed explicitly, and the sender has already exited.
+		return
+	default:
+	}
+	w.stopSender()
+
+	b, err := w.serializer.Serialize(deserializeAbort(deserializeErr))
+	if err != nil {
+		return
+	}
+	if w.writeDeadliner != nil {
+		_ = w.writeDeadliner.SetWriteDeadline(time.Now().Add(abortTimeout))
+	}
+	if err = w.conn.WriteMessage(w.payloadType, b); err != nil {
+		w.log.Println("Error writing ABORT:", err)
+	}
+}
+
 func (w *websocketPeer) Recv() <-chan wamp.Message { return w.rd }
 
 func (w *websocketPeer) Send() chan<- wamp.Message { return w.wr }
@@ -563,9 +588,11 @@ func (w *websocketPeer) recvHandler() {
 
 		msg, err := w.serializer.Deserialize(b)
 		if err != nil {
-			// TODO: something more than merely logging?
+			// WAMP treats a message that cannot be deserialized as a protocol
+			// violation, so abort instead of skipping it.
 			w.log.Println("Cannot deserialize peer message:", err)
-			continue
+			w.abort(err)
+			return
 		}
 		// It is OK for the router to block a client since routing should be
 		// very quick compared to the time to transfer a message over
