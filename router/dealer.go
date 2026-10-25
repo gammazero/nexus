@@ -7,8 +7,10 @@ import (
 	"maps"
 	"math/rand"
 	"strings"
+	"sync"
 	"time"
 
+	"github.com/gammazero/deque"
 	"github.com/gammazero/nexus/v3/stdlog"
 	"github.com/gammazero/nexus/v3/wamp"
 )
@@ -20,6 +22,14 @@ const (
 	sendResultDeadline = time.Minute
 	// yieldRetryDelay is the initial delay before reprocessing a blocked yield.
 	yieldRetryDelay = time.Millisecond
+	// maxYieldRetryDelay is the longest delay between retries of a blocked
+	// yield. The delay doubles from yieldRetryDelay up to this.
+	maxYieldRetryDelay = 100 * time.Millisecond
+	// maxPendingYields is the most YIELDs that are queued for a call whose
+	// caller is blocked. Once that many are queued, the callee waits for room
+	// before it can send any other message, so a callee that produces results
+	// faster than its caller reads them is slowed to the caller's pace.
+	maxPendingYields = 64
 )
 
 // Role information for this broker.
@@ -63,6 +73,24 @@ type invocation struct {
 	inProgress  bool
 	timerCancel context.CancelFunc
 	options     wamp.Dict
+
+	// pendingYields holds the YIELDs for this call that could not yet be
+	// delivered because the caller is blocked, in the order they arrived, so
+	// that progressive results stay in order. A deliverPendingYields
+	// goroutine delivers them while retrying is true. Accessed only from the
+	// dealer goroutine.
+	pendingYields deque.Deque[pendingYield]
+	retrying      bool
+	// retryDeadline is when the dealer gives up on a caller that has not read
+	// any of the queued results, and cancels the call. It is moved forward
+	// each time a queued result is delivered.
+	retryDeadline time.Time
+}
+
+// pendingYield is a queued YIELD, with its progress option.
+type pendingYield struct {
+	msg      *wamp.Yield
+	progress bool
 }
 
 type requestID struct {
@@ -99,6 +127,11 @@ type dealer struct {
 
 	actionChan chan func()
 	stopped    chan struct{}
+	// closing is closed when the dealer starts to close, to stop the
+	// goroutines that deliver queued YIELDs. close waits for them, using
+	// pendingYieldsDone, before it closes actionChan.
+	closing           chan struct{}
+	pendingYieldsDone sync.WaitGroup
 
 	// Generate registration IDs.
 	idGen *wamp.IDGen
@@ -140,6 +173,7 @@ func newDealer(logger stdlog.StdLog, strictURI, allowDisclose, debug bool) *deal
 		// channel is appropriate.
 		actionChan: make(chan func()),
 		stopped:    make(chan struct{}),
+		closing:    make(chan struct{}),
 
 		idGen: new(wamp.IDGen),
 		prng:  rand.New(rand.NewSource(time.Now().Unix())), //nolint:gosec // used for call invocation
@@ -341,50 +375,149 @@ func (d *dealer) cancel(caller *wamp.Session, msg *wamp.Cancel) {
 // yield handles the result of successfully processing and finishing the
 // execution of a call, send from callee to dealer.
 //
-// If the RESULT could not be sent to the caller because the caller was blocked
-// (send queue full), then retry sending until timeout. If timeout while trying
-// to send RESULT, then cancel call.
+// If the RESULT cannot be sent to the caller because the caller is blocked
+// (send queue full), then the YIELD is queued for the call, and a goroutine
+// keeps trying to deliver the queued YIELDs, in order, until the caller reads
+// them or the deadline passes. yield then returns, so that a blocked caller
+// does not stop the callee from doing anything else. See gammazero/nexus#324.
+// Only when a call already has maxPendingYields queued does yield wait for
+// room in the queue.
 func (d *dealer) yield(callee *wamp.Session, msg *wamp.Yield) {
 	if callee == nil || msg == nil {
 		panic("dealer.Yield with nil session or message")
 	}
 
-	var again bool
 	progress, _ := msg.Options[wamp.OptProgress].(bool)
+	invkReqID := requestID{session: callee.ID, request: msg.Request}
 
-	done := make(chan struct{})
-	d.actionChan <- func() {
-		again = d.syncYield(callee, msg, progress, true)
-		done <- struct{}{}
-	}
-	<-done
-
-	// If blocked, retry
-	if again {
-		retry := true
-		delay := yieldRetryDelay
-		start := time.Now()
-		// Retry processing YIELD until caller gone or deadline reached.
-		for {
-			if d.debug {
-				d.log.Println("Retry sending RESULT after", delay)
-			}
-			<-time.After(delay)
-			// Do not retry if the elapsed time exceeds deadline.
-			if time.Since(start) >= sendResultDeadline {
-				retry = false
-			}
-			d.actionChan <- func() {
-				again = d.syncYield(callee, msg, progress, retry)
-				done <- struct{}{}
-			}
-			<-done
-			if !again {
-				break
-			}
-			delay *= 2
+	delay := yieldRetryDelay
+	for {
+		var full, startRetry bool
+		done := make(chan struct{})
+		d.actionChan <- func() {
+			full, startRetry = d.syncQueueYield(callee, invkReqID, msg, progress)
+			close(done)
 		}
+		<-done
+		if startRetry {
+			d.pendingYieldsDone.Add(1)
+			go d.deliverPendingYields(callee, invkReqID)
+		}
+		if !full {
+			return
+		}
+
+		// Wait for the queue to have room. The call is canceled if the caller
+		// reads nothing until the deadline, which leaves room too.
+		if d.debug {
+			d.log.Println("Wait for room to queue YIELD after", delay)
+		}
+		time.Sleep(delay)
+		delay = min(2*delay, maxYieldRetryDelay)
 	}
+}
+
+// syncQueueYield delivers msg to the caller, or queues it if the caller is
+// blocked or other YIELDs are already queued for the call. It reports whether
+// the queue is full, so that msg is neither delivered nor queued, and whether
+// a goroutine must be started to deliver the queue.
+func (d *dealer) syncQueueYield(callee *wamp.Session, invkReqID requestID, msg *wamp.Yield, progress bool) (full, startRetry bool) { //nolint:lll
+	invk, ok := d.invocations[invkReqID]
+	if ok && invk.retrying {
+		if invk.pendingYields.Len() >= maxPendingYields {
+			return true, false
+		}
+		invk.pendingYields.PushBack(pendingYield{msg, progress})
+		return false, false
+	}
+	if !d.syncYield(callee, msg, progress, true) {
+		return false, false
+	}
+	// The caller is blocked, and syncYield kept the invocation.
+	invk = d.invocations[invkReqID]
+	invk.pendingYields.PushBack(pendingYield{msg, progress})
+	invk.retrying = true
+	invk.retryDeadline = time.Now().Add(sendResultDeadline)
+	return false, true
+}
+
+// deliverPendingYields delivers the YIELDs queued for an invocation, in
+// order, retrying while the caller is blocked. It exits when the queue is
+// empty, the invocation is gone, or the dealer is closing.
+func (d *dealer) deliverPendingYields(callee *wamp.Session, invkReqID requestID) {
+	defer d.pendingYieldsDone.Done()
+
+	delay := yieldRetryDelay
+	timer := time.NewTimer(delay)
+	defer timer.Stop()
+	for {
+		if d.debug {
+			d.log.Println("Retry sending RESULT after", delay)
+		}
+		select {
+		case <-timer.C:
+		case <-d.closing:
+			return
+		}
+
+		var more, delivered bool
+		done := make(chan struct{})
+		// The dealer does not close actionChan until this goroutine exits, so
+		// this cannot send on a closed channel.
+		select {
+		case d.actionChan <- func() {
+			more, delivered = d.syncDeliverPendingYield(callee, invkReqID)
+			close(done)
+		}:
+		case <-d.closing:
+			return
+		}
+		<-done
+		if !more {
+			return
+		}
+		if delivered {
+			// The caller is reading, so try the next one soon.
+			delay = yieldRetryDelay
+		} else {
+			delay = min(2*delay, maxYieldRetryDelay)
+		}
+		timer.Reset(delay)
+	}
+}
+
+// syncDeliverPendingYield tries to deliver the first YIELD queued for an
+// invocation. It reports whether YIELDs remain queued, and whether it
+// delivered one. Once the caller has read nothing until the deadline, the
+// call is canceled.
+func (d *dealer) syncDeliverPendingYield(callee *wamp.Session, invkReqID requestID) (more, delivered bool) {
+	invk, ok := d.invocations[invkReqID]
+	if !ok {
+		// The call was canceled, timed out, or one side left.
+		return false, false
+	}
+	if invk.pendingYields.Len() == 0 {
+		invk.retrying = false
+		return false, false
+	}
+	head := invk.pendingYields.Front()
+	canRetry := time.Now().Before(invk.retryDeadline)
+	if d.syncYield(callee, head.msg, head.progress, canRetry) {
+		// Still blocked.
+		return true, false
+	}
+	// Delivered, or the call was canceled at the deadline. A final YIELD also
+	// removes the invocation.
+	invk.pendingYields.PopFront()
+	invk.retryDeadline = time.Now().Add(sendResultDeadline)
+	if _, ok = d.invocations[invkReqID]; !ok {
+		return false, true
+	}
+	if invk.pendingYields.Len() == 0 {
+		invk.retrying = false
+		return false, true
+	}
+	return true, true
 }
 
 // error handles an invocation error returned by the callee.
@@ -437,6 +570,10 @@ func (d *dealer) removeSession(sess *wamp.Session, notify bool) {
 
 // close stops the dealer, letting already queued actions finish.
 func (d *dealer) close() {
+	// Stop the goroutines that deliver queued YIELDs, and wait for them, so
+	// that none sends to actionChan after it is closed.
+	close(d.closing)
+	d.pendingYieldsDone.Wait()
 	close(d.actionChan)
 	<-d.stopped
 	if d.debug {
@@ -1197,10 +1334,10 @@ func (d *dealer) syncYield(callee *wamp.Session, msg *wamp.Yield, progress, canR
 		}
 	}
 
-	// Send RESULT to the caller. If the caller is blocked, then make the
-	// callee wait and retry sending this message again. The caller may be
-	// blocked when the callee is generating progressive responses faster than
-	// the caller can handle them.
+	// Send RESULT to the caller. If the caller is blocked, and canRetry is
+	// set, then report that, so that the YIELD is queued and sent again later.
+	// The caller may be blocked when the callee is generating progressive
+	// responses faster than the caller can handle them.
 
 	// Without this copy, the RESULT aliases the callee's incoming Arguments and
 	// ArgumentsKw directly. Nothing writes to those fields after this point today,

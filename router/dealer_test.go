@@ -2,11 +2,13 @@ package router //nolint:testpackage
 
 import (
 	"fmt"
+	"sync/atomic"
 	"testing"
 	"testing/synctest"
 	"time"
 
 	"github.com/stretchr/testify/require"
+	"go.uber.org/goleak"
 
 	"github.com/gammazero/nexus/v3/transport"
 	"github.com/gammazero/nexus/v3/wamp"
@@ -1298,4 +1300,224 @@ func TestRegisterSharedJoinUndeliverableAckNotAdded(t *testing.T) {
 	require.Same(t, s1, reg.callees[0])
 	_, ok = dealer.calleeRegIDSet[s2]
 	require.False(t, ok, "failed join must not be tracked against the callee")
+}
+
+// setupBlockedCall registers testProcedure and calls it from a caller whose
+// one-message queue is never read by the dealer's goroutine. It returns the
+// callee session, the caller session, and the INVOCATION for the call.
+func setupBlockedCall(t *testing.T, d *dealer) (*wamp.Session, *wamp.Session, *wamp.Invocation) {
+	t.Helper()
+	callee := wamp.NewSession(newTestPeer(), 0, nil, nil)
+	d.register(callee, &wamp.Register{Request: 1, Procedure: testProcedure})
+	_, ok := (<-callee.Recv()).(*wamp.Registered)
+	require.True(t, ok, "expected REGISTERED")
+
+	caller := wamp.NewSession(newTestPeer(), 0, nil, nil)
+	d.call(caller, &wamp.Call{Request: 100, Procedure: testProcedure})
+	inv, ok := (<-callee.Recv()).(*wamp.Invocation)
+	require.True(t, ok, "expected INVOCATION")
+	return callee, caller, inv
+}
+
+func progressYield(inv *wamp.Invocation, arg int) *wamp.Yield {
+	return &wamp.Yield{
+		Request:   inv.Request,
+		Options:   wamp.Dict{wamp.OptProgress: true},
+		Arguments: wamp.List{arg},
+	}
+}
+
+// requireResult fails if the next message for caller is not a RESULT with the
+// argument arg.
+func requireResult(t *testing.T, caller *wamp.Session, arg int) *wamp.Result {
+	t.Helper()
+	select {
+	case msg := <-caller.Recv():
+		res, ok := msg.(*wamp.Result)
+		require.True(t, ok, "expected RESULT %d, got %T", arg, msg)
+		require.Equal(t, arg, res.Arguments[0], "RESULT out of order")
+		return res
+	case <-time.After(2 * time.Second):
+		require.FailNowf(t, "timed out", "RESULT %d not delivered", arg)
+		return nil
+	}
+}
+
+// TestDealerYieldRetriesOnSlowCaller checks that a YIELD whose RESULT cannot
+// be sent to a blocked caller is queued, and is delivered once the caller
+// reads its queue.
+func TestDealerYieldRetriesOnSlowCaller(t *testing.T) {
+	d, _ := newTestDealer(t)
+	callee, caller, inv := setupBlockedCall(t, d)
+
+	// The first RESULT fills the caller's queue, and the second is queued.
+	d.yield(callee, progressYield(inv, 1))
+	d.yield(callee, progressYield(inv, 2))
+
+	requireResult(t, caller, 1)
+	requireResult(t, caller, 2)
+
+	// A final YIELD ends the call.
+	d.yield(callee, &wamp.Yield{Request: inv.Request, Arguments: wamp.List{3}})
+	res := requireResult(t, caller, 3)
+	_, hasProgress := res.Details[wamp.OptProgress]
+	require.False(t, hasProgress, "final RESULT must not have progress")
+}
+
+// TestDealerYieldRetriesPreservesOrder checks that queued YIELDs are delivered
+// in the order they arrived.
+func TestDealerYieldRetriesPreservesOrder(t *testing.T) {
+	d, _ := newTestDealer(t)
+	callee, caller, inv := setupBlockedCall(t, d)
+
+	const n = 5
+	for i := 1; i <= n; i++ {
+		d.yield(callee, progressYield(inv, i))
+	}
+	for i := 1; i <= n; i++ {
+		requireResult(t, caller, i)
+	}
+}
+
+// TestDealerYieldQueueBounded checks that once maxPendingYields are queued for
+// a call, yield waits for room instead of queuing more, and that all YIELDs
+// are delivered, in order, once the caller reads them.
+func TestDealerYieldQueueBounded(t *testing.T) {
+	synctest.Test(t, func(t *testing.T) {
+		d, _ := newTestDealer(t)
+		callee, caller, inv := setupBlockedCall(t, d)
+
+		// One RESULT fills the caller's queue, then maxPendingYields are
+		// queued, and the next yield waits.
+		const n = maxPendingYields + 3
+		var sent atomic.Int32
+		go func() {
+			for i := 1; i <= n; i++ {
+				d.yield(callee, progressYield(inv, i))
+				sent.Add(1)
+			}
+		}()
+		time.Sleep(time.Second)
+		synctest.Wait()
+		require.Equal(t, int32(maxPendingYields+1), sent.Load(), "yields not held back")
+		queued := make(chan int)
+		d.actionChan <- func() {
+			queued <- d.invocations[requestID{callee.ID, inv.Request}].pendingYields.Len()
+		}
+		require.Equal(t, maxPendingYields, <-queued)
+
+		for i := 1; i <= n; i++ {
+			requireResult(t, caller, i)
+		}
+		synctest.Wait()
+		require.Equal(t, int32(n), sent.Load())
+	})
+}
+
+// TestDealerYieldDeadlineFromLastProgress checks that a caller that reads its
+// results slowly but steadily gets every result of a stream that takes longer
+// than sendResultDeadline. The deadline only cancels a call whose caller
+// reads nothing for that long.
+func TestDealerYieldDeadlineFromLastProgress(t *testing.T) {
+	synctest.Test(t, func(t *testing.T) {
+		d, _ := newTestDealer(t)
+		callee, caller, inv := setupBlockedCall(t, d)
+
+		const n = 1000
+		go func() {
+			for i := 1; i <= n; i++ {
+				d.yield(callee, progressYield(inv, i))
+			}
+		}()
+		// Reading one result every 100ms takes 100s, longer than the deadline.
+		for i := 1; i <= n; i++ {
+			time.Sleep(100 * time.Millisecond)
+			requireResult(t, caller, i)
+		}
+	})
+}
+
+// TestDealerYieldDeadlineCancels checks that a call whose caller reads none of
+// its queued results until sendResultDeadline is canceled, and that the callee
+// is told to stop.
+func TestDealerYieldDeadlineCancels(t *testing.T) {
+	synctest.Test(t, func(t *testing.T) {
+		d, _ := newTestDealer(t)
+		calleeRoles := wamp.Dict{"roles": wamp.Dict{"callee": wamp.Dict{
+			"features": wamp.Dict{wamp.FeatureCallCanceling: true},
+		}}}
+		callee := wamp.NewSession(newTestPeer(), 0, nil, calleeRoles)
+		d.register(callee, &wamp.Register{Request: 1, Procedure: testProcedure})
+		<-callee.Recv()
+		caller := wamp.NewSession(newTestPeer(), 0, nil, nil)
+		d.call(caller, &wamp.Call{Request: 100, Procedure: testProcedure})
+		inv := (<-callee.Recv()).(*wamp.Invocation)
+
+		d.yield(callee, progressYield(inv, 1))
+		d.yield(callee, progressYield(inv, 2))
+
+		time.Sleep(sendResultDeadline + time.Second)
+		synctest.Wait()
+		msg := <-callee.Recv()
+		_, ok := msg.(*wamp.Interrupt)
+		require.True(t, ok, "expected INTERRUPT, got %T", msg)
+		found := make(chan bool)
+		d.actionChan <- func() {
+			_, ok := d.invocations[requestID{callee.ID, inv.Request}]
+			found <- ok
+		}
+		require.False(t, <-found, "invocation not removed")
+	})
+}
+
+// TestDealerDrainExitsOnInvocationCancel checks that canceling a call whose
+// YIELDs are queued drops them, and that a later YIELD for the call is not
+// delivered.
+func TestDealerDrainExitsOnInvocationCancel(t *testing.T) {
+	d, _ := newTestDealer(t)
+	callee, caller, inv := setupBlockedCall(t, d)
+
+	d.yield(callee, progressYield(inv, 1))
+	d.yield(callee, progressYield(inv, 2))
+
+	d.cancel(caller, &wamp.Cancel{
+		Request: 100,
+		Options: wamp.Dict{wamp.OptMode: wamp.CancelModeKillNoWait},
+	})
+	requireResult(t, caller, 1)
+	// The cancel ERROR, if there was room for it.
+	select {
+	case msg := <-caller.Recv():
+		_, isResult := msg.(*wamp.Result)
+		require.False(t, isResult, "queued RESULT delivered after cancel")
+	case <-time.After(100 * time.Millisecond):
+	}
+
+	d.yield(callee, &wamp.Yield{Request: inv.Request, Arguments: wamp.List{3}})
+	select {
+	case msg := <-caller.Recv():
+		require.FailNowf(t, "unexpected message", "got %T after cancel", msg)
+	case <-time.After(100 * time.Millisecond):
+	}
+}
+
+// TestDealerCloseWhileDeliveringYields checks that closing the dealer while
+// queued YIELDs are being delivered neither panics, by sending on the closed
+// action channel, nor leaves goroutines running.
+func TestDealerCloseWhileDeliveringYields(t *testing.T) {
+	defer goleak.VerifyNone(t, goleak.IgnoreCurrent())
+
+	for i := range 500 {
+		d := newDealer(logger, false, true, debug)
+		_, rtr := transport.LinkedPeers()
+		d.setMetaPeer(rtr)
+		callee, _, inv := setupBlockedCall(t, d)
+		d.yield(callee, progressYield(inv, 1))
+		d.yield(callee, progressYield(inv, 2))
+
+		// Close at different points of the delivery goroutine's retries.
+		time.Sleep(time.Duration(i%4) * 500 * time.Microsecond)
+		d.close()
+		rtr.Close()
+	}
 }
