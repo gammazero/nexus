@@ -168,6 +168,24 @@ func TestPPTUnpackRejectsMalformedPayload(t *testing.T) {
 			wantErr: ErrSerialization,
 		},
 		{
+			name: "e2ee serializer not allowed",
+			details: wamp.Dict{
+				wamp.OptPPTScheme:     WampPPTScheme,
+				wamp.OptPPTSerializer: "json",
+			},
+			args:    wamp.List{[]byte{1}},
+			wantErr: ErrPPTSerializerInvalid,
+		},
+		{
+			name: "e2ee payload not cbor",
+			details: wamp.Dict{
+				wamp.OptPPTScheme:     WampPPTScheme,
+				wamp.OptPPTSerializer: "cbor",
+			},
+			args:    wamp.List{[]byte{0xff, 0xff, 0xff, 0xff}},
+			wantErr: ErrSerialization,
+		},
+		{
 			name: "ppt non-string serializer",
 			details: wamp.Dict{
 				wamp.OptPPTScheme:     MqttPPTScheme,
@@ -202,4 +220,19 @@ func TestE2EEPackRejectsMissingSerializer(t *testing.T) {
 		_, err = packE2EEPayload(opts, wamp.List{"secret"}, nil)
 	})
 	require.ErrorIs(t, err, ErrPPTSerializerInvalid)
+}
+
+// TestE2EEPackRejectsUnsupportedSerializer checks that packing an end-to-end
+// encrypted payload with a serializer other than cbor is reported as an
+// error.
+func TestE2EEPackRejectsUnsupportedSerializer(t *testing.T) {
+	for _, serializer := range []string{"json", "msgpack", "x_unknown", ""} {
+		opts := wamp.Dict{
+			wamp.OptPPTScheme:     WampPPTScheme,
+			wamp.OptPPTSerializer: serializer,
+		}
+		packed, err := packE2EEPayload(opts, wamp.List{"secret"}, nil)
+		require.ErrorIsf(t, err, ErrPPTSerializerInvalid, "serializer %q", serializer)
+		require.Nil(t, packed)
+	}
 }
