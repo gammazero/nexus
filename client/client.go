@@ -59,7 +59,7 @@ type Client struct {
 	sess *wamp.Session
 
 	responseTimeout time.Duration
-	awaitingReply   map[wamp.ID]chan wamp.Message
+	awaitingReply   map[wamp.ID]*replyWaiter
 
 	eventHandlers map[wamp.ID]EventHandler
 	topicSubID    map[string]wamp.ID
@@ -310,7 +310,7 @@ func NewClient(p wamp.Peer, cfg Config) (*Client, error) {
 		sess: sess,
 
 		responseTimeout: cfg.ResponseTimeout,
-		awaitingReply:   map[wamp.ID]chan wamp.Message{},
+		awaitingReply:   map[wamp.ID]*replyWaiter{},
 
 		eventHandlers: map[wamp.ID]EventHandler{},
 		topicSubID:    map[string]wamp.ID{},
@@ -1369,10 +1369,33 @@ func unexpectedMsgError(msg wamp.Message, expected wamp.MessageType) error {
 	return errors.New(s)
 }
 
+// replyWaiter is how run() hands the replies to a request to the goroutine
+// waiting for them. done is closed when that goroutine stops waiting, so that
+// run() does not block forever on a reply that arrives after the wait timed
+// out.
+type replyWaiter struct {
+	msgs chan wamp.Message
+	done chan struct{}
+}
+
 func (c *Client) expectReply(id wamp.ID) {
-	wait := make(chan wamp.Message)
+	w := &replyWaiter{
+		msgs: make(chan wamp.Message),
+		done: make(chan struct{}),
+	}
 	c.sess.Lock()
-	c.awaitingReply[id] = wait
+	c.awaitingReply[id] = w
+	c.sess.Unlock()
+}
+
+// stopWaiting stops waiting for replies to the request id. A reply that run()
+// is trying to hand over is discarded.
+func (c *Client) stopWaiting(id wamp.ID) {
+	c.sess.Lock()
+	if w, ok := c.awaitingReply[id]; ok {
+		close(w.done)
+		delete(c.awaitingReply, id)
+	}
 	c.sess.Unlock()
 }
 
@@ -1395,9 +1418,7 @@ func (c *Client) sendRequest(expectReply bool, newMsg func(id wamp.ID) wamp.Mess
 	}
 	if err := c.send(newMsg(id)); err != nil {
 		if expectReply {
-			c.sess.Lock()
-			delete(c.awaitingReply, id)
-			c.sess.Unlock()
+			c.stopWaiting(id)
 		}
 		return 0, err
 	}
@@ -1461,35 +1482,24 @@ func (c *Client) closeSession() {
 // run() goroutine may be blocked waiting for a reply to be read from the
 // awaiting reply channel.
 func (c *Client) waitForReply(id wamp.ID) (wamp.Message, error) {
-	var wait chan wamp.Message
-	var ok bool
 	c.sess.Lock()
-	wait, ok = c.awaitingReply[id]
+	w, ok := c.awaitingReply[id]
 	c.sess.Unlock()
 	if !ok {
 		return nil, fmt.Errorf("not expecting reply for ID: %v", id)
 	}
+	defer c.stopWaiting(id)
 
-	var msg wamp.Message
-	var err error
 	timer := time.NewTimer(c.responseTimeout)
+	defer timer.Stop()
 	select {
-	case msg, ok = <-wait:
-		timer.Stop()
-		if !ok {
-			// Return directly here, since awaitingReply entry already deleted.
-			return nil, ErrNotConn
-		}
+	case msg := <-w.msgs:
+		return msg, nil
 	case <-timer.C:
-		err = ErrReplyTimeout
+		return nil, ErrReplyTimeout
 	case <-c.Done():
-		err = ErrNotConn
+		return nil, ErrNotConn
 	}
-	c.sess.Lock()
-	delete(c.awaitingReply, id)
-	c.sess.Unlock()
-
-	return msg, err
 }
 
 // waitForReplyWithCancel waits for an expected reply from the router while
@@ -1499,24 +1509,21 @@ func (c *Client) waitForReply(id wamp.ID) (wamp.Message, error) {
 // run() goroutine may be blocked waiting for a reply to be read from the
 // awaiting reply channel.
 func (c *Client) waitForReplyWithCancel(ctx context.Context, id wamp.ID, procedure string, progChan chan<- *wamp.Result) (wamp.Message, error) { //nolint:lll
-	var wait chan wamp.Message
-	var ok bool
 	c.sess.Lock()
-	wait, ok = c.awaitingReply[id]
+	w, ok := c.awaitingReply[id]
 	c.sess.Unlock()
 	if !ok {
 		return nil, fmt.Errorf("not expecting reply for ID: %v", id)
 	}
+	// All done with this call when this returns, so not waiting for more
+	// replies.
+	defer c.stopWaiting(id)
 
 	var msg wamp.Message
 	var err error
 CollectResults:
 	select {
-	case msg, ok = <-wait:
-		if !ok {
-			// Return here, since awaitingReply entry already deleted.
-			return nil, ErrNotConn
-		}
+	case msg = <-w.msgs:
 		// If this is a progressive result, put the Result message on the
 		// progress channel and go back to waiting for more results.
 		if progChan != nil {
@@ -1543,11 +1550,7 @@ CollectResults:
 	waitCancel:
 		// Discard responses until ERROR or timeout
 		select {
-		case msg, ok = <-wait:
-			if !ok {
-				timer.Stop()
-				return nil, err
-			}
+		case msg = <-w.msgs:
 			if _, ok = msg.(*wamp.Error); !ok {
 				// Discard message
 				goto waitCancel
@@ -1560,11 +1563,6 @@ CollectResults:
 	case <-c.Done():
 		err = ErrNotConn
 	}
-	// All done with this call, so not waiting for more replies.
-	c.sess.Lock()
-	delete(c.awaitingReply, id)
-	c.sess.Unlock()
-
 	return msg, err
 }
 
@@ -2058,10 +2056,8 @@ func (c *Client) runHandleInterrupt(msg *wamp.Interrupt) {
 }
 
 func (c *Client) runSignalReply(msg wamp.Message, requestID wamp.ID) {
-	var w chan wamp.Message
-	var ok bool
 	c.sess.Lock()
-	w, ok = c.awaitingReply[requestID]
+	w, ok := c.awaitingReply[requestID]
 	c.sess.Unlock()
 	if !ok {
 		c.log.Println("Received", msg.MessageType(), requestID,
@@ -2069,7 +2065,10 @@ func (c *Client) runSignalReply(msg wamp.Message, requestID wamp.ID) {
 		return
 	}
 	select {
-	case w <- msg:
+	case w.msgs <- msg:
+	case <-w.done:
+		c.log.Println("Received", msg.MessageType(), requestID,
+			"after client stopped waiting for it")
 	case <-c.Done():
 	}
 }
