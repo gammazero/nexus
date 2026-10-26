@@ -468,6 +468,14 @@ drainLoop:
 	<-w.recvDone
 }
 
+// writeFailed closes the websocket after a write to it failed or timed out.
+// gorilla cannot write to it again, so this ends recvHandler too, which closes
+// Recv. Without this, the sender would stop while the receiver kept waiting,
+// and the user of the peer would never learn that the connection is gone.
+func (w *websocketPeer) writeFailed() {
+	_ = w.conn.Close()
+}
+
 // sendHandler pulls messages from the write channel, and pushes them to the
 // websocket.
 func (w *websocketPeer) sendHandler() {
@@ -488,12 +496,15 @@ sendLoop:
 				if !wamp.IsGoodbyeAck(msg) {
 					w.log.Print(err)
 				}
+				w.writeFailed()
 				return
 			}
 		case m := <-w.pings:
 			err := w.writeMessage(websocket.PongMessage, []byte(m))
 			if err != nil {
 				w.log.Print(err)
+				w.writeFailed()
+				return
 			}
 		case <-w.ctxSender.Done():
 			return
@@ -524,6 +535,7 @@ recvLoop:
 				if !wamp.IsGoodbyeAck(msg) {
 					w.log.Print(err)
 				}
+				w.writeFailed()
 				return
 			}
 		case <-ticker.C:
@@ -536,6 +548,7 @@ recvLoop:
 			// Send websocket ping.
 			err := w.writeMessage(websocket.PingMessage, pingMsg)
 			if err != nil {
+				w.writeFailed()
 				return
 			}
 			w.pendingPongs.Add(1)
@@ -543,6 +556,8 @@ recvLoop:
 			err := w.writeMessage(websocket.PongMessage, []byte(m))
 			if err != nil {
 				w.log.Print(err)
+				w.writeFailed()
+				return
 			}
 		case <-senderDone:
 			return

@@ -10,3 +10,12 @@ func SetSenderStopTimeout(d time.Duration) func() {
 	senderStopTimeout = d
 	return func() { senderStopTimeout = old }
 }
+
+// SetRawSocketWriteTimeout sets how long a write by rawsocket peers created
+// afterwards may take before it fails. It returns a function that restores the
+// previous value.
+func SetRawSocketWriteTimeout(d time.Duration) func() {
+	old := rawSocketWriteTimeout
+	rawSocketWriteTimeout = d
+	return func() { rawSocketWriteTimeout = old }
+}

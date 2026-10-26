@@ -38,6 +38,16 @@ func (g *IDGen) Next() ID {
 	return ID(g.next)
 }
 
+// Release gives back id, which must be the ID that Next last returned, so that
+// the next call to Next returns it again. It is for a request that was not
+// sent after all, so that request IDs stay sequential. Release does nothing if
+// id is not the ID that Next last returned.
+func (g *IDGen) Release(id ID) {
+	if g.next == uint64(id) {
+		g.next = uint64(id) - 1
+	}
+}
+
 // SyncIDGen is a concurrent-safe IDGen.
 type SyncIDGen struct {
 	IDGen
@@ -49,6 +59,13 @@ func (g *SyncIDGen) Next() ID {
 	g.lock.Lock()
 	defer g.lock.Unlock()
 	return g.IDGen.Next()
+}
+
+// Release gives back id, as IDGen.Release does.
+func (g *SyncIDGen) Release(id ID) {
+	g.lock.Lock()
+	defer g.lock.Unlock()
+	g.IDGen.Release(id)
 }
 
 // secureInt63n generates a cryptographically secure random int64 in the range [0, n).

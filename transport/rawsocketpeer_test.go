@@ -361,3 +361,17 @@ func TestRawSocketHandshakeFailure(t *testing.T) {
 	_, err = client.Read(make([]byte, 1))
 	require.ErrorIs(t, err, io.EOF)
 }
+
+// TestRawSocketStuckWriteClosesRecv verifies that a write that does not
+// complete within the write timeout, because the remote peer stopped reading,
+// fails and closes the connection, so that the peer's Recv channel closes. The
+// write used to block forever.
+func TestRawSocketStuckWriteClosesRecv(t *testing.T) {
+	verifyNoLeaks(t)
+	t.Cleanup(transport.SetRawSocketWriteTimeout(50 * time.Millisecond))
+	_, peer := newPipedRawSocket(t, 0)
+
+	// The client end of the pipe is never read, so this write blocks.
+	peer.Send() <- &wamp.Hello{Realm: "test", Details: wamp.Dict{}}
+	requireRecvDone(t, peer)
+}

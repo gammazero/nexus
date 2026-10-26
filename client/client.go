@@ -844,7 +844,7 @@ func (c *Client) Call(ctx context.Context, procedure string, options wamp.Dict, 
 	err := c.prepareCallPayloadMessage(message, options, args, kwargs)
 	var id wamp.ID
 	if err == nil {
-		id, err = c.sendRequest(true, func(id wamp.ID) wamp.Message {
+		id, err = c.sendRequestCtx(ctx, true, func(id wamp.ID) wamp.Message {
 			message.Request = id
 			return message
 		})
@@ -950,7 +950,7 @@ func (c *Client) CallProgressive(ctx context.Context, procedure string, sendProg
 	err = c.prepareCallPayloadMessage(message, options, args, kwargs)
 	var id wamp.ID
 	if err == nil {
-		id, err = c.sendRequest(true, func(id wamp.ID) wamp.Message {
+		id, err = c.sendRequestCtx(ctx, true, func(id wamp.ID) wamp.Message {
 			message.Request = id
 			return message
 		})
@@ -1409,6 +1409,21 @@ func (c *Client) stopWaiting(id wamp.ID) {
 // request ID, or ErrNotConn if the client is closed before the request is
 // sent.
 func (c *Client) sendRequest(expectReply bool, newMsg func(id wamp.ID) wamp.Message) (wamp.ID, error) {
+	return c.sendRequestOrStop(expectReply, newMsg, nil)
+}
+
+// sendRequestCtx is like sendRequest, but also stops waiting to send when ctx
+// is done, and then returns ctx.Err(). The ID allocated for the request is
+// then given back, so that the next request uses it.
+func (c *Client) sendRequestCtx(ctx context.Context, expectReply bool, newMsg func(id wamp.ID) wamp.Message) (wamp.ID, error) { //nolint:lll
+	id, err := c.sendRequestOrStop(expectReply, newMsg, ctx.Done())
+	if errors.Is(err, errSendStopped) {
+		return 0, ctx.Err()
+	}
+	return id, err
+}
+
+func (c *Client) sendRequestOrStop(expectReply bool, newMsg func(id wamp.ID) wamp.Message, stop <-chan struct{}) (wamp.ID, error) { //nolint:lll
 	c.reqLock.Lock()
 	defer c.reqLock.Unlock()
 
@@ -1416,9 +1431,14 @@ func (c *Client) sendRequest(expectReply bool, newMsg func(id wamp.ID) wamp.Mess
 	if expectReply {
 		c.expectReply(id)
 	}
-	if err := c.send(newMsg(id)); err != nil {
+	if err := c.sendOrStop(newMsg(id), stop); err != nil {
 		if expectReply {
 			c.stopWaiting(id)
+		}
+		if errors.Is(err, errSendStopped) {
+			// Nothing was sent, and reqLock is still held, so no other request
+			// has an ID after this one.
+			c.sess.IDGen.Release(id)
 		}
 		return 0, err
 	}
