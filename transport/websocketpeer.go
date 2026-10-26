@@ -482,21 +482,10 @@ func (w *websocketPeer) sendHandler() {
 	defer close(w.writerDone)
 	defer w.cancelSender()
 
-sendLoop:
 	for {
 		select {
 		case msg := <-w.wr:
-			b, err := w.serializer.Serialize(msg)
-			if err != nil {
-				w.log.Print(err)
-				continue sendLoop
-			}
-
-			if err = w.writeMessage(w.payloadType, b); err != nil {
-				if !wamp.IsGoodbyeAck(msg) {
-					w.log.Print(err)
-				}
-				w.writeFailed()
+			if !w.sendMessage(msg) {
 				return
 			}
 		case m := <-w.pings:
@@ -507,9 +496,46 @@ sendLoop:
 				return
 			}
 		case <-w.ctxSender.Done():
+			w.sendQueued()
 			return
 		}
 	}
+}
+
+// sendQueued writes the messages already queued when the sender is told to
+// stop, such as an ABORT or GOODBYE queued just before Close, which would
+// otherwise be lost if the stop was seen first. Each write has a deadline,
+// and stopSender closes the connection if this takes too long.
+func (w *websocketPeer) sendQueued() {
+	for {
+		select {
+		case msg := <-w.wr:
+			if !w.sendMessage(msg) {
+				return
+			}
+		default:
+			return
+		}
+	}
+}
+
+// sendMessage serializes msg and writes it to the websocket. It returns false
+// if the write failed, which closes the websocket, so that the sender must
+// stop.
+func (w *websocketPeer) sendMessage(msg wamp.Message) bool {
+	b, err := w.serializer.Serialize(msg)
+	if err != nil {
+		w.log.Print(err)
+		return true
+	}
+	if err = w.writeMessage(w.payloadType, b); err != nil {
+		if !wamp.IsGoodbyeAck(msg) {
+			w.log.Print(err)
+		}
+		w.writeFailed()
+		return false
+	}
+	return true
 }
 
 func (w *websocketPeer) sendHandlerKeepAlive() {
@@ -521,21 +547,10 @@ func (w *websocketPeer) sendHandlerKeepAlive() {
 	pingMsg := []byte("keepalive")
 
 	senderDone := w.ctxSender.Done()
-recvLoop:
 	for {
 		select {
 		case msg := <-w.wr:
-			b, err := w.serializer.Serialize(msg)
-			if err != nil {
-				w.log.Print(err)
-				continue recvLoop
-			}
-
-			if err = w.writeMessage(w.payloadType, b); err != nil {
-				if !wamp.IsGoodbyeAck(msg) {
-					w.log.Print(err)
-				}
-				w.writeFailed()
+			if !w.sendMessage(msg) {
 				return
 			}
 		case <-ticker.C:
@@ -560,6 +575,7 @@ recvLoop:
 				return
 			}
 		case <-senderDone:
+			w.sendQueued()
 			return
 		}
 	}
