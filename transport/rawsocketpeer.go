@@ -290,25 +290,10 @@ func (rs *rawSocketPeer) sendHandler() {
 	defer rs.cancelSender()
 
 	senderDone := rs.ctxSender.Done()
-sendLoop:
 	for {
 		select {
 		case msg := <-rs.wr:
-			b, err := rs.serializer.Serialize(msg)
-			if err != nil {
-				rs.log.Print(err)
-				continue sendLoop
-			}
-			if len(b) > rs.sendLimit {
-				rs.log.Println("Message size", len(b), "exceeds limit of",
-					rs.sendLimit)
-				continue sendLoop
-			}
-			if err = rs.writeFrameWithDeadline(frameMessage, b); err != nil {
-				if !wamp.IsGoodbyeAck(msg) {
-					rs.log.Println("Error writing message:", msg, err)
-				}
-				rs.writeFailed()
+			if !rs.sendMessage(msg) {
 				return
 			}
 		case <-rs.pongReady:
@@ -320,9 +305,44 @@ sendLoop:
 				}
 			}
 		case <-senderDone:
-			return
+			// Write the messages already queued, such as an ABORT or GOODBYE
+			// queued just before Close, which would otherwise be lost if the
+			// stop was seen first. Each write has a deadline, and stopSender
+			// closes the connection if this takes too long.
+			for {
+				select {
+				case msg := <-rs.wr:
+					if !rs.sendMessage(msg) {
+						return
+					}
+				default:
+					return
+				}
+			}
 		}
 	}
+}
+
+// sendMessage serializes msg and writes it to the socket. It returns false if
+// the write failed, which closes the socket, so that the sender must stop.
+func (rs *rawSocketPeer) sendMessage(msg wamp.Message) bool {
+	b, err := rs.serializer.Serialize(msg)
+	if err != nil {
+		rs.log.Print(err)
+		return true
+	}
+	if len(b) > rs.sendLimit {
+		rs.log.Println("Message size", len(b), "exceeds limit of", rs.sendLimit)
+		return true
+	}
+	if err = rs.writeFrameWithDeadline(frameMessage, b); err != nil {
+		if !wamp.IsGoodbyeAck(msg) {
+			rs.log.Println("Error writing message:", msg, err)
+		}
+		rs.writeFailed()
+		return false
+	}
+	return true
 }
 
 // writeFrameWithDeadline writes a frame like writeFrame, but fails if the
