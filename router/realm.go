@@ -1496,6 +1496,20 @@ func (r *realm) killSessionsByDetail(key, value string, reason wamp.URI, message
 	return <-retChan
 }
 
+// killSessionsByDetailIfOpen is killSessionsByDetail for callers outside the
+// realm, which may call it while the realm is being closed. It holds closeLock
+// so that the realm is not closed meanwhile, which would close actionChan,
+// and returns an error if the realm is already closed. The meta session is not
+// closed.
+func (r *realm) killSessionsByDetailIfOpen(key, value string, reason wamp.URI, message string) (int, error) { //nolint:lll
+	r.closeLock.Lock()
+	defer r.closeLock.Unlock()
+	if r.closed {
+		return 0, fmt.Errorf("realm %s is closed", r.uri)
+	}
+	return r.killSessionsByDetail(key, value, reason, message, 0), nil
+}
+
 // killAllSessions closes all currently connected sessions in the caller's
 // realm, except for the meta session and the session specified by the exclude
 // parameter.

@@ -63,9 +63,10 @@ type RealmConfig struct {
 	// additional session details values to include.
 	MetaIncludeSessionDetails []string `json:"meta_include_session_details"`
 
-	// EnableMetaKill enables the wamp.session.kill* session meta procedures.
-	// These are disabled by default to avoid requiring Authorizer logic when
-	// it may not be needed otherwise.
+	// EnableMetaKill enables the wamp.session.kill* session meta procedures. These
+	// are disabled by default to avoid requiring Authorizer logic when it may not
+	// be needed otherwise. Go code can kill sessions by authid or authrole with
+	// SessionKiller, without enabling these procedures for the realm's clients.
 	EnableMetaKill bool `json:"enable_meta_kill"`
 	// EnableMetaModify enables the wamp.session.modify_details session meta
 	// procedure. This is disabled by default to avoid requiring Authorizer
