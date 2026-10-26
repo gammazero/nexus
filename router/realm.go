@@ -292,10 +292,11 @@ func (r *realm) createMetaSession() {
 
 	// Run the handler for messages from the meta session.
 	go func() {
-		_, _, err := r.handleInboundMessages(r.metaSess)
+		goodbye, _, _, err := r.handleInboundMessages(r.metaSess)
 		if err != nil {
 			r.log.Println("meta session handler should never return error, got:", err)
 		}
+		sendGoodbye(r.metaSess, goodbye)
 	}()
 	if r.debug {
 		r.log.Println("Started meta-session", r.metaSess)
@@ -433,7 +434,7 @@ func (r *realm) handleSession(sess *wamp.Session, welcome wamp.Message) error {
 		r.log.Println("Handling messages for session", sess)
 	}
 	go func() {
-		shutdown, killAll, err := r.handleInboundMessages(sess)
+		goodbye, shutdown, killAll, err := r.handleInboundMessages(sess)
 		if err != nil {
 			abortMsg := wamp.Abort{
 				Reason:  wamp.ErrProtocolViolation,
@@ -446,6 +447,11 @@ func (r *realm) handleSession(sess *wamp.Session, welcome wamp.Message) error {
 			}
 		}
 		r.onLeave(sess, shutdown, killAll)
+		// Send GOODBYE only once the session is removed from the realm, so that
+		// the router sends nothing to the session after it. Removing it from
+		// the dealer publishes meta events, such as
+		// wamp.registration.on_delete, that the session may be subscribed to.
+		sendGoodbye(sess, goodbye)
 		sess.Close()
 		r.waitHandlers.Done()
 	}()
@@ -477,8 +483,11 @@ func clientAllocatedRequestID(msg wamp.Message) (wamp.ID, bool) {
 }
 
 // handleInboundMessages handles the messages sent from a client session to the
-// router.
-func (r *realm) handleInboundMessages(sess *wamp.Session) (bool, bool, error) {
+// router. When the session ends, it returns the GOODBYE to send to the client,
+// if any, which the caller sends once the session is removed from the realm.
+// It also reports whether the session ended because the router is shutting
+// down, and whether it was killed by wamp.session.kill_all.
+func (r *realm) handleInboundMessages(sess *wamp.Session) (*wamp.Goodbye, bool, bool, error) {
 	if r.debug {
 		defer r.log.Println("Ended session", sess)
 	}
@@ -501,7 +510,7 @@ func (r *realm) handleInboundMessages(sess *wamp.Session) (bool, bool, error) {
 		case msg, open = <-recv:
 			if !open {
 				r.log.Println("Lost", sess)
-				return false, false, nil
+				return nil, false, false, nil
 			}
 		case <-recvDone:
 			goodbye := sess.Goodbye()
@@ -510,11 +519,7 @@ func (r *realm) handleInboundMessages(sess *wamp.Session) (bool, bool, error) {
 				if r.debug {
 					r.log.Printf("Stop session %s: system shutdown", sess)
 				}
-				select {
-				case sess.Send() <- goodbye:
-				default:
-				}
-				return true, false, nil
+				return goodbye, true, false, nil
 			}
 			if r.debug {
 				r.log.Printf("Kill session %s: %s", sess, goodbye.Reason)
@@ -523,11 +528,7 @@ func (r *realm) handleInboundMessages(sess *wamp.Session) (bool, bool, error) {
 			if _, ok := goodbye.Details["all"]; ok {
 				killAll = true
 			}
-			select {
-			case sess.Send() <- goodbye:
-			default:
-			}
-			return false, killAll, nil
+			return goodbye, false, killAll, nil
 		}
 
 		if r.debug {
@@ -544,7 +545,7 @@ func (r *realm) handleInboundMessages(sess *wamp.Session) (bool, bool, error) {
 				_, isCall := msg.(*wamp.Call)
 				var err error
 				if continuation, err = reqIDs.check(id, isCall); err != nil {
-					return false, false, err
+					return nil, false, false, err
 				}
 			}
 		}
@@ -581,28 +582,23 @@ func (r *realm) handleInboundMessages(sess *wamp.Session) (bool, bool, error) {
 			// An INVOCATION error is the only type of ERROR message the router
 			// should receive.
 			if msg.Type != wamp.INVOCATION {
-				return false, false, fmt.Errorf("invalid ERROR received: %v", msg)
+				return nil, false, false, fmt.Errorf("invalid ERROR received: %v", msg)
 			}
 			r.dealer.error(sess, msg)
 
 		case *wamp.Goodbye:
 			// Handle client leaving realm.
-			gmMsg := &wamp.Goodbye{
-				Reason:  wamp.ErrGoodbyeAndOut,
-				Details: wamp.Dict{},
-			}
-			select {
-			case sess.Send() <- gmMsg:
-			default:
-			}
 			if r.debug {
 				r.log.Println("GOODBYE from session", sess, "reason:", msg.Reason)
 			}
-			return false, false, nil
+			return &wamp.Goodbye{
+				Reason:  wamp.ErrGoodbyeAndOut,
+				Details: wamp.Dict{},
+			}, false, false, nil
 
 		default:
 			// Received unrecognized message type.
-			return false, false, fmt.Errorf("unexpected %v", msg.MessageType())
+			return nil, false, false, fmt.Errorf("unexpected %v", msg.MessageType())
 		}
 	}
 }
@@ -1297,6 +1293,18 @@ func makeError(req wamp.ID, uri wamp.URI) *wamp.Error {
 		Request: req,
 		Details: wamp.Dict{},
 		Error:   uri,
+	}
+}
+
+// sendGoodbye sends goodbye to sess, unless goodbye is nil or the outbound
+// queue of sess is full.
+func sendGoodbye(sess *wamp.Session, goodbye *wamp.Goodbye) {
+	if goodbye == nil {
+		return
+	}
+	select {
+	case sess.Send() <- goodbye:
+	default:
 	}
 }
 
