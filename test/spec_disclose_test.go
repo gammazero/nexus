@@ -3,6 +3,7 @@ package test_test
 import (
 	"context"
 	"testing"
+	"testing/synctest"
 	"time"
 
 	"github.com/stretchr/testify/require"
@@ -52,33 +53,33 @@ func TestSpecDiscloseCaller(t *testing.T) {
 	if scheme != "" {
 		t.Skip("dedicated router; runs only on local in-process scheme")
 	}
-	checkGoLeaks(t)
+	synctest.Test(t, func(t *testing.T) {
+		r := newDiscloseRouter(t)
 
-	r := newDiscloseRouter(t)
+		callee := discloseConnect(t, r)
+		caller := discloseConnect(t, r)
 
-	callee := discloseConnect(t, r)
-	caller := discloseConnect(t, r)
+		const procName = "spec.disclose.caller"
+		gotCaller := make(chan wamp.ID, 1)
+		require.NoError(t, callee.Register(procName, func(_ context.Context, inv *wamp.Invocation) client.InvokeResult {
+			id, _ := wamp.AsID(inv.Details["caller"])
+			gotCaller <- id
+			return client.InvokeResult{}
+		}, nil))
 
-	const procName = "spec.disclose.caller"
-	gotCaller := make(chan wamp.ID, 1)
-	require.NoError(t, callee.Register(procName, func(_ context.Context, inv *wamp.Invocation) client.InvokeResult {
-		id, _ := wamp.AsID(inv.Details["caller"])
-		gotCaller <- id
-		return client.InvokeResult{}
-	}, nil))
+		_, err := caller.Call(context.Background(), procName,
+			wamp.Dict{wamp.OptDiscloseMe: true}, nil, nil, nil)
+		require.NoError(t, err)
 
-	_, err := caller.Call(context.Background(), procName,
-		wamp.Dict{wamp.OptDiscloseMe: true}, nil, nil, nil)
-	require.NoError(t, err)
+		select {
+		case id := <-gotCaller:
+			require.Equal(t, caller.ID(), id, "INVOCATION must carry caller session ID")
+		case <-time.After(time.Second):
+			t.Fatal("callee did not see disclosed caller ID")
+		}
 
-	select {
-	case id := <-gotCaller:
-		require.Equal(t, caller.ID(), id, "INVOCATION must carry caller session ID")
-	case <-time.After(time.Second):
-		t.Fatal("callee did not see disclosed caller ID")
-	}
-
-	require.NoError(t, callee.Unregister(procName))
+		require.NoError(t, callee.Unregister(procName))
+	})
 }
 
 // TestSpecDiscloseCallerAbsentByDefault verifies that without disclose_me the
@@ -87,32 +88,32 @@ func TestSpecDiscloseCallerAbsentByDefault(t *testing.T) {
 	if scheme != "" {
 		t.Skip("dedicated router; runs only on local in-process scheme")
 	}
-	checkGoLeaks(t)
+	synctest.Test(t, func(t *testing.T) {
+		r := newDiscloseRouter(t)
 
-	r := newDiscloseRouter(t)
+		callee := discloseConnect(t, r)
+		caller := discloseConnect(t, r)
 
-	callee := discloseConnect(t, r)
-	caller := discloseConnect(t, r)
+		const procName = "spec.disclose.absent"
+		gotDetails := make(chan wamp.Dict, 1)
+		require.NoError(t, callee.Register(procName, func(_ context.Context, inv *wamp.Invocation) client.InvokeResult {
+			gotDetails <- inv.Details
+			return client.InvokeResult{}
+		}, nil))
 
-	const procName = "spec.disclose.absent"
-	gotDetails := make(chan wamp.Dict, 1)
-	require.NoError(t, callee.Register(procName, func(_ context.Context, inv *wamp.Invocation) client.InvokeResult {
-		gotDetails <- inv.Details
-		return client.InvokeResult{}
-	}, nil))
+		_, err := caller.Call(context.Background(), procName, nil, nil, nil, nil)
+		require.NoError(t, err)
 
-	_, err := caller.Call(context.Background(), procName, nil, nil, nil, nil)
-	require.NoError(t, err)
+		select {
+		case details := <-gotDetails:
+			_, has := details["caller"]
+			require.False(t, has, "INVOCATION must NOT include caller field without disclose_me")
+		case <-time.After(time.Second):
+			t.Fatal("call did not deliver INVOCATION")
+		}
 
-	select {
-	case details := <-gotDetails:
-		_, has := details["caller"]
-		require.False(t, has, "INVOCATION must NOT include caller field without disclose_me")
-	case <-time.After(time.Second):
-		t.Fatal("call did not deliver INVOCATION")
-	}
-
-	require.NoError(t, callee.Unregister(procName))
+		require.NoError(t, callee.Unregister(procName))
+	})
 }
 
 // TestSpecDisclosePublisher verifies PUBLISH with disclose_me=true delivers
@@ -121,32 +122,32 @@ func TestSpecDisclosePublisher(t *testing.T) {
 	if scheme != "" {
 		t.Skip("dedicated router; runs only on local in-process scheme")
 	}
-	checkGoLeaks(t)
+	synctest.Test(t, func(t *testing.T) {
+		r := newDiscloseRouter(t)
 
-	r := newDiscloseRouter(t)
+		sub := discloseConnect(t, r)
+		pub := discloseConnect(t, r)
 
-	sub := discloseConnect(t, r)
-	pub := discloseConnect(t, r)
+		const topic = "spec.disclose.topic"
+		gotPub := make(chan wamp.ID, 1)
+		require.NoError(t, sub.Subscribe(topic, func(ev *wamp.Event) {
+			id, _ := wamp.AsID(ev.Details["publisher"])
+			gotPub <- id
+		}, nil))
 
-	const topic = "spec.disclose.topic"
-	gotPub := make(chan wamp.ID, 1)
-	require.NoError(t, sub.Subscribe(topic, func(ev *wamp.Event) {
-		id, _ := wamp.AsID(ev.Details["publisher"])
-		gotPub <- id
-	}, nil))
+		require.NoError(t, pub.Publish(topic,
+			wamp.Dict{wamp.OptAcknowledge: true, wamp.OptDiscloseMe: true},
+			wamp.List{"hello"}, nil))
 
-	require.NoError(t, pub.Publish(topic,
-		wamp.Dict{wamp.OptAcknowledge: true, wamp.OptDiscloseMe: true},
-		wamp.List{"hello"}, nil))
+		select {
+		case id := <-gotPub:
+			require.Equal(t, pub.ID(), id, "EVENT must carry publisher session ID")
+		case <-time.After(time.Second):
+			t.Fatal("subscriber did not see disclosed publisher ID")
+		}
 
-	select {
-	case id := <-gotPub:
-		require.Equal(t, pub.ID(), id, "EVENT must carry publisher session ID")
-	case <-time.After(time.Second):
-		t.Fatal("subscriber did not see disclosed publisher ID")
-	}
-
-	require.NoError(t, sub.Unsubscribe(topic))
+		require.NoError(t, sub.Unsubscribe(topic))
+	})
 }
 
 // TestSpecDiscloseRejectedWhenDisallowed verifies that a realm with
