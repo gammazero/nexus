@@ -292,11 +292,11 @@ func (r *realm) createMetaSession() {
 
 	// Run the handler for messages from the meta session.
 	go func() {
-		goodbye, _, _, err := r.handleInboundMessages(r.metaSess)
+		last, _, _, err := r.handleInboundMessages(r.metaSess)
 		if err != nil {
 			r.log.Println("meta session handler should never return error, got:", err)
 		}
-		sendGoodbye(r.metaSess, goodbye)
+		sendLast(r.metaSess, last)
 	}()
 	if r.debug {
 		r.log.Println("Started meta-session", r.metaSess)
@@ -434,24 +434,20 @@ func (r *realm) handleSession(sess *wamp.Session, welcome wamp.Message) error {
 		r.log.Println("Handling messages for session", sess)
 	}
 	go func() {
-		goodbye, shutdown, killAll, err := r.handleInboundMessages(sess)
+		last, shutdown, killAll, err := r.handleInboundMessages(sess)
 		if err != nil {
-			abortMsg := wamp.Abort{
+			last = &wamp.Abort{
 				Reason:  wamp.ErrProtocolViolation,
 				Details: wamp.Dict{wamp.OptMessage: err.Error()},
 			}
 			r.log.Println("Aborting session", sess, ":", err)
-			select {
-			case sess.Send() <- &abortMsg:
-			default:
-			}
 		}
 		r.onLeave(sess, shutdown, killAll)
-		// Send GOODBYE only once the session is removed from the realm, so that
-		// the router sends nothing to the session after it. Removing it from
-		// the dealer publishes meta events, such as
+		// Send the GOODBYE or ABORT only once the session is removed from the
+		// realm, so that the router sends nothing to the session after it.
+		// Removing it from the dealer publishes meta events, such as
 		// wamp.registration.on_delete, that the session may be subscribed to.
-		sendGoodbye(sess, goodbye)
+		sendLast(sess, last)
 		sess.Close()
 		r.waitHandlers.Done()
 	}()
@@ -483,11 +479,11 @@ func clientAllocatedRequestID(msg wamp.Message) (wamp.ID, bool) {
 }
 
 // handleInboundMessages handles the messages sent from a client session to the
-// router. When the session ends, it returns the GOODBYE to send to the client,
-// if any, which the caller sends once the session is removed from the realm.
-// It also reports whether the session ended because the router is shutting
-// down, and whether it was killed by wamp.session.kill_all.
-func (r *realm) handleInboundMessages(sess *wamp.Session) (*wamp.Goodbye, bool, bool, error) {
+// router. When the session ends, it returns the GOODBYE or ABORT to send to
+// the client, if any, which the caller sends once the session is removed from
+// the realm. It also reports whether the session ended because the router is
+// shutting down, and whether it was killed by wamp.session.kill_all.
+func (r *realm) handleInboundMessages(sess *wamp.Session) (wamp.Message, bool, bool, error) {
 	if r.debug {
 		defer r.log.Println("Ended session", sess)
 	}
@@ -513,6 +509,11 @@ func (r *realm) handleInboundMessages(sess *wamp.Session) (*wamp.Goodbye, bool, 
 				return nil, false, false, nil
 			}
 		case <-recvDone:
+			if abort := sess.Abort(); abort != nil {
+				// The broker or dealer aborted the session.
+				r.log.Println("Aborting session", sess, ":", abort.Details[wamp.OptMessage])
+				return abort, false, false, nil
+			}
 			goodbye := sess.Goodbye()
 			switch goodbye {
 			case shutdownGoodbye, wamp.NoGoodbye:
@@ -1344,14 +1345,14 @@ func makeError(req wamp.ID, uri wamp.URI) *wamp.Error {
 	}
 }
 
-// sendGoodbye sends goodbye to sess, unless goodbye is nil or the outbound
-// queue of sess is full.
-func sendGoodbye(sess *wamp.Session, goodbye *wamp.Goodbye) {
-	if goodbye == nil {
+// sendLast sends msg, the GOODBYE or ABORT that ends the session, to sess,
+// unless msg is nil or the outbound queue of sess is full.
+func sendLast(sess *wamp.Session, msg wamp.Message) {
+	if msg == nil {
 		return
 	}
 	select {
-	case sess.Send() <- goodbye:
+	case sess.Send() <- msg:
 	default:
 	}
 }

@@ -44,3 +44,27 @@ func TestIsNewRecvIDBounds(t *testing.T) {
 		})
 	}
 }
+
+func TestSessionEndRecvAbort(t *testing.T) {
+	sess := NewSession(nil, 1, nil, nil)
+	require.Nil(t, sess.Abort())
+
+	abort := &Abort{Reason: ErrProtocolViolation}
+	require.True(t, sess.EndRecvAbort(abort))
+	select {
+	case <-sess.RecvDone():
+	default:
+		require.FailNow(t, "RecvDone not closed")
+	}
+	require.Same(t, abort, sess.Abort())
+
+	// The session can only be ended once.
+	require.False(t, sess.EndRecvAbort(&Abort{}))
+	require.False(t, sess.EndRecv(nil))
+	require.Same(t, abort, sess.Abort())
+
+	ended := NewSession(nil, 2, nil, nil)
+	require.True(t, ended.EndRecv(nil))
+	require.False(t, ended.EndRecvAbort(abort))
+	require.Nil(t, ended.Abort())
+}

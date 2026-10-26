@@ -213,8 +213,9 @@ func (b *broker) publish(pub *wamp.Session, msg *wamp.Publish) {
 			abortMsg := wamp.Abort{Reason: wamp.ErrProtocolViolation}
 			abortMsg.Details = wamp.Dict{}
 			abortMsg.Details[wamp.OptMessage] = ErrPPTNotSupportedByPeer.Error()
-			b.trySend(pub, &abortMsg)
-			pub.Close()
+			// Let the realm end the session, so that it is removed from the
+			// broker and dealer before its peer is closed.
+			pub.EndRecvAbort(&abortMsg)
 
 			return
 		}

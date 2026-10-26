@@ -337,10 +337,17 @@ func TestPPTPubSub(t *testing.T) {
 		wamp.OptPPTScheme:     "x_custom",
 		wamp.OptPPTSerializer: "native",
 	}
+	// The broker ends the session with an ABORT, which the realm sends once it
+	// has removed the session.
 	broker.publish(pubSess, &wamp.Publish{Request: 126, Topic: testTopic, Options: options})
-	rsp = <-pubSess.Recv()
-	_, ok = rsp.(*wamp.Abort)
-	require.True(t, ok, "expected ABORT")
+	select {
+	case <-pubSess.RecvDone():
+	case <-time.After(time.Second):
+		require.FailNow(t, "session not ended")
+	}
+	abort := pubSess.Abort()
+	require.NotNil(t, abort, "expected ABORT")
+	require.Equal(t, wamp.ErrProtocolViolation, abort.Reason)
 
 	greetDetails := wamp.Dict{
 		"roles": wamp.Dict{
