@@ -507,3 +507,31 @@ func TestWSDeserializeErrorAborts(t *testing.T) {
 	require.Equal(t, wamp.ErrProtocolViolation, abort.Reason)
 	requireCloses(t, peer)
 }
+
+// failingWriteConn is a WebsocketConnection whose writes fail, and whose reads
+// block until the connection is closed.
+type failingWriteConn struct {
+	*blockingConn
+}
+
+func (failingWriteConn) WriteMessage(int, []byte) error { return errWriteFailed }
+
+var errWriteFailed = errors.New("simulated write error")
+
+// TestWSWriteErrorClosesRecv verifies that a failed write closes the
+// connection, so that the peer's Recv channel closes and its user sees that
+// the connection is gone. The sender used to exit while the receiver kept
+// waiting, so that nothing ever drained the outbound queue again.
+func TestWSWriteErrorClosesRecv(t *testing.T) {
+	defer goleak.VerifyNone(t, goleak.IgnoreCurrent())
+
+	for _, keepAlive := range []time.Duration{0, testKeepAlive} {
+		conn := failingWriteConn{newBlockingConn()}
+		peer := newTestPeer(conn, keepAlive)
+		peer.Send() <- &wamp.Hello{Realm: "test"}
+
+		requireRecvClosed(t, peer)
+		require.True(t, conn.isClosed(), "connection not closed")
+		requireCloses(t, peer)
+	}
+}

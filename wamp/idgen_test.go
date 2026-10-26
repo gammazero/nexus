@@ -63,3 +63,23 @@ func TestSyncIDGen(t *testing.T) {
 		require.NoError(t, err)
 	}
 }
+
+func TestIDGenRelease(t *testing.T) {
+	var g SyncIDGen
+	require.Equal(t, ID(1), g.Next())
+	id := g.Next()
+	require.Equal(t, ID(2), id)
+
+	// Giving back the last ID makes Next return it again.
+	g.Release(id)
+	require.Equal(t, ID(2), g.Next())
+
+	// Giving back an ID that is not the last one does nothing.
+	g.Release(1)
+	require.Equal(t, ID(3), g.Next())
+
+	// Giving back the first ID works too.
+	var g2 IDGen
+	g2.Release(g2.Next())
+	require.Equal(t, ID(1), g2.Next())
+}

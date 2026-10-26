@@ -51,6 +51,8 @@ type rawSocketPeer struct {
 
 	// How long to wait for the sender to exit before closing conn.
 	stopTimeout time.Duration
+	// How long a write to conn may take before it fails.
+	writeTimeout time.Duration
 
 	log stdlog.StdLog
 }
@@ -80,6 +82,11 @@ const (
 	// the queue is empty, however large its body.
 	maxQueuedPongBytes = 64 << 10
 )
+
+// rawSocketWriteTimeout is how long a write to the socket may take before it
+// fails, so that a remote peer that stops reading cannot block the sender
+// forever. It is the same as the default for websocket peers.
+var rawSocketWriteTimeout = defaultWriteTimeout
 
 // ConnectRawSocketPeer creates a new rawSocketPeer with the specified config,
 // and connects it, to the WAMP router at the specified address. If a non-nil
@@ -196,6 +203,8 @@ func newRawSocketPeer(conn net.Conn, serializer serialize.Serializer, logger std
 		pongReady:   make(chan struct{}, 1),
 		stopTimeout: senderStopTimeout,
 
+		writeTimeout: rawSocketWriteTimeout,
+
 		// The router will read from this channel and immediately dispatch the
 		// message to the broker or dealer. Therefore this channel can be
 		// unbuffered.
@@ -295,23 +304,43 @@ sendLoop:
 					rs.sendLimit)
 				continue sendLoop
 			}
-			if err = rs.writeFrame(frameMessage, b); err != nil {
+			if err = rs.writeFrameWithDeadline(frameMessage, b); err != nil {
 				if !wamp.IsGoodbyeAck(msg) {
 					rs.log.Println("Error writing message:", msg, err)
 				}
-				continue sendLoop
+				rs.writeFailed()
+				return
 			}
 		case <-rs.pongReady:
 			for _, body := range rs.takePongs() {
-				if err := rs.writeFrame(framePong, body); err != nil {
+				if err := rs.writeFrameWithDeadline(framePong, body); err != nil {
 					rs.log.Println("Error responding to PING:", err)
-					break
+					rs.writeFailed()
+					return
 				}
 			}
 		case <-senderDone:
 			return
 		}
 	}
+}
+
+// writeFrameWithDeadline writes a frame like writeFrame, but fails if the
+// write does not complete within writeTimeout, because the remote peer stopped
+// reading.
+func (rs *rawSocketPeer) writeFrameWithDeadline(frameType byte, b []byte) error {
+	if err := rs.conn.SetWriteDeadline(time.Now().Add(rs.writeTimeout)); err != nil {
+		return err
+	}
+	return rs.writeFrame(frameType, b)
+}
+
+// writeFailed closes the socket after a write to it failed or timed out. A
+// frame may have been partly written, so nothing more can be written. Closing
+// the socket also ends recvHandler, which closes Recv, so that the user of the
+// peer learns that the connection is gone.
+func (rs *rawSocketPeer) writeFailed() {
+	_ = rs.conn.Close()
 }
 
 // writeFrame writes a frame of the given type, holding body b, to the socket.
