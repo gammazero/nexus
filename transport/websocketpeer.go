@@ -523,7 +523,7 @@ func (w *websocketPeer) sendQueued() {
 // if the write failed, which closes the websocket, so that the sender must
 // stop.
 func (w *websocketPeer) sendMessage(msg wamp.Message) bool {
-	b, err := w.serializer.Serialize(msg)
+	b, err := serialize.SerializeMessage(w.serializer, msg)
 	if err != nil {
 		w.log.Print(err)
 		return true
