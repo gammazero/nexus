@@ -8,6 +8,8 @@ import (
 
 	"github.com/gammazero/deque"
 	"github.com/gammazero/nexus/v3/stdlog"
+	"github.com/gammazero/nexus/v3/transport"
+	"github.com/gammazero/nexus/v3/transport/serialize"
 	"github.com/gammazero/nexus/v3/wamp"
 )
 
@@ -620,8 +622,13 @@ func (b *broker) syncRemoveSession(subscriber *wamp.Session, notify bool) {
 // Local subscribers each get their own EVENT, since a local client's handler
 // may change it, as does a subscriber that the publisher's identity is
 // disclosed to.
+//
+// The shared EVENT is sent wrapped in a serialize.SharedMessage to the peers
+// that accept one, so that it is serialized once for each serializer, not once
+// for each subscriber.
 func (b *broker) syncPubEvent(pub *wamp.Session, msg *wamp.Publish, pubID wamp.ID, sub *subscription, excludePublisher, sendTopic, disclose bool, filter PublishFilter, eventDetails wamp.Dict) { //nolint:lll
 	var sharedEvent *wamp.Event
+	var sharedMsg *serialize.SharedMessage
 
 	for subscriber := range sub.subscribers {
 		// Do not send event to publisher.
@@ -644,18 +651,22 @@ func (b *broker) syncPubEvent(pub *wamp.Session, msg *wamp.Publish, pubID wamp.I
 			}
 		}
 
-		var event *wamp.Event
 		if subscriber.IsLocal() ||
 			(disclose && subscriber.HasFeature(wamp.RoleSubscriber, wamp.FeaturePubIdent)) {
-			event = prepareEvent(pub, msg, pubID, sub, sendTopic, disclose, eventDetails, subscriber)
-		} else {
-			if sharedEvent == nil {
-				sharedEvent = prepareEvent(pub, msg, pubID, sub, sendTopic, false, eventDetails, nil)
-			}
-			event = sharedEvent
+			b.trySend(subscriber, prepareEvent(pub, msg, pubID, sub, sendTopic, disclose, eventDetails, subscriber))
+			continue
 		}
-
-		b.trySend(subscriber, event)
+		if sharedEvent == nil {
+			sharedEvent = prepareEvent(pub, msg, pubID, sub, sendTopic, false, eventDetails, nil)
+		}
+		if !transport.AcceptsSharedMessage(subscriber.Peer) {
+			b.trySend(subscriber, sharedEvent)
+			continue
+		}
+		if sharedMsg == nil {
+			sharedMsg = serialize.NewSharedMessage(sharedEvent)
+		}
+		b.trySend(subscriber, sharedMsg)
 	}
 
 	// If event history store is enabled for subscription let's save event

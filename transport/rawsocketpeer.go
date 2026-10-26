@@ -326,7 +326,7 @@ func (rs *rawSocketPeer) sendHandler() {
 // sendMessage serializes msg and writes it to the socket. It returns false if
 // the write failed, which closes the socket, so that the sender must stop.
 func (rs *rawSocketPeer) sendMessage(msg wamp.Message) bool {
-	b, err := rs.serializer.Serialize(msg)
+	b, err := serialize.SerializeMessage(rs.serializer, msg)
 	if err != nil {
 		rs.log.Print(err)
 		return true
