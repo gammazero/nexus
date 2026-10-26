@@ -381,13 +381,19 @@ func (c *Client) Subscribe(topic string, fn EventHandler, options wamp.Dict) err
 	if options == nil {
 		options = wamp.Dict{}
 	}
-	id, err := c.sendRequest(true, func(id wamp.ID) wamp.Message {
+	install := func(msg wamp.Message) {
+		if msg, ok := msg.(*wamp.Subscribed); ok {
+			c.eventHandlers[msg.Subscription] = fn
+			c.topicSubID[topic] = msg.Subscription
+		}
+	}
+	id, err := c.sendRequestInstall(func(id wamp.ID) wamp.Message {
 		return &wamp.Subscribe{
 			Request: id,
 			Options: options,
 			Topic:   wamp.URI(topic),
 		}
-	})
+	}, install)
 	if err != nil {
 		return err
 	}
@@ -399,11 +405,7 @@ func (c *Client) Subscribe(topic string, fn EventHandler, options wamp.Dict) err
 	}
 	switch msg := msg.(type) {
 	case *wamp.Subscribed:
-		// Register the event handler for this subscription.
-		c.sess.Lock()
-		c.eventHandlers[msg.Subscription] = fn
-		c.topicSubID[topic] = msg.Subscription
-		c.sess.Unlock()
+		// run() installed the event handler when it handled SUBSCRIBED.
 		return nil
 	case *wamp.Error:
 		return fmt.Errorf("subscribing to topic '%v': %s", topic,
@@ -643,13 +645,19 @@ func (c *Client) Register(procedure string, fn InvocationHandler, options wamp.D
 	if options == nil {
 		options = wamp.Dict{}
 	}
-	id, err := c.sendRequest(true, func(id wamp.ID) wamp.Message {
+	install := func(msg wamp.Message) {
+		if msg, ok := msg.(*wamp.Registered); ok {
+			c.invHandlers[msg.Registration] = fn
+			c.nameProcID[procedure] = msg.Registration
+		}
+	}
+	id, err := c.sendRequestInstall(func(id wamp.ID) wamp.Message {
 		return &wamp.Register{
 			Request:   id,
 			Options:   options,
 			Procedure: wamp.URI(procedure),
 		}
-	})
+	}, install)
 	if err != nil {
 		return err
 	}
@@ -661,11 +669,7 @@ func (c *Client) Register(procedure string, fn InvocationHandler, options wamp.D
 	}
 	switch msg := msg.(type) {
 	case *wamp.Registered:
-		// Register the event handler for this registration.
-		c.sess.Lock()
-		c.invHandlers[msg.Registration] = fn
-		c.nameProcID[procedure] = msg.Registration
-		c.sess.Unlock()
+		// run() installed the invocation handler when it handled REGISTERED.
 		if c.debug {
 			c.log.Println("Registered", procedure, "as registration",
 				msg.Registration)
@@ -1373,15 +1377,23 @@ func unexpectedMsgError(msg wamp.Message, expected wamp.MessageType) error {
 // waiting for them. done is closed when that goroutine stops waiting, so that
 // run() does not block forever on a reply that arrives after the wait timed
 // out.
+//
+// If install is not nil, run() calls it with the reply, with the session
+// locked, before it handles any later message, so that the handler for a
+// subscription or registration is in place for an EVENT or INVOCATION that
+// the router sends right after the SUBSCRIBED or REGISTERED. msgs has room
+// for that reply, so that it is never lost once install has run.
 type replyWaiter struct {
-	msgs chan wamp.Message
-	done chan struct{}
+	msgs    chan wamp.Message
+	done    chan struct{}
+	install func(wamp.Message)
 }
 
-func (c *Client) expectReply(id wamp.ID) {
+func (c *Client) expectReply(id wamp.ID, install func(wamp.Message)) {
 	w := &replyWaiter{
-		msgs: make(chan wamp.Message),
-		done: make(chan struct{}),
+		msgs:    make(chan wamp.Message, 1),
+		done:    make(chan struct{}),
+		install: install,
 	}
 	c.sess.Lock()
 	c.awaitingReply[id] = w
@@ -1391,12 +1403,29 @@ func (c *Client) expectReply(id wamp.ID) {
 // stopWaiting stops waiting for replies to the request id. A reply that run()
 // is trying to hand over is discarded.
 func (c *Client) stopWaiting(id wamp.ID) {
+	c.stopWaitingTake(id)
+}
+
+// stopWaitingTake stops waiting for replies to the request id, like
+// stopWaiting, but returns a reply that run() has already handed over, if
+// any. Since run() installs a handler and hands over its reply with the
+// session locked, a waiter that stops either gets that reply here, or the
+// handler is never installed.
+func (c *Client) stopWaitingTake(id wamp.ID) wamp.Message {
 	c.sess.Lock()
-	if w, ok := c.awaitingReply[id]; ok {
-		close(w.done)
-		delete(c.awaitingReply, id)
+	defer c.sess.Unlock()
+	w, ok := c.awaitingReply[id]
+	if !ok {
+		return nil
 	}
-	c.sess.Unlock()
+	close(w.done)
+	delete(c.awaitingReply, id)
+	select {
+	case msg := <-w.msgs:
+		return msg
+	default:
+		return nil
+	}
 }
 
 // sendRequest allocates the next request ID, passes it to newMsg to create the
@@ -1409,27 +1438,34 @@ func (c *Client) stopWaiting(id wamp.ID) {
 // request ID, or ErrNotConn if the client is closed before the request is
 // sent.
 func (c *Client) sendRequest(expectReply bool, newMsg func(id wamp.ID) wamp.Message) (wamp.ID, error) {
-	return c.sendRequestOrStop(expectReply, newMsg, nil)
+	return c.sendRequestOrStop(expectReply, newMsg, nil, nil)
+}
+
+// sendRequestInstall is like sendRequest for a request that expects a reply,
+// but run() calls install with the reply, with the session locked, before it
+// handles any later message. See replyWaiter.
+func (c *Client) sendRequestInstall(newMsg func(id wamp.ID) wamp.Message, install func(wamp.Message)) (wamp.ID, error) { //nolint:lll
+	return c.sendRequestOrStop(true, newMsg, nil, install)
 }
 
 // sendRequestCtx is like sendRequest, but also stops waiting to send when ctx
 // is done, and then returns ctx.Err(). The ID allocated for the request is
 // then given back, so that the next request uses it.
 func (c *Client) sendRequestCtx(ctx context.Context, expectReply bool, newMsg func(id wamp.ID) wamp.Message) (wamp.ID, error) { //nolint:lll
-	id, err := c.sendRequestOrStop(expectReply, newMsg, ctx.Done())
+	id, err := c.sendRequestOrStop(expectReply, newMsg, ctx.Done(), nil)
 	if errors.Is(err, errSendStopped) {
 		return 0, ctx.Err()
 	}
 	return id, err
 }
 
-func (c *Client) sendRequestOrStop(expectReply bool, newMsg func(id wamp.ID) wamp.Message, stop <-chan struct{}) (wamp.ID, error) { //nolint:lll
+func (c *Client) sendRequestOrStop(expectReply bool, newMsg func(id wamp.ID) wamp.Message, stop <-chan struct{}, install func(wamp.Message)) (wamp.ID, error) { //nolint:lll
 	c.reqLock.Lock()
 	defer c.reqLock.Unlock()
 
 	id := c.sess.IDGen.Next()
 	if expectReply {
-		c.expectReply(id)
+		c.expectReply(id, install)
 	}
 	if err := c.sendOrStop(newMsg(id), stop); err != nil {
 		if expectReply {
@@ -1512,14 +1548,21 @@ func (c *Client) waitForReply(id wamp.ID) (wamp.Message, error) {
 
 	timer := time.NewTimer(c.responseTimeout)
 	defer timer.Stop()
+	var err error
 	select {
 	case msg := <-w.msgs:
 		return msg, nil
 	case <-timer.C:
-		return nil, ErrReplyTimeout
+		err = ErrReplyTimeout
 	case <-c.Done():
-		return nil, ErrNotConn
+		err = ErrNotConn
 	}
+	// Take a reply that arrived as the wait ended, since run() may already have
+	// installed its handler.
+	if msg := c.stopWaitingTake(id); msg != nil {
+		return msg, nil
+	}
+	return nil, err
 }
 
 // waitForReplyWithCancel waits for an expected reply from the router while
@@ -2078,12 +2121,23 @@ func (c *Client) runHandleInterrupt(msg *wamp.Interrupt) {
 func (c *Client) runSignalReply(msg wamp.Message, requestID wamp.ID) {
 	c.sess.Lock()
 	w, ok := c.awaitingReply[requestID]
-	c.sess.Unlock()
 	if !ok {
+		c.sess.Unlock()
 		c.log.Println("Received", msg.MessageType(), requestID,
 			"that client is no longer waiting for")
 		return
 	}
+	if w.install != nil {
+		// Install the handler before handling the next message, which may be an
+		// EVENT or INVOCATION for it. msgs has room for this first reply, so the
+		// waiter gets it even if its wait ends now.
+		w.install(msg)
+		w.install = nil
+		w.msgs <- msg
+		c.sess.Unlock()
+		return
+	}
+	c.sess.Unlock()
 	select {
 	case w.msgs <- msg:
 	case <-w.done:
