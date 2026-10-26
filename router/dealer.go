@@ -1,8 +1,6 @@
 package router
 
 import (
-	"context"
-	"errors"
 	"fmt"
 	"maps"
 	"math/rand"
@@ -67,12 +65,20 @@ type registration struct {
 
 // invocation tracks in-progress invocation.
 type invocation struct {
-	callID      requestID
-	callee      *wamp.Session
-	canceled    bool
-	inProgress  bool
-	timerCancel context.CancelFunc
-	options     wamp.Dict
+	callID     requestID
+	callee     *wamp.Session
+	canceled   bool
+	inProgress bool
+	options    wamp.Dict
+
+	// timer cancels the call when the dealer enforces the call's timeout and
+	// the callee does not answer in time. For a call with progressive
+	// results, each result moves timeoutAt forward by timeout, so that the
+	// timeout limits the time until the first result and between results, as
+	// the spec requires, not the duration of the whole call.
+	timer     *time.Timer
+	timeout   time.Duration
+	timeoutAt time.Time
 
 	// pendingYields holds the YIELDs for this call that could not yet be
 	// delivered because the caller is blocked, in the order they arrived, so
@@ -85,6 +91,24 @@ type invocation struct {
 	// any of the queued results, and cancels the call. It is moved forward
 	// each time a queued result is delivered.
 	retryDeadline time.Time
+}
+
+// stopTimer stops the call timeout timer, if any. A timer that has already
+// fired then does nothing.
+func (invk *invocation) stopTimer() {
+	if invk.timer != nil {
+		invk.timer.Stop()
+		invk.timer = nil
+	}
+}
+
+// resetTimer restarts the call timeout timer, if any, after a progressive
+// result.
+func (invk *invocation) resetTimer() {
+	if invk.timer != nil {
+		invk.timeoutAt = time.Now().Add(invk.timeout)
+		invk.timer.Reset(invk.timeout)
+	}
 }
 
 // pendingYield is a queued YIELD, with its progress option.
@@ -132,6 +156,12 @@ type dealer struct {
 	// pendingYieldsDone, before it closes actionChan.
 	closing           chan struct{}
 	pendingYieldsDone sync.WaitGroup
+
+	// actionsClosed is set, under actionsMu, before actionChan is closed, so
+	// that a call timeout timer that fires during close does not send to the
+	// closed channel.
+	actionsMu     sync.RWMutex
+	actionsClosed bool
 
 	// Generate registration IDs.
 	idGen *wamp.IDGen
@@ -423,6 +453,11 @@ func (d *dealer) yield(callee *wamp.Session, msg *wamp.Yield) {
 // a goroutine must be started to deliver the queue.
 func (d *dealer) syncQueueYield(callee *wamp.Session, invkReqID requestID, msg *wamp.Yield, progress bool) (full, startRetry bool) { //nolint:lll
 	invk, ok := d.invocations[invkReqID]
+	if ok && progress && invk.callee == callee {
+		// The timeout limits the time between results, so a progressive result
+		// starts it again.
+		invk.resetTimer()
+	}
 	if ok && invk.retrying {
 		if invk.pendingYields.Len() >= maxPendingYields {
 			return true, false
@@ -574,10 +609,24 @@ func (d *dealer) close() {
 	// that none sends to actionChan after it is closed.
 	close(d.closing)
 	d.pendingYieldsDone.Wait()
+	d.actionsMu.Lock()
+	d.actionsClosed = true
+	d.actionsMu.Unlock()
 	close(d.actionChan)
 	<-d.stopped
 	if d.debug {
 		d.log.Print("Dealer stopped")
+	}
+}
+
+// submitFromTimer runs action on the dealer goroutine, unless the dealer is
+// closed. It is for timers, which can fire at any time, including while the
+// dealer is closing.
+func (d *dealer) submitFromTimer(action func()) {
+	d.actionsMu.RLock()
+	defer d.actionsMu.RUnlock()
+	if !d.actionsClosed {
+		d.actionChan <- action
 	}
 }
 
@@ -1085,28 +1134,28 @@ func (d *dealer) syncCall(caller *wamp.Session, msg *wamp.Call) {
 	//
 	// The error message that is returned to the Caller MUST use
 	// wamp.error.timeout as the reason URI.
-	if timeout > 0 {
-		// Timer removed if context canceled, call cancelled if timeout.
-		var timerCtx context.Context
-		timerCtx, invk.timerCancel = context.WithTimeout(context.Background(),
-			time.Duration(timeout)*time.Millisecond)
-
-		// Start goroutine to cancel pending call on timeout. Works like Cancel
-		// with mode=killnowait, and includes an error message argument "call
-		// timeout"
-		go func() {
-			<-timerCtx.Done()
-			if errors.Is(timerCtx.Err(), context.Canceled) {
-				// Timer canceled. Got response from callee, or caller canceled
-				// or ended session.
-				return
-			}
-			d.actionChan <- func() {
-				errArgs := wamp.List{"call timeout"}
-				d.syncCancel(caller, &wamp.Cancel{Request: msg.Request},
-					wamp.CancelModeKillNoWait, wamp.ErrTimeout, errArgs)
-			}
-		}()
+	//
+	// The timeout option is frozen by the initiating CALL of a progressive call
+	// invocation, so the timer is only started for that CALL.
+	if timeout > 0 && !ok {
+		invk.timeout = time.Duration(timeout) * time.Millisecond
+		invk.timeoutAt = time.Now().Add(invk.timeout)
+		invkReqID := requestID{session: callee.ID, request: invocationID}
+		callRequest := msg.Request
+		invk.timer = time.AfterFunc(invk.timeout, func() {
+			d.submitFromTimer(func() {
+				invk, ok := d.invocations[invkReqID]
+				if !ok || invk.timer == nil || time.Now().Before(invk.timeoutAt) {
+					// The call ended, the timer was stopped, or a progressive
+					// result moved the timeout forward after the timer fired.
+					return
+				}
+				// Works like Cancel with mode=killnowait, and includes an error
+				// message argument "call timeout".
+				d.syncCancel(caller, &wamp.Cancel{Request: callRequest},
+					wamp.CancelModeKillNoWait, wamp.ErrTimeout, wamp.List{"call timeout"})
+			})
+		})
 	}
 }
 
@@ -1149,9 +1198,7 @@ func (d *dealer) syncCancel(caller *wamp.Session, msg *wamp.Cancel, mode string,
 	invk.canceled = true
 
 	// Stop any call timeout timer.
-	if invk.timerCancel != nil {
-		invk.timerCancel()
-	}
+	invk.stopTimer()
 
 	// If mode is "kill" or "killnowait", then send INTERRUPT.
 	if mode != wamp.CancelModeSkip {
@@ -1259,9 +1306,7 @@ func (d *dealer) syncYield(callee *wamp.Session, msg *wamp.Yield, progress, canR
 		details[wamp.OptProgress] = true
 	} else {
 		// Stop any call timeout timer.
-		if invk.timerCancel != nil {
-			invk.timerCancel()
-		}
+		invk.stopTimer()
 
 		// Clean up the invocation, unless need to retry.
 		defer func() {
@@ -1388,9 +1433,7 @@ func (d *dealer) syncError(callee *wamp.Session, msg *wamp.Error) {
 		return
 	}
 	// Stop any call timeout timer.
-	if invk.timerCancel != nil {
-		invk.timerCancel()
-	}
+	invk.stopTimer()
 
 	delete(d.invocations, invkReqID)
 	callID := invk.callID
@@ -1490,18 +1533,14 @@ func (d *dealer) syncRemoveSession(sess *wamp.Session, notify bool) []*wamp.Publ
 		}
 		if !notify {
 			// Drop the call without telling the caller, who is also being disconnected.
-			if invk.timerCancel != nil {
-				invk.timerCancel()
-			}
+			invk.stopTimer()
 			delete(d.calls, invk.callID)
 			delete(d.invocationByCall, invk.callID)
 			delete(d.invocations, iid)
 			continue
 		}
 		// Stop any call timeout timer.
-		if invk.timerCancel != nil {
-			invk.timerCancel()
-		}
+		invk.stopTimer()
 		if errArgs == nil {
 			errArgs = wamp.List{"callee gone"}
 		}
@@ -1526,9 +1565,7 @@ func (d *dealer) syncRemoveSession(sess *wamp.Session, notify bool) []*wamp.Publ
 		if invkID, ok := d.invocationByCall[req]; ok {
 			if invk, ok := d.invocations[invkID]; ok {
 				// Stop any call timeout timer.
-				if invk.timerCancel != nil {
-					invk.timerCancel()
-				}
+				invk.stopTimer()
 			}
 			delete(d.invocationByCall, req)
 			delete(d.invocations, invkID)
