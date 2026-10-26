@@ -28,6 +28,7 @@ type Session struct {
 	mu      sync.Mutex
 	done    chan struct{}
 	goodbye *Goodbye
+	abort   *Abort
 }
 
 // NoGoodbye indicates that no Goodbye message was sent out
@@ -117,6 +118,39 @@ func (s *Session) EndRecv(goodbye *Goodbye) bool {
 	close(s.done)
 
 	return true
+}
+
+// EndRecvAbort ends the session like EndRecv, but for the message handler to
+// send the peer abort instead of a GOODBYE, for example because the peer
+// violated the protocol. It returns false if the session was already ended.
+//
+// Use this, instead of closing the peer, to abort a session from code other
+// than its message handler, so that the message handler can stop routing
+// messages to the session before the peer is closed.
+func (s *Session) EndRecvAbort(abort *Abort) bool {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+
+	if s.goodbye != nil {
+		return false // already ended
+	}
+	s.goodbye = NoGoodbye
+	s.abort = abort
+
+	if s.done == nil {
+		s.done = make(chan struct{})
+	}
+	close(s.done)
+
+	return true
+}
+
+// Abort returns the ABORT message supplied to EndRecvAbort, or nil if the
+// session was not ended by EndRecvAbort.
+func (s *Session) Abort() *Abort {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	return s.abort
 }
 
 // setRoles extracts the specified roles from HELLO or WELCOME details, and

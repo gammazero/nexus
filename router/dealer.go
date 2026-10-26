@@ -894,8 +894,9 @@ func (d *dealer) syncCall(caller *wamp.Session, msg *wamp.Call) {
 		abortMsg.Details = wamp.Dict{}
 		abortMsg.Details[wamp.OptMessage] = "Peer is trying to use Progressive Call Invocations while it was not " +
 			"announced during HELLO handshake"
-		d.trySend(caller, &abortMsg)
-		caller.Close()
+		// Let the realm end the session, so that it is removed from the
+		// broker and dealer before its peer is closed.
+		caller.EndRecvAbort(&abortMsg)
 		return
 	}
 
@@ -970,8 +971,7 @@ func (d *dealer) syncCall(caller *wamp.Session, msg *wamp.Call) {
 				abortMsg.Details = wamp.Dict{}
 				abortMsg.Details[wamp.OptMessage] = "Peer is trying to use Payload PassThru Mode while it was not " +
 					"announced during HELLO handshake"
-				d.trySend(caller, &abortMsg)
-				caller.Close()
+				caller.EndRecvAbort(&abortMsg)
 				return
 			}
 
@@ -1348,8 +1348,7 @@ func (d *dealer) syncYield(callee *wamp.Session, msg *wamp.Yield, progress, canR
 			abortMsg := wamp.Abort{Reason: wamp.ErrProtocolViolation}
 			abortMsg.Details = wamp.Dict{}
 			abortMsg.Details[wamp.OptMessage] = ErrPPTNotSupportedByPeer.Error()
-			d.trySend(callee, &abortMsg)
-			callee.Close()
+			callee.EndRecvAbort(&abortMsg)
 			return false
 		}
 
