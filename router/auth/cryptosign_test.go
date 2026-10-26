@@ -299,3 +299,38 @@ func TestCryptoSignAuthenticateBypassOnWelcomeError(t *testing.T) {
 	require.ErrorContains(t, err, "OnWelcome refused")
 	require.Nil(t, welcome)
 }
+
+// TestCryptoSignRejectsReplay checks that a signature captured from one
+// authentication is not accepted in another, and that a signature by the
+// client's key over any message other than the challenge is rejected. The
+// router used to accept any valid signature by the client's key, whatever
+// message it signed.
+func TestCryptoSignRejectsReplay(t *testing.T) {
+	ks, priv := newCryptoSignKeyStore(t)
+	a := auth.NewCryptoSignAuthenticator(ks, time.Second)
+
+	var captured string
+	_, err := authenticate(t, a, wamp.Dict{"authid": "alice"},
+		func(ch *wamp.Challenge) wamp.Message {
+			captured = signChallenge(t, ch, priv)
+			return &wamp.Authenticate{Signature: captured}
+		})
+	require.NoError(t, err)
+
+	welcome, err := authenticate(t, a, wamp.Dict{"authid": "alice"},
+		func(*wamp.Challenge) wamp.Message {
+			return &wamp.Authenticate{Signature: captured}
+		})
+	require.ErrorContains(t, err, "invalid signature", "replayed signature accepted")
+	require.Nil(t, welcome)
+
+	other := make([]byte, 32)
+	_, err = rand.Read(other)
+	require.NoError(t, err)
+	welcome, err = authenticate(t, a, wamp.Dict{"authid": "alice"},
+		func(*wamp.Challenge) wamp.Message {
+			return &wamp.Authenticate{Signature: hex.EncodeToString(sign.Sign(nil, other, priv))}
+		})
+	require.ErrorContains(t, err, "invalid signature", "signature over another message accepted")
+	require.Nil(t, welcome)
+}

@@ -2,6 +2,7 @@ package auth
 
 import (
 	"crypto/rand"
+	"crypto/subtle"
 	"encoding/hex"
 	"errors"
 	"fmt"
@@ -97,7 +98,7 @@ func (cr *CryptoSignAuthenticator) Authenticate(sid wamp.ID, details wamp.Dict, 
 			msg.MessageType(), client)
 	}
 
-	verify, err := cr.verifySignature(authRsp.Signature, key)
+	verify, err := cr.verifySignature(authRsp.Signature, key, challenge)
 	if err != nil {
 		return nil, err
 	}
@@ -119,10 +120,14 @@ func (cr *CryptoSignAuthenticator) Authenticate(sid wamp.ID, details wamp.Dict, 
 	return welcome, nil
 }
 
-func (cr *CryptoSignAuthenticator) verifySignature(signature string, publicKey []byte) (bool, error) {
+// verifySignature reports whether signature, which is hex encoded, is a
+// signature by publicKey followed by the message it signed, and that message
+// is the challenge sent to the client. Without checking the message, any
+// signature by the client's key, such as one captured from an earlier
+// authentication, would be accepted.
+func (cr *CryptoSignAuthenticator) verifySignature(signature string, publicKey, challenge []byte) (bool, error) { //nolint:lll
 	signatureBytes, err := hex.DecodeString(signature)
 	if err != nil {
-		fmt.Println(err)
 		return false, err
 	}
 
@@ -130,12 +135,13 @@ func (cr *CryptoSignAuthenticator) verifySignature(signature string, publicKey [
 		return false, fmt.Errorf("signed message has invalid length (was %v, but should have been 96", len(signatureBytes))
 	}
 
-	signedOut := make([]byte, 32)
 	var pubkey [32]byte
 	copy(pubkey[:], publicKey)
-	_, verify := sign.Open(signedOut, signatureBytes, &pubkey)
-
-	return verify, nil
+	message, verify := sign.Open(nil, signatureBytes, &pubkey)
+	if !verify {
+		return false, nil
+	}
+	return subtle.ConstantTimeCompare(message, challenge) == 1, nil
 }
 
 // TODO: Finish implementing extractChannelBinding.
