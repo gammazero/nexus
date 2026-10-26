@@ -5,6 +5,7 @@ import (
 	"encoding/hex"
 	"errors"
 	"testing"
+	"testing/synctest"
 	"time"
 
 	"github.com/stretchr/testify/require"
@@ -88,36 +89,36 @@ func TestSpecAuthCryptoSignSucceeds(t *testing.T) {
 	if scheme != "" {
 		t.Skip("dedicated router; runs only on local in-process scheme")
 	}
-	checkGoLeaks(t)
+	synctest.Test(t, func(t *testing.T) {
+		const (
+			testAuthid   = "alice"
+			testAuthrole = "admin"
+		)
+		r, priv := newCryptosignRouter(t, testAuthid, testAuthrole)
 
-	const (
-		testAuthid   = "alice"
-		testAuthrole = "admin"
-	)
-	r, priv := newCryptosignRouter(t, testAuthid, testAuthrole)
-
-	cfg := client.Config{
-		Realm: "nexus.test.cryptosign",
-		HelloDetails: wamp.Dict{
-			"authid":      testAuthid,
-			"authmethods": wamp.List{"cryptosign"},
-		},
-		AuthHandlers: map[string]client.AuthFunc{
-			"cryptosign": func(c *wamp.Challenge) (string, wamp.Dict) {
-				return signCryptosignChallenge(t, c, priv), wamp.Dict{}
+		cfg := client.Config{
+			Realm: "nexus.test.cryptosign",
+			HelloDetails: wamp.Dict{
+				"authid":      testAuthid,
+				"authmethods": wamp.List{"cryptosign"},
 			},
-		},
-		ResponseTimeout: time.Second,
-		Logger:          cliLogger,
-	}
-	cli, err := client.ConnectLocal(r, cfg)
-	require.NoError(t, err)
-	defer cli.Close()
+			AuthHandlers: map[string]client.AuthFunc{
+				"cryptosign": func(c *wamp.Challenge) (string, wamp.Dict) {
+					return signCryptosignChallenge(t, c, priv), wamp.Dict{}
+				},
+			},
+			ResponseTimeout: time.Second,
+			Logger:          cliLogger,
+		}
+		cli, err := client.ConnectLocal(r, cfg)
+		require.NoError(t, err)
+		defer cli.Close()
 
-	authmethod, _ := wamp.AsString(cli.RealmDetails()["authmethod"])
-	require.Equal(t, "cryptosign", authmethod)
-	authrole, _ := wamp.AsString(cli.RealmDetails()["authrole"])
-	require.Equal(t, testAuthrole, authrole)
+		authmethod, _ := wamp.AsString(cli.RealmDetails()["authmethod"])
+		require.Equal(t, "cryptosign", authmethod)
+		authrole, _ := wamp.AsString(cli.RealmDetails()["authrole"])
+		require.Equal(t, testAuthrole, authrole)
+	})
 }
 
 // TestSpecAuthCryptoSignBadSignature verifies an invalid signature is rejected
@@ -126,31 +127,31 @@ func TestSpecAuthCryptoSignBadSignature(t *testing.T) {
 	if scheme != "" {
 		t.Skip("dedicated router; runs only on local in-process scheme")
 	}
-	checkGoLeaks(t)
+	synctest.Test(t, func(t *testing.T) {
+		const testAuthid = "alice"
+		r, _ := newCryptosignRouter(t, testAuthid, "admin")
 
-	const testAuthid = "alice"
-	r, _ := newCryptosignRouter(t, testAuthid, "admin")
+		// Generate a different keypair so signatures won't verify.
+		_, otherPriv, err := sign.GenerateKey(rand.Reader)
+		require.NoError(t, err)
 
-	// Generate a different keypair so signatures won't verify.
-	_, otherPriv, err := sign.GenerateKey(rand.Reader)
-	require.NoError(t, err)
-
-	cfg := client.Config{
-		Realm: "nexus.test.cryptosign",
-		HelloDetails: wamp.Dict{
-			"authid":      testAuthid,
-			"authmethods": wamp.List{"cryptosign"},
-		},
-		AuthHandlers: map[string]client.AuthFunc{
-			"cryptosign": func(c *wamp.Challenge) (string, wamp.Dict) {
-				return signCryptosignChallenge(t, c, otherPriv), wamp.Dict{}
+		cfg := client.Config{
+			Realm: "nexus.test.cryptosign",
+			HelloDetails: wamp.Dict{
+				"authid":      testAuthid,
+				"authmethods": wamp.List{"cryptosign"},
 			},
-		},
-		ResponseTimeout: time.Second,
-		Logger:          cliLogger,
-	}
-	_, err = client.ConnectLocal(r, cfg)
-	require.Error(t, err, "expected cryptosign auth to fail with mismatched key")
+			AuthHandlers: map[string]client.AuthFunc{
+				"cryptosign": func(c *wamp.Challenge) (string, wamp.Dict) {
+					return signCryptosignChallenge(t, c, otherPriv), wamp.Dict{}
+				},
+			},
+			ResponseTimeout: time.Second,
+			Logger:          cliLogger,
+		}
+		_, err = client.ConnectLocal(r, cfg)
+		require.Error(t, err, "expected cryptosign auth to fail with mismatched key")
+	})
 }
 
 // TestSpecAuthCryptoSignUnknownUser verifies that an authid not in the
@@ -159,24 +160,24 @@ func TestSpecAuthCryptoSignUnknownUser(t *testing.T) {
 	if scheme != "" {
 		t.Skip("dedicated router; runs only on local in-process scheme")
 	}
-	checkGoLeaks(t)
+	synctest.Test(t, func(t *testing.T) {
+		r, priv := newCryptosignRouter(t, "alice", "admin")
 
-	r, priv := newCryptosignRouter(t, "alice", "admin")
-
-	cfg := client.Config{
-		Realm: "nexus.test.cryptosign",
-		HelloDetails: wamp.Dict{
-			"authid":      "no-such-user",
-			"authmethods": wamp.List{"cryptosign"},
-		},
-		AuthHandlers: map[string]client.AuthFunc{
-			"cryptosign": func(c *wamp.Challenge) (string, wamp.Dict) {
-				return signCryptosignChallenge(t, c, priv), wamp.Dict{}
+		cfg := client.Config{
+			Realm: "nexus.test.cryptosign",
+			HelloDetails: wamp.Dict{
+				"authid":      "no-such-user",
+				"authmethods": wamp.List{"cryptosign"},
 			},
-		},
-		ResponseTimeout: time.Second,
-		Logger:          cliLogger,
-	}
-	_, err := client.ConnectLocal(r, cfg)
-	require.Error(t, err, "expected cryptosign auth to fail for unknown authid")
+			AuthHandlers: map[string]client.AuthFunc{
+				"cryptosign": func(c *wamp.Challenge) (string, wamp.Dict) {
+					return signCryptosignChallenge(t, c, priv), wamp.Dict{}
+				},
+			},
+			ResponseTimeout: time.Second,
+			Logger:          cliLogger,
+		}
+		_, err := client.ConnectLocal(r, cfg)
+		require.Error(t, err, "expected cryptosign auth to fail for unknown authid")
+	})
 }
