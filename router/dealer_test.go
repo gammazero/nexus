@@ -1521,3 +1521,31 @@ func TestDealerCloseWhileDeliveringYields(t *testing.T) {
 		rtr.Close()
 	}
 }
+
+// TestDealerCloseWhileCallTimesOut checks that closing the dealer while call
+// timeout timers are firing neither panics, by sending on the closed action
+// channel, nor leaves goroutines running.
+func TestDealerCloseWhileCallTimesOut(t *testing.T) {
+	defer goleak.VerifyNone(t, goleak.IgnoreCurrent())
+
+	for i := range 500 {
+		d := newDealer(logger, false, true, debug)
+		_, rtr := transport.LinkedPeers()
+		d.setMetaPeer(rtr)
+		callee := wamp.NewSession(newTestPeer(), 0, nil, nil)
+		d.register(callee, &wamp.Register{Request: 1, Procedure: testProcedure})
+		<-callee.Recv()
+		caller := wamp.NewSession(newTestPeer(), 0, nil, nil)
+		d.call(caller, &wamp.Call{
+			Request:   100,
+			Procedure: testProcedure,
+			Options:   wamp.Dict{wamp.OptTimeout: 1},
+		})
+		<-callee.Recv()
+
+		// Close at different points around when the 1ms timer fires.
+		time.Sleep(time.Duration(i%4) * 500 * time.Microsecond)
+		d.close()
+		rtr.Close()
+	}
+}
