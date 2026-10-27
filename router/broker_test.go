@@ -27,7 +27,7 @@ func (p *testPeer) Close()                    {}
 func (p *testPeer) IsLocal() bool { return true }
 
 func newTestBroker(t *testing.T, eventCfgs []*TopicEventHistoryConfig) *broker {
-	b, err := newBroker(logger, false, true, debug, nil, eventCfgs)
+	b, err := newBroker(logger, false, true, debug, nil, eventCfgs, "")
 	require.NoError(t, err, "Can not initialize broker")
 	t.Cleanup(func() {
 		b.close()
@@ -1107,8 +1107,8 @@ func requireAckAfterHello(t *testing.T, peer *testPeer) wamp.Message {
 
 // TestSubscribeBlockedAckDelivered checks that when the SUBSCRIBED ack cannot
 // be queued at once, the broker still creates the subscription, and the ack
-// reaches the subscriber once it reads, ahead of any EVENT for the
-// subscription. An EVENT for a subscription ID the subscriber has not learned
+// reaches the subscriber once it reads, ahead of the EVENTs for the
+// subscription that wait behind it. An EVENT for a subscription ID the subscriber has not learned
 // is a protocol violation that makes some clients drop the connection.
 func TestSubscribeBlockedAckDelivered(t *testing.T) {
 	broker := newTestBroker(t, nil)
@@ -1130,14 +1130,18 @@ func TestSubscribeBlockedAckDelivered(t *testing.T) {
 	broker.publish(pubSess, &wamp.Publish{Request: 2, Topic: testTopic})
 	waitBroker(broker)
 
-	subMsg, ok := requireAckAfterHello(t, blocked).(*wamp.Subscribed)
+	require.IsType(t, &wamp.Hello{}, <-blocked.Recv())
+	subMsg, ok := (<-blocked.Recv()).(*wamp.Subscribed)
 	require.True(t, ok, "expected SUBSCRIBED")
 	require.Equal(t, sub.id, subMsg.Subscription)
+	event, ok := (<-blocked.Recv()).(*wamp.Event)
+	require.True(t, ok, "expected EVENT")
+	require.Equal(t, sub.id, event.Subscription)
 }
 
 // TestSubscribeJoinBlockedAckDelivered is the variant for joining an existing
 // subscription: a subscriber whose SUBSCRIBED ack cannot be queued at once
-// joins it, and receives the ack ahead of any EVENT.
+// joins it, and receives the ack ahead of the EVENTs that wait behind it.
 func TestSubscribeJoinBlockedAckDelivered(t *testing.T) {
 	broker := newTestBroker(t, nil)
 	testTopic := wamp.URI("nexus.test.topic")
@@ -1164,9 +1168,13 @@ func TestSubscribeJoinBlockedAckDelivered(t *testing.T) {
 	waitBroker(broker)
 	require.IsType(t, &wamp.Event{}, <-sess.Recv())
 
-	joinMsg, ok := requireAckAfterHello(t, blocked).(*wamp.Subscribed)
+	require.IsType(t, &wamp.Hello{}, <-blocked.Recv())
+	joinMsg, ok := (<-blocked.Recv()).(*wamp.Subscribed)
 	require.True(t, ok, "expected SUBSCRIBED")
 	require.Equal(t, subMsg.Subscription, joinMsg.Subscription)
+	event, ok := (<-blocked.Recv()).(*wamp.Event)
+	require.True(t, ok, "expected EVENT")
+	require.Equal(t, subMsg.Subscription, event.Subscription)
 }
 
 // waitBroker waits until broker has handled every action queued before it, so
@@ -1175,4 +1183,34 @@ func waitBroker(broker *broker) {
 	done := make(chan struct{})
 	broker.actionChan <- func() { close(done) }
 	<-done
+}
+
+// TestEventOverflowClose checks that, with the "close" EventOverflow, the
+// broker ends the session of a subscriber whose queue and EVENT backlog are
+// full with a GOODBYE carrying CloseSlowSubscriber, and does not end it
+// before that.
+func TestEventOverflowClose(t *testing.T) {
+	b, err := newBroker(logger, false, true, debug, nil, nil, EventOverflowClose)
+	require.NoError(t, err)
+	t.Cleanup(b.close)
+	testTopic := wamp.URI("nexus.test.topic")
+
+	peer := &testPeer{in: make(chan wamp.Message, 1)}
+	sess := wamp.NewSession(peer, 0, nil, nil)
+	sess.SetSendLimit(1)
+	defer sess.Close()
+	b.subscribe(sess, &wamp.Subscribe{Request: 1, Topic: testTopic})
+	waitBroker(b)
+
+	// The SUBSCRIBED fills the queue, and the first EVENT the backlog.
+	pubSess := wamp.NewSession(newTestPeer(), 0, nil, nil)
+	b.publish(pubSess, &wamp.Publish{Request: 2, Topic: testTopic})
+	waitBroker(b)
+	require.Nil(t, sess.Goodbye(), "session ended while its backlog had room")
+
+	b.publish(pubSess, &wamp.Publish{Request: 3, Topic: testTopic})
+	waitBroker(b)
+	goodbye := sess.Goodbye()
+	require.NotNil(t, goodbye, "slow subscriber not closed")
+	require.Equal(t, CloseSlowSubscriber, goodbye.Reason)
 }

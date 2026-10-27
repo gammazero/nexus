@@ -24,8 +24,8 @@ func LinkedPeersQSize(queueSize int) (wamp.Peer, wamp.Peer) {
 
 	// The channel used for the router to send messages to the client should be
 	// large enough to prevent blocking while waiting for a slow client, as a
-	// client may block on I/O. If the client does block, then the message
-	// should be dropped.
+	// client may block on I/O. If the client does block, then the router holds
+	// messages in the session's backlog, or drops them.
 	rToC := make(chan wamp.Message, queueSize)
 
 	// The router will read from this channel and immediately dispatch the

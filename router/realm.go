@@ -90,6 +90,10 @@ type realm struct {
 	// strictRequestIDs enforces sequential client-allocated request IDs. See
 	// RealmConfig.StrictRequestIDs.
 	strictRequestIDs bool
+
+	// eventBacklog is the send limit of each client session. See
+	// RealmConfig.EventBacklog.
+	eventBacklog int
 }
 
 var (
@@ -99,13 +103,23 @@ var (
 	}
 )
 
-// newRealm creates a new realm with the given RealmConfig, broker and dealer.
-func newRealm(config *RealmConfig, broker *broker, dealer *dealer, logger stdlog.StdLog, debug bool) (*realm, error) {
+// checkRealmConfig returns an error if config is not valid for creating a
+// realm. It is called before the realm's broker and dealer are created, so
+// that an invalid config does not leave their goroutines running.
+func checkRealmConfig(config *RealmConfig) error {
 	if !config.URI.ValidURI(config.StrictURI, "") {
-		return nil, fmt.Errorf(
+		return fmt.Errorf(
 			"invalid realm URI %v (URI strict checking %v)", config.URI, config.StrictURI)
 	}
+	if config.EventBacklog < 0 {
+		return fmt.Errorf("negative event backlog: %d", config.EventBacklog)
+	}
+	return nil
+}
 
+// newRealm creates a new realm with the given RealmConfig, broker and dealer.
+// The config must have been checked with checkRealmConfig.
+func newRealm(config *RealmConfig, broker *broker, dealer *dealer, logger stdlog.StdLog, debug bool) *realm {
 	r := &realm{
 		uri:         config.URI,
 		broker:      broker,
@@ -128,6 +142,7 @@ func newRealm(config *RealmConfig, broker *broker, dealer *dealer, logger stdlog
 		enableMetaModify: config.EnableMetaModify,
 
 		strictRequestIDs: config.StrictRequestIDs,
+		eventBacklog:     config.EventBacklog,
 	}
 
 	if debug {
@@ -162,7 +177,7 @@ func newRealm(config *RealmConfig, broker *broker, dealer *dealer, logger stdlog
 	go r.metaProcedureHandler()
 	go r.run()
 
-	return r, nil
+	return r
 }
 
 func (r *realm) run() {
@@ -434,6 +449,10 @@ func (r *realm) handleSession(sess *wamp.Session, welcome wamp.Message) error {
 		err := errors.New("realm closed")
 		return err
 	}
+
+	// Set before the session is visible, so that nothing is sent to it under the
+	// default limit.
+	sess.SetSendLimit(r.eventBacklog)
 
 	r.waitHandlers.Add(1)
 
