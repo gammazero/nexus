@@ -9,9 +9,6 @@ type Message interface {
 	MessageType() MessageType
 }
 
-// Dict is a dictionary that maps keys to objects in a WAMP message.
-type Dict map[string]any
-
 // List represents a list of items in a WAMP message.
 type List []any
 
