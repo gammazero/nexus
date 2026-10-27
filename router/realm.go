@@ -313,12 +313,23 @@ func (r *realm) createMetaSession() {
 // onJoin is called when a non-meta session joins this realm. The session is
 // stored in the realm's clients and a meta event is published.
 //
+// welcome, if not nil, is queued to the session in the same realm action that
+// stores the session, so that the client cannot get its WELCOME before the
+// session is visible to the realm, and nothing that finds the session through
+// the realm can queue a message to it ahead of the WELCOME. Nothing else can
+// reach the session before then, so its outbound queue is empty and, being
+// buffered for every router-created peer, accepts the WELCOME without blocking
+// the realm goroutine.
+//
 // Note: onJoin() is called from handleSession, not handleInboundMessages, so
 // that it is not called for the meta client.
-func (r *realm) onJoin(sess *wamp.Session) {
+func (r *realm) onJoin(sess *wamp.Session, welcome wamp.Message) {
 	sync := make(chan struct{})
 	r.actionChan <- func() {
 		r.clients[sess.ID] = sess
+		if welcome != nil {
+			sess.Send() <- welcome
+		}
 		close(sync)
 	}
 	<-sync
@@ -406,9 +417,10 @@ func (r *realm) onLeave(sess *wamp.Session, shutdown, killAll bool) {
 //
 // Routing occurs only between WAMP Sessions that have joined the same Realm.
 //
-// welcome, if not nil, is queued to the session before the session becomes
-// visible to the rest of the realm (onJoin), so it is always the first message
-// the client receives. Anything that reacts to the join, such as a
+// welcome, if not nil, is queued to the session as the session becomes visible
+// to the rest of the realm (onJoin), so it is always the first message the
+// client receives, and the session can be found, as by wamp.session.kill_all,
+// once the client has it. Anything that reacts to the join, such as a
 // wamp.session.kill triggered by wamp.session.on_join or an event, queues
 // behind it. If the realm is closed the welcome is not sent and an error is
 // returned, so the caller can still ABORT the handshake.
@@ -423,18 +435,11 @@ func (r *realm) handleSession(sess *wamp.Session, welcome wamp.Message) error {
 		return err
 	}
 
-	// Nothing else can reach this session yet, so its outbound queue is
-	// empty and, being buffered for every router-created peer, accepts the
-	// WELCOME without blocking while the lock is held.
-	if welcome != nil {
-		sess.Send() <- welcome
-	}
-
 	r.waitHandlers.Add(1)
 
 	// Ensure session is capable of receiving exit signal before releasing
 	// lock.
-	r.onJoin(sess)
+	r.onJoin(sess, welcome)
 	r.closeLock.Unlock()
 
 	if r.debug {
