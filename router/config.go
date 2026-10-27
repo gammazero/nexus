@@ -106,6 +106,12 @@ type RealmConfig struct {
 	// closes the client, with a GOODBYE carrying CloseSlowSubscriber if there is
 	// room for it, so that the client knows that it fell behind and can
 	// reconnect.
+	//
+	// Use EventOverflowClose for a realm whose clients must not miss EVENTs, and
+	// that reconnect and resync when closed. Closing a client ends its whole
+	// session, including its registrations and the calls in progress to it, and a
+	// client that does not reconnect stops working, so EventOverflowDrop is the
+	// default.
 	EventOverflow string `json:"event_overflow"`
 
 	TopicEventHistoryConfigs []*TopicEventHistoryConfig `json:"event_history"`
