@@ -20,7 +20,9 @@ type Config struct {
 	// allows unauthenticated clients to create new realms.
 	RealmTemplate *RealmConfig `json:"realm_template"`
 
-	// Enable debug logging for router, realm, broker, dealer
+	// Debug enables debug logging for the router, and for the realm, broker and
+	// dealer of every realm. To enable it for only some realms, set Debug in their
+	// RealmConfig instead.
 	Debug bool
 	// Interval in seconds for logging memory stats. O to disable. Logs Alloc,
 	// Mallocs, Frees, and NumGC. For a description of these, see
@@ -40,6 +42,10 @@ type RealmConfig struct {
 	AnonymousAuth bool `json:"anonymous_auth"`
 	// Allow publisher and caller identity disclosure when requested.
 	AllowDisclose bool `json:"allow_disclose"`
+	// Debug enables debug logging for this realm, and for its broker and dealer,
+	// even when Config.Debug is not set. With Config.Debug set, debug logging is
+	// enabled for every realm, whatever the value of Debug.
+	Debug bool `json:"debug"`
 	// Slice of Authenticator interfaces.
 	Authenticators []auth.Authenticator
 	// Authorizer called for each message.

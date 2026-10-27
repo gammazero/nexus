@@ -306,7 +306,7 @@ func (r *router) AttachClient(client wamp.Peer, transportDetails wamp.Dict) erro
 		return err
 	}
 
-	if r.debug {
+	if realm.debug {
 		r.log.Println("Finished attaching session:", sid)
 	}
 	return nil
@@ -429,15 +429,18 @@ func (r *router) addRealm(config *RealmConfig) (*realm, error) {
 		return nil, err
 	}
 
-	broker, err := newBroker(r.log, config.StrictURI, config.AllowDisclose, r.debug, config.PublishFilterFactory, config.TopicEventHistoryConfigs, config.EventOverflow)
+	if r.debug && !config.Debug {
+		// Config.Debug enables debug logging for every realm. Set it in a
+		// copy, so that the caller's config is not changed.
+		cfg := *config
+		cfg.Debug = true
+		config = &cfg
+	}
+	broker, err := newBroker(r.log, config)
 	if err != nil {
 		return nil, err
 	}
-	realm := newRealm(
-		config,
-		broker,
-		newDealer(r.log, config.StrictURI, config.AllowDisclose, r.debug),
-		r.log, r.debug)
+	realm := newRealm(config, broker, newDealer(r.log, config), r.log)
 	r.realms[config.URI] = realm
 	r.log.Println("Added realm:", config.URI)
 	return realm, nil

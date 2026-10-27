@@ -48,6 +48,8 @@ Annotated config file example:
                 "strict_uri": false,    // Enforce strict URI format validation.
                 "allow_disclose": true, // Allow publisher and caller identity disclosure when requested.
                 "anonymous_auth": true, // Allow anonymous authentication.
+                "debug": false,         // Debug logging for this realm only, even when the router's
+                                        // "debug" is false.
                 "meta_strict": false,   // When true, only include standard session details in on_join event
                 "meta_include_session_details": [], // When MetaStrict is true, specifies session details
 	                                                // to include in addition to the standard details
@@ -76,7 +78,7 @@ Annotated config file example:
                 ]
             }
         ],
-        "debug": true,
+        "debug": true,          // Debug logging for the router and every realm. --verbose sets it.
         "mem_stats_log_sec": 0  // Interval in seconds for logging memory stats. 0 to disable.
 	                            // Logs Alloc, Mallocs, Frees, and NumGC.
     }

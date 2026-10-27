@@ -184,13 +184,15 @@ type dealer struct {
 	debug bool
 }
 
-// newDealer creates the default Dealer implementation.
+// newDealer creates the default Dealer implementation, with the dealer
+// settings of the realm config. The dealer copies the settings that it uses,
+// so config is not used after newDealer returns.
 //
 // Messages are routed serially by the dealer's message handling goroutine.
 // This serialization is limited to the work of determining the message's
 // destination, and then the message is handed off to the next goroutine,
 // typically the receiving client's send handler.
-func newDealer(logger stdlog.StdLog, strictURI, allowDisclose, debug bool) *dealer {
+func newDealer(logger stdlog.StdLog, config *RealmConfig) *dealer {
 	d := &dealer{
 		procRegMap:    map[wamp.URI]*registration{},
 		pfxProcRegMap: map[wamp.URI]*registration{},
@@ -213,11 +215,11 @@ func newDealer(logger stdlog.StdLog, strictURI, allowDisclose, debug bool) *deal
 		idGen: new(wamp.IDGen),
 		prng:  rand.New(rand.NewSource(time.Now().Unix())), //nolint:gosec // used for call invocation
 
-		strictURI:     strictURI,
-		allowDisclose: allowDisclose,
+		strictURI:     config.StrictURI,
+		allowDisclose: config.AllowDisclose,
 
 		log:   logger,
-		debug: debug,
+		debug: config.Debug,
 	}
 	go d.run()
 	return d

@@ -99,19 +99,22 @@ type broker struct {
 	filterFactory FilterFactory
 }
 
-// newBroker returns a new default broker implementation instance.
-func newBroker(logger stdlog.StdLog, strictURI, allowDisclose, debug bool, publishFilter FilterFactory, evntCfgs []*TopicEventHistoryConfig, eventOverflow string) (*broker, error) { //nolint:lll
+// newBroker returns a new default broker implementation instance, with the
+// broker settings of the realm config. The broker copies the settings that it
+// uses, so config is not used after newBroker returns.
+func newBroker(logger stdlog.StdLog, config *RealmConfig) (*broker, error) {
 	if logger == nil {
 		panic("logger is nil")
 	}
 	var closeSlow bool
-	switch eventOverflow {
+	switch config.EventOverflow {
 	case "", EventOverflowDrop:
 	case EventOverflowClose:
 		closeSlow = true
 	default:
-		return nil, configError{Err: fmt.Errorf("invalid event overflow: %q", eventOverflow)}
+		return nil, configError{Err: fmt.Errorf("invalid event overflow: %q", config.EventOverflow)}
 	}
+	publishFilter := config.PublishFilterFactory
 	if publishFilter == nil {
 		publishFilter = NewSimplePublishFilter
 	}
@@ -132,18 +135,15 @@ func newBroker(logger stdlog.StdLog, strictURI, allowDisclose, debug bool, publi
 
 		idGen: new(wamp.IDGen),
 
-		strictURI:     strictURI,
-		allowDisclose: allowDisclose,
+		strictURI:     config.StrictURI,
+		allowDisclose: config.AllowDisclose,
 		closeSlow:     closeSlow,
 
 		log:           logger,
-		debug:         debug,
+		debug:         config.Debug,
 		filterFactory: publishFilter,
 	}
-	err := b.PreInitEventHistoryTopics(evntCfgs)
-	// if broker fails initialize event history store we just log it, the
-	// broker itself will continue to operate but without event history store
-	if err != nil {
+	if err := b.PreInitEventHistoryTopics(config.TopicEventHistoryConfigs); err != nil {
 		return nil, configError{Err: err}
 	}
 	go b.run()

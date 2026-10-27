@@ -119,7 +119,7 @@ func checkRealmConfig(config *RealmConfig) error {
 
 // newRealm creates a new realm with the given RealmConfig, broker and dealer.
 // The config must have been checked with checkRealmConfig.
-func newRealm(config *RealmConfig, broker *broker, dealer *dealer, logger stdlog.StdLog, debug bool) *realm {
+func newRealm(config *RealmConfig, broker *broker, dealer *dealer, logger stdlog.StdLog) *realm {
 	r := &realm{
 		uri:         config.URI,
 		broker:      broker,
@@ -133,7 +133,7 @@ func newRealm(config *RealmConfig, broker *broker, dealer *dealer, logger stdlog
 		metaDone:    make(chan struct{}),
 		metaProcMap: make(map[wamp.ID]func(*wamp.Invocation) wamp.Message, 9),
 		log:         logger,
-		debug:       debug,
+		debug:       config.Debug,
 		localAuth:   config.RequireLocalAuth,
 		localAuthz:  config.RequireLocalAuthz,
 		metaStrict:  config.MetaStrict,
@@ -145,11 +145,11 @@ func newRealm(config *RealmConfig, broker *broker, dealer *dealer, logger stdlog
 		eventBacklog:     config.EventBacklog,
 	}
 
-	if debug {
+	if r.debug {
 		if r.enableMetaKill {
 			r.log.Println("Session meta kill procedures enabled")
 		}
-		if r.enableMetaKill {
+		if r.enableMetaModify {
 			r.log.Println("Session meta modify_details procedure enabled")
 		}
 	}

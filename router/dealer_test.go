@@ -15,7 +15,7 @@ import (
 )
 
 func newTestDealer(t *testing.T) (*dealer, wamp.Peer) {
-	d := newDealer(logger, false, true, debug)
+	d := newDealer(logger, &RealmConfig{AllowDisclose: true, Debug: debug})
 	metaClient, rtr := transport.LinkedPeers()
 	d.setMetaPeer(rtr)
 	t.Cleanup(func() {
@@ -1171,7 +1171,7 @@ func TestCallerIdentification(t *testing.T) {
 
 func TestWrongYielder(t *testing.T) {
 	synctest.Test(t, func(t *testing.T) {
-		dealer := newDealer(logger, false, true, debug)
+		dealer := newDealer(logger, &RealmConfig{AllowDisclose: true, Debug: debug})
 		t.Cleanup(func() {
 			dealer.close()
 		})
@@ -1518,7 +1518,7 @@ func TestDealerCloseWhileDeliveringYields(t *testing.T) {
 	defer goleak.VerifyNone(t, goleak.IgnoreCurrent())
 
 	for i := range 500 {
-		d := newDealer(logger, false, true, debug)
+		d := newDealer(logger, &RealmConfig{AllowDisclose: true, Debug: debug})
 		_, rtr := transport.LinkedPeers()
 		d.setMetaPeer(rtr)
 		callee, caller, inv := setupBlockedCall(t, d)
@@ -1541,7 +1541,7 @@ func TestDealerCloseWhileCallTimesOut(t *testing.T) {
 	defer goleak.VerifyNone(t, goleak.IgnoreCurrent())
 
 	for i := range 500 {
-		d := newDealer(logger, false, true, debug)
+		d := newDealer(logger, &RealmConfig{AllowDisclose: true, Debug: debug})
 		_, rtr := transport.LinkedPeers()
 		d.setMetaPeer(rtr)
 		callee := wamp.NewSession(newTestPeer(), 0, nil, nil)
