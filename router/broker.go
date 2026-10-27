@@ -127,8 +127,8 @@ func newBroker(logger stdlog.StdLog, config *RealmConfig) (*broker, error) {
 		subscriptions:   map[wamp.ID]*subscription{},
 		sessionSubIDSet: map[*wamp.Session]map[wamp.ID]struct{}{},
 
-		// The action handler should be nearly always runable, since it is the
-		// critical section that does the only routing. So, and unbuffered
+		// The action handler should be nearly always runnable, since it is the
+		// critical section that does the only routing. So, an unbuffered
 		// channel is appropriate.
 		actionChan: make(chan func()),
 		stopped:    make(chan struct{}),
@@ -235,7 +235,7 @@ func (b *broker) publish(pub *wamp.Session, msg *wamp.Publish) {
 			return
 		}
 
-		// Every side supports PPT feature. Fill PPT options for callee.
+		// Every side supports PPT feature. Fill PPT options for subscribers.
 		pptOptionsToDetails(msg.Options, details)
 	}
 
@@ -245,9 +245,9 @@ func (b *broker) publish(pub *wamp.Session, msg *wamp.Publish) {
 			b.log.Println(wamp.RolePublisher, "included", wamp.OptExcludeMe,
 				"option but did not announce support for",
 				wamp.FeaturePubExclusion)
-			// Do not return error here, even though published did not announce
-			// for publisher_exclusion. Assume that publisher supports it since
-			// specify option that requires it.
+			// Do not return error here, even though publisher did not announce
+			// publisher_exclusion. Assume that publisher supports it since it
+			// specified the option that requires it.
 		}
 		excludePub = exclude
 	}
@@ -358,7 +358,7 @@ func (b *broker) removeSession(sess *wamp.Session, notify bool) {
 	<-done
 }
 
-// Close stops the broker, letting already queued actions finish.
+// close stops the broker, letting already queued actions finish.
 func (b *broker) close() {
 	close(b.actionChan)
 	<-b.stopped
@@ -520,8 +520,8 @@ func (b *broker) syncSubscribe(subscriber *wamp.Session, msg *wamp.Subscribe, ma
 	b.syncPubSubMeta(wamp.MetaEventSubOnSubscribe, subscriber.ID, sub.id)
 }
 
-// syncDeleteSubscription removes the the ID->subscription mapping and removes
-// the topic->subscription mapping.
+// syncDelSubscription removes the ID->subscription mapping and removes the
+// topic->subscription mapping.
 func (b *broker) syncDelSubscription(sub *subscription) {
 	// Remove ID -> subscription.
 	delete(b.subscriptions, sub.id)
@@ -537,7 +537,7 @@ func (b *broker) syncDelSubscription(sub *subscription) {
 	}
 }
 
-// syncUnsibsubscribe removes the subscriber from the specified subscription.
+// syncUnsubscribe removes the subscriber from the specified subscription.
 func (b *broker) syncUnsubscribe(subscriber *wamp.Session, msg *wamp.Unsubscribe) {
 	subID := msg.Subscription
 	sub, ok := b.subscriptions[subID]
@@ -1097,11 +1097,11 @@ func (b *broker) subCountSubscribers(msg *wamp.Invocation) wamp.Message {
 	}
 }
 
-// eventHistoryLast retrieves events history for subscription applying provided filters
+// subEventHistory retrieves events history for subscription applying provided filters
 // TODO: Need to filter by authid and/or authrole of caller if stored events have any of them
 // But that's not possible in current arch as meta peer doesn't know anything about caller, just invocation message
 func (b *broker) subEventHistory(msg *wamp.Invocation) wamp.Message {
-	var events wamp.List // []*storedEvent
+	var events wamp.List
 	var isLimitReached bool
 	var reverse bool
 	var limit int

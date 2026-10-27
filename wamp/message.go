@@ -306,7 +306,7 @@ type Register struct {
 
 func (msg *Register) MessageType() MessageType { return REGISTER }
 
-// If the Dealer is able to fulfill and allowing the registration, it answers
+// If the Dealer is able to fulfill and allow the registration, it answers
 // by sending a REGISTERED message to the Callee:
 //
 // [REGISTERED, REGISTER.Request|id, Registration|id]
@@ -357,7 +357,7 @@ type Call struct {
 func (msg *Call) MessageType() MessageType { return CALL }
 
 // If the Dealer is able to fulfill (mediate) the call and it allows the call,
-// it sends a INVOCATION message to the respective Callee implementing the
+// it sends an INVOCATION message to the respective Callee implementing the
 // procedure:
 //
 // [INVOCATION, Request|id, REGISTERED.Registration|id, Details|dict]

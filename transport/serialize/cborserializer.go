@@ -44,8 +44,8 @@ func (s *CBORSerializer) Deserialize(data []byte) (wamp.Message, error) {
 		return nil, errors.New("invalid message")
 	}
 
-	// cbor deserializer gives us a uint64 instead of an int64, whyever it
-	// doesn't matter here, because valid values are only within an 8bit range.
+	// cbor deserializer gives us a uint64 instead of an int64. That does not
+	// matter here, because valid values are only within an 8bit range.
 	utyp, ok := v[0].(uint64)
 	if !ok {
 		return nil, errors.New("unsupported message format")
@@ -61,7 +61,7 @@ func (s *CBORSerializer) SerializeDataItem(item any) ([]byte, error) {
 	return b, err
 }
 
-// DeserializeDataItem decodes a json payload into an object/structure.
+// DeserializeDataItem decodes a cbor payload into an object/structure.
 func (s *CBORSerializer) DeserializeDataItem(data []byte, v any) error {
 	return codec.NewDecoderBytes(data, ch).Decode(&v)
 }

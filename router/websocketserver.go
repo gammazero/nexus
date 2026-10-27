@@ -67,7 +67,7 @@ type WebsocketServer struct {
 	// connections) is also stored in HELLO and session details.
 	//
 	// The cookie from the request, and the next cookie to expect, are stored
-	// in the HELLO and session details, respectively, as:
+	// in the HELLO and session details as:
 	//
 	//     Details.transport.auth.cookie|*http.Cookie
 	//     Details.transport.auth.nextcookie|*http.Cookie
@@ -125,7 +125,7 @@ type WebsocketServer struct {
 //
 // Optional websocket server configuration can be set, after creating the
 // server instance, by setting WebsocketServer.Upgrader and other
-// WebsocketServer members directly. Use then WebsocketServer.AllowOrigins()
+// WebsocketServer members directly. Then use WebsocketServer.AllowOrigins()
 // function to specify what origins to allow for CORS support.
 //
 // To run the websocket server, call one of the server's
@@ -203,7 +203,7 @@ func NewWebsocketServer(r Router) *WebsocketServer {
 //
 // # Custom Origin Checks
 //
-// Alternatively, a custom function my be configured to supplied any origin
+// Alternatively, a custom function may be configured to supply any origin
 // checking logic your application needs. The WebsocketServer calls the
 // function specified in the WebsocketServer.Upgrader.CheckOrigin field to
 // check the origin. If the CheckOrigin function returns false, then the
@@ -247,7 +247,7 @@ func (s *WebsocketServer) AllowOrigins(origins []string) error {
 }
 
 // ListenAndServe listens on the specified TCP address and starts a goroutine
-// that accepts new client connections until the returned io.closer is closed.
+// that accepts new client connections until the returned io.Closer is closed.
 func (s *WebsocketServer) ListenAndServe(address string) (io.Closer, error) {
 	// Call Listen separate from Serve to check for error listening.
 	l, err := net.Listen("tcp", address)
@@ -267,7 +267,7 @@ func (s *WebsocketServer) ListenAndServe(address string) (io.Closer, error) {
 
 // ListenAndServeTLS listens on the specified TCP address and starts a
 // goroutine that accepts new TLS client connections until the returned
-// io.closer is closed. If tls.Config does not already contain a certificate,
+// io.Closer is closed. If tls.Config does not already contain a certificate,
 // then certFile and keyFile, if specified, are used to load an X509
 // certificate.
 func (s *WebsocketServer) ListenAndServeTLS(address string, tlscfg *tls.Config, certFile, keyFile string) (io.Closer, error) { //nolint:lll
@@ -340,7 +340,7 @@ func (s *WebsocketServer) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	}
 
 	// If request capture is enabled, then save the HTTP upgrade http.Request
-	// in the HELLO and session details as transport.auth details.request.
+	// in the HELLO and session details as transport.auth.request.
 	if s.EnableRequestCapture {
 		if authDict == nil {
 			authDict = wamp.Dict{}

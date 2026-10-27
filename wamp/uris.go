@@ -65,7 +65,7 @@ const (
 	ErrAuthorizationFailed = URI("wamp.error.authorization_failed")
 
 	// Something failed with the authentication itself, that is, authentication
-	// could not run to end. *
+	// could not run to end.
 	ErrAuthenticationFailed = URI("wamp.error.authentication_failed")
 
 	// Peer wanted to join a non-existing realm (and the Router did not allow

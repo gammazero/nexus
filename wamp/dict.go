@@ -48,7 +48,8 @@ func NormalizeDict(v any) Dict {
 	return dict
 }
 
-// Return the child dictionary for the given key, or nil if not present.
+// DictChild returns the child dictionary for the given key, or nil if not
+// present.
 //
 // If the child is not a Dict, an attempt is made to convert it. The dict is
 // not modified since features may be looked up concurrently for the same

@@ -200,7 +200,7 @@ func (r *realm) run() {
 // are no messages remaining to be sent to the router.
 //
 // After that, the meta client session is killed. This ensures there are no
-// more meta messages to sent to the router.
+// more meta messages to send to the router.
 //
 // At this point the broker and dealer are shutdown since they cannot receive
 // any more messages to route, and have no clients to route messages to.
@@ -209,7 +209,7 @@ func (r *realm) run() {
 func (r *realm) close() {
 	// The lock is held in mutual exclusion with the router starting any new
 	// session handlers for this realm. This prevents the router from starting
-	// any new session handlers, allowing the realm can safely close after
+	// any new session handlers, allowing the realm to safely close after
 	// waiting for all existing session handlers to exit.
 	r.closeLock.Lock()
 	defer r.closeLock.Unlock()
@@ -242,7 +242,7 @@ func (r *realm) close() {
 	<-r.metaDone
 
 	// handleInboundMessages() and metaProcedureHandler() are the only things
-	// than can submit request to the broker and dealer, so now that these are
+	// that can submit requests to the broker and dealer, so now that these are
 	// finished there can be no more messages to broker and dealer.
 
 	// No new messages, so safe to close dealer and broker.
@@ -428,7 +428,7 @@ func (r *realm) onLeave(sess *wamp.Session, shutdown, killAll bool) {
 	}
 }
 
-// HandleSession starts a session attached to this realm.
+// handleSession starts a session attached to this realm.
 //
 // Routing occurs only between WAMP Sessions that have joined the same Realm.
 //
@@ -1114,8 +1114,8 @@ func (r *realm) sessionGet(msg *wamp.Invocation) wamp.Message {
 
 	// WAMP spec only specifies returning "session", "authid", "authrole",
 	// "authmethod", "authprovider", and "transport". All details are returned
-	// in this implementation, except transport.auth, unless Config.MetaStrict
-	// is set to true.
+	// in this implementation, except transport.auth, unless
+	// RealmConfig.MetaStrict is set to true.
 	sess.Lock()
 	output := r.cleanSessionDetails(sess.Details)
 	sess.Unlock()
@@ -1539,8 +1539,8 @@ func (r *realm) killAllSessions(reason wamp.URI, message string, exclude wamp.ID
 	r.actionChan <- func() {
 		var kills int
 		for sid, sess := range r.clients {
-			// Skip excluded session. MetaSession does not have a kill channel
-			// so not need to explicitly exclude.
+			// Skip excluded session. The meta session is not in clients, so it
+			// does not need to be excluded.
 			if sid == exclude {
 				continue
 			}

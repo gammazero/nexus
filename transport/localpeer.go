@@ -61,7 +61,7 @@ type localPeer struct {
 	closeOnce sync.Once
 }
 
-// IsLocal returns true is the wamp.Peer is a localPeer.
+// IsLocal returns true if the wamp.Peer is a localPeer.
 func (p *localPeer) IsLocal() bool { return true }
 
 // Recv returns the channel this peer reads incoming messages from.

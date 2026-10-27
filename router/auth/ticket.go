@@ -8,7 +8,7 @@ import (
 	"github.com/gammazero/nexus/v3/wamp"
 )
 
-// ticketAuthenticator implements CRAuthenticator
+// TicketAuthenticator is a ticket-based authenticator.
 type TicketAuthenticator struct {
 	CRAuthenticator
 }

@@ -84,7 +84,7 @@ func (s *MessagePackSerializer) SerializeDataItem(item any) ([]byte, error) {
 	return b, err
 }
 
-// DeserializeDataItem decodes a json payload into an object/structure.
+// DeserializeDataItem decodes a msgpack payload into an object/structure.
 func (s *MessagePackSerializer) DeserializeDataItem(data []byte, v any) error {
 	return codec.NewDecoderBytes(data, mh).Decode(&v)
 }

@@ -247,8 +247,8 @@ func (rs *rawSocketPeer) Done() <-chan struct{} { return rs.done }
 // setDone closes the channel that Done returns.
 func (rs *rawSocketPeer) setDone() { rs.doneOnce.Do(func() { close(rs.done) }) }
 
-// Close closes the rawsocket peer. This closes the local send channel, and
-// sends a close control message to the socket to tell the other side to close.
+// Close closes the rawsocket peer. This stops sending, and closes the socket,
+// which tells the other side that the connection is closed.
 // Calling Close more than once, including concurrently, is safe. Calls after
 // the first wait for it to finish, and then do nothing.
 //
@@ -432,10 +432,10 @@ MsgLoop:
 				// Peer was closed explicitly. sendHandler should have already
 				// been told to exit.
 			default:
-				// Peer received control message to close. Cause sendHandler to
-				// exit without closing the write channel (in case writes still
-				// happening) and discard any queued messages. Do not wait
-				// forever for a write that is stuck.
+				// The connection was closed by the other side, or failed.
+				// Cause sendHandler to exit without closing the write channel
+				// (in case writes still happening) and discard any queued
+				// messages. Do not wait forever for a write that is stuck.
 				rs.stopSender()
 
 				// Close socket connection.
@@ -685,7 +685,8 @@ func byteToLength(b byte) int {
 	return int(1 << (b + 9))
 }
 
-// checkNetworkType checks for acceptable network types, and returns if
+// checkNetworkType returns an error if network is not an acceptable network
+// type.
 func checkNetworkType(network string) error {
 	switch network {
 	case "tcp", "tcp4", "tcp6", "unix":

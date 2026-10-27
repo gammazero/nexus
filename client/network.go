@@ -13,7 +13,7 @@ import (
 	"github.com/gammazero/nexus/v3/wamp"
 )
 
-// ConnectNet creates a new client connected a WAMP router over a websocket,
+// ConnectNet creates a new client connected to a WAMP router over a websocket,
 // TCP socket, or unix socket. The new client joins the realm specified in the
 // Config. The context may be used to cancel or timeout connecting to a router.
 //

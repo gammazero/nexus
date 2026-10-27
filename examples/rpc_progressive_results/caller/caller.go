@@ -73,7 +73,7 @@ func main() {
 		return
 	}
 
-	// Check if rceived hash matches the hash computed over the received data.
+	// Check if received hash matches the hash computed over the received data.
 	if !bytes.Equal(calleeHash, h.Sum(nil)) {
 		logger.Println("Hash of received data does not match")
 		return

@@ -30,7 +30,7 @@ type Router interface {
 	// It provides additional transport information details.
 	AttachClient(wamp.Peer, wamp.Dict) error
 
-	// Close stops the router and waits message processing to stop.
+	// Close stops the router and waits for message processing to stop.
 	Close()
 
 	// Logger returns the logger the router is using.
@@ -42,9 +42,8 @@ type Router interface {
 	// RemoveRealm will attempt to remove a realm from this router.
 	RemoveRealm(wamp.URI)
 
-	// RouterFeatures exposes WAMP features current version provides When Nexus
-	// is used as a pluggable library sometimes it is usefully to expose WAMP
-	// features current version provides.
+	// RouterFeatures returns the WAMP features that this version of the router
+	// provides, for when nexus is used as a library.
 	RouterFeatures() *wamp.Dict
 }
 
@@ -152,15 +151,15 @@ func (r *router) Attach(client wamp.Peer) error {
 }
 
 // AttachClient connects a client to the router and to the requested realm. If
-// successful, Attach returns after sending a WELCOME message to the client.
+// successful, AttachClient returns after sending a WELCOME message to the
+// client.
 //
 // Additional information is provided in transportDetails. This information
 // becomes part of HELLO.Details and session.Details, as details["transport"].
 // This exposes it to authenticator and authorizer logic. The information
 // includes items useful for authentication, in details.transport.auth.
 //
-// See websocketpeer.WebSocketConfig for information provided by websocket
-// connections.
+// See WebsocketServer for information provided by websocket connections.
 func (r *router) AttachClient(client wamp.Peer, transportDetails wamp.Dict) error {
 	sendAbort := func(reason wamp.URI, abortErr error) {
 		abortMsg := wamp.Abort{Reason: reason}
@@ -312,7 +311,7 @@ func (r *router) AttachClient(client wamp.Peer, transportDetails wamp.Dict) erro
 	return nil
 }
 
-// Close stops the router and waits message processing to stop.
+// Close stops the router and waits for message processing to stop.
 func (r *router) Close() {
 	r.closeOnce.Do(func() {
 		done := make(chan struct{})

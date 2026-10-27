@@ -11,7 +11,7 @@ const deltaID = ID(500) // maximum allowed wraparound distance
 
 // Session is an active WAMP session. It associates a session ID and details
 // with a connected Peer, which is the remote side of the session. So, if the
-// session owned by the router, then the Peer is the connected client.
+// session is owned by the router, then the Peer is the connected client.
 type Session struct {
 	// Interface for communicating with connected peer.
 	Peer
@@ -137,7 +137,7 @@ func (s *Session) RecvDone() <-chan struct{} {
 }
 
 // If RecvDone is not yet closed, Goodbye returns nil. If RecvDone is closed,
-// Goodbye returns the GOODBYE message that was supplied when RecvEnd was
+// Goodbye returns the GOODBYE message that was supplied when EndRecv was
 // called.
 func (s *Session) Goodbye() *Goodbye {
 	s.mu.Lock()
@@ -145,7 +145,7 @@ func (s *Session) Goodbye() *Goodbye {
 	return s.goodbye
 }
 
-// EndRecv tells the session to signal messages handlers to stop receiving
+// EndRecv tells the session to signal message handlers to stop receiving
 // messages from this session. An optional goodbye message may be provided for
 // the message handler to send to the peer. It is the responsibility of the
 // message handler to send the goodbye message, so that this can be coordinated
