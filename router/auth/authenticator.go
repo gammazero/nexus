@@ -1,9 +1,9 @@
 // Package auth provides interfaces for implementing authentication logic that
 // the WAMP router can use.
 //
-// In addition, in authentication and challenge-response authentication
-// interface, this package provides default implementations for the following
-// authentication methods: "wampcra", "ticket", "anonymous".
+// In addition to the authentication interfaces, this package provides default
+// implementations for the following authentication methods: "wampcra",
+// "ticket", "cryptosign", "anonymous".
 package auth
 
 import (
@@ -36,7 +36,7 @@ type Authenticator interface {
 	//
 	// These websocket data items are available as:
 	//
-	//     details.auth.request|*http.Request
+	//     details.transport.auth.request|*http.Request
 	//     details.transport.auth.cookie|*http.Cookie
 	//     details.transport.auth.nextcookie|*http.Cookie
 	//
@@ -88,6 +88,6 @@ type BypassKeyStore interface {
 	// allows the KeyStore to update any information about the authenticated
 	// client, to modify the welcome message, and to store the next tracking
 	// cookie ID to expect from the client. The request information and the
-	// next cookie ID are available from in details.transport.auth|Dict.
+	// next cookie ID are available in details.transport.auth|Dict.
 	OnWelcome(authid string, welcome *wamp.Welcome, details wamp.Dict) error
 }

@@ -6,7 +6,7 @@ import "github.com/gammazero/nexus/v3/wamp"
 // to authorize sending messages.
 type Authorizer interface {
 	// Authorize returns true if the sending session is authorized to send the
-	// message. Otherwise, it returns or false if not authorized. An error is
+	// message. Otherwise, it returns false. An error is
 	// returned if there is a failure to determine authorization. This error is
 	// included in the ERROR response to the client.
 	//

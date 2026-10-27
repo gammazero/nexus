@@ -47,7 +47,7 @@ type Config struct {
 	// waiting for a response from the router. A value of 0 uses the default.
 	ResponseTimeout time.Duration
 
-	// Set to JSON or MSGPACK. Default (zero-value) is JSON.
+	// Set to JSON, MSGPACK or CBOR. Default (zero-value) is JSON.
 	Serialization serialize.Serialization
 
 	// Provide a tls.Config to connect the client using TLS. The zero

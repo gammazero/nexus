@@ -39,8 +39,8 @@ func (s *JSONSerializer) Deserialize(data []byte) (wamp.Message, error) {
 		return nil, errors.New("invalid message")
 	}
 
-	// json deserializer gives us an uint64 instead of an int64, whyever it
-	// doesn't matter here, because valid values are only within an 8bit range.
+	// json deserializer gives us a uint64 instead of an int64. That does not
+	// matter here, because valid values are only within an 8bit range.
 	utyp, ok := v[0].(uint64)
 	if !ok {
 		return nil, errors.New("unsupported message format")

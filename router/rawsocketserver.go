@@ -44,7 +44,7 @@ func NewRawSocketServer(r Router) *RawSocketServer {
 }
 
 // ListenAndServe listens on the specified endpoint and starts a goroutine that
-// accepts new client connections until the returned io.closer is closed.
+// accepts new client connections until the returned io.Closer is closed.
 func (s *RawSocketServer) ListenAndServe(network, address string) (io.Closer, error) {
 	l, err := listenRawSocket(network, address)
 	if err != nil {
@@ -58,7 +58,7 @@ func (s *RawSocketServer) ListenAndServe(network, address string) (io.Closer, er
 }
 
 // ListenAndServeTLS listens on the specified endpoint and starts a goroutine
-// that accepts new TLS client connections until the returned io.closer is
+// that accepts new TLS client connections until the returned io.Closer is
 // closed. If tls.Config does not already contain a certificate, then certFile
 // and keyFile, if specified, are used to load an X509 certificate.
 func (s *RawSocketServer) ListenAndServeTLS(network, address string, tlscfg *tls.Config, certFile, keyFile string) (io.Closer, error) { //nolint:lll

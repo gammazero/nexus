@@ -24,7 +24,7 @@ type Config struct {
 	// dealer of every realm. To enable it for only some realms, set Debug in their
 	// RealmConfig instead.
 	Debug bool
-	// Interval in seconds for logging memory stats. O to disable. Logs Alloc,
+	// Interval in seconds for logging memory stats. 0 to disable. Logs Alloc,
 	// Mallocs, Frees, and NumGC. For a description of these, see
 	// https://golang.org/pkg/runtime/#MemStats
 	MemStatsLogSec int `json:"mem_stats_log_sec"`
@@ -38,7 +38,7 @@ type RealmConfig struct {
 	// Enforce strict URI format validation.
 	StrictURI bool `json:"strict_uri"`
 	// Allow anonymous authentication. If an auth.AnonymousAuth Authenticator
-	// if not supplied, then router supplies on with AuthRole of "anonymous".
+	// is not supplied, then router supplies one with AuthRole of "anonymous".
 	AnonymousAuth bool `json:"anonymous_auth"`
 	// Allow publisher and caller identity disclosure when requested.
 	AllowDisclose bool `json:"allow_disclose"`
@@ -59,8 +59,8 @@ type RealmConfig struct {
 	RequireLocalAuthz bool `json:"require_local_authz"`
 
 	// When true, only include standard session details in on_join event and
-	// session_get response. Standard details include: session, authid,
-	// authrole, authmethod, transport. When false, all session details are
+	// session_get response. Standard details include: session, authid, authrole,
+	// authmethod, authprovider, transport. When false, all session details are
 	// included, except transport.auth.
 	MetaStrict bool `json:"meta_strict"`
 	// When MetaStrict is true, MetaIncludeSessionDetails specifies session

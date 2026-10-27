@@ -19,7 +19,7 @@ func SignChallenge(ch string, key []byte) string {
 	return base64.StdEncoding.EncodeToString(SignChallengeBytes(ch, key))
 }
 
-// SignChallenge computes the HMAC-SHA256, using the given key, over the
+// SignChallengeBytes computes the HMAC-SHA256, using the given key, over the
 // challenge string, and returns the result.
 func SignChallengeBytes(ch string, key []byte) []byte {
 	sig := hmac.New(sha256.New, key)
@@ -27,7 +27,7 @@ func SignChallengeBytes(ch string, key []byte) []byte {
 	return sig.Sum(nil)
 }
 
-// VerifySignature compares a signature to a signature that the computed over
+// VerifySignature compares a signature to a signature computed over
 // the given challenge string using the key. The signature is a base64-encoded
 // string, generally presented by a client, and the challenge string and key
 // are used to compute the expected HMAC signature. If these are the same, then
@@ -60,7 +60,7 @@ const (
 //
 //	func clientCRAuthFunc(c *wamp.Challenge) (string, wamp.Dict) {
 //	    // Get user password and return signature.
-//	    password := AskUserPassoword()
+//	    password := AskUserPassword()
 //	    return RespondChallenge(password, c, nil), wamp.Dict{}
 //	}
 //
@@ -84,7 +84,7 @@ func RespondChallenge(secret string, c *wamp.Challenge, h func() hash.Hash) stri
 		return SignChallenge(ch, []byte(secret))
 	}
 
-	// If salting info give, then compute a derived key using PBKDF2.
+	// If salting info given, then compute a derived key using PBKDF2.
 	salt := []byte(saltStr)
 	iters, _ := wamp.AsInt64(c.Extra["iterations"])
 	keylen, _ := wamp.AsInt64(c.Extra["keylen"])

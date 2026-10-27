@@ -140,7 +140,7 @@ func (f *simplePublishFilter) Allowed(sub *wamp.Session) bool {
 			return false
 		}
 		eligible = slices.Contains(vals, sessAttr)
-		// If session attribute value no found in whitelist, then deny.
+		// If session attribute value not found in whitelist, then deny.
 		if !eligible {
 			return false
 		}

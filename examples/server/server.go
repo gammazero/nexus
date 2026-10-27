@@ -161,7 +161,7 @@ func createLocalCallee(nxr router.Router, realm string) (*client.Client, error) 
 		return nil, err
 	}
 
-	// Register procedure "time"
+	// Register procedure "worldtime"
 	const timeProc = "worldtime"
 	if err = callee.Register(timeProc, worldTime, nil); err != nil {
 		return nil, fmt.Errorf("failed to register %q: %w", timeProc, err)

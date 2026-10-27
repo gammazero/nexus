@@ -344,7 +344,7 @@ func (c *Client) Connected() bool { return c.ctx.Err() == nil }
 func (c *Client) ID() wamp.ID { return c.sess.ID }
 
 // Logger returns the clients logger that was provided by Config when the
-// client was created, or the stdout logger if one was not provided in Config.
+// client was created, or the stderr logger if one was not provided in Config.
 func (c *Client) Logger() stdlog.StdLog { return c.log }
 
 // RealmDetails returns the realm information received in the WELCOME message.
@@ -445,10 +445,10 @@ func (c *Client) Unsubscribe(topic string) error {
 		c.sess.Unlock()
 		return ErrNotSubscribed
 	}
-	// Delete the subscription anyway, regardless of whether or not the the
+	// Delete the subscription anyway, regardless of whether or not the
 	// router succeeds or fails to unsubscribe. If the client called
 	// Unsubscribe() then it has no interest in receiving any more events for
-	// the topic, and may expect any.
+	// the topic, and may not expect any.
 	delete(c.topicSubID, topic)
 	delete(c.eventHandlers, subID)
 	c.sess.Unlock()
@@ -550,8 +550,8 @@ func (c *Client) Publish(topic string, options wamp.Dict, args wamp.List, kwargs
 	if pptScheme, _ := options[wamp.OptPPTScheme].(string); pptScheme != "" {
 		// Let's check: was ppt feature announced by broker?
 		if !c.sess.HasFeature(wamp.RoleBroker, wamp.FeaturePayloadPassthruMode) {
-			// It's protocol violation, so we need to abort connection But as
-			// we did not send anything to the router, so just err client.
+			// Sending it would be a protocol violation. Nothing was sent to
+			// the router, so just return an error.
 			return ErrPPTNotSupportedByRouter
 		}
 
@@ -701,7 +701,7 @@ func (c *Client) Unregister(procedure string) error {
 		c.sess.Unlock()
 		return ErrNotRegistered
 	}
-	// Delete the registration anyway, regardless of whether or not the the
+	// Delete the registration anyway, regardless of whether or not the
 	// router succeeds or fails to unregister. If the client called
 	// Unregister() then it has no interest in receiving any more invocations
 	// for the procedure, and may not expect any.
@@ -770,7 +770,7 @@ type SendProgressiveData func(ctx context.Context) (options wamp.Dict, args wamp
 //
 // If the context is canceled or times out, then error returned will not be a
 // RPCError. This allows the caller to distinguish between cancellation
-// initiated by the client (by canceling context), and cancellation initialed
+// initiated by the client (by canceling context), and cancellation initiated
 // elsewhere.
 //
 // # Call Timeout
@@ -793,7 +793,7 @@ type SendProgressiveData func(ctx context.Context) (options wamp.Dict, args wamp
 // A caller may request the disclosure of its identity (its WAMP session ID) to
 // callees, if allowed by the dealer.
 //
-// To request that this caller's identity disclosed to callees, set:
+// To request that this caller's identity is disclosed to callees, set:
 //
 //	options["disclose_me"] = true
 //
@@ -1053,7 +1053,7 @@ func (c *Client) CallProgressive(ctx context.Context, procedure string, sendProg
 }
 
 // SetCallCancelMode sets the client's call cancel mode to one of the
-// following: "kill", "killnowait', "skip". Setting to "" specifies using the
+// following: "kill", "killnowait", "skip". Setting to "" specifies using the
 // default value: "killnowait". The cancel mode is an option that is sent in a
 // CANCEL message when a CALL is canceled.
 //
@@ -1063,7 +1063,7 @@ func (c *Client) CallProgressive(ctx context.Context, procedure string, sendProg
 // the caller. No INTERRUPT is sent to the callee and the result is discarded
 // when received.
 //
-// "kill": INTERRUPT is sent to the client, but ERROR is not returned to the
+// "kill": INTERRUPT is sent to the callee, but ERROR is not returned to the
 // caller until after the callee has responded to the canceled call. In this
 // case the caller may receive RESULT or ERROR depending whether the callee
 // finishes processing the invocation or the interrupt first.
@@ -1088,7 +1088,7 @@ func (c *Client) SetCallCancelMode(cancelMode string) error {
 
 // RPCError is a wrapper for a WAMP ERROR message that is received as a result
 // of a CALL. This allows the client application to type assert the error to a
-// RPCError and inspect the the ERROR message contents, as may be necessary to
+// RPCError and inspect the ERROR message contents, as may be necessary to
 // process an error response from the callee.
 type RPCError struct {
 	Err       *wamp.Error
@@ -1146,7 +1146,7 @@ func (c *Client) Close() error {
 		}
 	}
 
-	// When for any running invocation handlers to finish.
+	// Wait for any running invocation handlers to finish.
 	c.activeInvHandlers.Wait()
 	c.closeSession()
 
@@ -1276,7 +1276,7 @@ func handleCRAuth(peer wamp.Peer, challenge *wamp.Challenge, authHandlers map[st
 	// Look up the authentication function for the specified authmethod.
 	authFunc, ok := authHandlers[challenge.AuthMethod]
 	if !ok {
-		// The router send a challenge for an auth method the client does not
+		// The router sent a challenge for an auth method the client does not
 		// know how to deal with. In response to a CHALLENGE message, the
 		// Client MUST send an AUTHENTICATE message. So, send empty
 		// AUTHENTICATE since client does not know what to put in it.
@@ -1736,7 +1736,7 @@ func (c *Client) runHandleEvent(msg *wamp.Event) {
 		var err error
 
 		// Now need to check ppt_serializer (in pair with ppt_scheme) and
-		// serialize payload with appreciate serializer
+		// deserialize payload with appropriate serializer
 		if pptScheme == WampPPTScheme {
 			args, kwargs, err = unpackE2EEPayload(msg.Details, msg.Arguments)
 		} else {
@@ -1836,7 +1836,7 @@ func (c *Client) runHandleInvocation(msg *wamp.Invocation) {
 		var err error
 
 		// Now need to check ppt_serializer (in pair with ppt_scheme) and
-		// deserialize payload with appreciate serializer
+		// deserialize payload with appropriate serializer
 		if pptScheme == WampPPTScheme {
 			args, kwargs, err = unpackE2EEPayload(msg.Details, msg.Arguments)
 		} else {
@@ -2153,8 +2153,8 @@ func (c *Client) prepareCallPayloadMessage(msg *wamp.Call, options wamp.Dict, ar
 	if pptScheme, _ := options[wamp.OptPPTScheme].(string); pptScheme != "" {
 		// Let's check: was ppt feature announced by dealer?
 		if !c.sess.HasFeature(wamp.RoleDealer, wamp.FeaturePayloadPassthruMode) {
-			// It's protocol violation, so we need to abort connection But as
-			// we did not send anything to the router, so just err client.
+			// Sending it would be a protocol violation. Nothing was sent to
+			// the router, so just return an error.
 			return ErrPPTNotSupportedByRouter
 		}
 
@@ -2211,7 +2211,7 @@ func (c *Client) prepareCallResultMessage(msg *wamp.Result) (*wamp.Abort, error)
 		var err error
 
 		// Now need to check ppt_serializer (in pair with ppt_scheme) and
-		// deserialize payload with appreciate serializer.
+		// deserialize payload with appropriate serializer.
 		if pptScheme == WampPPTScheme {
 			args, kwargs, err = unpackE2EEPayload(msg.Details, msg.Arguments)
 		} else {

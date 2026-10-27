@@ -629,11 +629,8 @@ func (w *websocketPeer) recvHandler() {
 				// for a write that is stuck. See gammazero/nexus#242.
 				w.stopSender()
 			}
-			// The error is only one of these errors. It is generally not
-			// helpful to log this, so keeping this commented out. websocket:
-			// close sent websocket: close 1000 (normal): goodbye read tcp
-			// addr:port->addr:port: use of closed network connection
-			//w.log.Print(err)
+			// The error is not logged, since it is generally only that the
+			// websocket or the network connection was closed.
 			return
 		}
 

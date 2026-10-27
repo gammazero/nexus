@@ -8,7 +8,7 @@ import (
 
 // AnonymousAuth implements Authenticator interface.
 //
-// To use anonymous authentication, supply an anstance of AnonymousAuth with
+// To use anonymous authentication, supply an instance of AnonymousAuth with
 // the AuthRole of choice to the RealmConfig:
 //
 //	RealmConfigs: []*router.RealmConfig{
@@ -19,13 +19,13 @@ import (
 //	        ...
 //	    },
 //
-// Or, set AnonymousAuth=ture in the RealmConfig and let the router create an
+// Or, set AnonymousAuth=true in the RealmConfig and let the router create an
 // instance with the AuthRole of "anonymous".
 type AnonymousAuth struct {
 	AuthRole string
 }
 
-// AuthMethod retruns description of authentication method.
+// AuthMethod returns a description of authentication method.
 func (a *AnonymousAuth) AuthMethod() string {
 	return "anonymous"
 }

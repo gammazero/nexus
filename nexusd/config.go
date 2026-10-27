@@ -53,14 +53,14 @@ type Config struct {
 		// default of 64. Replies to a client's own requests are never dropped when the
 		// queue is full. EVENTs, INVOCATIONs, INTERRUPTs and progressive RESULTs wait
 		// in a backlog, set by the realm's event_backlog and event_overflow. See
-		// OutQueueSize in router.WebsocketServer for details.
+		// OutQueueSize in router.RawSocketServer for details.
 		OutQueueSize int `json:"out_queue_size"`
 	}
 
 	// File to write log data to. If not specified, log to stdout.
 	LogPath string `json:"log_path"`
 	// Router configuration parameters.
-	// See https://godoc.org/github.com/gammazero/nexus/v3#RouterConfig
+	// See https://pkg.go.dev/github.com/gammazero/nexus/v3/router#Config
 	Router router.Config
 }
 

@@ -47,7 +47,7 @@ func main() {
 var progressiveIncPayload []int64
 var mu sync.Mutex
 
-// Important node: ctx context.Context here is the context of the whole
+// Important note: ctx context.Context here is the context of the whole
 // invocation starting with 1st call/invocation and lasts until final result
 func sum(ctx context.Context, inv *wamp.Invocation) client.InvokeResult {
 	mu.Lock()

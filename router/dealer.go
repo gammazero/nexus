@@ -15,8 +15,8 @@ import (
 
 const (
 	// sendResultDeadline is the amount of time until the dealer gives up
-	// trying to send a RESULT to a blocked caller. This is different that the
-	// CALL timeout which spedifies how long the callee may take to answer.
+	// trying to send a RESULT to a blocked caller. This is different from the
+	// CALL timeout, which specifies how long the callee may take to answer.
 	sendResultDeadline = time.Minute
 	// yieldRetryDelay is the initial delay before reprocessing a blocked yield.
 	yieldRetryDelay = time.Millisecond
@@ -30,7 +30,7 @@ const (
 	maxPendingYields = 64
 )
 
-// Role information for this broker.
+// Role information for this dealer.
 var dealerRole = wamp.Dict{ //nolint:gochecknoglobals
 	"features": wamp.Dict{
 		wamp.FeatureCallCanceling:       true,
@@ -47,7 +47,7 @@ var dealerRole = wamp.Dict{ //nolint:gochecknoglobals
 	},
 }
 
-// remoteProcedure tracks in-progress remote procedure call
+// registration is a registered procedure and the callees registered for it.
 type registration struct {
 	id             wamp.ID  // registration ID
 	procedure      wamp.URI // procedure this registration is for
@@ -132,7 +132,7 @@ func (r requestID) String() string {
 }
 
 type dealer struct {
-	// procedure URI -> registration ID
+	// procedure URI -> registration
 	procRegMap    map[wamp.URI]*registration
 	pfxProcRegMap map[wamp.URI]*registration
 	wcProcRegMap  map[wamp.URI]*registration
@@ -144,7 +144,7 @@ type dealer struct {
 	// call ID -> caller session
 	calls map[requestID]*wamp.Session
 
-	// invocation ID -> {call ID, callee, canceled}
+	// invocation ID -> invocation
 	invocations map[requestID]*invocation
 
 	// call ID -> invocation ID (for cancel)
@@ -205,8 +205,8 @@ func newDealer(logger stdlog.StdLog, config *RealmConfig) *dealer {
 		invocationByCall: map[requestID]requestID{},
 		calleeRegIDSet:   map[*wamp.Session]map[wamp.ID]struct{}{},
 
-		// The action handler should be nearly always runable, since it is the
-		// critical section that does the only routing. So, and unbuffered
+		// The action handler should be nearly always runnable, since it is the
+		// critical section that does the only routing. So, an unbuffered
 		// channel is appropriate.
 		actionChan: make(chan func()),
 		stopped:    make(chan struct{}),
@@ -233,7 +233,7 @@ func (d *dealer) setMetaPeer(metaPeer wamp.Peer) {
 }
 
 // role returns the role information for the "dealer" role. The data returned
-// is suitable for use as broker role info in a WELCOME message.
+// is suitable for use as dealer role info in a WELCOME message.
 func (d *dealer) role() wamp.Dict {
 	return dealerRole
 }
@@ -370,16 +370,16 @@ func (d *dealer) continueCall(caller *wamp.Session, msg *wamp.Call) {
 //
 // Cancellation behaves differently depending on the mode:
 //
-// "skip": The pending call is canceled and ERROR is send immediately back to
+// "skip": The pending call is canceled and ERROR is sent immediately back to
 // the caller. No INTERRUPT is sent to the callee and the result is discarded
 // when received.
 //
-// "kill": INTERRUPT is sent to the client, but ERROR is not returned to the
+// "kill": INTERRUPT is sent to the callee, but ERROR is not returned to the
 // caller until after the callee has responded to the canceled call. In this
 // case the caller may receive RESULT or ERROR depending whether the callee
 // finishes processing the invocation or the interrupt first.
 //
-// "killnowait": The pending call is canceled and ERROR is send immediately
+// "killnowait": The pending call is canceled and ERROR is sent immediately
 // back to the caller. INTERRUPT is sent to the callee and any response to the
 // invocation or interrupt from the callee is discarded when received.
 //
@@ -410,7 +410,7 @@ func (d *dealer) cancel(caller *wamp.Session, msg *wamp.Cancel) {
 }
 
 // yield handles the result of successfully processing and finishing the
-// execution of a call, send from callee to dealer.
+// execution of a call, sent from callee to dealer.
 //
 // If the RESULT cannot be sent to the caller because the caller is blocked
 // (send queue full), then the YIELD is queued for the call, and a goroutine
@@ -593,7 +593,7 @@ func (d *dealer) removeSession(sess *wamp.Session, notify bool) {
 	}
 	// Meta events must be returned by removeSession and must not be sent to
 	// metaPeer while running inside the dealer goroutine. Sending to metaPeer
-	// from inside the dealer goroutine can deadlock since metaPeer may alredy
+	// from inside the dealer goroutine can deadlock since metaPeer may already
 	// be waiting for the dealer goroutine to process a yield.
 	var metaPubs []*wamp.Publish
 	done := make(chan struct{})
@@ -800,7 +800,7 @@ func (d *dealer) syncUnregister(callee *wamp.Session, msg *wamp.Unregister) []*w
 	}
 
 	// Publish wamp.registration.on_unregister meta event. Fired when a session
-	// is removed from a subscription.
+	// is removed from a registration.
 	metaPubs = append(metaPubs, &wamp.Publish{
 		Request:   wamp.GlobalID(),
 		Topic:     wamp.MetaEventRegOnUnregister,
@@ -831,7 +831,7 @@ func (d *dealer) syncMatchProcedure(procedure wamp.URI) (*registration, bool) {
 	reg, ok := d.procRegMap[procedure]
 	if !ok {
 		// No exact match was found. So, search for a prefix or wildcard match,
-		// and prefer the most specific math (longest matched pattern). If
+		// and prefer the most specific match (longest matched pattern). If
 		// there is a tie, then prefer the first longest prefix.
 		matchCount := -1 // initialize matchCount to -1 to catch an empty registration.
 		for pfxProc, pfxReg := range d.pfxProcRegMap {
@@ -1028,7 +1028,7 @@ func (d *dealer) syncCall(caller *wamp.Session, msg *wamp.Call) {
 		if opt, _ := invk.options[wamp.OptReceiveProgress].(bool); opt {
 			// If the Callee supports progressive calls, the Dealer will
 			// forward the Caller's willingness to receive progressive results
-			// by setting.
+			// by setting INVOCATION.Details.receive_progress|bool := true.
 			//
 			// The Callee must support call canceling, as this is necessary to
 			// stop progressive results if the caller session is closed during
@@ -1173,7 +1173,7 @@ func (d *dealer) syncCancel(caller *wamp.Session, msg *wamp.Cancel, mode string,
 
 	// Check if the caller of cancel is also the caller of the procedure.
 	if caller != procCaller {
-		// The caller is trying to cancel calls that it does not own. It it
+		// The caller is trying to cancel calls that it does not own. It is
 		// either confused or trying to do something bad.
 		d.log.Println("CANCEL received from caller", caller,
 			"for call owned by different session")
@@ -1234,8 +1234,6 @@ func (d *dealer) syncCancel(caller *wamp.Session, msg *wamp.Cancel, mode string,
 			}
 		}
 	}
-	// Treat any unrecognized mode the same as "skip".
-
 	// Immediately delete the pending call and send ERROR back to the caller.
 	// This will cause any RESULT or ERROR arriving later from the callee to be
 	// dropped.
@@ -1381,7 +1379,7 @@ func (d *dealer) syncYield(callee *wamp.Session, msg *wamp.Yield, progress, canR
 			return false
 		}
 
-		// Every side supports PPT feature. Fill PPT options for callee.
+		// Every side supports PPT feature. Fill PPT options for caller.
 		details[wamp.OptPPTScheme] = pptScheme
 		if val, ok := msg.Options[wamp.OptPPTSerializer]; ok {
 			details[wamp.OptPPTSerializer] = val.(string)
@@ -1602,12 +1600,10 @@ func (d *dealer) syncRemoveSession(sess *wamp.Session, notify bool) []*wamp.Publ
 	return metaPubs
 }
 
-// syncDelCalleeReg deletes the the callee from the specified registration and
-// deletes the registration from the set of registrations for the callee.
+// syncDelCalleeReg deletes the callee from the specified registration.
 //
 // If there are no more callees for the registration, then the registration is
-// removed and true is returned to indicate that the last registration was
-// deleted.
+// removed and true is returned to indicate that the registration was deleted.
 func (d *dealer) syncDelCalleeReg(callee *wamp.Session, regID wamp.ID) (bool, error) {
 	reg, ok := d.registrations[regID]
 	if !ok {

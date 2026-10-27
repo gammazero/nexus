@@ -22,7 +22,7 @@ func main() {
 	}
 	defer callee.Close()
 
-	// Important node: ctx context.Context here is the context of the whole invocation
+	// Important note: ctx context.Context here is the context of the whole invocation
 	// starting with 1st call/invocation and lasts until final result
 	mirror := func(ctx context.Context, inv *wamp.Invocation) client.InvokeResult {
 		log.Println("Received and sending back payload data...", inv.Arguments[0])
@@ -39,7 +39,7 @@ func main() {
 		return client.InvokeResult{Err: wamp.InternalProgressiveOmitResult}
 	}
 
-	// Register procedure "sum"
+	// Register procedure "mirror"
 	if err = callee.Register(procedureName, mirror, nil); err != nil {
 		logger.Fatal("Failed to register procedure:", err)
 	}

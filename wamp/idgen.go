@@ -17,7 +17,7 @@ func GlobalID() ID {
 // IDGen is generator for WAMP request IDs. Create with new(IDGen).
 //
 // WAMP request IDs are sequential per WAMP session, starting at 1 and wrapping
-// around at 2**53 (both value are inclusive [1, 2**53]).
+// around at 2**53 (both values are inclusive [1, 2**53]).
 //
 // The reason to choose the specific upper bound is that 2^53 is the largest
 // integer such that this integer and all (positive) smaller integers can be

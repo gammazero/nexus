@@ -5,7 +5,7 @@ import (
 	"strings"
 )
 
-// IDs are integers between (inclusive) 0 and 2^53 (9007199254740992)
+// IDs are integers between (inclusive) 1 and 2^53 (9007199254740992)
 type ID uint64
 
 // URIs are dot-separated identifiers, where each component *should* only
