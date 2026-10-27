@@ -38,6 +38,11 @@ type rawSocketPeer struct {
 	writerDone chan struct{}
 	closeOnce  sync.Once
 
+	// done is closed when the sender or the receiver stops, after which the peer
+	// cannot exchange messages with the remote side.
+	done     chan struct{}
+	doneOnce sync.Once
+
 	// PONG bodies queued by recvHandler, for sendHandler to write, so that only
 	// sendHandler writes frames. pongBytes is the size of the queued frames, and
 	// pongReady is signaled when a PONG is queued. pongDropped is set when a
@@ -200,6 +205,7 @@ func newRawSocketPeer(conn net.Conn, serializer serialize.Serializer, logger std
 
 		closed:      make(chan struct{}),
 		writerDone:  make(chan struct{}),
+		done:        make(chan struct{}),
 		pongReady:   make(chan struct{}, 1),
 		stopTimeout: senderStopTimeout,
 
@@ -232,6 +238,14 @@ func (rs *rawSocketPeer) Recv() <-chan wamp.Message { return rs.rd }
 func (rs *rawSocketPeer) Send() chan<- wamp.Message { return rs.wr }
 
 func (rs *rawSocketPeer) IsLocal() bool { return false }
+
+// Done returns a channel that is closed when the peer can no longer exchange
+// messages with the remote side, because the connection was lost or the peer
+// was closed.
+func (rs *rawSocketPeer) Done() <-chan struct{} { return rs.done }
+
+// setDone closes the channel that Done returns.
+func (rs *rawSocketPeer) setDone() { rs.doneOnce.Do(func() { close(rs.done) }) }
 
 // Close closes the rawsocket peer. This closes the local send channel, and
 // sends a close control message to the socket to tell the other side to close.
@@ -288,6 +302,7 @@ func (rs *rawSocketPeer) stopSender() {
 func (rs *rawSocketPeer) sendHandler() {
 	defer close(rs.writerDone)
 	defer rs.cancelSender()
+	defer rs.setDone()
 
 	senderDone := rs.ctxSender.Done()
 	for {
@@ -406,6 +421,7 @@ func (rs *rawSocketPeer) recvHandler() {
 	// When done, close read channel to cause router to remove session if not
 	// already removed.
 	defer close(rs.rd)
+	defer rs.setDone()
 MsgLoop:
 	for {
 		var header [4]byte

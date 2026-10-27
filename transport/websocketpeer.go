@@ -98,6 +98,10 @@ type websocketPeer struct {
 	pings chan string
 	// Number of pings sent without any response from the remote peer.
 	pendingPongs atomic.Int32
+	// recvBlocked is set while recvHandler waits for the user of the peer, such as
+	// the router, to take a message. Nothing is read from conn then, including
+	// pongs, so missed pongs are not counted.
+	recvBlocked atomic.Bool
 
 	// How long to wait for the sender to exit before closing conn.
 	stopTimeout time.Duration
@@ -115,6 +119,11 @@ type websocketPeer struct {
 	recvDone   chan struct{}
 	writerDone chan struct{}
 	closeOnce  sync.Once
+
+	// done is closed when the sender or the receiver stops, after which the peer
+	// cannot exchange messages with the remote side.
+	done     chan struct{}
+	doneOnce sync.Once
 
 	log stdlog.StdLog
 }
@@ -289,6 +298,7 @@ func NewWebsocketPeer(conn WebsocketConnection, serializer serialize.Serializer,
 		closed:      make(chan struct{}),
 		recvDone:    make(chan struct{}),
 		writerDone:  make(chan struct{}),
+		done:        make(chan struct{}),
 
 		// The router will read from this channel and immediately dispatch the
 		// message to the broker or dealer. Therefore this channel can be
@@ -428,6 +438,14 @@ func (w *websocketPeer) Send() chan<- wamp.Message { return w.wr }
 
 func (w *websocketPeer) IsLocal() bool { return false }
 
+// Done returns a channel that is closed when the peer can no longer exchange
+// messages with the remote side, because the connection was lost or the peer
+// was closed.
+func (w *websocketPeer) Done() <-chan struct{} { return w.done }
+
+// setDone closes the channel that Done returns.
+func (w *websocketPeer) setDone() { w.doneOnce.Do(func() { close(w.done) }) }
+
 // Close closes the websocket peer. This closes the local send channel, and
 // sends a close control message to the websocket to tell the other side to
 // close.
@@ -481,6 +499,7 @@ func (w *websocketPeer) writeFailed() {
 func (w *websocketPeer) sendHandler() {
 	defer close(w.writerDone)
 	defer w.cancelSender()
+	defer w.setDone()
 
 	for {
 		select {
@@ -541,6 +560,7 @@ func (w *websocketPeer) sendMessage(msg wamp.Message) bool {
 func (w *websocketPeer) sendHandlerKeepAlive() {
 	defer close(w.writerDone)
 	defer w.cancelSender()
+	defer w.setDone()
 
 	ticker := time.NewTicker(w.keepAlive)
 	defer ticker.Stop()
@@ -554,6 +574,10 @@ func (w *websocketPeer) sendHandlerKeepAlive() {
 				return
 			}
 		case <-ticker.C:
+			// Pongs are not read while recvHandler is blocked, so they are not missed.
+			if w.recvBlocked.Load() {
+				w.pendingPongs.Store(0)
+			}
 			// If missed 2 responses, close websocket.
 			if w.pendingPongs.Load() >= 2 {
 				w.log.Print("peer not responging to pings, closing websocket")
@@ -585,6 +609,7 @@ func (w *websocketPeer) sendHandlerKeepAlive() {
 // channel.
 func (w *websocketPeer) recvHandler() {
 	defer close(w.recvDone)
+	defer w.setDone()
 	// When done, close read channel to cause router to remove session if not
 	// already removed.
 	defer close(w.rd)
@@ -634,6 +659,19 @@ func (w *websocketPeer) recvHandler() {
 		// write from completing.
 		select {
 		case w.rd <- msg:
+			continue
+		default:
+		}
+		// The router is not taking messages, such as while it waits for the client to
+		// read its replies. Nothing is read from conn meanwhile, including pongs, so
+		// do not let the keepalive expire. When the message is taken, start a new
+		// keepalive interval before clearing recvBlocked, so that the sender does not
+		// see a stale count of missed pongs.
+		w.recvBlocked.Store(true)
+		select {
+		case w.rd <- msg:
+			w.peerAlive()
+			w.recvBlocked.Store(false)
 		case <-w.closed:
 			// If closed, try for one second to send the last message and then
 			// exit recvHandler.

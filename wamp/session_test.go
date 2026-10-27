@@ -3,6 +3,7 @@ package wamp //nolint:testpackage
 import (
 	"fmt"
 	"testing"
+	"testing/synctest"
 
 	"github.com/stretchr/testify/require"
 )
@@ -67,4 +68,113 @@ func TestSessionEndRecvAbort(t *testing.T) {
 	require.True(t, ended.EndRecv(nil))
 	require.False(t, ended.EndRecvAbort(abort))
 	require.Nil(t, ended.Abort())
+}
+
+type chanPeer struct {
+	ch     chan Message
+	closed bool
+}
+
+func (p *chanPeer) Recv() <-chan Message { return p.ch }
+func (p *chanPeer) Send() chan<- Message { return p.ch }
+func (p *chanPeer) Close()               { p.closed = true }
+func (p *chanPeer) IsLocal() bool        { return true }
+
+func TestSendReplyBacklog(t *testing.T) {
+	const queueSize = 2
+	peer := &chanPeer{ch: make(chan Message, queueSize)}
+	s := NewSession(peer, 1, nil, nil)
+
+	require.True(t, s.TrySend(&Event{Publication: 1}))
+	require.Nil(t, s.ReplyRoom())
+
+	// Fill the queue and put replies in the backlog.
+	for i := 1; i <= queueSize+2; i++ {
+		s.SendReply(&Published{Request: ID(i)})
+	}
+	room := s.ReplyRoom()
+	require.NotNil(t, room)
+
+	// Must not send ahead of the backlog.
+	require.False(t, s.TrySend(&Event{Publication: 2}))
+
+	// Read everything in order.
+	msg := <-peer.ch
+	require.Equal(t, &Event{Publication: 1}, msg)
+	for i := 1; i <= queueSize+2; i++ {
+		msg = <-peer.ch
+		require.Equal(t, &Published{Request: ID(i)}, msg)
+	}
+	<-room
+
+	// Wait for the backlog goroutine to finish, then send directly again.
+	s.sendWG.Wait()
+	require.True(t, s.TrySend(&Event{Publication: 3}))
+	require.Equal(t, &Event{Publication: 3}, <-peer.ch)
+}
+
+func TestSessionCloseDiscardsBacklog(t *testing.T) {
+	peer := &chanPeer{ch: make(chan Message, 1)}
+	s := NewSession(peer, 1, nil, nil)
+
+	for i := 1; i <= 3; i++ {
+		s.SendReply(&Published{Request: ID(i)})
+	}
+	room := s.ReplyRoom()
+	require.NotNil(t, room)
+
+	s.Close()
+	require.True(t, peer.closed)
+	<-room
+	require.Nil(t, s.ReplyRoom())
+	require.False(t, s.TrySend(&Event{Publication: 1}))
+	s.SendReply(&Published{Request: 4})
+
+	// Only the message that fit in the queue was sent.
+	require.Equal(t, &Published{Request: 1}, <-peer.ch)
+	require.Empty(t, peer.ch)
+
+	// Closing again does not close the peer again.
+	peer.closed = false
+	s.Close()
+	require.True(t, peer.closed)
+}
+
+// TestStopSendingSendsNothingMore checks that once StopSending returns,
+// nothing more is sent from the backlog, so that the GOODBYE or ABORT that the
+// router sends after it is the last message the peer gets.
+func TestStopSendingSendsNothingMore(t *testing.T) {
+	synctest.Test(t, func(t *testing.T) {
+		peer := &chanPeer{ch: make(chan Message, 1)}
+		s := NewSession(peer, 1, nil, nil)
+		for i := 1; i <= 3; i++ {
+			s.SendReply(&Published{Request: ID(i)})
+		}
+
+		s.StopSending()
+
+		// Reading the queued reply makes room, which the backlog must not use, so that
+		// the GOODBYE goes in next, as the router's sendLast does.
+		require.Equal(t, &Published{Request: 1}, <-peer.ch)
+		synctest.Wait()
+		select {
+		case peer.ch <- &Goodbye{}:
+		default:
+			require.FailNow(t, "backlog sent after StopSending", "got %T", <-peer.ch)
+		}
+		require.IsType(t, &Goodbye{}, <-peer.ch)
+		require.Nil(t, s.ReplyRoom())
+
+		s.SendReply(&Published{Request: 4})
+		require.False(t, s.TrySend(&Event{Publication: 1}))
+		synctest.Wait()
+		select {
+		case msg := <-peer.ch:
+			require.FailNow(t, "sent after StopSending", "got %T", msg)
+		default:
+		}
+
+		s.Close()
+		require.True(t, peer.closed)
+	})
 }

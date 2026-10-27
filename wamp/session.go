@@ -3,6 +3,8 @@ package wamp
 import (
 	"fmt"
 	"sync"
+
+	"github.com/gammazero/deque"
 )
 
 const deltaID = ID(500) // maximum allowed wraparound distance
@@ -29,6 +31,15 @@ type Session struct {
 	done    chan struct{}
 	goodbye *Goodbye
 	abort   *Abort
+
+	// Messages from SendReply that wait for room in the peer's send queue.
+	sendMu      sync.Mutex
+	backlog     deque.Deque[Message]
+	backlogRoom chan struct{}
+	backlogSent uint64
+	sendStop    chan struct{}
+	sendClosed  bool
+	sendWG      sync.WaitGroup
 }
 
 // NoGoodbye indicates that no Goodbye message was sent out
@@ -253,4 +264,169 @@ func (s *Session) IsNewRecvID(id ID) bool {
 	// from the last id to the new id is within delta, then this is a
 	// legitimate new id within the allowed wraparound.
 	return (MaxID - (last - id)) < deltaID
+}
+
+// TrySend sends the message to the peer without blocking. It returns false,
+// and the message is dropped, if the peer's send queue is full or messages
+// from SendReply are still waiting to be sent. Use TrySend for messages that
+// the peer can do without, such as events for a slow subscriber.
+func (s *Session) TrySend(msg Message) bool {
+	s.sendMu.Lock()
+	defer s.sendMu.Unlock()
+
+	if s.sendClosed || s.backlog.Len() != 0 {
+		return false
+	}
+	select {
+	case s.Send() <- msg:
+		return true
+	default:
+		return false
+	}
+}
+
+// SendReply sends the message to the peer without blocking and without
+// dropping it. If the peer's send queue is full, the message waits in a
+// backlog and is sent, in order, as soon as the queue has room. Use SendReply
+// for replies to the peer's own requests, which the peer cannot tell are
+// missing.
+//
+// The backlog is not bounded here. Callers bound it by not making requests
+// on behalf of the peer while ReplyRoom returns a non-nil channel.
+func (s *Session) SendReply(msg Message) {
+	s.sendMu.Lock()
+	defer s.sendMu.Unlock()
+
+	if s.sendClosed {
+		return
+	}
+	if s.backlog.Len() == 0 {
+		select {
+		case s.Send() <- msg:
+			return
+		default:
+		}
+		if s.sendStop == nil {
+			s.sendStop = make(chan struct{})
+		}
+		s.sendWG.Add(1)
+		go s.sendBacklog(s.sendStop)
+	}
+	// The sendBacklog goroutine cannot read the backlog until sendMu is
+	// released, after msg is added.
+	s.backlog.PushBack(msg)
+}
+
+// ReplyRoom returns nil if the backlog of messages from SendReply is smaller
+// than the peer's send queue. Otherwise, it returns a channel that is closed
+// when the backlog becomes smaller than the send queue, or when the session
+// is closed.
+func (s *Session) ReplyRoom() <-chan struct{} {
+	s.sendMu.Lock()
+	defer s.sendMu.Unlock()
+
+	if s.sendClosed || s.backlog.Len() < s.backlogLimit() {
+		return nil
+	}
+	if s.backlogRoom == nil {
+		s.backlogRoom = make(chan struct{})
+	}
+	return s.backlogRoom
+}
+
+// PeerDone returns the channel from Done if the session's peer is a DonePeer,
+// and nil otherwise. Receiving from a nil channel blocks forever, so a caller
+// can select on the result either way.
+func (s *Session) PeerDone() <-chan struct{} {
+	if p, ok := s.Peer.(DonePeer); ok {
+		return p.Done()
+	}
+	return nil
+}
+
+// BacklogSent returns the number of messages sent from the backlog of messages
+// from SendReply. A caller waiting on ReplyRoom can use it to tell whether the
+// peer is still reading.
+func (s *Session) BacklogSent() uint64 {
+	s.sendMu.Lock()
+	defer s.sendMu.Unlock()
+	return s.backlogSent
+}
+
+// StopSending stops sending the backlog of messages from SendReply, discarding
+// any that remain, and returns once nothing more can be sent from it. After
+// that, SendReply and TrySend send nothing. Call StopSending before sending
+// the GOODBYE or ABORT that ends the session, so that no reply follows it.
+func (s *Session) StopSending() {
+	s.sendMu.Lock()
+	if !s.sendClosed {
+		s.sendClosed = true
+		if s.sendStop != nil {
+			close(s.sendStop)
+		}
+		if s.backlogRoom != nil {
+			close(s.backlogRoom)
+			s.backlogRoom = nil
+		}
+		s.backlog.Clear()
+	}
+	s.sendMu.Unlock()
+
+	s.sendWG.Wait()
+}
+
+// Close calls StopSending and then closes the peer.
+func (s *Session) Close() {
+	s.StopSending()
+	s.Peer.Close()
+}
+
+// backlogLimit is the backlog size at which ReplyRoom reports that there is
+// no room. It is the capacity of the peer's send queue, so that a peer that
+// keeps up with its replies has at most twice that many messages pending.
+//
+// Call this function when sendMu is held.
+func (s *Session) backlogLimit() int {
+	return max(cap(s.Send()), 1)
+}
+
+// sendBacklog sends messages from the backlog to the peer, blocking until the
+// peer's send queue has room for each, until the backlog is empty or the
+// session is closed. A message stays at the front of the backlog until it is
+// sent, so that TrySend and SendReply do not send ahead of it.
+func (s *Session) sendBacklog(stop <-chan struct{}) {
+	defer s.sendWG.Done()
+	for {
+		s.sendMu.Lock()
+		if s.sendClosed {
+			// Close cleared the backlog.
+			s.sendMu.Unlock()
+			return
+		}
+		msg := s.backlog.Front()
+		s.sendMu.Unlock()
+
+		select {
+		case s.Send() <- msg:
+		case <-stop:
+			return
+		}
+
+		s.sendMu.Lock()
+		if s.sendClosed {
+			s.sendMu.Unlock()
+			return
+		}
+		s.backlog.PopFront()
+		s.backlogSent++
+		n := s.backlog.Len()
+		if s.backlogRoom != nil && n < s.backlogLimit() {
+			close(s.backlogRoom)
+			s.backlogRoom = nil
+		}
+		s.sendMu.Unlock()
+		if n == 0 {
+			return
+		}
+	}
 }

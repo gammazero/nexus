@@ -102,8 +102,17 @@ type WebsocketServer struct {
 	// the websocket connection is closed.
 	KeepAlive time.Duration
 
-	// OutQueueSize is the maximum number of pending outbound messages, per
-	// client. The default is defaultOutQueueSize.
+	// OutQueueSize is the maximum number of pending outbound messages, per client.
+	// The default is defaultOutQueueSize.
+	//
+	// When a client's queue is full, the router does not drop replies to the
+	// client's own requests. They wait until the client reads them, and the router
+	// holds the client's next request until there is room. A client that reads
+	// nothing for a minute while the router waits is disconnected. EVENTs are
+	// dropped when the queue is full. A call whose INVOCATION or progressive
+	// RESULT cannot be queued fails, and its caller gets an ERROR. Size the queue
+	// for bursts of EVENTs, INVOCATIONs and progressive RESULTs, not for the
+	// number of requests a client has in flight.
 	OutQueueSize int
 
 	router    Router

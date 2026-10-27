@@ -215,3 +215,115 @@ func TestProgressiveInvocationOptionsFrozen(t *testing.T) {
 		}
 	})
 }
+
+// TestOneFinalResultPerCall checks that the dealer sends the caller only one
+// final RESULT for a call. A callee may send a final YIELD while the caller is
+// still sending a progressive call, and the invocation remains until the
+// caller finishes sending. Any YIELD after that final result must not reach
+// the caller, which has finished the call, or a callee that keeps sending them
+// grows the caller's reply backlog without limit.
+func TestOneFinalResultPerCall(t *testing.T) {
+	synctest.Test(t, func(t *testing.T) {
+		r := newTestRouter(t)
+		callee, caller, inv := finalResultMidStream(t, r)
+
+		for i := 1; i < 3; i++ {
+			callee.Send() <- &wamp.Yield{Request: inv.Request, Arguments: wamp.List{i}}
+		}
+		synctest.Wait()
+		requireNothing(t, caller)
+
+		// Finishing the progressive call removes the invocation once the callee
+		// answers, and still sends the caller nothing more.
+		caller.Send() <- &wamp.Call{
+			Request:   1,
+			Procedure: progTimeoutProc,
+			Arguments: wamp.List{2},
+		}
+		inv = recvType[*wamp.Invocation](t, callee)
+		callee.Send() <- &wamp.Yield{Request: inv.Request, Arguments: wamp.List{3}}
+		synctest.Wait()
+		requireNothing(t, caller)
+		requireNoCalls(t, r)
+	})
+}
+
+// TestCancelAfterFinalResult checks that a CANCEL for a call whose final
+// RESULT the caller already got removes the call without sending the caller an
+// ERROR or the callee an INTERRUPT. The caller finished the call, and the
+// callee answered it.
+func TestCancelAfterFinalResult(t *testing.T) {
+	synctest.Test(t, func(t *testing.T) {
+		r := newTestRouter(t)
+		callee, caller, _ := finalResultMidStream(t, r)
+
+		caller.Send() <- &wamp.Cancel{
+			Request: 1,
+			Options: wamp.Dict{wamp.OptMode: wamp.CancelModeKillNoWait},
+		}
+		synctest.Wait()
+		requireNothing(t, caller)
+		requireNothing(t, callee)
+		requireNoCalls(t, r)
+	})
+}
+
+// TestCalleeGoneAfterFinalResult checks that when the callee leaves after
+// sending the final RESULT for a call that the caller is still sending, the
+// caller gets no ERROR for the call, which it already finished.
+func TestCalleeGoneAfterFinalResult(t *testing.T) {
+	synctest.Test(t, func(t *testing.T) {
+		r := newTestRouter(t)
+		callee, caller, _ := finalResultMidStream(t, r)
+
+		callee.Send() <- &wamp.Goodbye{Reason: wamp.CloseNormal, Details: wamp.Dict{}}
+		recvType[*wamp.Goodbye](t, callee)
+		synctest.Wait()
+		requireNothing(t, caller)
+		requireNoCalls(t, r)
+	})
+}
+
+// finalResultMidStream starts a progressive call, has the callee send the
+// final YIELD for it while the caller is still sending, and checks that the
+// caller gets the final RESULT. It returns the callee, the caller, and the
+// INVOCATION for the call, whose request ID is 1.
+func finalResultMidStream(t *testing.T, r Router) (callee, caller *wamp.Session, inv *wamp.Invocation) {
+	t.Helper()
+	callee, caller = joinProgressive(t, r)
+	caller.Send() <- &wamp.Call{
+		Request:   1,
+		Procedure: progTimeoutProc,
+		Options:   wamp.Dict{wamp.OptProgress: true},
+		Arguments: wamp.List{1},
+	}
+	inv = recvType[*wamp.Invocation](t, callee)
+	callee.Send() <- &wamp.Yield{Request: inv.Request, Arguments: wamp.List{0}}
+	synctest.Wait()
+	res := recvType[*wamp.Result](t, caller)
+	require.Equal(t, 0, res.Arguments[0])
+	requireNothing(t, caller)
+	return callee, caller, inv
+}
+
+// requireNoCalls fails if the dealer of the test realm of r still holds a call
+// or an invocation.
+func requireNoCalls(t *testing.T, r Router) {
+	t.Helper()
+	d := r.(*router).realms[testRealm].dealer
+	count := make(chan int)
+	d.actionChan <- func() {
+		count <- len(d.calls) + len(d.invocations) + len(d.invocationByCall)
+	}
+	require.Zero(t, <-count, "finished call not removed")
+}
+
+// requireNothing fails if sess has a message to read.
+func requireNothing(t *testing.T, sess *wamp.Session) {
+	t.Helper()
+	select {
+	case msg := <-sess.Recv():
+		require.FailNow(t, "unexpected message", "got %T: %+v", msg, msg)
+	default:
+	}
+}
