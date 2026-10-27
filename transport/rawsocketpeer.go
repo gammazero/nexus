@@ -498,15 +498,10 @@ MsgLoop:
 		select {
 		case rs.rd <- msg:
 		case <-rs.closed:
-			// If closed, try for one second to send the last message and then
-			// exit recvHandler.
-			timer := time.NewTimer(time.Second)
-			select {
-			case rs.rd <- msg:
-			case <-timer.C:
-			}
+			// The peer was closed, so its user has stopped reading. Drop the message and
+			// exit, instead of waiting for it to be read, which would leave this goroutine
+			// running after Close.
 			_ = rs.conn.Close()
-			timer.Stop()
 			return
 		}
 	}

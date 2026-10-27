@@ -673,14 +673,8 @@ func (w *websocketPeer) recvHandler() {
 			w.peerAlive()
 			w.recvBlocked.Store(false)
 		case <-w.closed:
-			// If closed, try for one second to send the last message and then
-			// exit recvHandler.
-			timer := time.NewTimer(time.Second)
-			select {
-			case w.rd <- msg:
-			case <-timer.C:
-			}
-			timer.Stop()
+			// The peer was closed, so its user has stopped reading. Drop the message and
+			// exit, instead of making Close wait for it to be read.
 			return
 		}
 	}

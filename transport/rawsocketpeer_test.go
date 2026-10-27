@@ -7,6 +7,7 @@ import (
 	"net"
 	"strings"
 	"testing"
+	"testing/synctest"
 	"time"
 
 	"github.com/stretchr/testify/require"
@@ -374,4 +375,27 @@ func TestRawSocketStuckWriteClosesRecv(t *testing.T) {
 	// The client end of the pipe is never read, so this write blocks.
 	peer.Send() <- &wamp.Hello{Realm: "test", Details: wamp.Dict{}}
 	requireRecvDone(t, peer)
+}
+
+// TestRawSocketCloseDoesNotWaitForUnreadMessage verifies that recvHandler
+// exits as soon as the peer is closed while it holds a message that nothing
+// reads. See TestWSCloseDoesNotWaitForUnreadMessage.
+func TestRawSocketCloseDoesNotWaitForUnreadMessage(t *testing.T) {
+	synctest.Test(t, func(t *testing.T) {
+		client, peer := newPipedRawSocket(t, 0)
+		writeHello(t, client)
+		// Wait for recvHandler to read the HELLO and block handing it over.
+		synctest.Wait()
+
+		start := time.Now()
+		peer.Close()
+		synctest.Wait()
+		select {
+		case msg, ok := <-peer.Recv():
+			require.False(t, ok, "recvHandler still delivering %T after Close", msg)
+		default:
+			require.FailNow(t, "recvHandler still running after Close")
+		}
+		require.Zero(t, time.Since(start), "recvHandler waited for the message to be read")
+	})
 }
