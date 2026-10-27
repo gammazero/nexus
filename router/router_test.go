@@ -58,18 +58,26 @@ var clientRoles = wamp.Dict{
 }
 
 func newTestRouter(t *testing.T) Router {
+	return newTestRouterRealm(t, nil)
+}
+
+// newTestRouterRealm is like newTestRouter, but calls configure, if not nil,
+// to change the configuration of the test realm.
+func newTestRouterRealm(t *testing.T, configure func(*RealmConfig)) Router {
+	realmConfig := &RealmConfig{
+		URI:              testRealm,
+		StrictURI:        false,
+		AnonymousAuth:    true,
+		AllowDisclose:    false,
+		EnableMetaKill:   true,
+		EnableMetaModify: true,
+	}
+	if configure != nil {
+		configure(realmConfig)
+	}
 	config := &Config{
-		RealmConfigs: []*RealmConfig{
-			{
-				URI:              testRealm,
-				StrictURI:        false,
-				AnonymousAuth:    true,
-				AllowDisclose:    false,
-				EnableMetaKill:   true,
-				EnableMetaModify: true,
-			},
-		},
-		Debug: debug,
+		RealmConfigs: []*RealmConfig{realmConfig},
+		Debug:        debug,
 	}
 
 	r, err := NewRouter(config, logger)

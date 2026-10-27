@@ -425,19 +425,19 @@ func (r *router) addRealm(config *RealmConfig) (*realm, error) {
 	if _, ok := r.realms[config.URI]; ok {
 		return nil, errors.New("realm already exists: " + string(config.URI))
 	}
+	if err := checkRealmConfig(config); err != nil {
+		return nil, err
+	}
 
-	broker, err := newBroker(r.log, config.StrictURI, config.AllowDisclose, r.debug, config.PublishFilterFactory, config.TopicEventHistoryConfigs)
+	broker, err := newBroker(r.log, config.StrictURI, config.AllowDisclose, r.debug, config.PublishFilterFactory, config.TopicEventHistoryConfigs, config.EventOverflow)
 	if err != nil {
 		return nil, err
 	}
-	realm, err := newRealm(
+	realm := newRealm(
 		config,
 		broker,
 		newDealer(r.log, config.StrictURI, config.AllowDisclose, r.debug),
 		r.log, r.debug)
-	if err != nil {
-		return nil, err
-	}
 	r.realms[config.URI] = realm
 	r.log.Println("Added realm:", config.URI)
 	return realm, nil

@@ -1113,7 +1113,7 @@ func (d *dealer) syncCall(caller *wamp.Session, msg *wamp.Call) {
 		Arguments:    args,
 		ArgumentsKw:  argsKw,
 	}
-	if !callee.TrySend(invMsg) {
+	if !callee.SendLimited(invMsg) {
 		d.syncError(callee, &wamp.Error{
 			Type:      wamp.INVOCATION,
 			Request:   invocationID,
@@ -1221,7 +1221,7 @@ func (d *dealer) syncCancel(caller *wamp.Session, msg *wamp.Cancel, mode string,
 				Request: invkReqID.request,
 				Options: wamp.Dict{wamp.OptReason: reason, wamp.OptMode: mode},
 			}
-			if invk.callee.TrySend(intrMsg) {
+			if invk.callee.SendLimited(intrMsg) {
 				d.log.Println("Dealer sent INTERRUPT to cancel invocation", invkReqID, "for call", msg.Request, "mode:", mode)
 				// If mode is "kill" then let error from callee trigger the
 				// response to the caller. This is how the caller waits for the
@@ -1279,7 +1279,7 @@ func (d *dealer) syncYield(callee *wamp.Session, msg *wamp.Yield, progress, canR
 				Request: msg.Request,
 				Options: wamp.Dict{wamp.OptMode: wamp.CancelModeKillNoWait},
 			}
-			if callee.TrySend(intrMsg) {
+			if callee.SendLimited(intrMsg) {
 				d.log.Println("Dealer sent INTERRUPT to cancel progressive",
 					"results for request", msg.Request, "to callee", callee)
 			}
@@ -1428,7 +1428,7 @@ func (d *dealer) syncYield(callee *wamp.Session, msg *wamp.Yield, progress, canR
 	// progressive responses faster than the caller can handle them. If the
 	// caller stays blocked, cancel the call so that the caller gets an ERROR
 	// instead.
-	if caller.TrySend(res) {
+	if caller.SendLimited(res) {
 		return false
 	}
 	if canRetry {

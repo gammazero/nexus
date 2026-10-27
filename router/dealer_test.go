@@ -1236,15 +1236,24 @@ func TestRegisterBlockedAckDelivered(t *testing.T) {
 	require.True(t, ok, "registration not tracked against the callee")
 
 	// A CALL made while the ack waits must not send an INVOCATION ahead of it.
-	// The callee cannot take the INVOCATION, so the caller gets an ERROR.
+	// The INVOCATION waits behind the ack.
 	caller := newTestPeer()
 	callerSess := wamp.NewSession(caller, 0, nil, nil)
 	dealer.call(callerSess, &wamp.Call{Request: 2, Procedure: testProcedure})
-	require.IsType(t, &wamp.Error{}, <-caller.Recv())
+	waitDealer(dealer)
+	select {
+	case msg := <-caller.Recv():
+		require.FailNow(t, "call ended while the INVOCATION waits", "got %T", msg)
+	default:
+	}
 
-	regMsg, ok := requireAckAfterHello(t, blocked).(*wamp.Registered)
+	require.IsType(t, &wamp.Hello{}, <-blocked.Recv())
+	regMsg, ok := (<-blocked.Recv()).(*wamp.Registered)
 	require.True(t, ok, "expected REGISTERED")
 	require.Equal(t, reg.id, regMsg.Registration)
+	inv, ok := (<-blocked.Recv()).(*wamp.Invocation)
+	require.True(t, ok, "expected INVOCATION")
+	require.Equal(t, reg.id, inv.Registration)
 }
 
 // TestRegisterSharedJoinBlockedAckDelivered is the shared-registration
@@ -1378,8 +1387,8 @@ func TestDealerYieldQueueBounded(t *testing.T) {
 		d, _ := newTestDealer(t)
 		callee, caller, inv := setupBlockedCall(t, d)
 
-		// One RESULT fills the caller's queue, then maxPendingYields are
-		// queued, and the next yield waits.
+		// One RESULT fills the caller's queue, one waits in its backlog, then
+		// maxPendingYields are queued, and the next yield waits.
 		const n = maxPendingYields + 3
 		var sent atomic.Int32
 		go func() {
@@ -1390,7 +1399,7 @@ func TestDealerYieldQueueBounded(t *testing.T) {
 		}()
 		time.Sleep(time.Second)
 		synctest.Wait()
-		require.Equal(t, int32(maxPendingYields+1), sent.Load(), "yields not held back")
+		require.Equal(t, int32(maxPendingYields+2), sent.Load(), "yields not held back")
 		queued := make(chan int)
 		d.actionChan <- func() {
 			queued <- d.invocations[requestID{callee.ID, inv.Request}].pendingYields.Len()
@@ -1447,8 +1456,11 @@ func TestDealerYieldDeadlineCancels(t *testing.T) {
 		d.call(caller, &wamp.Call{Request: 100, Procedure: testProcedure})
 		inv := (<-callee.Recv()).(*wamp.Invocation)
 
-		d.yield(callee, progressYield(inv, 1))
-		d.yield(callee, progressYield(inv, 2))
+		// The first RESULT fills the caller's queue, the second waits in its
+		// backlog, and the third does not fit.
+		for i := 1; i <= 3; i++ {
+			d.yield(callee, progressYield(inv, i))
+		}
 
 		time.Sleep(sendResultDeadline + time.Second)
 		synctest.Wait()
@@ -1471,14 +1483,18 @@ func TestDealerDrainExitsOnInvocationCancel(t *testing.T) {
 	d, _ := newTestDealer(t)
 	callee, caller, inv := setupBlockedCall(t, d)
 
-	d.yield(callee, progressYield(inv, 1))
-	d.yield(callee, progressYield(inv, 2))
+	// The first RESULT fills the caller's queue, the second waits in its
+	// backlog, and the third is queued in the dealer.
+	for i := 1; i <= 3; i++ {
+		d.yield(callee, progressYield(inv, i))
+	}
 
 	d.cancel(caller, &wamp.Cancel{
 		Request: 100,
 		Options: wamp.Dict{wamp.OptMode: wamp.CancelModeKillNoWait},
 	})
 	requireResult(t, caller, 1)
+	requireResult(t, caller, 2)
 	// The cancel ERROR, if there was room for it.
 	select {
 	case msg := <-caller.Recv():
@@ -1487,7 +1503,7 @@ func TestDealerDrainExitsOnInvocationCancel(t *testing.T) {
 	case <-time.After(100 * time.Millisecond):
 	}
 
-	d.yield(callee, &wamp.Yield{Request: inv.Request, Arguments: wamp.List{3}})
+	d.yield(callee, &wamp.Yield{Request: inv.Request, Arguments: wamp.List{4}})
 	select {
 	case msg := <-caller.Recv():
 		require.FailNowf(t, "unexpected message", "got %T after cancel", msg)
@@ -1505,14 +1521,16 @@ func TestDealerCloseWhileDeliveringYields(t *testing.T) {
 		d := newDealer(logger, false, true, debug)
 		_, rtr := transport.LinkedPeers()
 		d.setMetaPeer(rtr)
-		callee, _, inv := setupBlockedCall(t, d)
-		d.yield(callee, progressYield(inv, 1))
-		d.yield(callee, progressYield(inv, 2))
+		callee, caller, inv := setupBlockedCall(t, d)
+		for j := 1; j <= 3; j++ {
+			d.yield(callee, progressYield(inv, j))
+		}
 
 		// Close at different points of the delivery goroutine's retries.
 		time.Sleep(time.Duration(i%4) * 500 * time.Microsecond)
 		d.close()
 		rtr.Close()
+		caller.Close()
 	}
 }
 
@@ -1585,4 +1603,11 @@ func TestYieldErrorsDoNotGrowBacklog(t *testing.T) {
 		require.FailNow(t, "ERRORs for YIELDs must be dropped when the queue is full", "got %T", msg)
 	default:
 	}
+}
+
+// waitDealer waits until dealer has handled every action queued before it.
+func waitDealer(dealer *dealer) {
+	done := make(chan struct{})
+	dealer.actionChan <- func() { close(done) }
+	<-done
 }

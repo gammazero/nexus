@@ -113,6 +113,54 @@ func TestSendReplyBacklog(t *testing.T) {
 	require.Equal(t, &Event{Publication: 3}, <-peer.ch)
 }
 
+func TestSendLimitedBacklog(t *testing.T) {
+	const queueSize = 2
+	const limit = 3
+	peer := &chanPeer{ch: make(chan Message, queueSize)}
+	s := NewSession(peer, 1, nil, nil)
+	s.SetSendLimit(limit)
+
+	// Fill the queue, then the backlog up to its limit.
+	for i := 1; i <= queueSize+limit; i++ {
+		require.True(t, s.SendLimited(&Event{Publication: ID(i)}))
+	}
+	require.False(t, s.SendLimited(&Event{Publication: 99}), "backlog over limit")
+
+	// Messages from SendLimited do not count against room for replies, and a
+	// reply waits behind them.
+	require.Nil(t, s.ReplyRoom())
+	s.SendReply(&Published{Request: 1})
+	require.False(t, s.TrySend(&Event{Publication: 99}), "sent ahead of backlog")
+	require.False(t, s.SendLimited(&Event{Publication: 99}), "backlog over limit")
+
+	// Read everything in order.
+	for i := 1; i <= queueSize+limit; i++ {
+		require.Equal(t, &Event{Publication: ID(i)}, <-peer.ch)
+	}
+	require.Equal(t, &Published{Request: 1}, <-peer.ch)
+
+	// Once the backlog is sent, it has room again.
+	s.sendWG.Wait()
+	for i := 1; i <= queueSize+limit; i++ {
+		require.True(t, s.SendLimited(&Event{Publication: ID(i)}))
+	}
+	s.Close()
+	require.False(t, s.SendLimited(&Event{Publication: 99}), "sent after close")
+}
+
+// TestSendLimitedDefaultLimit checks that, with no limit set, SendLimited lets
+// as many messages wait in the backlog as the send queue holds.
+func TestSendLimitedDefaultLimit(t *testing.T) {
+	const queueSize = 2
+	peer := &chanPeer{ch: make(chan Message, queueSize)}
+	s := NewSession(peer, 1, nil, nil)
+	defer s.Close()
+	for i := 1; i <= 2*queueSize; i++ {
+		require.True(t, s.SendLimited(&Event{Publication: ID(i)}))
+	}
+	require.False(t, s.SendLimited(&Event{Publication: 99}))
+}
+
 func TestSessionCloseDiscardsBacklog(t *testing.T) {
 	peer := &chanPeer{ch: make(chan Message, 1)}
 	s := NewSession(peer, 1, nil, nil)

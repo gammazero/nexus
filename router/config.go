@@ -86,6 +86,28 @@ type RealmConfig struct {
 	// per realm when all clients allocate sequential IDs.
 	StrictRequestIDs bool `json:"strict_request_ids"`
 
+	// EventBacklog is the maximum number of messages that wait for each client, in
+	// addition to those in the client's outbound queue, while the client reads
+	// them more slowly than the router sends them. These are EVENTs, and the
+	// INVOCATIONs, INTERRUPTs and progressive RESULTs that the router sends to the
+	// client, which wait in order with the replies to the client's requests, and
+	// are delivered once the client reads. A value of zero, the default, uses the
+	// size of the client's outbound queue.
+	//
+	// When the backlog is full, an EVENT is handled as set by EventOverflow, a
+	// call whose INVOCATION does not fit fails with wamp.error.network_failure, an
+	// INTERRUPT is dropped, and a progressive RESULT is retried until the call is
+	// canceled.
+	EventBacklog int `json:"event_backlog"`
+	// EventOverflow selects what the router does with an EVENT for a client whose
+	// outbound queue and backlog are full. With EventOverflowDrop ("drop"), the
+	// default, the router drops the EVENT, and the client stays connected without
+	// knowing that it missed it. With EventOverflowClose ("close"), the router
+	// closes the client, with a GOODBYE carrying CloseSlowSubscriber if there is
+	// room for it, so that the client knows that it fell behind and can
+	// reconnect.
+	EventOverflow string `json:"event_overflow"`
+
 	TopicEventHistoryConfigs []*TopicEventHistoryConfig `json:"event_history"`
 
 	// PublishFilterFactory is a function used to create a PublishFilter to
@@ -95,6 +117,18 @@ type RealmConfig struct {
 	// nexus. A value of nil enables the default filtering.
 	PublishFilterFactory FilterFactory
 }
+
+// Values for RealmConfig.EventOverflow.
+const (
+	// EventOverflowDrop drops an EVENT that does not fit.
+	EventOverflowDrop = "drop"
+	// EventOverflowClose closes a client for which an EVENT does not fit.
+	EventOverflowClose = "close"
+)
+
+// CloseSlowSubscriber is the reason in the GOODBYE that the router sends to a
+// client that it closes because an EVENT did not fit, with EventOverflowClose.
+const CloseSlowSubscriber = wamp.URI("nexus.close.slow_subscriber")
 
 type TopicEventHistoryConfig struct {
 	Topic       wamp.URI `json:"topic"` // Topic URI

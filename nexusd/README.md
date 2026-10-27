@@ -53,6 +53,10 @@ Annotated config file example:
 	                                                // to include in addition to the standard details
                 "enable_meta_kill": false,   // enables the wamp.session.kill* session meta procedures.
                 "enable_meta_modify": false, // enables the wamp.session.modify_details session meta procedures.
+                "event_backlog": 0,          // Messages that wait for a slow client beyond its out_queue_size.
+                                             // 0 - default (out_queue_size).
+                "event_overflow": "drop",    // When an EVENT does not fit: "drop" (default) drops it,
+                                             // "close" closes the client. See Outbound queue size.
                 "event_history": [           // Configurations for event history stores
                     {
                         "topic": "exact.topic.uri",
@@ -92,10 +96,21 @@ to read. When a client's queue is full:
 * While the router holds a websocket client's request, it does not read the
   client's pongs, so `keep_alive` does not count missed pongs until the router
   takes the request.
-* EVENTs are dropped, and the router logs each drop.
-* A call fails, and its caller gets an ERROR, if its INVOCATION cannot be
-  queued for the callee (`wamp.error.network_failure`), or if the caller stays
-  blocked on its progressive RESULTs (`wamp.error.canceled`).
+* EVENTs, and the INVOCATIONs, INTERRUPTs and progressive RESULTs for the
+  client, wait in its backlog, which holds up to the realm's `event_backlog` of
+  them, by default as many as `out_queue_size`. They are delivered in order,
+  with the client's replies, once the client reads.
+* When the backlog is full too, the realm's `event_overflow` selects what
+  happens to an EVENT. With `"drop"`, the default, the router drops the EVENT and logs
+  each drop, and the client stays connected without knowing that it missed it.
+  With `"close"`, the router closes the client, with a GOODBYE carrying
+  `nexus.close.slow_subscriber` if there is room for it, so that the client
+  knows that it fell behind and can reconnect.
+* A call fails, and its caller gets an ERROR, if its INVOCATION does not fit
+  in the callee's backlog (`wamp.error.network_failure`), or if the caller
+  stays blocked on its progressive RESULTs (`wamp.error.canceled`).
 
 Size the queue for bursts of EVENTs, INVOCATIONs and progressive RESULTs, not
-for the number of requests a client has in flight.
+for the number of requests a client has in flight. Size `event_backlog` for
+the longest burst of EVENTs, INVOCATIONs and progressive RESULTs that a client
+should be able to fall behind by and still receive all of them.

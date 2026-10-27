@@ -90,15 +90,27 @@ type broker struct {
 	strictURI     bool
 	allowDisclose bool
 
+	// Close a session for which an EVENT does not fit in its backlog, instead
+	// of dropping the EVENT.
+	closeSlow bool
+
 	log           stdlog.StdLog
 	debug         bool
 	filterFactory FilterFactory
 }
 
 // newBroker returns a new default broker implementation instance.
-func newBroker(logger stdlog.StdLog, strictURI, allowDisclose, debug bool, publishFilter FilterFactory, evntCfgs []*TopicEventHistoryConfig) (*broker, error) { //nolint:lll
+func newBroker(logger stdlog.StdLog, strictURI, allowDisclose, debug bool, publishFilter FilterFactory, evntCfgs []*TopicEventHistoryConfig, eventOverflow string) (*broker, error) { //nolint:lll
 	if logger == nil {
 		panic("logger is nil")
+	}
+	var closeSlow bool
+	switch eventOverflow {
+	case "", EventOverflowDrop:
+	case EventOverflowClose:
+		closeSlow = true
+	default:
+		return nil, configError{Err: fmt.Errorf("invalid event overflow: %q", eventOverflow)}
 	}
 	if publishFilter == nil {
 		publishFilter = NewSimplePublishFilter
@@ -122,6 +134,7 @@ func newBroker(logger stdlog.StdLog, strictURI, allowDisclose, debug bool, publi
 
 		strictURI:     strictURI,
 		allowDisclose: allowDisclose,
+		closeSlow:     closeSlow,
 
 		log:           logger,
 		debug:         debug,
@@ -649,20 +662,20 @@ func (b *broker) syncPubEvent(pub *wamp.Session, msg *wamp.Publish, pubID wamp.I
 
 		if subscriber.IsLocal() ||
 			(disclose && subscriber.HasFeature(wamp.RoleSubscriber, wamp.FeaturePubIdent)) {
-			b.trySend(subscriber, prepareEvent(pub, msg, pubID, sub, sendTopic, disclose, eventDetails, subscriber))
+			b.sendEvent(subscriber, prepareEvent(pub, msg, pubID, sub, sendTopic, disclose, eventDetails, subscriber))
 			continue
 		}
 		if sharedEvent == nil {
 			sharedEvent = prepareEvent(pub, msg, pubID, sub, sendTopic, false, eventDetails, nil)
 		}
 		if !transport.AcceptsSharedMessage(subscriber.Peer) {
-			b.trySend(subscriber, sharedEvent)
+			b.sendEvent(subscriber, sharedEvent)
 			continue
 		}
 		if sharedMsg == nil {
 			sharedMsg = serialize.NewSharedMessage(sharedEvent)
 		}
-		b.trySend(subscriber, sharedMsg)
+		b.sendEvent(subscriber, sharedMsg)
 	}
 
 	// If event history store is enabled for subscription let's save event
@@ -735,14 +748,14 @@ func (b *broker) syncPubSubMeta(metaTopic wamp.URI, subSessID, subID wamp.ID) {
 			// Need to send separate event message to each local subscriber,
 			// since local clients could modify contents.
 			if subscriber.IsLocal() {
-				b.trySend(subscriber, makeEvent())
+				b.sendEvent(subscriber, makeEvent())
 				continue
 			}
 
 			if event == nil {
 				event = makeEvent()
 			}
-			b.trySend(subscriber, event)
+			b.sendEvent(subscriber, event)
 		}
 	})
 }
@@ -787,23 +800,34 @@ func (b *broker) syncPubSubCreateMeta(subSessID wamp.ID, sub *subscription) {
 			// Need to send separate event message to each local subscriber,
 			// since local clients could modify contents.
 			if subscriber.IsLocal() {
-				b.trySend(subscriber, makeEvent())
+				b.sendEvent(subscriber, makeEvent())
 				continue
 			}
 
 			if event == nil {
 				event = makeEvent()
 			}
-			b.trySend(subscriber, event)
+			b.sendEvent(subscriber, event)
 		}
 	})
 }
 
-// trySend queues msg to sess without blocking. If the outbound queue of sess
-// is full, or replies wait in its backlog, msg is dropped.
-func (b *broker) trySend(sess *wamp.Session, msg wamp.Message) {
-	if !sess.TrySend(msg) {
+// sendEvent queues the EVENT msg to sess without blocking. If the outbound
+// queue of sess is full, msg waits in its backlog, unless the backlog is
+// already at its limit. Then msg is dropped, and sess is closed if closeSlow
+// is set.
+func (b *broker) sendEvent(sess *wamp.Session, msg wamp.Message) {
+	if sess.SendLimited(msg) {
+		return
+	}
+	if !b.closeSlow {
 		b.log.Printf("!!! Dropped %s to session %s: blocked", msg.MessageType(), sess)
+		return
+	}
+	// Let the realm end the session, so that it is removed from the broker and
+	// dealer before its peer is closed.
+	if sess.EndRecv(makeGoodbye(CloseSlowSubscriber, "event backlog full")) {
+		b.log.Printf("!!! Closing session %s: event backlog full", sess)
 	}
 }
 

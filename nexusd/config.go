@@ -30,8 +30,9 @@ type Config struct {
 		AllowOrigins []string `json:"allow_origins"`
 		// Limit on number of pending messages to send to each client. 0 uses the
 		// default of 64. Replies to a client's own requests are never dropped when the
-		// queue is full, but EVENTs are. See OutQueueSize in router.WebsocketServer
-		// for details.
+		// queue is full. EVENTs, INVOCATIONs, INTERRUPTs and progressive RESULTs wait
+		// in a backlog, set by the realm's event_backlog and event_overflow. See
+		// OutQueueSize in router.WebsocketServer for details.
 		OutQueueSize int `json:"out_queue_size"`
 	}
 
@@ -50,8 +51,9 @@ type Config struct {
 		KeyFile  string `json:"key_file"`
 		// Limit on number of pending messages to send to each client. 0 uses the
 		// default of 64. Replies to a client's own requests are never dropped when the
-		// queue is full, but EVENTs are. See OutQueueSize in router.WebsocketServer
-		// for details.
+		// queue is full. EVENTs, INVOCATIONs, INTERRUPTs and progressive RESULTs wait
+		// in a backlog, set by the realm's event_backlog and event_overflow. See
+		// OutQueueSize in router.WebsocketServer for details.
 		OutQueueSize int `json:"out_queue_size"`
 	}
 
