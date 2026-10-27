@@ -2,6 +2,7 @@ package wamp //nolint:testpackage
 
 import (
 	"fmt"
+	"sync"
 	"testing"
 	"testing/synctest"
 
@@ -225,4 +226,82 @@ func TestStopSendingSendsNothingMore(t *testing.T) {
 		s.Close()
 		require.True(t, peer.closed)
 	})
+}
+
+func TestSessionRoles(t *testing.T) {
+	details := Dict{
+		"roles": Dict{
+			"subscriber": Dict{"features": Dict{
+				"publisher_identification":   true,
+				"pattern_based_subscription": false,
+			}},
+			"caller": map[string]any{"features": map[string]any{
+				"progressive_call_results": true,
+			}},
+			"callee":    Dict{"features": Dict{}, "other": 1},
+			"publisher": Dict{"features": "none"},
+			"dealer":    true,
+		},
+	}
+	expected := Dict{
+		"subscriber": Dict{"features": Dict{"publisher_identification": true}},
+		"caller":     Dict{"features": Dict{"progressive_call_results": true}},
+		"callee":     Dict{"features": Dict{}},
+		"publisher":  Dict{},
+		"dealer":     Dict{},
+	}
+	sess := NewSession(nil, 1, nil, details)
+	require.Equal(t, expected, sess.Roles())
+
+	// Changing the returned dict does not change the session.
+	roles := sess.Roles()
+	roles["caller"].(Dict)["features"].(Dict)["call_canceling"] = true
+	delete(roles["subscriber"].(Dict)["features"].(Dict),
+		"publisher_identification")
+	roles["callee"].(Dict)["features"] = Dict{"shared_registration": true}
+	roles["publisher"].(Dict)["features"] = Dict{"x": true}
+	delete(roles, "dealer")
+	roles["broker"] = Dict{}
+	require.Equal(t, expected, sess.Roles())
+	require.False(t, sess.HasFeature("caller", "call_canceling"))
+	require.True(t, sess.HasFeature("subscriber", "publisher_identification"))
+	require.False(t, sess.HasFeature("callee", "shared_registration"))
+	require.True(t, sess.HasRole("dealer"))
+	require.False(t, sess.HasRole("broker"))
+
+	for _, details := range []Dict{
+		nil,
+		{},
+		{"roles": nil},
+		{"roles": Dict{}},
+		{"roles": map[string]any{}},
+		{"roles": "caller"},
+	} {
+		require.Nil(t, NewSession(nil, 1, nil, details).Roles(),
+			"details %v", details)
+	}
+}
+
+func TestSessionRolesConcurrent(t *testing.T) {
+	details := Dict{
+		"roles": Dict{
+			"caller": Dict{"features": Dict{"call_canceling": true}},
+		},
+	}
+	sess := NewSession(nil, 1, nil, details)
+
+	var wg sync.WaitGroup
+	for i := range 8 {
+		wg.Go(func() {
+			for range 100 {
+				roles := sess.Roles()
+				roles["caller"].(Dict)["features"].(Dict)["call_canceling"] = i
+				roles["callee"] = Dict{}
+			}
+		})
+	}
+	wg.Wait()
+
+	require.Equal(t, details["roles"], sess.Roles())
+	require.True(t, sess.HasFeature("caller", "call_canceling"))
 }
