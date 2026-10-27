@@ -1496,16 +1496,27 @@ func TestRouterFeatures(t *testing.T) {
 	require.GreaterOrEqual(t, len(brokerFeatures), 1, "broker features are missed")
 }
 
+// strictConcurrentRequests is the number of requests that
+// TestStrictRequestIDsConcurrentRequests has in flight at once.
+const strictConcurrentRequests = 100
+
 // strictRequestIDsClients returns two clients connected to a realm with
 // StrictRequestIDs enabled, where a request ID out of sequence aborts the
 // session.
+//
+// The router drops a message to a local client whose queue is full, so each
+// client's queue holds a reply to every concurrent request. With the default
+// queue of 64, a client that falls behind loses a reply and the request times
+// out.
 func strictRequestIDsClients(t *testing.T) (*client.Client, *client.Client) {
 	r := getTestRouter(t, &router.RealmConfig{
 		URI:              wamp.URI(testRealm),
 		AnonymousAuth:    true,
 		StrictRequestIDs: true,
 	})
-	return newTestClient(t, r), newTestClient(t, r)
+	queueSize := func(c *client.Config) { c.LocalQueueSize = strictConcurrentRequests }
+	return newTestClientWithConfig(t, r, newTestClientConfig(testRealm, queueSize)),
+		newTestClientWithConfig(t, r, newTestClientConfig(testRealm, queueSize))
 }
 
 // TestStrictRequestIDsConcurrentRequests verifies that requests made
@@ -1514,8 +1525,8 @@ func TestStrictRequestIDsConcurrentRequests(t *testing.T) {
 	c, _ := strictRequestIDsClients(t)
 
 	var wg sync.WaitGroup
-	errs := make(chan error, 100)
-	for i := range 50 {
+	errs := make(chan error, strictConcurrentRequests)
+	for i := range strictConcurrentRequests / 2 {
 		wg.Go(func() {
 			errs <- c.Publish(testTopic, wamp.Dict{wamp.OptAcknowledge: true}, nil, nil)
 		})
