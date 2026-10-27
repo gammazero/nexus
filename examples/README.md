@@ -11,6 +11,29 @@ The simple examples can be run from the `examples` directory by running:
 2. Run the subscriber with `go run simple/sub/subscriber.go`
 3. Run the publisher with `go run simple/pub/publisher.go`
 
+## CryptoSign Authentication Example
+
+The `cryptosign` example contains a websocket server that admits only clients that authenticate with
+WAMP-Cryptosign, and a client that does. The client signs a random challenge from the router with its
+Ed25519 private key, and the router verifies the signature with the client's public key, which it knows in
+advance.
+
+The examples can be run from the `examples` directory by running:
+
+1. Run the server with `go run cryptosign/server/server.go`
+2. Run the client with `go run cryptosign/client/client.go`
+
+By default, both use the key pair from the WAMP spec's cryptosign test vectors, for the authid `alice`. That
+private key is public knowledge, so never use it outside this example. To use your own key pair:
+
+1. Make a key pair with `go run cryptosign/client/client.go -genkey`
+2. Run the server with `go run cryptosign/server/server.go -authid=bob -pubkey=<public key>`
+3. Run the client with `go run cryptosign/client/client.go -authid=bob -key=<private key>`
+
+A client with the wrong key is refused with `invalid signature`, and an unknown authid with
+`wamp.error.authentication_failed`. A real router should use TLS, with `ListenAndServeTLS`, so that the
+authentication cannot be observed or tampered with.
+
 ## Example Server and Clients
 
 The project Wiki provides a walk-through of [client](https://github.com/gammazero/nexus/wiki/Client-Library) and
