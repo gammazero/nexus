@@ -94,6 +94,36 @@ func (s *Session) HasFeature(role, feature string) bool {
 	return ok
 }
 
+// Roles returns the roles and features that the session declared in its HELLO
+// or WELCOME details, the same ones that HasRole and HasFeature report, as a
+// new Dict that maps each role name to a role Dict. The caller can read or
+// change the result without holding the session lock and without affecting the
+// session.
+//
+// A role Dict has a "features" Dict that maps each feature whose value was
+// true to true. Features whose value was not true are left out, and a role
+// whose value or "features" value was not a dict has no "features" entry.
+// Other entries of a role's dict are not kept. Roles returns nil if the
+// session declared no roles.
+func (s *Session) Roles() Dict {
+	if len(s.roles) == 0 {
+		return nil
+	}
+	roles := make(Dict, len(s.roles))
+	for role, features := range s.roles {
+		roleDict := Dict{}
+		if features != nil {
+			featDict := make(Dict, len(features))
+			for feature := range features {
+				featDict[feature] = true
+			}
+			roleDict["features"] = featDict
+		}
+		roles[role] = roleDict
+	}
+	return roles
+}
+
 // RecvDone returns a channel that is closed when this session has been ended
 // by calling EndRecv.
 func (s *Session) RecvDone() <-chan struct{} {
