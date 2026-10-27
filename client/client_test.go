@@ -1292,12 +1292,6 @@ func TestProgressDisconnect(t *testing.T) {
 		Debug:           true,
 	}
 
-	// TODO: is this necessary?
-	go func() {
-		time.Sleep(time.Second)
-		time.Sleep(time.Second)
-		time.Sleep(time.Second)
-	}()
 	callee, err := client.ConnectNet(t.Context(), testURL, cfg)
 	require.NoError(t, err)
 	defer callee.Close()

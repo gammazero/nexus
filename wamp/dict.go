@@ -6,6 +6,9 @@ import (
 	"strings"
 )
 
+// Dict is a dictionary that maps keys to objects in a WAMP message.
+type Dict map[string]any
+
 // NormalizeDict takes a dict and creates a new normalized dict where all
 // map[string]xxx are converted to Dict. Values that cannot be converted, or
 // are already the correct map type, remain the same.
