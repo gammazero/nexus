@@ -101,11 +101,15 @@ to read. When a client's queue is full:
   them, by default as many as `out_queue_size`. They are delivered in order,
   with the client's replies, once the client reads.
 * When the backlog is full too, the realm's `event_overflow` selects what
-  happens to an EVENT. With `"drop"`, the default, the router drops the EVENT and logs
-  each drop, and the client stays connected without knowing that it missed it.
-  With `"close"`, the router closes the client, with a GOODBYE carrying
-  `nexus.close.slow_subscriber` if there is room for it, so that the client
-  knows that it fell behind and can reconnect.
+  happens to an EVENT. With `"drop"`, the default, the router drops the EVENT
+  and logs each drop, and the client stays connected without knowing that it
+  missed it. With `"close"`, the router closes the client, with a GOODBYE
+  carrying `nexus.close.slow_subscriber` if there is room for it, so that the
+  client knows that it fell behind and can reconnect. Use `"close"` for a
+  realm whose clients must not miss events, and that reconnect and resync when
+  closed. Closing a client ends its whole session, including its registrations
+  and the calls in progress to it, and a client that does not reconnect stops
+  working, so `"drop"` is the default.
 * A call fails, and its caller gets an ERROR, if its INVOCATION does not fit
   in the callee's backlog (`wamp.error.network_failure`), or if the caller
   stays blocked on its progressive RESULTs (`wamp.error.canceled`).
