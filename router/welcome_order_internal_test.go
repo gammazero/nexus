@@ -4,6 +4,7 @@ import (
 	"maps"
 	"sync/atomic"
 	"testing"
+	"testing/synctest"
 	"time"
 
 	"github.com/stretchr/testify/require"
@@ -85,4 +86,48 @@ func TestWelcomeQueuedBeforeSessionIsVisible(t *testing.T) {
 	require.NoError(t, err)
 	require.Equal(t, wamp.GOODBYE, next.MessageType())
 	require.NoError(t, <-attachErr)
+}
+
+// A client must not get its WELCOME before the session is visible to the
+// realm. Otherwise a client that another client acts on as soon as it has
+// joined, as by wamp.session.kill_all, can be missed. The realm goroutine is
+// held while the client joins, so that the session cannot become visible, and
+// the client must not get its WELCOME until the realm goroutine is released.
+func TestWelcomeOnlyOnceSessionIsVisible(t *testing.T) {
+	synctest.Test(t, func(t *testing.T) {
+		r := newTestRouter(t)
+		rlm := r.(*router).realms[testRealm]
+
+		release := make(chan struct{})
+		rlm.actionChan <- func() { <-release }
+
+		client, server := transport.LinkedPeers()
+		t.Cleanup(func() { client.Close() })
+		go func() {
+			client.Send() <- &wamp.Hello{Realm: testRealm, Details: clientRoles}
+		}()
+		attachErr := make(chan error, 1)
+		go func() { attachErr <- r.Attach(server) }()
+
+		synctest.Wait()
+		select {
+		case msg := <-client.Recv():
+			close(release)
+			require.FailNowf(t, "client got a message before it was visible",
+				"%s", msg.MessageType())
+		default:
+		}
+		close(release)
+
+		msg, err := wamp.RecvTimeout(client, time.Second)
+		require.NoError(t, err)
+		require.IsType(t, &wamp.Welcome{}, msg)
+
+		// Once the client has its WELCOME, kill_all closes it.
+		require.Equal(t, 1, rlm.killAllSessions("", "", 0))
+		msg, err = wamp.RecvTimeout(client, time.Second)
+		require.NoError(t, err)
+		require.IsType(t, &wamp.Goodbye{}, msg)
+		require.NoError(t, <-attachErr)
+	})
 }
