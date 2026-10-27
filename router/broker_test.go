@@ -1090,78 +1090,83 @@ func blockedSession() (*wamp.Session, *testPeer) {
 	return wamp.NewSession(peer, 0, nil, nil), peer
 }
 
-// requireOnlyHello checks that peer holds only the message blockedSession
-// queued to it.
-func requireOnlyHello(t *testing.T, peer *testPeer) {
+// requireAckAfterHello checks that peer, from blockedSession, receives the
+// message that blocked it, then one ack, and nothing else. It returns the
+// ack.
+func requireAckAfterHello(t *testing.T, peer *testPeer) wamp.Message {
 	t.Helper()
 	require.IsType(t, &wamp.Hello{}, <-peer.Recv())
+	ack := <-peer.Recv()
 	select {
 	case msg := <-peer.Recv():
-		require.FailNow(t, "blocked session must not receive anything", "got %T", msg)
+		require.FailNow(t, "blocked session must receive only the ack", "got %T", msg)
 	default:
 	}
+	return ack
 }
 
-// TestSubscribeUndeliverableAckCreatesNoSubscription checks that when the
-// SUBSCRIBED ack cannot be queued, the broker does not create the
-// subscription. A subscription the subscriber never learned about receives
-// EVENTs for an unknown subscription ID, which is a protocol violation that
-// makes some clients drop the connection.
-func TestSubscribeUndeliverableAckCreatesNoSubscription(t *testing.T) {
+// TestSubscribeBlockedAckDelivered checks that when the SUBSCRIBED ack cannot
+// be queued at once, the broker still creates the subscription, and the ack
+// reaches the subscriber once it reads, ahead of any EVENT for the
+// subscription. An EVENT for a subscription ID the subscriber has not learned
+// is a protocol violation that makes some clients drop the connection.
+func TestSubscribeBlockedAckDelivered(t *testing.T) {
 	broker := newTestBroker(t, nil)
 	testTopic := wamp.URI("nexus.test.topic")
 
 	blockedSess, blocked := blockedSession()
+	defer blockedSess.Close()
 	broker.subscribe(blockedSess, &wamp.Subscribe{Request: 1, Topic: testTopic})
-
-	// The broker handles actions in order, so once a later subscribe is answered,
-	// the first one has been handled.
-	sess := wamp.NewSession(newTestPeer(), 0, nil, nil)
-	broker.subscribe(sess, &wamp.Subscribe{Request: 2, Topic: testTopic})
-	subMsg, ok := (<-sess.Recv()).(*wamp.Subscribed)
 	waitBroker(broker)
-	require.True(t, ok, "expected SUBSCRIBED")
 
 	sub, ok := broker.topicSubscription[testTopic]
 	require.True(t, ok, "broker missing subscription for topic")
-	require.Equal(t, subMsg.Subscription, sub.id)
-	require.Equal(t, map[*wamp.Session]struct{}{sess: {}}, sub.subscribers,
-		"subscriber whose ack was dropped must not be subscribed")
+	require.Equal(t, map[*wamp.Session]struct{}{blockedSess: {}}, sub.subscribers)
 	_, ok = broker.sessionSubIDSet[blockedSess]
-	require.False(t, ok, "failed subscribe must not be tracked against the subscriber")
-	requireOnlyHello(t, blocked)
+	require.True(t, ok, "subscription not tracked against the subscriber")
+
+	// An EVENT published while the ack waits must not overtake it.
+	pubSess := wamp.NewSession(newTestPeer(), 0, nil, nil)
+	broker.publish(pubSess, &wamp.Publish{Request: 2, Topic: testTopic})
+	waitBroker(broker)
+
+	subMsg, ok := requireAckAfterHello(t, blocked).(*wamp.Subscribed)
+	require.True(t, ok, "expected SUBSCRIBED")
+	require.Equal(t, sub.id, subMsg.Subscription)
 }
 
-// TestSubscribeJoinUndeliverableAckNotAdded is the variant for joining an
-// existing subscription: a subscriber whose SUBSCRIBED ack cannot be queued
-// must not be added to it.
-func TestSubscribeJoinUndeliverableAckNotAdded(t *testing.T) {
+// TestSubscribeJoinBlockedAckDelivered is the variant for joining an existing
+// subscription: a subscriber whose SUBSCRIBED ack cannot be queued at once
+// joins it, and receives the ack ahead of any EVENT.
+func TestSubscribeJoinBlockedAckDelivered(t *testing.T) {
 	broker := newTestBroker(t, nil)
 	testTopic := wamp.URI("nexus.test.topic")
-	otherTopic := wamp.URI("nexus.test.other")
 
 	sess := wamp.NewSession(newTestPeer(), 0, nil, nil)
 	broker.subscribe(sess, &wamp.Subscribe{Request: 1, Topic: testTopic})
 	subMsg, ok := (<-sess.Recv()).(*wamp.Subscribed)
-	waitBroker(broker)
 	require.True(t, ok, "expected SUBSCRIBED")
 
 	blockedSess, blocked := blockedSession()
+	defer blockedSess.Close()
 	broker.subscribe(blockedSess, &wamp.Subscribe{Request: 2, Topic: testTopic})
-
-	// Wait until the blocked subscribe has been handled.
-	broker.subscribe(sess, &wamp.Subscribe{Request: 3, Topic: otherTopic})
-	_, ok = (<-sess.Recv()).(*wamp.Subscribed)
 	waitBroker(broker)
-	require.True(t, ok, "expected SUBSCRIBED")
 
 	sub, ok := broker.subscriptions[subMsg.Subscription]
 	require.True(t, ok, "existing subscription must remain")
-	require.Equal(t, map[*wamp.Session]struct{}{sess: {}}, sub.subscribers,
-		"subscriber whose ack was dropped must not join the subscription")
+	require.Equal(t, map[*wamp.Session]struct{}{sess: {}, blockedSess: {}}, sub.subscribers)
 	_, ok = broker.sessionSubIDSet[blockedSess]
-	require.False(t, ok, "failed join must not be tracked against the subscriber")
-	requireOnlyHello(t, blocked)
+	require.True(t, ok, "join not tracked against the subscriber")
+
+	// An EVENT published while the ack waits must not overtake it.
+	pubSess := wamp.NewSession(newTestPeer(), 0, nil, nil)
+	broker.publish(pubSess, &wamp.Publish{Request: 3, Topic: testTopic})
+	waitBroker(broker)
+	require.IsType(t, &wamp.Event{}, <-sess.Recv())
+
+	joinMsg, ok := requireAckAfterHello(t, blocked).(*wamp.Subscribed)
+	require.True(t, ok, "expected SUBSCRIBED")
+	require.Equal(t, subMsg.Subscription, joinMsg.Subscription)
 }
 
 // waitBroker waits until broker has handled every action queued before it, so

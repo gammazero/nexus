@@ -71,6 +71,11 @@ type invocation struct {
 	inProgress bool
 	options    wamp.Dict
 
+	// resultSent is set once the final RESULT for the call is sent. The invocation
+	// remains while the caller is still sending a progressive call, but the caller
+	// has finished the call, so nothing more is sent to it.
+	resultSent bool
+
 	// timer cancels the call when the dealer enforces the call's timeout and
 	// the callee does not answer in time. For a call with progressive
 	// results, each result moves timeoutAt forward by timeout, so that the
@@ -249,7 +254,7 @@ func (d *dealer) register(callee *wamp.Session, msg *wamp.Register) {
 		errMsg := fmt.Sprintf(
 			"register for invalid procedure URI %v (URI strict checking %v)",
 			msg.Procedure, d.strictURI)
-		d.trySend(callee, &wamp.Error{
+		callee.SendReply(&wamp.Error{
 			Type:      msg.MessageType(),
 			Request:   msg.Request,
 			Error:     wamp.ErrInvalidURI,
@@ -266,7 +271,7 @@ func (d *dealer) register(callee *wamp.Session, msg *wamp.Register) {
 	if wampURI && callee.ID != metaID {
 		errMsg := fmt.Sprintf("register for restricted procedure URI %v",
 			msg.Procedure)
-		d.trySend(callee, &wamp.Error{
+		callee.SendReply(&wamp.Error{
 			Type:      msg.MessageType(),
 			Request:   msg.Request,
 			Error:     wamp.ErrInvalidURI,
@@ -285,7 +290,7 @@ func (d *dealer) register(callee *wamp.Session, msg *wamp.Register) {
 		authrole, _ := wamp.AsString(callee.Details["authrole"])
 		callee.Unlock()
 		if authrole != "trusted" {
-			d.trySend(callee, &wamp.Error{
+			callee.SendReply(&wamp.Error{
 				Type:    msg.MessageType(),
 				Request: msg.Request,
 				Details: wamp.Dict{},
@@ -388,7 +393,7 @@ func (d *dealer) cancel(caller *wamp.Session, msg *wamp.Cancel) {
 	case "":
 		mode = wamp.CancelModeKillNoWait
 	default:
-		d.trySend(caller, &wamp.Error{
+		caller.SendReply(&wamp.Error{
 			Type:      msg.MessageType(),
 			Request:   msg.Request,
 			Error:     wamp.ErrInvalidArgument,
@@ -663,7 +668,7 @@ func (d *dealer) syncRegister(callee *wamp.Session, msg *wamp.Register, match, i
 		if reg.policy == "" || reg.policy == wamp.InvokeSingle {
 			d.log.Println("REGISTER for already registered procedure",
 				msg.Procedure, "from callee", callee)
-			d.trySend(callee, &wamp.Error{
+			callee.SendReply(&wamp.Error{
 				Type:    msg.MessageType(),
 				Request: msg.Request,
 				Details: wamp.Dict{},
@@ -678,7 +683,7 @@ func (d *dealer) syncRegister(callee *wamp.Session, msg *wamp.Register, match, i
 			d.log.Println("REGISTER for already registered procedure",
 				msg.Procedure, "with conflicting invocation policy (has",
 				reg.policy, "and requested", invokePolicy)
-			d.trySend(callee, &wamp.Error{
+			callee.SendReply(&wamp.Error{
 				Type:    msg.MessageType(),
 				Request: msg.Request,
 				Details: wamp.Dict{},
@@ -690,13 +695,9 @@ func (d *dealer) syncRegister(callee *wamp.Session, msg *wamp.Register, match, i
 		regID = reg.id
 	}
 
-	// Queue the REGISTERED ack before creating the registration. If the ack cannot
-	// be queued, then the callee never learns the registration ID, and INVOCATIONs
-	// for it would be a protocol violation, so create nothing.
-	if !d.trySend(callee, &wamp.Registered{Request: msg.Request, Registration: regID}) {
-		d.log.Println("Registration of", msg.Procedure, "not created")
-		return metaPubs
-	}
+	// Queue the REGISTERED ack before creating the registration, so that no
+	// INVOCATION for the registration reaches the callee ahead of it.
+	callee.SendReply(&wamp.Registered{Request: msg.Request, Registration: regID})
 
 	if reg == nil {
 		created := wamp.NowISO8601()
@@ -781,7 +782,7 @@ func (d *dealer) syncUnregister(callee *wamp.Session, msg *wamp.Unregister) []*w
 	delReg, err := d.syncDelCalleeReg(callee, msg.Registration)
 	if err != nil {
 		d.log.Println("Cannot unregister:", err)
-		d.trySend(callee, &wamp.Error{
+		callee.SendReply(&wamp.Error{
 			Type:    msg.MessageType(),
 			Request: msg.Request,
 			Details: wamp.Dict{},
@@ -790,7 +791,7 @@ func (d *dealer) syncUnregister(callee *wamp.Session, msg *wamp.Unregister) []*w
 		return metaPubs
 	}
 
-	d.trySend(callee, &wamp.Unregistered{Request: msg.Request})
+	callee.SendReply(&wamp.Unregistered{Request: msg.Request})
 
 	if d.metaPeer == nil {
 		return metaPubs
@@ -864,7 +865,7 @@ func (d *dealer) syncCall(caller *wamp.Session, msg *wamp.Call) {
 	reg, ok := d.syncMatchProcedure(msg.Procedure)
 	if !ok || len(reg.callees) == 0 {
 		// If no registered procedure, send error.
-		d.trySend(caller, &wamp.Error{
+		caller.SendReply(&wamp.Error{
 			Type:    msg.MessageType(),
 			Request: msg.Request,
 			Details: wamp.Dict{},
@@ -949,7 +950,7 @@ func (d *dealer) syncCall(caller *wamp.Session, msg *wamp.Call) {
 		if isInProgress &&
 			(!callee.HasFeature(wamp.RoleCallee, wamp.FeatureProgCallInvocations) ||
 				!callee.HasFeature(wamp.RoleCallee, wamp.FeatureCallCanceling)) {
-			d.trySend(caller, &wamp.Error{
+			caller.SendReply(&wamp.Error{
 				Type:    msg.MessageType(),
 				Request: msg.Request,
 				Details: wamp.Dict{},
@@ -977,7 +978,7 @@ func (d *dealer) syncCall(caller *wamp.Session, msg *wamp.Call) {
 
 			// Let's check if callee supports this feature.
 			if !callee.HasFeature(wamp.RoleCallee, wamp.FeaturePayloadPassthruMode) {
-				d.trySend(caller, &wamp.Error{
+				caller.SendReply(&wamp.Error{
 					Type:    msg.MessageType(),
 					Request: msg.Request,
 					Details: wamp.Dict{},
@@ -1006,7 +1007,7 @@ func (d *dealer) syncCall(caller *wamp.Session, msg *wamp.Call) {
 				// Dealer MAY deny a Caller's request to disclose its identity.
 				if !d.allowDisclose {
 					// Do not continue a call when discloseMe was disallowed.
-					d.trySend(caller, &wamp.Error{
+					caller.SendReply(&wamp.Error{
 						Type:    msg.MessageType(),
 						Request: msg.Request,
 						Details: wamp.Dict{},
@@ -1112,9 +1113,7 @@ func (d *dealer) syncCall(caller *wamp.Session, msg *wamp.Call) {
 		Arguments:    args,
 		ArgumentsKw:  argsKw,
 	}
-	select {
-	case callee.Send() <- invMsg:
-	default:
+	if !callee.TrySend(invMsg) {
 		d.syncError(callee, &wamp.Error{
 			Type:      wamp.INVOCATION,
 			Request:   invocationID,
@@ -1191,6 +1190,15 @@ func (d *dealer) syncCancel(caller *wamp.Session, msg *wamp.Cancel, mode string,
 		d.log.Print("CRITICAL: missing caller for pending invocation")
 		return
 	}
+	// The caller finished the call when it got the final RESULT, and the callee
+	// has answered, so remove the call without sending either of them anything.
+	if invk.resultSent {
+		invk.stopTimer()
+		delete(d.calls, reqID)
+		delete(d.invocationByCall, reqID)
+		delete(d.invocations, invkReqID)
+		return
+	}
 	// For those who repeatedly press elevator buttons.
 	if invk.canceled {
 		return
@@ -1213,8 +1221,7 @@ func (d *dealer) syncCancel(caller *wamp.Session, msg *wamp.Cancel, mode string,
 				Request: invkReqID.request,
 				Options: wamp.Dict{wamp.OptReason: reason, wamp.OptMode: mode},
 			}
-			select {
-			case invk.callee.Send() <- intrMsg:
+			if invk.callee.TrySend(intrMsg) {
 				d.log.Println("Dealer sent INTERRUPT to cancel invocation", invkReqID, "for call", msg.Request, "mode:", mode)
 				// If mode is "kill" then let error from callee trigger the
 				// response to the caller. This is how the caller waits for the
@@ -1222,7 +1229,6 @@ func (d *dealer) syncCancel(caller *wamp.Session, msg *wamp.Cancel, mode string,
 				if mode == wamp.CancelModeKill {
 					return
 				}
-			default:
 			}
 		}
 	}
@@ -1248,7 +1254,7 @@ func (d *dealer) syncCancel(caller *wamp.Session, msg *wamp.Cancel, mode string,
 	}
 
 	// Send error to the caller.
-	d.trySend(caller, errMsg)
+	caller.SendReply(errMsg)
 }
 
 func (d *dealer) syncYield(callee *wamp.Session, msg *wamp.Yield, progress, canRetry bool) bool {
@@ -1273,11 +1279,9 @@ func (d *dealer) syncYield(callee *wamp.Session, msg *wamp.Yield, progress, canR
 				Request: msg.Request,
 				Options: wamp.Dict{wamp.OptMode: wamp.CancelModeKillNoWait},
 			}
-			select {
-			case callee.Send() <- intrMsg:
+			if callee.TrySend(intrMsg) {
 				d.log.Println("Dealer sent INTERRUPT to cancel progressive",
 					"results for request", msg.Request, "to callee", callee)
-			default:
 			}
 		} else {
 			// WAMP does not allow sending INTERRUPT in response to normal or
@@ -1300,7 +1304,6 @@ func (d *dealer) syncYield(callee *wamp.Session, msg *wamp.Yield, progress, canR
 
 	details := wamp.Dict{}
 
-	var keepInvocation bool
 	if progress {
 		// If this is a progressive response, then set progress=true.
 		details[wamp.OptProgress] = true
@@ -1308,9 +1311,9 @@ func (d *dealer) syncYield(callee *wamp.Session, msg *wamp.Yield, progress, canR
 		// Stop any call timeout timer.
 		invk.stopTimer()
 
-		// Clean up the invocation, unless need to retry.
+		// Clean up the invocation, unless invocation is still in progress.
 		defer func() {
-			if keepInvocation || invk.inProgress {
+			if invk.inProgress {
 				return
 			}
 			delete(d.invocations, invkReqID)
@@ -1329,6 +1332,16 @@ func (d *dealer) syncYield(callee *wamp.Session, msg *wamp.Yield, progress, canR
 		return false
 	}
 
+	// Send the caller only one final RESULT for a call. Each final RESULT is a
+	// reply, which is never dropped, so a callee that kept sending YIELDs for an
+	// invocation that remains while the caller is still sending a progressive call
+	// would otherwise grow the caller's backlog without limit.
+	if invk.resultSent {
+		d.log.Println("Ignoring YIELD after final result for request",
+			msg.Request, "from callee", callee)
+		return false
+	}
+
 	// Check and handle Payload PassThru Mode
 	// @see https://wamp-proto.org/wamp_latest_ietf.html#name-payload-passthru-mode
 	if pptScheme, _ := msg.Options[wamp.OptPPTScheme].(string); pptScheme != "" {
@@ -1336,7 +1349,7 @@ func (d *dealer) syncYield(callee *wamp.Session, msg *wamp.Yield, progress, canR
 		// Let's check: was ppt feature announced by callee?
 		if !callee.HasFeature(wamp.RoleCallee, wamp.FeaturePayloadPassthruMode) {
 			// Notify caller that CALL was erred.
-			d.trySend(caller, &wamp.Error{
+			caller.SendReply(&wamp.Error{
 				Type:    msg.MessageType(),
 				Request: msg.Request,
 				Details: wamp.Dict{
@@ -1352,9 +1365,10 @@ func (d *dealer) syncYield(callee *wamp.Session, msg *wamp.Yield, progress, canR
 			return false
 		}
 
-		// Check if caller supports this feature.
+		// Check if caller supports this feature. The ERROR answers a YIELD, so it is
+		// sent with TrySend. See isRequest.
 		if !caller.HasFeature(wamp.RoleCaller, wamp.FeaturePayloadPassthruMode) {
-			d.trySend(callee, &wamp.Error{
+			callee.TrySend(&wamp.Error{
 				Type:    msg.MessageType(),
 				Request: msg.Request,
 				Details: wamp.Dict{
@@ -1378,11 +1392,6 @@ func (d *dealer) syncYield(callee *wamp.Session, msg *wamp.Yield, progress, canR
 		}
 	}
 
-	// Send RESULT to the caller. If the caller is blocked, and canRetry is
-	// set, then report that, so that the YIELD is queued and sent again later.
-	// The caller may be blocked when the callee is generating progressive
-	// responses faster than the caller can handle them.
-
 	// Without this copy, the RESULT aliases the callee's incoming Arguments and
 	// ArgumentsKw directly. Nothing writes to those fields after this point today,
 	// but if that changes, a concurrent write while the caller's transport goroutine
@@ -1404,17 +1413,30 @@ func (d *dealer) syncYield(callee *wamp.Session, msg *wamp.Yield, progress, canR
 		Arguments:   args,
 		ArgumentsKw: argsKw,
 	}
-	select {
-	case caller.Send() <- res:
-	default:
-		if canRetry {
-			keepInvocation = true
-			return true
-		}
-		d.log.Printf("!!! Dropped %s to caller %s: blocked", res.MessageType(), caller)
-		d.syncCancel(caller, &wamp.Cancel{Request: callID.request},
-			wamp.CancelModeKillNoWait, wamp.ErrCanceled, nil)
+
+	// A final RESULT completes the call, so there is one per call and it is
+	// never dropped, even if the caller is blocked.
+	if !progress {
+		invk.resultSent = true
+		caller.SendReply(res)
+		return false
 	}
+
+	// Send progressive RESULT to the caller. If the caller is blocked, and
+	// canRetry is set, then report that, so that the YIELD is queued and sent
+	// again later. The caller may be blocked when the callee is generating
+	// progressive responses faster than the caller can handle them. If the
+	// caller stays blocked, cancel the call so that the caller gets an ERROR
+	// instead.
+	if caller.TrySend(res) {
+		return false
+	}
+	if canRetry {
+		return true
+	}
+	d.log.Printf("!!! Dropped %s to caller %s: blocked", res.MessageType(), caller)
+	d.syncCancel(caller, &wamp.Cancel{Request: callID.request},
+		wamp.CancelModeKillNoWait, wamp.ErrCanceled, nil)
 	return false
 }
 
@@ -1451,6 +1473,11 @@ func (d *dealer) syncError(callee *wamp.Session, msg *wamp.Error) {
 	}
 	delete(d.calls, callID)
 
+	// The caller has finished the call if it got the final RESULT.
+	if invk.resultSent {
+		return
+	}
+
 	// Without this copy, the forwarded ERROR aliases the callee's incoming Details,
 	// Arguments, and ArgumentsKw directly. Nothing writes to those fields after
 	// this point today, but if that changes, a concurrent write while the caller's
@@ -1474,7 +1501,7 @@ func (d *dealer) syncError(callee *wamp.Session, msg *wamp.Error) {
 	}
 
 	// Send error to the caller.
-	d.trySend(caller, &wamp.Error{
+	caller.SendReply(&wamp.Error{
 		Type:        wamp.CALL,
 		Request:     callID.request,
 		Error:       msg.Error,
@@ -1814,18 +1841,6 @@ func (d *dealer) regCountCallees(msg *wamp.Invocation) wamp.Message {
 	return &wamp.Yield{
 		Request:   msg.Request,
 		Arguments: wamp.List{count},
-	}
-}
-
-// trySend queues msg to sess without blocking, and reports whether it was
-// queued. If the outbound queue of sess is full, msg is dropped.
-func (d *dealer) trySend(sess *wamp.Session, msg wamp.Message) bool {
-	select {
-	case sess.Send() <- msg:
-		return true
-	default:
-		d.log.Printf("!!! Dropped %s to session %s: blocked", msg.MessageType(), sess)
-		return false
 	}
 }
 

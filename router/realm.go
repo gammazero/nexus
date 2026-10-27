@@ -7,6 +7,7 @@ import (
 	"slices"
 	"strconv"
 	"sync"
+	"time"
 
 	"github.com/gammazero/nexus/v3/router/auth"
 	"github.com/gammazero/nexus/v3/stdlog"
@@ -16,6 +17,11 @@ import (
 
 // Special ID for meta session.
 const metaID = wamp.ID(1)
+
+// replyRoomTimeout is how long a session's request waits for the session to
+// read enough of its pending replies to make room for another. A session that
+// reads nothing for this long is closed.
+const replyRoomTimeout = time.Minute
 
 const (
 	destroyedScope = "destroyed"
@@ -296,6 +302,7 @@ func (r *realm) createMetaSession() {
 		if err != nil {
 			r.log.Println("meta session handler should never return error, got:", err)
 		}
+		r.metaSess.StopSending()
 		sendLast(r.metaSess, last)
 	}()
 	if r.debug {
@@ -443,16 +450,32 @@ func (r *realm) handleSession(sess *wamp.Session, welcome wamp.Message) error {
 			r.log.Println("Aborting session", sess, ":", err)
 		}
 		r.onLeave(sess, shutdown, killAll)
-		// Send the GOODBYE or ABORT only once the session is removed from the
-		// realm, so that the router sends nothing to the session after it.
-		// Removing it from the dealer publishes meta events, such as
-		// wamp.registration.on_delete, that the session may be subscribed to.
+		// Send the GOODBYE or ABORT only once the session is removed from the realm,
+		// so that the router sends nothing to the session after it. Removing it from
+		// the dealer publishes meta events, such as wamp.registration.on_delete, that
+		// the session may be subscribed to. Stop sending the session's reply backlog
+		// first, so that no reply follows the GOODBYE or ABORT.
+		sess.StopSending()
 		sendLast(sess, last)
 		sess.Close()
 		r.waitHandlers.Done()
 	}()
 
 	return nil
+}
+
+// isRequest reports whether msg is a request, which the router answers with a
+// reply that it never drops. The other messages from a client are YIELD and
+// ERROR, which answer the router's INVOCATION, and GOODBYE. The router does
+// not wait for room for a reply before handling them, so any error it returns
+// for them must be sent with TrySend, or a client that keeps sending them
+// without reading would grow its backlog without limit.
+func isRequest(msg wamp.Message) bool {
+	switch msg.(type) {
+	case *wamp.Yield, *wamp.Error, *wamp.Goodbye:
+		return false
+	}
+	return true
 }
 
 // clientAllocatedRequestID returns the session scope request ID of a message
@@ -537,6 +560,13 @@ func (r *realm) handleInboundMessages(sess *wamp.Session) (wamp.Message, bool, b
 				msg.MessageType(), msg)
 		}
 
+		// Wait for room for the reply before handling a request, so that the
+		// session's backlog of replies stays bounded. Replies are never
+		// dropped, and messages that are not requests still flow.
+		if isRequest(msg) && sess != r.metaSess && !r.waitReplyRoom(sess, recvDone) {
+			return nil, false, false, nil
+		}
+
 		// Check the request ID before authorization, so that a request that is not
 		// authorized still uses up its ID. Returning an error causes the caller to
 		// send an ABORT with wamp.error.protocol_violation and close the session.
@@ -600,6 +630,49 @@ func (r *realm) handleInboundMessages(sess *wamp.Session) (wamp.Message, bool, b
 		default:
 			// Received unrecognized message type.
 			return nil, false, false, fmt.Errorf("unexpected %v", msg.MessageType())
+		}
+	}
+}
+
+// waitReplyRoom waits until the session has room for another reply. It
+// returns true when there is room, or when the session is ending, since any
+// reply is then discarded. It returns false if the session reads none of its
+// replies for replyRoomTimeout, or if its peer can no longer exchange
+// messages, and the session must be closed. A session that keeps reading,
+// however slowly, is not closed.
+//
+// Waiting stops reading the session's messages, which pushes back on the
+// client instead of letting it queue unlimited replies in the router. Waiting
+// is bounded because a client may stop reading while it waits to send, and
+// would otherwise deadlock with the router.
+func (r *realm) waitReplyRoom(sess *wamp.Session, recvDone <-chan struct{}) bool {
+	room := sess.ReplyRoom()
+	if room == nil {
+		return true
+	}
+	sent := sess.BacklogSent()
+	timer := time.NewTimer(replyRoomTimeout)
+	defer timer.Stop()
+	for {
+		select {
+		case <-room:
+			return true
+		case <-recvDone:
+			return true
+		case <-sess.PeerDone():
+			// The client disconnected. The router is not reading the session, so it would
+			// not see that the session is lost until the timeout.
+			r.log.Println("Lost", sess, "while waiting for it to read replies")
+			return false
+		case <-timer.C:
+			if n := sess.BacklogSent(); n != sent {
+				// The session read some replies, so keep waiting.
+				sent = n
+				timer.Reset(replyRoomTimeout)
+				continue
+			}
+			r.log.Printf("!!! Closing session %s: not reading replies", sess)
+			return false
 		}
 	}
 }
@@ -677,10 +750,10 @@ func (r *realm) authzMessage(sess *wamp.Session, msg wamp.Message) bool {
 			r.log.Println("Client", sess, msg.MessageType(), "not authorized")
 		}
 		if !skipResponse {
-			select {
-			case sess.Send() <- errRsp:
-			default:
-				r.log.Println("!!! client blocked, could not send authz error")
+			if isRequest(msg) {
+				sess.SendReply(errRsp)
+			} else {
+				sess.TrySend(errRsp)
 			}
 		}
 		return false

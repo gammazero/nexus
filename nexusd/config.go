@@ -28,7 +28,10 @@ type Config struct {
 		// Allow origins that match these glob patterns when an origin header
 		// is present in the websocket upgrade request.
 		AllowOrigins []string `json:"allow_origins"`
-		// Limit on number of pending messages to send to each client.
+		// Limit on number of pending messages to send to each client. 0 uses the
+		// default of 64. Replies to a client's own requests are never dropped when the
+		// queue is full, but EVENTs are. See OutQueueSize in router.WebsocketServer
+		// for details.
 		OutQueueSize int `json:"out_queue_size"`
 	}
 
@@ -45,7 +48,10 @@ type Config struct {
 		// Files containing a certificate and matching private key.
 		CertFile string `json:"cert_file"`
 		KeyFile  string `json:"key_file"`
-		// Limit on number of pending messages to send to each client.
+		// Limit on number of pending messages to send to each client. 0 uses the
+		// default of 64. Replies to a client's own requests are never dropped when the
+		// queue is full, but EVENTs are. See OutQueueSize in router.WebsocketServer
+		// for details.
 		OutQueueSize int `json:"out_queue_size"`
 	}
 

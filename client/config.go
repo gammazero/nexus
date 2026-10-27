@@ -55,10 +55,18 @@ type Config struct {
 	// use TLS.
 	TlsCfg *tls.Config
 
-	// For local clients only. This configures the router-to-client queue size
-	// and is the maximum number of messages that are enqueued for the client
-	// to read. If the client does not read messages, then additional messages
-	// from the router are dropped. A value of zero specifies the default.
+	// For local clients only. This configures the router-to-client queue size and
+	// is the maximum number of messages that are enqueued for the client to read.
+	// A value of zero specifies the default.
+	//
+	// When the queue is full, the router does not drop replies to the client's own
+	// requests. They wait until the client reads them, and the router holds the
+	// client's next request until there is room. A client that reads nothing for a
+	// minute while the router waits is disconnected. EVENTs are dropped when the
+	// queue is full. A call whose INVOCATION or progressive RESULT cannot be
+	// queued fails, and its caller gets an ERROR. Size the queue for bursts of
+	// EVENTs, INVOCATIONs and progressive RESULTs, not for the number of requests
+	// a client has in flight.
 	LocalQueueSize int
 
 	// Client receive limit for use with RawSocket transport. If recvLimit is >

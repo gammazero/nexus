@@ -1215,56 +1215,42 @@ func TestWrongYielder(t *testing.T) {
 	})
 }
 
-// TestRegisterUndeliverableAckCreatesNoRegistration pins the REGISTERED-ack
-// integrity invariant: when the ack cannot even be queued on the callee's
-// outbound channel, the dealer must not create the registration. A
-// registration the callee never learned about receives INVOCATIONs for an
-// unknown registration ID, which is a protocol violation that makes some
-// clients (autobahn-js) drop the whole connection, re-triggering the register
-// burst that overflowed the queue in the first place.
-func TestRegisterUndeliverableAckCreatesNoRegistration(t *testing.T) {
+// TestRegisterBlockedAckDelivered checks that when the REGISTERED ack cannot
+// be queued at once, the dealer still creates the registration, and the ack
+// reaches the callee once it reads, ahead of any INVOCATION for the
+// registration. An INVOCATION for a registration ID the callee has not
+// learned is a protocol violation that makes some clients (autobahn-js) drop
+// the connection.
+func TestRegisterBlockedAckDelivered(t *testing.T) {
 	dealer, metaClient := newTestDealer(t)
 
-	// A callee whose single-slot outbound queue is already occupied: the
-	// REGISTERED ack cannot be queued.
-	blocked := newTestPeer()
-	blocked.Send() <- &wamp.Hello{}
-	blockedSess := wamp.NewSession(blocked, 0, nil, nil)
+	blockedSess, blocked := blockedSession()
+	defer blockedSess.Close()
 	dealer.register(blockedSess, &wamp.Register{Request: 1, Procedure: testProcedure})
+	checkMetaReg(t, metaClient, blockedSess.ID) // on_create
+	checkMetaReg(t, metaClient, blockedSess.ID) // on_register
 
-	// Dealer-side state must not exist.
-	_, ok := dealer.procRegMap[testProcedure]
-	require.False(t, ok, "no registration may exist when the REGISTERED ack was dropped")
+	reg, ok := dealer.procRegMap[testProcedure]
+	require.True(t, ok, "registration not created")
 	_, ok = dealer.calleeRegIDSet[blockedSess]
-	require.False(t, ok, "failed register must not be tracked against the callee")
+	require.True(t, ok, "registration not tracked against the callee")
 
-	// The callee's queue still holds only the pre-filled message.
-	require.IsType(t, &wamp.Hello{}, <-blocked.Recv())
-	select {
-	case msg := <-blocked.Recv():
-		require.FailNow(t, "blocked callee must not receive anything", "got %T", msg)
-	default:
-	}
+	// A CALL made while the ack waits must not send an INVOCATION ahead of it.
+	// The callee cannot take the INVOCATION, so the caller gets an ERROR.
+	caller := newTestPeer()
+	callerSess := wamp.NewSession(caller, 0, nil, nil)
+	dealer.call(callerSess, &wamp.Call{Request: 2, Procedure: testProcedure})
+	require.IsType(t, &wamp.Error{}, <-caller.Recv())
 
-	// The procedure remains registrable by a healthy callee and no ghost
-	// single-policy registration blocks it. The first meta events fired belong to
-	// that callee (a failed register fires none; checkMetaReg asserts the session
-	// ID).
-	callee := newTestPeer()
-	sess := wamp.NewSession(callee, 0, nil, nil)
-	dealer.register(sess, &wamp.Register{Request: 2, Procedure: testProcedure})
-	_, ok = (<-callee.Recv()).(*wamp.Registered)
-	require.True(t, ok, "procedure must be registrable after the failed register")
-	checkMetaReg(t, metaClient, sess.ID) // on_create
-	checkMetaReg(t, metaClient, sess.ID) // on_register
+	regMsg, ok := requireAckAfterHello(t, blocked).(*wamp.Registered)
+	require.True(t, ok, "expected REGISTERED")
+	require.Equal(t, reg.id, regMsg.Registration)
 }
 
-// TestRegisterSharedJoinUndeliverableAckNotAdded is the shared-registration
-// variant of the ack-integrity invariant: a callee joining an existing shared
-// registration whose REGISTERED ack cannot be queued must not be added as a
-// callee (it would receive round-robin INVOCATIONs for a registration ID it
-// never learned).
-func TestRegisterSharedJoinUndeliverableAckNotAdded(t *testing.T) {
+// TestRegisterSharedJoinBlockedAckDelivered is the shared-registration
+// variant: a callee joining an existing shared registration whose REGISTERED
+// ack cannot be queued at once is added as a callee, and receives the ack.
+func TestRegisterSharedJoinBlockedAckDelivered(t *testing.T) {
 	dealer, metaClient := newTestDealer(t)
 
 	calleeRoles := wamp.Dict{
@@ -1288,18 +1274,23 @@ func TestRegisterSharedJoinUndeliverableAckNotAdded(t *testing.T) {
 	blocked := newTestPeer()
 	blocked.Send() <- &wamp.Hello{}
 	s2 := wamp.NewSession(blocked, 0, nil, calleeRoles)
+	defer s2.Close()
 	dealer.register(s2, &wamp.Register{
 		Request:   2,
 		Procedure: testProcedure,
 		Options:   wamp.SetOption(nil, wamp.OptInvoke, wamp.InvokeRoundRobin),
 	})
+	checkMetaReg(t, metaClient, s2.ID) // on_register
 
 	reg, ok := dealer.registrations[regID]
 	require.True(t, ok, "existing shared registration must remain")
-	require.Equal(t, 1, len(reg.callees), "callee with dropped ack must not join the registration")
-	require.Same(t, s1, reg.callees[0])
+	require.Equal(t, []*wamp.Session{s1, s2}, reg.callees)
 	_, ok = dealer.calleeRegIDSet[s2]
-	require.False(t, ok, "failed join must not be tracked against the callee")
+	require.True(t, ok, "join not tracked against the callee")
+
+	regMsg, ok := requireAckAfterHello(t, blocked).(*wamp.Registered)
+	require.True(t, ok, "expected REGISTERED")
+	require.Equal(t, regID, regMsg.Registration)
 }
 
 // setupBlockedCall registers testProcedure and calls it from a caller whose
@@ -1450,6 +1441,9 @@ func TestDealerYieldDeadlineCancels(t *testing.T) {
 		d.register(callee, &wamp.Register{Request: 1, Procedure: testProcedure})
 		<-callee.Recv()
 		caller := wamp.NewSession(newTestPeer(), 0, nil, nil)
+		// Closing the caller stops sending the cancel ERROR, which waits for
+		// the caller to read.
+		defer caller.Close()
 		d.call(caller, &wamp.Call{Request: 100, Procedure: testProcedure})
 		inv := (<-callee.Recv()).(*wamp.Invocation)
 
@@ -1547,5 +1541,48 @@ func TestDealerCloseWhileCallTimesOut(t *testing.T) {
 		time.Sleep(time.Duration(i%4) * 500 * time.Microsecond)
 		d.close()
 		rtr.Close()
+	}
+}
+
+// TestYieldErrorsDoNotGrowBacklog checks that the ERRORs the dealer returns
+// for a callee's YIELDs do not wait in the callee's reply backlog. The router
+// does not wait for room before handling a YIELD, so a callee that keeps
+// sending YIELDs that each get an ERROR, without reading, would otherwise grow
+// its backlog without limit.
+func TestYieldErrorsDoNotGrowBacklog(t *testing.T) {
+	d, _ := newTestDealer(t)
+	pptCallee := wamp.Dict{"roles": wamp.Dict{"callee": wamp.Dict{"features": wamp.Dict{
+		wamp.FeaturePayloadPassthruMode: true,
+	}}}}
+	callee := wamp.NewSession(newTestPeer(), 0, nil, pptCallee)
+	defer callee.Close()
+	d.register(callee, &wamp.Register{Request: 1, Procedure: testProcedure})
+	require.IsType(t, &wamp.Registered{}, <-callee.Recv())
+
+	// The caller does not support payload passthru, so each YIELD that uses it
+	// gets an ERROR.
+	caller := wamp.NewSession(newTestPeer(), 0, nil, nil)
+	d.call(caller, &wamp.Call{Request: 100, Procedure: testProcedure})
+	inv, ok := (<-callee.Recv()).(*wamp.Invocation)
+	require.True(t, ok, "expected INVOCATION")
+
+	// Fill the callee's queue, and send progressive YIELDs that it does not read
+	// the ERRORs for.
+	callee.Send() <- &wamp.Hello{}
+	for i := 1; i <= 10; i++ {
+		yield := progressYield(inv, i)
+		yield.Options[wamp.OptPPTScheme] = "x_test"
+		d.yield(callee, yield)
+	}
+	done := make(chan struct{})
+	d.actionChan <- func() { close(done) }
+	<-done
+
+	require.Nil(t, callee.ReplyRoom(), "ERRORs for YIELDs must not wait in the backlog")
+	require.IsType(t, &wamp.Hello{}, <-callee.Recv())
+	select {
+	case msg := <-callee.Recv():
+		require.FailNow(t, "ERRORs for YIELDs must be dropped when the queue is full", "got %T", msg)
+	default:
 	}
 }

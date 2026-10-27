@@ -33,18 +33,30 @@ func LinkedPeersQSize(queueSize int) (wamp.Peer, wamp.Peer) {
 	// unbuffered.
 	cToR := make(chan wamp.Message)
 
+	// Closing either peer means the two can no longer exchange messages.
+	done := &linkDone{ch: make(chan struct{})}
+
 	// router reads from and writes to client
-	r := &localPeer{rd: cToR, wr: rToC}
+	r := &localPeer{rd: cToR, wr: rToC, done: done}
 	// client reads from and writes to router
-	c := &localPeer{rd: rToC, wr: cToR}
+	c := &localPeer{rd: rToC, wr: cToR, done: done}
 
 	return c, r
 }
 
+// linkDone is closed when either of two linked peers is closed.
+type linkDone struct {
+	ch   chan struct{}
+	once sync.Once
+}
+
+func (d *linkDone) close() { d.once.Do(func() { close(d.ch) }) }
+
 // localPeer implements Peer
 type localPeer struct {
-	rd <-chan wamp.Message
-	wr chan<- wamp.Message
+	rd   <-chan wamp.Message
+	wr   chan<- wamp.Message
+	done *linkDone
 
 	closeOnce sync.Once
 }
@@ -58,8 +70,15 @@ func (p *localPeer) Recv() <-chan wamp.Message { return p.rd }
 // Send returns the peer's outbound message channel.
 func (p *localPeer) Send() chan<- wamp.Message { return p.wr }
 
+// Done returns a channel that is closed when this peer or the peer linked to
+// it is closed, after which the two cannot exchange messages.
+func (p *localPeer) Done() <-chan struct{} { return p.done.ch }
+
 // Close closes the outgoing channel, waking any readers waiting on data from
 // this peer. Calling Close more than once, including concurrently, is safe.
 func (p *localPeer) Close() {
-	p.closeOnce.Do(func() { close(p.wr) })
+	p.closeOnce.Do(func() {
+		close(p.wr)
+		p.done.close()
+	})
 }

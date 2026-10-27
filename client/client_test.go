@@ -1503,20 +1503,13 @@ const strictConcurrentRequests = 100
 // strictRequestIDsClients returns two clients connected to a realm with
 // StrictRequestIDs enabled, where a request ID out of sequence aborts the
 // session.
-//
-// The router drops a message to a local client whose queue is full, so each
-// client's queue holds a reply to every concurrent request. With the default
-// queue of 64, a client that falls behind loses a reply and the request times
-// out.
 func strictRequestIDsClients(t *testing.T) (*client.Client, *client.Client) {
 	r := getTestRouter(t, &router.RealmConfig{
 		URI:              wamp.URI(testRealm),
 		AnonymousAuth:    true,
 		StrictRequestIDs: true,
 	})
-	queueSize := func(c *client.Config) { c.LocalQueueSize = strictConcurrentRequests }
-	return newTestClientWithConfig(t, r, newTestClientConfig(testRealm, queueSize)),
-		newTestClientWithConfig(t, r, newTestClientConfig(testRealm, queueSize))
+	return newTestClient(t, r), newTestClient(t, r)
 }
 
 // TestStrictRequestIDsConcurrentRequests verifies that requests made
@@ -1585,4 +1578,118 @@ func TestStrictRequestIDsProgressiveCall(t *testing.T) {
 
 	// The session must still be usable.
 	require.NoError(t, callee.Unregister(procName))
+}
+
+// TestNoDroppedReplies checks that the router does not drop replies to a
+// client's own requests when the client reads slowly and has more replies
+// outstanding than its outbound queue holds.
+func TestNoDroppedReplies(t *testing.T) {
+	synctest.Test(t, func(t *testing.T) {
+		// The replies fill the client's queue and an equal backlog in the
+		// router, which is as many as the router queues before it stops
+		// reading the client's requests. Any more, and the client blocks
+		// sending a request while holding a mutex that the other requests wait
+		// on, which synctest.Wait does not treat as durably blocked.
+		const (
+			queueSize = 8
+			requests  = 2 * queueSize
+		)
+		r := getTestRouter(t, newTestRealmConfig(testRealm))
+		slow := newTestClientWithConfig(t, r, newTestClientConfig(testRealm,
+			func(cfg *client.Config) {
+				cfg.LocalQueueSize = queueSize
+				cfg.ResponseTimeout = 5 * time.Second
+			}))
+		pub := newTestClient(t, r)
+		const procName = "test.noop"
+		err := pub.Register(procName, func(context.Context, *wamp.Invocation) client.InvokeResult {
+			return client.InvokeResult{}
+		}, nil)
+		require.NoError(t, err)
+
+		// Block the slow client's message loop in an event handler, so that
+		// it stops reading from the router.
+		release := make(chan struct{})
+		blocked := make(chan struct{})
+		err = slow.Subscribe(testTopic, func(*wamp.Event) {
+			close(blocked)
+			<-release
+		}, nil)
+		require.NoError(t, err)
+		require.NoError(t, pub.Publish(testTopic, nil, nil, nil))
+		<-blocked
+
+		// Send more requests than the client's queue holds. The replies
+		// queue up in the router.
+		errs := make(chan error, requests)
+		for i := range requests {
+			go func() {
+				if i%2 == 0 {
+					errs <- slow.Publish(testTopic2,
+						wamp.Dict{wamp.OptAcknowledge: true}, nil, nil)
+					return
+				}
+				_, err := slow.Call(context.Background(), procName, nil,
+					nil, nil, nil)
+				errs <- err
+			}()
+		}
+		synctest.Wait()
+
+		// Resume reading. Every request must get its reply.
+		close(release)
+		for range requests {
+			require.NoError(t, <-errs)
+		}
+	})
+}
+
+// TestRouterClosesStuckClient checks that the router closes a session that
+// stops reading replies, instead of queuing replies for it without limit.
+func TestRouterClosesStuckClient(t *testing.T) {
+	synctest.Test(t, func(t *testing.T) {
+		const queueSize = 8
+		r := getTestRouter(t, newTestRealmConfig(testRealm))
+		slow := newTestClientWithConfig(t, r, newTestClientConfig(testRealm,
+			func(cfg *client.Config) {
+				cfg.LocalQueueSize = queueSize
+				cfg.ResponseTimeout = 5 * time.Second
+			}))
+		pub := newTestClient(t, r)
+
+		release := make(chan struct{})
+		blocked := make(chan struct{})
+		err := slow.Subscribe(testTopic, func(*wamp.Event) {
+			close(blocked)
+			<-release
+		}, nil)
+		require.NoError(t, err)
+		require.NoError(t, pub.Publish(testTopic, nil, nil, nil))
+		<-blocked
+
+		// Fill the queue and the router's reply backlog, and send one more
+		// request, which the router holds until there is room.
+		const requests = 2*queueSize + 1
+		errs := make(chan error, requests)
+		for range requests {
+			go func() {
+				errs <- slow.Publish(testTopic2,
+					wamp.Dict{wamp.OptAcknowledge: true}, nil, nil)
+			}()
+		}
+		synctest.Wait()
+		select {
+		case <-slow.Done():
+			t.Fatal("client closed too soon")
+		default:
+		}
+
+		// The router gives up on the client after a minute.
+		time.Sleep(time.Minute + time.Second)
+		close(release)
+		<-slow.Done()
+		for range requests {
+			<-errs
+		}
+	})
 }

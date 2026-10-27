@@ -193,7 +193,7 @@ func (b *broker) publish(pub *wamp.Session, msg *wamp.Publish) {
 			"publish with invalid topic URI %v (URI strict checking %v)",
 			msg.Topic, b.strictURI)
 
-		b.trySend(pub, &wamp.Error{
+		pub.SendReply(&wamp.Error{
 			Type:      msg.MessageType(),
 			Request:   msg.Request,
 			Error:     wamp.ErrInvalidURI,
@@ -248,7 +248,7 @@ func (b *broker) publish(pub *wamp.Session, msg *wamp.Publish) {
 		// Broker MAY deny a publisher's request to disclose its identity.
 		if !b.allowDisclose {
 			if pubAck {
-				b.trySend(pub, &wamp.Error{
+				pub.SendReply(&wamp.Error{
 					Type:    msg.MessageType(),
 					Request: msg.Request,
 					Details: wamp.Dict{},
@@ -272,7 +272,7 @@ func (b *broker) publish(pub *wamp.Session, msg *wamp.Publish) {
 
 	// Send PUBLISHED message if acknowledge is present and true.
 	if pubAck {
-		b.trySend(pub, &wamp.Published{Request: msg.Request, Publication: pubID})
+		pub.SendReply(&wamp.Published{Request: msg.Request, Publication: pubID})
 	}
 }
 
@@ -299,7 +299,7 @@ func (b *broker) subscribe(sub *wamp.Session, msg *wamp.Subscribe) {
 		errMsg := fmt.Sprintf(
 			"subscribe for invalid topic URI %v (URI strict checking %v)",
 			msg.Topic, b.strictURI)
-		b.trySend(sub, &wamp.Error{
+		sub.SendReply(&wamp.Error{
 			Type:      msg.MessageType(),
 			Request:   msg.Request,
 			Error:     wamp.ErrInvalidURI,
@@ -468,7 +468,7 @@ func (b *broker) syncSubscribe(subscriber *wamp.Session, msg *wamp.Subscribe, ma
 		// topic.
 		if _, already := sub.subscribers[subscriber]; already {
 			// Already subscribed; send existing subscription ID.
-			b.trySend(subscriber, &wamp.Subscribed{
+			subscriber.SendReply(&wamp.Subscribed{
 				Request:      msg.Request,
 				Subscription: sub.id,
 			})
@@ -479,13 +479,9 @@ func (b *broker) syncSubscribe(subscriber *wamp.Session, msg *wamp.Subscribe, ma
 		subID = b.idGen.Next()
 	}
 
-	// Queue the SUBSCRIBED ack before creating the subscription. If the ack cannot
-	// be queued, then the subscriber never learns the subscription ID, and EVENTs
-	// for it would be a protocol violation, so create nothing.
-	if !b.trySend(subscriber, &wamp.Subscribed{Request: msg.Request, Subscription: subID}) {
-		b.log.Println("Subscription to", msg.Topic, "not created")
-		return
-	}
+	// Queue the SUBSCRIBED ack before creating the subscription, so that no
+	// EVENT for the subscription reaches the subscriber ahead of it.
+	subscriber.SendReply(&wamp.Subscribed{Request: msg.Request, Subscription: subID})
 
 	if existingSub {
 		// Add subscriber to existing subscription.
@@ -533,7 +529,7 @@ func (b *broker) syncUnsubscribe(subscriber *wamp.Session, msg *wamp.Unsubscribe
 	subID := msg.Subscription
 	sub, ok := b.subscriptions[subID]
 	if !ok {
-		b.trySend(subscriber, &wamp.Error{
+		subscriber.SendReply(&wamp.Error{
 			Type:    msg.MessageType(),
 			Request: msg.Request,
 			Error:   wamp.ErrNoSuchSubscription,
@@ -570,7 +566,7 @@ func (b *broker) syncUnsubscribe(subscriber *wamp.Session, msg *wamp.Unsubscribe
 	}
 
 	// Tell sender they are unsubscribed.
-	b.trySend(subscriber, &wamp.Unsubscribed{Request: msg.Request})
+	subscriber.SendReply(&wamp.Unsubscribed{Request: msg.Request})
 
 	// Publish WAMP unsubscribe meta event.
 	b.syncPubSubMeta(wamp.MetaEventSubOnUnsubscribe, subscriber.ID, subID)
@@ -803,15 +799,11 @@ func (b *broker) syncPubSubCreateMeta(subSessID wamp.ID, sub *subscription) {
 	})
 }
 
-// trySend queues msg to sess without blocking, and reports whether it was
-// queued. If the outbound queue of sess is full, msg is dropped.
-func (b *broker) trySend(sess *wamp.Session, msg wamp.Message) bool {
-	select {
-	case sess.Send() <- msg:
-		return true
-	default:
+// trySend queues msg to sess without blocking. If the outbound queue of sess
+// is full, or replies wait in its backlog, msg is dropped.
+func (b *broker) trySend(sess *wamp.Session, msg wamp.Message) {
+	if !sess.TrySend(msg) {
 		b.log.Printf("!!! Dropped %s to session %s: blocked", msg.MessageType(), sess)
-		return false
 	}
 }
 

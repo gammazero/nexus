@@ -24,7 +24,8 @@ Annotated config file example:
         "key_file": "",               // to enable secure connections
         "keep_alive": 30,
         "enable_compression": false,
-        "allow_origins": ["*"]        // For CORS checking
+        "allow_origins": ["*"],       // For CORS checking
+        "out_queue_size": 0           // Limit on number of pending messages to send to each client. 0 - default (64).
     },
     "rawsocket": {
         "tcp_address": "", // Listen address. Can be in form of hostname:port, IP:port, :port (this means to listen on all interfaces)
@@ -33,7 +34,7 @@ Annotated config file example:
         "max_msg_len": 0,   // Maximum message length server can receive. Default = 16M.
         "cert_file": "",    // Specify TLS Certificate file and key paths
         "key_file": "",     // to enable secure connections
-        "out_queue_size": 0 // Limit on number of pending messages to send to each client. 0 - disable queue.
+        "out_queue_size": 0 // Limit on number of pending messages to send to each client. 0 - default (64).
     },
     "log_path": "",         // File to write log data to. If not specified, log to stdout.
     "router": {             // Router configuration parameters.
@@ -77,3 +78,24 @@ Annotated config file example:
     }
 }
 ```
+
+## Outbound queue size
+
+`out_queue_size` is the number of messages the router queues for each client
+to read. When a client's queue is full:
+
+* Replies to the client's own requests, such as PUBLISHED, SUBSCRIBED,
+  REGISTERED and RESULT, are never dropped. They wait until the client reads
+  them, and the router holds the client's next request until there is room.
+* A client that reads nothing for a minute while the router waits is
+  disconnected.
+* While the router holds a websocket client's request, it does not read the
+  client's pongs, so `keep_alive` does not count missed pongs until the router
+  takes the request.
+* EVENTs are dropped, and the router logs each drop.
+* A call fails, and its caller gets an ERROR, if its INVOCATION cannot be
+  queued for the callee (`wamp.error.network_failure`), or if the caller stays
+  blocked on its progressive RESULTs (`wamp.error.canceled`).
+
+Size the queue for bursts of EVENTs, INVOCATIONs and progressive RESULTs, not
+for the number of requests a client has in flight.
