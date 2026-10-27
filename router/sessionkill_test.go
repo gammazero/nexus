@@ -1,6 +1,7 @@
 package router //nolint:testpackage
 
 import (
+	"fmt"
 	"testing"
 	"testing/synctest"
 	"time"
@@ -296,5 +297,93 @@ func TestSessionModifyDetails(t *testing.T) {
 		require.False(t, ok, "xyzzy should have been delete from details")
 		val, _ := wamp.AsFloat64(details["pi"])
 		require.Equal(t, 3.14, val)
+	})
+}
+
+// killer returns r as a SessionKiller, which the Router that NewRouter
+// returns implements.
+func killer(t *testing.T, r Router) SessionKiller {
+	t.Helper()
+	k, ok := r.(SessionKiller)
+	require.True(t, ok, "Router does not implement SessionKiller")
+	return k
+}
+
+// requireGoodbye fails unless the next message for cli is GOODBYE with the
+// reason and message.
+func requireGoodbye(t *testing.T, cli *wamp.Session, reason wamp.URI, message string) {
+	t.Helper()
+	g := recvType[*wamp.Goodbye](t, cli)
+	require.Equal(t, reason, g.Reason)
+	m, _ := wamp.AsString(g.Details["message"])
+	require.Equal(t, message, m)
+}
+
+// TestRouterKillSessionsByAuthid checks that Router.KillSessionsByAuthid
+// closes every session with the authid, and only those, from Go code.
+func TestRouterKillSessionsByAuthid(t *testing.T) {
+	synctest.Test(t, func(t *testing.T) {
+		r := newTestRouter(t)
+		cli1 := testClient(t, r)
+		cli2 := testClient(t, r)
+		authid, _ := wamp.AsString(cli1.Details["authid"])
+		require.NotEmpty(t, authid)
+
+		n, err := killer(t, r).KillSessionsByAuthid(testRealm, "nobody", "", "")
+		require.NoError(t, err)
+		require.Zero(t, n)
+
+		reason := wamp.URI("nexus.test.kicked")
+		n, err = killer(t, r).KillSessionsByAuthid(testRealm, authid, reason, "bye")
+		require.NoError(t, err)
+		require.Equal(t, 2, n)
+		requireGoodbye(t, cli1, reason, "bye")
+		requireGoodbye(t, cli2, reason, "bye")
+	})
+}
+
+// TestRouterKillSessionsByAuthrole checks the same for
+// Router.KillSessionsByAuthrole, and that an empty reason sends
+// wamp.close.normal.
+func TestRouterKillSessionsByAuthrole(t *testing.T) {
+	synctest.Test(t, func(t *testing.T) {
+		r := newTestRouter(t)
+		cli := testClient(t, r)
+		authrole, _ := wamp.AsString(cli.Details["authrole"])
+		require.NotEmpty(t, authrole)
+
+		n, err := killer(t, r).KillSessionsByAuthrole(testRealm, authrole, "", "")
+		require.NoError(t, err)
+		require.Equal(t, 1, n)
+		requireGoodbye(t, cli, wamp.CloseNormal, "")
+	})
+}
+
+// TestRouterKillSessionsErrors checks the errors from the kill methods.
+func TestRouterKillSessionsErrors(t *testing.T) {
+	synctest.Test(t, func(t *testing.T) {
+		r := newTestRouter(t)
+
+		_, err := killer(t, r).KillSessionsByAuthid("nexus.no.such.realm", "x", "", "")
+		require.ErrorContains(t, err, "no realm")
+
+		_, err = killer(t, r).KillSessionsByAuthrole(testRealm, "x", "not a valid uri", "")
+		require.ErrorContains(t, err, "invalid reason URI")
+	})
+}
+
+// TestRouterKillSessionsWhileRemovingRealm checks that killing sessions while
+// the realm is being removed returns, with or without an error, instead of
+// sending on the closed realm's action channel.
+func TestRouterKillSessionsWhileRemovingRealm(t *testing.T) {
+	synctest.Test(t, func(t *testing.T) {
+		r := newTestRouter(t)
+		for i := range 200 {
+			uri := wamp.URI(fmt.Sprintf("nexus.test.removing%d", i))
+			require.NoError(t, r.AddRealm(&RealmConfig{URI: uri, AnonymousAuth: true}))
+			go r.RemoveRealm(uri)
+			_, _ = killer(t, r).KillSessionsByAuthid(uri, "x", "", "")
+			synctest.Wait()
+		}
 	})
 }

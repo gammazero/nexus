@@ -48,6 +48,31 @@ type Router interface {
 	RouterFeatures() *wamp.Dict
 }
 
+// SessionKiller is implemented by a Router that can close sessions from Go
+// code, without a WAMP client calling a session meta procedure, and so without
+// the realm enabling wamp.session.kill and the like for its clients. The
+// Router that NewRouter returns implements it:
+//
+//	if killer, ok := r.(router.SessionKiller); ok {
+//		n, err := killer.KillSessionsByAuthid(realm, authid, "", "")
+//	}
+type SessionKiller interface {
+	// KillSessionsByAuthid closes every session in the realm that has the
+	// authid, as the wamp.session.kill_by_authid meta procedure does. Each
+	// session is sent GOODBYE with the reason, wamp.close.normal if reason is
+	// empty, and the message, if not empty. It returns the number of sessions
+	// closed, or an error if the realm does not exist or the reason is not a
+	// valid URI.
+	KillSessionsByAuthid(realm wamp.URI, authid string, reason wamp.URI, message string) (int, error)
+
+	// KillSessionsByAuthrole closes every session in the realm that has the
+	// authrole, as the wamp.session.kill_by_authrole meta procedure does, and
+	// otherwise works like KillSessionsByAuthid.
+	KillSessionsByAuthrole(realm wamp.URI, authrole string, reason wamp.URI, message string) (int, error)
+}
+
+var _ SessionKiller = (*router)(nil)
+
 // router is the default WAMP router implementation.
 type router struct {
 	realms map[wamp.URI]*realm
@@ -361,6 +386,36 @@ func (r *router) RemoveRealm(name wamp.URI) {
 		realm.close()
 		r.log.Println("Realm", name, "was removed and completed shutdown")
 	}
+}
+
+// KillSessionsByAuthid closes every session in the realm that has the authid.
+func (r *router) KillSessionsByAuthid(realm wamp.URI, authid string, reason wamp.URI, message string) (int, error) { //nolint:lll
+	return r.killSessionsByDetail(realm, "authid", authid, reason, message)
+}
+
+// KillSessionsByAuthrole closes every session in the realm that has the
+// authrole.
+func (r *router) KillSessionsByAuthrole(realm wamp.URI, authrole string, reason wamp.URI, message string) (int, error) { //nolint:lll
+	return r.killSessionsByDetail(realm, "authrole", authrole, reason, message)
+}
+
+// killSessionsByDetail closes every session in the realm whose session detail
+// key has the value.
+func (r *router) killSessionsByDetail(realmURI wamp.URI, key, value string, reason wamp.URI, message string) (int, error) { //nolint:lll
+	if reason != "" && !reason.ValidURI(false, "") {
+		return 0, fmt.Errorf("invalid reason URI: %q", reason)
+	}
+	var realm *realm
+	sync := make(chan struct{})
+	r.actionChan <- func() {
+		realm = r.realms[realmURI]
+		close(sync)
+	}
+	<-sync
+	if realm == nil {
+		return 0, fmt.Errorf("no realm %q exists on this router", string(realmURI))
+	}
+	return realm.killSessionsByDetailIfOpen(key, value, reason, message)
 }
 
 // addRealm attempts to create and add a realm to this router.
