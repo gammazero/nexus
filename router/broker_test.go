@@ -27,7 +27,7 @@ func (p *testPeer) Close()                    {}
 func (p *testPeer) IsLocal() bool { return true }
 
 func newTestBroker(t *testing.T, eventCfgs []*TopicEventHistoryConfig) *broker {
-	b, err := newBroker(logger, false, true, debug, nil, eventCfgs, "")
+	b, err := newBroker(logger, &RealmConfig{AllowDisclose: true, Debug: debug, TopicEventHistoryConfigs: eventCfgs})
 	require.NoError(t, err, "Can not initialize broker")
 	t.Cleanup(func() {
 		b.close()
@@ -1190,7 +1190,7 @@ func waitBroker(broker *broker) {
 // full with a GOODBYE carrying CloseSlowSubscriber, and does not end it
 // before that.
 func TestEventOverflowClose(t *testing.T) {
-	b, err := newBroker(logger, false, true, debug, nil, nil, EventOverflowClose)
+	b, err := newBroker(logger, &RealmConfig{AllowDisclose: true, Debug: debug, EventOverflow: EventOverflowClose})
 	require.NoError(t, err)
 	t.Cleanup(b.close)
 	testTopic := wamp.URI("nexus.test.topic")
