@@ -7,6 +7,7 @@ import (
 	"sync"
 	"sync/atomic"
 	"testing"
+	"testing/synctest"
 	"time"
 
 	"github.com/gorilla/websocket"
@@ -534,4 +535,31 @@ func TestWSWriteErrorClosesRecv(t *testing.T) {
 		require.True(t, conn.isClosed(), "connection not closed")
 		requireCloses(t, peer)
 	}
+}
+
+// TestWSCloseDoesNotWaitForUnreadMessage verifies that recvHandler exits as
+// soon as the peer is closed while it holds a message that nothing reads, as
+// when the router closes a session after it stops reading from it. It used to
+// wait a second for the message to be read, so that Close took that long, and
+// tests that closed a session saw its goroutines still running. In the
+// synctest bubble, that second passes at once, so the test checks how much
+// time passed.
+func TestWSCloseDoesNotWaitForUnreadMessage(t *testing.T) {
+	synctest.Test(t, func(t *testing.T) {
+		conn := newRecordingConn(helloJSON)
+		peer := newTestPeer(conn, 0)
+		// Wait for recvHandler to read the HELLO and block handing it over.
+		synctest.Wait()
+
+		start := time.Now()
+		peer.Close()
+		synctest.Wait()
+		select {
+		case msg, ok := <-peer.Recv():
+			require.False(t, ok, "recvHandler still delivering %T after Close", msg)
+		default:
+			require.FailNow(t, "recvHandler still running after Close")
+		}
+		require.Zero(t, time.Since(start), "recvHandler waited for the message to be read")
+	})
 }
