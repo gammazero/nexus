@@ -1,55 +1,31 @@
 package main
 
 import (
-	"context"
+	"fmt"
 	"log"
 	"os"
 	"os/signal"
 
-	"github.com/gammazero/nexus/v3/client"
-	"github.com/gammazero/nexus/v3/transport/serialize"
+	"github.com/gammazero/nexus/v3/examples/newclient"
 	"github.com/gammazero/nexus/v3/wamp"
 )
 
-const (
-	exampleTopic     = "example.hello"
-	realm            = "realm1"
-	routerUrl        = "ws://127.0.0.1:8080"
-	serializationStr = "cbor"
-)
+const exampleTopic = "example.hello"
 
 func main() {
 	logger := log.New(os.Stdout, "SUBSCRIBER> ", 0)
-
-	var serialization serialize.Serialization
-	var subscriber *client.Client
-	var err error
-
-	// Get requested serialization.
-	switch serializationStr {
-	case "json":
-		serialization = client.JSON
-	case "msgpack":
-		serialization = client.MSGPACK
-	case "cbor":
-		serialization = client.CBOR
+	if err := run(logger); err != nil {
+		logger.Fatal(err)
 	}
+}
 
-	cfg := client.Config{
-		Realm:         realm,
-		Serialization: serialization,
-		Logger:        logger,
-	}
-
+func run(logger *log.Logger) error {
 	// Connect subscriber client with requested socket type and serialization.
-	subscriber, err = client.ConnectNet(context.Background(), routerUrl, cfg)
+	subscriber, err := newclient.NewClient(logger)
 	if err != nil {
-		logger.Fatalf("Cannot connect to server error: %s", err)
-		return
+		return err
 	}
 	defer subscriber.Close()
-
-	logger.Println("Connected to", routerUrl, "using", serializationStr, "serialization")
 
 	// Define function to handle events received.
 	eventHandler := func(event *wamp.Event) {
@@ -59,9 +35,8 @@ func main() {
 	}
 
 	// Subscribe to topic.
-	err = subscriber.Subscribe(exampleTopic, eventHandler, nil)
-	if err != nil {
-		logger.Fatal("subscribe error:", err)
+	if err = subscriber.Subscribe(exampleTopic, eventHandler, nil); err != nil {
+		return fmt.Errorf("subscribe error: %w", err)
 	}
 	logger.Println("Subscribed to", exampleTopic)
 
@@ -72,11 +47,12 @@ func main() {
 	case <-sigChan:
 	case <-subscriber.Done():
 		logger.Print("Router gone, exiting")
-		return // router gone, just exit
+		return nil // router gone, just exit
 	}
 
 	// Unsubscribe from topic.
 	if err = subscriber.Unsubscribe(exampleTopic); err != nil {
-		logger.Fatal("Failed to unsubscribe:", err)
+		return fmt.Errorf("failed to unsubscribe: %w", err)
 	}
+	return nil
 }

@@ -59,7 +59,7 @@ whether to use TLS:
 - Websocket + TLS: `-scheme=wss`
 - TCP socket: `-scheme=tcp`
 - TCP socket + TLS: `-scheme=tcps`
-- Unix socket: `-socket=unix`
+- Unix socket: `-scheme=unix`
 
 If no scheme is specified, then the default is `ws` (websocket without TLS).
 
@@ -72,7 +72,7 @@ certificate by specifying `-trust=server/cert.pem`. Verification can also be ski
 go run pubsub/subscriber/subscriber.go -scheme=wss -trust=server/cert.pem
 ```
 
-To choose the type of serialization for the client to use, specify `-serialize=json` or `-serialize=msgpack`.
+To choose the type of serialization for the client to use, specify `-serialize=json`, `-serialize=msgpack`, or `-serialize=cbor`.
 If no serialization is specified, then the default is `json`.
 
 NOTE: The certificate and key used by the example server were created using the following commands:
@@ -126,7 +126,7 @@ procedures to demonstrate the session meta API.
 
 A nexus router is capable of routing messages between clients running with different transports and
 serializations. To see this, you can run the example nexus server and then connect clients that use different
-combinations of websockets and raw sockets, and JSON and MsgPack serialization.
+combinations of websockets and raw sockets, and JSON, MsgPack, and CBOR serialization.
 
 ### Run Websocket Subscriber with TCP and Unix Raw Socket Publishers
 
@@ -140,7 +140,8 @@ Try different combinations socket type, TLS, and serialization with multiple cli
 ## Payload PassThru Mode Examples
 
 Nexus supports [Payload PassThru Mode](https://wamp-proto.org/wamp_latest_ietf.html#name-payload-passthru-mode)
-(`ppt` for short) in all roles. Check and run examples in [ppt](ppt) folder.
+(`ppt` for short) in all roles. Check and run examples in [ppt](ppt) folder. The ppt clients take the same options
+as the other example clients, and send payloads serialized with CBOR and MsgPack whatever serialization the client uses.
 
 1. Run the server with `go run server/server.go`
 2. Run the subscriber with `go run ppt/subscriber/subscriber.go`
@@ -156,10 +157,8 @@ dealer feature. Check and run examples in [rpc_progressive_invocations](./rpc_pr
 
 Please note that invocation handler is invoked with payload chunks in the same order they are received through the wire
 even that it is running asynchronously. Also `ctx context.Context` parameter of invocation handler is the context of
-the whole invocation starting with 1st call/invocation and lasts until final result. But if the client is
-specifying `timeout` option with every progressive call callback, then timeouted context is updated and
-cancel deadline is pushed forward in timeline. This can help processing progressive calls for slow clients.
-To use timeouted context for the whole call - do not specify `timeout` option within intermediate data chunks.
+the whole invocation starting with 1st call/invocation and lasts until final result. The `timeout` option of the
+first call applies to the whole progressive call, and a `timeout` option in later calls is ignored.
 
 1. Run the server with `go run server/server.go`
 2. Run the callee which accumulates progressive call invocations data chunks with `go run rpc_progressive_invocations/callee/callee.go`

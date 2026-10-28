@@ -1,6 +1,7 @@
 package main
 
 import (
+	"fmt"
 	"log"
 	"os"
 
@@ -12,53 +13,45 @@ const exampleTopic = "example.hello"
 
 func main() {
 	logger := log.New(os.Stdout, "PUBLISHER> ", 0)
+	if err := run(logger); err != nil {
+		logger.Fatal(err)
+	}
+}
+
+func run(logger *log.Logger) error {
 	// Connect publisher client with requested socket type and serialization.
 	publisher, err := newclient.NewClient(logger)
 	if err != nil {
-		logger.Fatal(err)
+		return err
 	}
 	defer publisher.Close()
 
 	// Publish to topic.
 	args := wamp.List{"hello world"}
-	err = publisher.Publish(exampleTopic, nil, args, nil)
-	if err != nil {
-		logger.Fatalf("publish error: %s", err)
+	if err = publisher.Publish(exampleTopic, nil, args, nil); err != nil {
+		return fmt.Errorf("publish error: %w", err)
 	}
 
 	// Publish more events to topic.
 	args = wamp.List{"how are you today"}
-	err = publisher.Publish(exampleTopic, nil, args, nil)
-	if err != nil {
-		logger.Fatalf("publish error: %s", err)
+	if err = publisher.Publish(exampleTopic, nil, args, nil); err != nil {
+		return fmt.Errorf("publish error: %w", err)
 	}
 
 	// Publish events only to sessions 42, 1138, 1701.
 	args = wamp.List{"for your eyes only"}
 	opts := wamp.Dict{wamp.WhitelistKey: wamp.List{42, 1138, 1701}}
-	err = publisher.Publish(exampleTopic, opts, args, nil)
-	if err != nil {
-		logger.Fatalf("publish error: %s", err)
+	if err = publisher.Publish(exampleTopic, opts, args, nil); err != nil {
+		return fmt.Errorf("publish error: %w", err)
 	}
 
-	args = wamp.List{"testing 1"}
-	err = publisher.Publish(exampleTopic, nil, args, nil)
-	if err != nil {
-		logger.Fatalf("publish error: %s", err)
-	}
-
-	args = wamp.List{"testing 2"}
-	err = publisher.Publish(exampleTopic, nil, args, nil)
-	if err != nil {
-		logger.Fatalf("publish error: %s", err)
-	}
-
-	args = wamp.List{"testing 3"}
-	err = publisher.Publish(exampleTopic, nil, args, nil)
-	if err != nil {
-		logger.Fatalf("publish error: %s", err)
+	for _, msg := range []string{"testing 1", "testing 2", "testing 3"} {
+		args = wamp.List{msg}
+		if err = publisher.Publish(exampleTopic, nil, args, nil); err != nil {
+			return fmt.Errorf("publish error: %w", err)
+		}
 	}
 
 	logger.Println("Published messages to", exampleTopic)
-	publisher.Close()
+	return nil
 }

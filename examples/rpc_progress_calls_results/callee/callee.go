@@ -2,6 +2,7 @@ package main
 
 import (
 	"context"
+	"fmt"
 	"log"
 	"os"
 	"os/signal"
@@ -15,33 +16,36 @@ const procedureName = "mirror"
 
 func main() {
 	logger := log.New(os.Stdout, "CALLEE> ", 0)
+	if err := run(logger); err != nil {
+		logger.Fatal(err)
+	}
+}
+
+func run(logger *log.Logger) error {
 	// Connect callee client with requested socket type and serialization.
 	callee, err := newclient.NewClient(logger)
 	if err != nil {
-		logger.Fatal(err)
+		return err
 	}
 	defer callee.Close()
 
 	// Important note: ctx context.Context here is the context of the whole invocation
 	// starting with 1st call/invocation and lasts until final result
 	mirror := func(ctx context.Context, inv *wamp.Invocation) client.InvokeResult {
-		log.Println("Received and sending back payload data...", inv.Arguments[0])
+		log.Println("Received and sending back payload data...", inv.Arguments)
 		if isInProgress, _ := inv.Details[wamp.OptProgress].(bool); !isInProgress {
 			return client.InvokeResult{Args: inv.Arguments}
-		} else {
-			senderr := callee.SendProgress(ctx, inv.Arguments, nil)
-			if senderr != nil {
-				log.Println("Error sending progress:", senderr)
-				return client.InvokeResult{Err: "test.failed"}
-			}
 		}
-
+		if senderr := callee.SendProgress(ctx, inv.Arguments, nil); senderr != nil {
+			log.Println("Error sending progress:", senderr)
+			return client.InvokeResult{Err: "test.failed"}
+		}
 		return client.InvokeResult{Err: wamp.InternalProgressiveOmitResult}
 	}
 
 	// Register procedure "mirror"
 	if err = callee.Register(procedureName, mirror, nil); err != nil {
-		logger.Fatal("Failed to register procedure:", err)
+		return fmt.Errorf("failed to register procedure: %w", err)
 	}
 	logger.Println("Registered procedure", procedureName, "with router")
 
@@ -52,10 +56,11 @@ func main() {
 	case <-sigChan:
 	case <-callee.Done():
 		logger.Print("Router gone, exiting")
-		return // router gone, just exit
+		return nil // router gone, just exit
 	}
 
 	if err = callee.Unregister(procedureName); err != nil {
 		logger.Println("Failed to unregister procedure:", err)
 	}
+	return nil
 }

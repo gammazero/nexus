@@ -1,97 +1,63 @@
 package main
 
 import (
-	"context"
+	"fmt"
 	"log"
 	"os"
 
-	"github.com/gammazero/nexus/v3/client"
-	"github.com/gammazero/nexus/v3/transport/serialize"
+	"github.com/gammazero/nexus/v3/examples/newclient"
 	"github.com/gammazero/nexus/v3/wamp"
 )
 
-const (
-	exampleTopic     = "example.hello"
-	realm            = "realm1"
-	routerUrl        = "ws://127.0.0.1:8080"
-	serializationStr = "cbor"
-)
+const exampleTopic = "example.hello"
 
 func main() {
 	logger := log.New(os.Stdout, "PUBLISHER> ", 0)
-
-	var serialization serialize.Serialization
-	var publisher *client.Client
-	var err error
-
-	// Get requested serialization.
-	switch serializationStr {
-	case "json":
-		serialization = client.JSON
-	case "msgpack":
-		serialization = client.MSGPACK
-	case "cbor":
-		serialization = client.CBOR
+	if err := run(logger); err != nil {
+		logger.Fatal(err)
 	}
+}
 
-	cfg := client.Config{
-		Realm:         realm,
-		Serialization: serialization,
-		Logger:        logger,
-	}
-
+func run(logger *log.Logger) error {
 	// Connect publisher client with requested socket type and serialization.
-	publisher, err = client.ConnectNet(context.Background(), routerUrl, cfg)
+	publisher, err := newclient.NewClient(logger)
 	if err != nil {
-		logger.Fatalf("Cannot connect to server error: %s", err)
-		return
+		return err
 	}
 	defer publisher.Close()
 
-	logger.Println("Connected to", routerUrl, "using", serializationStr, "serialization")
-
-	// Publish to topic.
-	args := wamp.List{"Event with x_custom ppt scheme and cbor payload serializer"}
-	kwargs := wamp.Dict{"property1": 25, "property2": "ppt is working", "property3": true}
-	options := wamp.Dict{
-		wamp.OptPPTScheme:     "x_custom",
-		wamp.OptPPTSerializer: "cbor",
+	// Publish an event with each ppt scheme and payload serializer.
+	events := []struct {
+		scheme     string
+		serializer string
+		property1  int
+		property2  string
+		property3  bool
+	}{
+		{"x_custom", "cbor", 25, "ppt is working", true},
+		{"mqtt", "msgpack", 45, "ppt is working again", false},
+		{"mqtt", "", 75, "ppt is working again", true},
 	}
-	err = publisher.Publish(exampleTopic, options, args, kwargs)
-	if err != nil {
-		logger.Fatalf("publish error: %s", err)
+	for _, e := range events {
+		serializer := e.serializer
+		options := wamp.Dict{wamp.OptPPTScheme: e.scheme}
+		if serializer != "" {
+			options[wamp.OptPPTSerializer] = serializer
+		} else {
+			serializer = "native"
+		}
+		args := wamp.List{fmt.Sprintf("Event with %s ppt scheme and %s payload serializer", e.scheme, serializer)}
+		kwargs := wamp.Dict{
+			"property1": e.property1,
+			"property2": e.property2,
+			"property3": e.property3,
+		}
+		if err = publisher.Publish(exampleTopic, options, args, kwargs); err != nil {
+			return fmt.Errorf("publish error: %w", err)
+		}
+		logger.Println("Published message to", exampleTopic)
+		logger.Println("  args payload:", args)
+		logger.Println("  kwargs payload:", kwargs)
 	}
-	logger.Println("Published message to", exampleTopic)
-	logger.Println("  args payload:", args)
-	logger.Println("  kwargs payload:", kwargs)
-
-	// Publish more events to topic.
-	args = wamp.List{"Event with mqtt ppt scheme and msgpack payload serializer"}
-	kwargs = wamp.Dict{"property1": 45, "property2": "ppt is working again", "property3": false}
-	options = wamp.Dict{
-		wamp.OptPPTScheme:     "mqtt",
-		wamp.OptPPTSerializer: "msgpack",
-	}
-	err = publisher.Publish(exampleTopic, options, args, kwargs)
-	if err != nil {
-		logger.Fatalf("publish error: %s", err)
-	}
-	logger.Println("Published message to", exampleTopic)
-	logger.Println("  args payload:", args)
-	logger.Println("  kwargs payload:", kwargs)
-
-	args = wamp.List{"Event with mqtt ppt scheme and native payload serializer"}
-	kwargs = wamp.Dict{"property1": 75, "property2": "ppt is working again", "property3": true}
-	options = wamp.Dict{
-		wamp.OptPPTScheme: "mqtt",
-	}
-	err = publisher.Publish(exampleTopic, options, args, kwargs)
-	if err != nil {
-		logger.Fatalf("publish error: %s", err)
-	}
-	logger.Println("Published message to", exampleTopic)
-	logger.Println("  args payload:", args)
-	logger.Println("  kwargs payload:", kwargs)
-
-	publisher.Close()
+	return nil
 }

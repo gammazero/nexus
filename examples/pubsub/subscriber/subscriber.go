@@ -1,6 +1,7 @@
 package main
 
 import (
+	"fmt"
 	"log"
 	"os"
 	"os/signal"
@@ -13,10 +14,16 @@ const exampleTopic = "example.hello"
 
 func main() {
 	logger := log.New(os.Stdout, "SUBSCRIBER> ", 0)
+	if err := run(logger); err != nil {
+		logger.Fatal(err)
+	}
+}
+
+func run(logger *log.Logger) error {
 	// Connect subscriber client with requested socket type and serialization.
 	subscriber, err := newclient.NewClient(logger)
 	if err != nil {
-		logger.Fatal(err)
+		return err
 	}
 	defer subscriber.Close()
 
@@ -29,9 +36,8 @@ func main() {
 	}
 
 	// Subscribe to topic.
-	err = subscriber.Subscribe(exampleTopic, eventHandler, nil)
-	if err != nil {
-		logger.Fatal("subscribe error:", err)
+	if err = subscriber.Subscribe(exampleTopic, eventHandler, nil); err != nil {
+		return fmt.Errorf("subscribe error: %w", err)
 	}
 	logger.Println("Subscribed to", exampleTopic)
 
@@ -42,11 +48,12 @@ func main() {
 	case <-sigChan:
 	case <-subscriber.Done():
 		logger.Print("Router gone, exiting")
-		return // router gone, just exit
+		return nil // router gone, just exit
 	}
 
 	// Unsubscribe from topic.
 	if err = subscriber.Unsubscribe(exampleTopic); err != nil {
-		logger.Fatal("Failed to unsubscribe:", err)
+		return fmt.Errorf("failed to unsubscribe: %w", err)
 	}
+	return nil
 }

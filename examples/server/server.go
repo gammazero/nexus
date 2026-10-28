@@ -99,8 +99,8 @@ func main() {
 	defer tcpCloser.Close() //nolint:errcheck
 	log.Printf("RawSocket TCP server listening on tcp://%s/", tcpAddr)
 
-	// Run unix rawsocket server.
-	_ = os.Remove(unixAddr)
+	// Run unix rawsocket server. A socket file left by a server that exited
+	// without removing it is removed by the router.
 	unixCloser, err := rss.ListenAndServe("unix", unixAddr)
 	if err != nil {
 		log.Fatal(err)

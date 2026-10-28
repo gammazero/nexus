@@ -2,6 +2,7 @@ package main
 
 import (
 	"context"
+	"errors"
 	"log"
 	"os"
 	"sync"
@@ -12,11 +13,16 @@ import (
 
 func main() {
 	logger := log.New(os.Stderr, "CALLER> ", 0)
+	if err := run(logger); err != nil {
+		logger.Fatal(err)
+	}
+}
 
+func run(logger *log.Logger) error {
 	// Connect caller client with requested socket type and serialization.
 	caller, err := newclient.NewClient(logger)
 	if err != nil {
-		logger.Fatal(err)
+		return err
 	}
 	defer caller.Close()
 
@@ -29,6 +35,9 @@ func main() {
 	var mu sync.Mutex
 
 	progRescb := func(result *wamp.Result) {
+		if len(result.Arguments) == 0 {
+			return
+		}
 		mu.Lock()
 		defer mu.Unlock()
 		n, _ := wamp.AsInt64(result.Arguments[0])
@@ -54,7 +63,10 @@ func main() {
 	logger.Println("Progressively calls remote procedure to get numbers back")
 	result, err := caller.CallProgressive(ctx, "mirror", sendProgDataCb, progRescb)
 	if err != nil {
-		logger.Fatal(err)
+		return err
+	}
+	if len(result.Arguments) == 0 {
+		return errors.New("result has no arguments")
 	}
 
 	n, _ := wamp.AsInt64(result.Arguments[0])
@@ -64,4 +76,5 @@ func main() {
 		sum += arg
 	}
 	logger.Println("Sum of sent/received numbers is:", sum)
+	return nil
 }

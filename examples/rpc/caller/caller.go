@@ -2,6 +2,7 @@ package main
 
 import (
 	"context"
+	"errors"
 	"log"
 	"os"
 
@@ -11,11 +12,16 @@ import (
 
 func main() {
 	logger := log.New(os.Stderr, "CALLER> ", 0)
+	if err := run(logger); err != nil {
+		logger.Fatal(err)
+	}
+}
 
+func run(logger *log.Logger) error {
 	// Connect caller client with requested socket type and serialization.
 	caller, err := newclient.NewClient(logger)
 	if err != nil {
-		logger.Fatal(err)
+		return err
 	}
 	defer caller.Close()
 
@@ -25,7 +31,7 @@ func main() {
 	logger.Println("Call remote procedure to time in specified timezones")
 	result, err := caller.Call(ctx, "worldtime", nil, callArgs, nil, nil)
 	if err != nil {
-		logger.Fatal(err)
+		return err
 	}
 	for i := range result.Arguments {
 		locTime, _ := wamp.AsString(result.Arguments[i])
@@ -38,9 +44,12 @@ func main() {
 	logger.Println("Call remote procedure to sum numbers 1-10")
 	result, err = caller.Call(ctx, "sum", nil, callArgs, nil, nil)
 	if err != nil {
-		logger.Fatal(err)
+		return err
+	}
+	if len(result.Arguments) == 0 {
+		return errors.New("result has no arguments")
 	}
 	sum, _ := wamp.AsInt64(result.Arguments[0])
 	logger.Println("Result is:", sum)
-
+	return nil
 }

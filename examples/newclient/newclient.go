@@ -65,7 +65,7 @@ func NewClient(logger *log.Logger) (*client.Client, error) {
 
 	default:
 		return nil, errors.New(
-			"invalid serialization, muse be one of: json, msgpack, cbor")
+			"invalid serialization, must be one of: json, msgpack, cbor")
 	}
 
 	if addr == "" {
