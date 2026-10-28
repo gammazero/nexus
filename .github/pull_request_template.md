@@ -1,27 +1,25 @@
-<!--- Provide a general summary of your changes in the Title above -->
+<!--- topic: brief summary of changes in the Title above -->
 
-### Description, Motivation and Context
-(Describe your changes in detail)
+### Description
 <!--- Why is this change required? What problem does it solve? -->
 <!--- If it fixes an open issue, please link to the issue here. -->
 
-### What is the current behavior?
-(You can also link to an open issue here)
+### Current Behavior
+<!--- You can also link to an open issue here. -->
 
-### What is the new behavior?
-(if this is a feature change)
+### New Behavior
+<!--- Highlight any breaking changes. -->
 
-### What kind of change does this PR introduce?
-<!--- What types of changes does your code introduce? Put an `x` in all the boxes that apply: -->
+### Kind of change this PR introduces
+<!--- Put an `x` in all the boxes that apply: -->
 - [ ] Enhancement (improve existing code or documentation without affecting behavior)
 - [ ] Bug fix (non-breaking change which fixes an issue)
 - [ ] New feature (non-breaking change which adds functionality)
 - [ ] Breaking change (fix or feature that would cause existing functionality to not work as expected)
 - [ ] Dependency update
 
-### Checklist:
-<!--- Go over all the following points, and put an `x` in all the boxes that apply. -->
-<!--- If you're unsure about any of these, don't hesitate to ask. We're here to help! -->
+### Checklist
+<!--- Put an `x` in all the boxes that apply. -->
 - [ ] My code follows the code style of this project.
 - [ ] I have added tests to cover my changes.
 - [ ] Overall test coverage is not decreased.
