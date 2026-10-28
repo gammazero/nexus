@@ -2,6 +2,8 @@ package main
 
 import (
 	"context"
+	"errors"
+	"fmt"
 	"log"
 	"os"
 	"os/signal"
@@ -17,11 +19,9 @@ const (
 	metaOnLeave = string(wamp.MetaEventSessionOnLeave)
 
 	metaCount = string(wamp.MetaProcSessionCount)
-	metaList  = string(wamp.MetaProcSessionList)
-	metaGet   = string(wamp.MetaProcSessionGet)
 )
 
-func subscribeMetaOnJoin(subscriber *client.Client, logger *log.Logger) {
+func subscribeMetaOnJoin(subscriber *client.Client, logger *log.Logger) error {
 	// Define function to handle on_join events received.
 	onJoin := func(event *wamp.Event) {
 		if len(event.Arguments) != 0 {
@@ -36,14 +36,14 @@ func subscribeMetaOnJoin(subscriber *client.Client, logger *log.Logger) {
 	}
 
 	// Subscribe to on_join topic.
-	err := subscriber.Subscribe(metaOnJoin, onJoin, nil)
-	if err != nil {
-		logger.Fatal("subscribe error:", err)
+	if err := subscriber.Subscribe(metaOnJoin, onJoin, nil); err != nil {
+		return fmt.Errorf("subscribe error: %w", err)
 	}
 	logger.Println("Subscribed to", metaOnJoin)
+	return nil
 }
 
-func subscribeMetaOnLeave(subscriber *client.Client, logger *log.Logger) {
+func subscribeMetaOnLeave(subscriber *client.Client, logger *log.Logger) error {
 	// Define function to handle on_leave events received.
 	onLeave := func(event *wamp.Event) {
 		if len(event.Arguments) != 0 {
@@ -56,11 +56,11 @@ func subscribeMetaOnLeave(subscriber *client.Client, logger *log.Logger) {
 	}
 
 	// Subscribe to on_leave topic.
-	err := subscriber.Subscribe(metaOnLeave, onLeave, nil)
-	if err != nil {
-		logger.Fatal("subscribe error:", err)
+	if err := subscriber.Subscribe(metaOnLeave, onLeave, nil); err != nil {
+		return fmt.Errorf("subscribe error: %w", err)
 	}
 	logger.Println("Subscribed to", metaOnLeave)
+	return nil
 }
 
 func getSessionCount(caller *client.Client, logger *log.Logger) {
@@ -72,31 +72,44 @@ func getSessionCount(caller *client.Client, logger *log.Logger) {
 		logger.Println("Call error:", err)
 		return
 	}
+	if len(result.Arguments) == 0 {
+		logger.Println("Call error: result has no arguments")
+		return
+	}
 	count, _ := wamp.AsInt64(result.Arguments[0])
 	logger.Println("Current session count:", count)
 }
 
 func main() {
 	logger := log.New(os.Stdout, "METACLIENT> ", 0)
+	if err := run(logger); err != nil {
+		logger.Fatal(err)
+	}
+}
+
+func run(logger *log.Logger) error {
 	// Connect subscriber client with requested socket type and serialization.
 	cli, err := newclient.NewClient(logger)
 	if err != nil {
-		logger.Fatal(err)
+		return err
 	}
 	defer cli.Close()
 
 	// Check for feature support in router.
-	const featureSessionMetaAPI = "session_meta_api"
-	if !cli.HasFeature("broker", featureSessionMetaAPI) {
-		logger.Fatal("Broker does not have", featureSessionMetaAPI, "feature")
+	if !cli.HasFeature(wamp.RoleBroker, wamp.FeatureSessionMetaAPI) {
+		return errors.New("broker does not have " + wamp.FeatureSessionMetaAPI + " feature")
 	}
-	if !cli.HasFeature("dealer", featureSessionMetaAPI) {
-		logger.Fatal("Dealer does not have", featureSessionMetaAPI, "feature")
+	if !cli.HasFeature(wamp.RoleDealer, wamp.FeatureSessionMetaAPI) {
+		return errors.New("dealer does not have " + wamp.FeatureSessionMetaAPI + " feature")
 	}
 
 	// Subscribe to session meta events.
-	subscribeMetaOnJoin(cli, logger)
-	subscribeMetaOnLeave(cli, logger)
+	if err = subscribeMetaOnJoin(cli, logger); err != nil {
+		return err
+	}
+	if err = subscribeMetaOnLeave(cli, logger); err != nil {
+		return err
+	}
 
 	// Get current sessions from session meta API.
 	getSessionCount(cli, logger)
@@ -108,7 +121,7 @@ func main() {
 	case <-sigChan:
 	case <-cli.Done():
 		logger.Print("Router gone, exiting")
-		return // router gone, just exit
+		return nil // router gone, just exit
 	}
 
 	// Unsubscribe from topic.
@@ -118,4 +131,5 @@ func main() {
 	if err = cli.Unsubscribe(metaOnLeave); err != nil {
 		logger.Println("Failed to unsubscribe:", err)
 	}
+	return nil
 }

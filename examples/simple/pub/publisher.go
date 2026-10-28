@@ -2,6 +2,7 @@ package main
 
 import (
 	"context"
+	"fmt"
 	"log"
 	"os"
 
@@ -18,6 +19,12 @@ const (
 
 func main() {
 	logger := log.New(os.Stdout, "", 0)
+	if err := run(logger); err != nil {
+		logger.Fatal(err)
+	}
+}
+
+func run(logger *log.Logger) error {
 	cfg := client.Config{
 		Realm:  realm,
 		Logger: logger,
@@ -26,14 +33,15 @@ func main() {
 	// Connect publisher session.
 	publisher, err := client.ConnectNet(context.Background(), addr, cfg)
 	if err != nil {
-		logger.Fatal(err)
+		return err
 	}
 	defer publisher.Close()
 
 	// Publish to topic.
 	err = publisher.Publish(exampleTopic, nil, wamp.List{"hello world"}, nil)
 	if err != nil {
-		logger.Fatal("publish error:", err)
+		return fmt.Errorf("publish error: %w", err)
 	}
 	logger.Println("Published", exampleTopic, "event")
+	return nil
 }

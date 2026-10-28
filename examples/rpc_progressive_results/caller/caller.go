@@ -15,6 +15,8 @@ import (
 	"context"
 	"crypto/sha256"
 	"encoding/base64"
+	"errors"
+	"fmt"
 	"log"
 	"os"
 	"strings"
@@ -32,11 +34,16 @@ const (
 
 func main() {
 	logger := log.New(os.Stderr, "CALLER> ", 0)
+	if err := run(logger); err != nil {
+		logger.Fatal(err)
+	}
+}
 
+func run(logger *log.Logger) error {
 	// Connect caller client with requested socket type and serialization.
 	caller, err := newclient.NewClient(logger)
 	if err != nil {
-		logger.Fatal(err)
+		return err
 	}
 	defer caller.Close()
 
@@ -46,7 +53,10 @@ func main() {
 	h := sha256.New()
 	progHandler := func(result *wamp.Result) {
 		// Received another chunk of data, computing hash as chunks received.
-		chunk := result.Arguments[0].(string)
+		var chunk string
+		if len(result.Arguments) != 0 {
+			chunk, _ = wamp.AsString(result.Arguments[0])
+		}
 		logger.Println("Received", len(chunk), "bytes (as progressive result)")
 		chunks = append(chunks, chunk)
 		h.Write([]byte(chunk))
@@ -59,26 +69,27 @@ func main() {
 	result, err := caller.Call(
 		ctx, procedureName, nil, wamp.List{chunkSize}, nil, progHandler)
 	if err != nil {
-		logger.Println("Failed to call procedure:", err)
-		return
+		return fmt.Errorf("failed to call procedure: %w", err)
 	}
 
 	// As a final result, the callee returns the base64 encoded sha256 hash of
 	// the data. This is decoded and compared to the value that the caller
 	// calculated. If they match, then the caller received the data correctly.
-	hashB64 := result.Arguments[0].(string)
+	if len(result.Arguments) == 0 {
+		return errors.New("result has no arguments")
+	}
+	hashB64, _ := wamp.AsString(result.Arguments[0])
 	calleeHash, err := base64.StdEncoding.DecodeString(hashB64)
 	if err != nil {
-		logger.Println("decode error:", err)
-		return
+		return fmt.Errorf("decode error: %w", err)
 	}
 
 	// Check if received hash matches the hash computed over the received data.
 	if !bytes.Equal(calleeHash, h.Sum(nil)) {
-		logger.Println("Hash of received data does not match")
-		return
+		return errors.New("hash of received data does not match")
 	}
 	logger.Println("Correctly received all data:")
 	logger.Println("----------------------------")
 	logger.Println(strings.Join(chunks, ""))
+	return nil
 }

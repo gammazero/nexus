@@ -2,6 +2,7 @@ package main
 
 import (
 	"context"
+	"errors"
 	"log"
 	"os"
 
@@ -11,11 +12,16 @@ import (
 
 func main() {
 	logger := log.New(os.Stderr, "CALLER> ", 0)
+	if err := run(logger); err != nil {
+		logger.Fatal(err)
+	}
+}
 
+func run(logger *log.Logger) error {
 	// Connect caller client with requested socket type and serialization.
 	caller, err := newclient.NewClient(logger)
 	if err != nil {
-		logger.Fatal(err)
+		return err
 	}
 	defer caller.Close()
 
@@ -43,9 +49,12 @@ func main() {
 	logger.Println("Progressively call remote procedure to get sum of numbers")
 	result, err := caller.CallProgressive(ctx, "sum", sendProgDataCb, nil)
 	if err != nil {
-		logger.Fatal(err)
+		return err
+	}
+	if len(result.Arguments) == 0 {
+		return errors.New("result has no arguments")
 	}
 	sum, _ := wamp.AsInt64(result.Arguments[0])
 	logger.Println("Result is:", sum)
-
+	return nil
 }

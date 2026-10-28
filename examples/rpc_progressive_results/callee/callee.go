@@ -15,6 +15,7 @@ import (
 	"context"
 	"crypto/sha256"
 	"encoding/base64"
+	"fmt"
 	"log"
 	"os"
 	"os/signal"
@@ -28,10 +29,16 @@ const procedureName = "example.progress.text"
 
 func main() {
 	logger := log.New(os.Stdout, "CALLEE> ", 0)
+	if err := run(logger); err != nil {
+		logger.Fatal(err)
+	}
+}
+
+func run(logger *log.Logger) error {
 	// Connect callee client with requested socket type and serialization.
 	callee, err := newclient.NewClient(logger)
 	if err != nil {
-		logger.Fatal(err)
+		return err
 	}
 	defer callee.Close()
 
@@ -43,7 +50,7 @@ func main() {
 
 	// Register procedure.
 	if err = callee.Register(procedureName, handler, nil); err != nil {
-		logger.Fatal("Failed to register procedure:", err)
+		return fmt.Errorf("failed to register procedure: %w", err)
 	}
 	logger.Println("Registered procedure", procedureName, "with router")
 
@@ -54,12 +61,13 @@ func main() {
 	case <-sigChan:
 	case <-callee.Done():
 		logger.Print("Router gone, exiting")
-		return // router gone, just exit
+		return nil // router gone, just exit
 	}
 
 	if err = callee.Unregister(procedureName); err != nil {
 		logger.Println("Failed to unregister procedure:", err)
 	}
+	return nil
 }
 
 // sendData sends the body of data in chunks of the requested size. The final

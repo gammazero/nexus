@@ -2,59 +2,38 @@ package main
 
 import (
 	"context"
+	"fmt"
 	"log"
 	"math/rand"
 	"os"
 	"os/signal"
 
 	"github.com/gammazero/nexus/v3/client"
-	"github.com/gammazero/nexus/v3/transport/serialize"
+	"github.com/gammazero/nexus/v3/examples/newclient"
 	"github.com/gammazero/nexus/v3/wamp"
 )
 
-const (
-	procedureName    = "sum"
-	realm            = "realm1"
-	routerUrl        = "ws://127.0.0.1:8080"
-	serializationStr = "cbor"
-)
+const procedureName = "sum"
 
 var logger = log.New(os.Stdout, "CALLEE> ", 0)
 
 func main() {
-	var serialization serialize.Serialization
-	var callee *client.Client
-	var err error
-
-	// Get requested serialization.
-	switch serializationStr {
-	case "json":
-		serialization = client.JSON
-	case "msgpack":
-		serialization = client.MSGPACK
-	case "cbor":
-		serialization = client.CBOR
+	if err := run(); err != nil {
+		logger.Fatal(err)
 	}
+}
 
-	cfg := client.Config{
-		Realm:         realm,
-		Serialization: serialization,
-		Logger:        logger,
-	}
-
+func run() error {
 	// Connect callee client with requested socket type and serialization.
-	callee, err = client.ConnectNet(context.Background(), routerUrl, cfg)
+	callee, err := newclient.NewClient(logger)
 	if err != nil {
-		logger.Fatalf("Cannot connect to server error: %s", err)
-		return
+		return err
 	}
 	defer callee.Close()
 
-	logger.Println("Connected to", routerUrl, "using", serializationStr, "serialization")
-
 	// Register procedure "sum"
 	if err = callee.Register(procedureName, sum, nil); err != nil {
-		logger.Fatal("Failed to register procedure:", err)
+		return fmt.Errorf("failed to register procedure: %w", err)
 	}
 	logger.Println("Registered procedure", procedureName)
 
@@ -65,12 +44,13 @@ func main() {
 	case <-sigChan:
 	case <-callee.Done():
 		logger.Print("Router gone, exiting")
-		return // router gone, just exit
+		return nil // router gone, just exit
 	}
 
 	if err = callee.Unregister(procedureName); err != nil {
 		logger.Println("Failed to unregister procedure:", err)
 	}
+	return nil
 }
 
 func sum(ctx context.Context, inv *wamp.Invocation) client.InvokeResult {
@@ -86,7 +66,7 @@ func sum(ctx context.Context, inv *wamp.Invocation) client.InvokeResult {
 	}
 	logger.Println("  Calculated sum", sum)
 
-	options := wamp.Dict{}
+	var options wamp.Dict
 	// Make a random choice to demonstrate different serializers.
 	switch rand.Intn(3) {
 	case 0:

@@ -2,6 +2,7 @@ package main
 
 import (
 	"context"
+	"fmt"
 	"log"
 	"os"
 	"os/signal"
@@ -19,6 +20,12 @@ const (
 
 func main() {
 	logger := log.New(os.Stdout, "", 0)
+	if err := run(logger); err != nil {
+		logger.Fatal(err)
+	}
+}
+
+func run(logger *log.Logger) error {
 	cfg := client.Config{
 		Realm:  realm,
 		Logger: logger,
@@ -27,7 +34,7 @@ func main() {
 	// Connect subscriber session.
 	subscriber, err := client.ConnectNet(context.Background(), addr, cfg)
 	if err != nil {
-		logger.Fatal(err)
+		return err
 	}
 	defer subscriber.Close()
 
@@ -40,9 +47,8 @@ func main() {
 	}
 
 	// Subscribe to topic.
-	err = subscriber.Subscribe(exampleTopic, eventHandler, nil)
-	if err != nil {
-		logger.Fatal("subscribe error:", err)
+	if err = subscriber.Subscribe(exampleTopic, eventHandler, nil); err != nil {
+		return fmt.Errorf("subscribe error: %w", err)
 	}
 	logger.Println("Subscribed to", exampleTopic)
 
@@ -53,11 +59,12 @@ func main() {
 	case <-sigChan:
 	case <-subscriber.Done():
 		logger.Print("Router gone, exiting")
-		return // router gone, just exit
+		return nil // router gone, just exit
 	}
 
 	// Unsubscribe from topic.
 	if err = subscriber.Unsubscribe(exampleTopic); err != nil {
 		logger.Println("Failed to unsubscribe:", err)
 	}
+	return nil
 }

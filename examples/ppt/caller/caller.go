@@ -2,95 +2,63 @@ package main
 
 import (
 	"context"
+	"errors"
 	"log"
 	"math/rand"
 	"os"
 
-	"github.com/gammazero/nexus/v3/client"
-	"github.com/gammazero/nexus/v3/transport/serialize"
+	"github.com/gammazero/nexus/v3/examples/newclient"
 	"github.com/gammazero/nexus/v3/wamp"
 )
 
-const (
-	procedureName    = "sum"
-	realm            = "realm1"
-	routerUrl        = "ws://127.0.0.1:8080"
-	serializationStr = "cbor"
-)
+const procedureName = "sum"
 
 func main() {
 	logger := log.New(os.Stderr, "CALLER> ", 0)
-
-	var serialization serialize.Serialization
-	var caller *client.Client
-	var err error
-
-	// Get requested serialization.
-	switch serializationStr {
-	case "json":
-		serialization = client.JSON
-	case "msgpack":
-		serialization = client.MSGPACK
-	case "cbor":
-		serialization = client.CBOR
+	if err := run(logger); err != nil {
+		logger.Fatal(err)
 	}
+}
 
-	cfg := client.Config{
-		Realm:         realm,
-		Serialization: serialization,
-		Logger:        logger,
-	}
-
+func run(logger *log.Logger) error {
 	// Connect caller client with requested socket type and serialization.
-	caller, err = client.ConnectNet(context.Background(), routerUrl, cfg)
+	caller, err := newclient.NewClient(logger)
 	if err != nil {
-		logger.Fatalf("Cannot connect to server error: %s", err)
-		return
+		return err
 	}
 	defer caller.Close()
 
-	logger.Println("Connected to", routerUrl, "using", serializationStr, "serialization")
-
-	// Test calling the "sum" procedure with args 1..10. Requires external rpc
-	// client to be running.
+	// Test calling the "sum" procedure with each ppt scheme and payload
+	// serializer. Requires external rpc client to be running.
+	calls := []struct {
+		scheme     string
+		serializer string
+	}{
+		{"x_custom", "cbor"},
+		{"mqtt", "msgpack"},
+		{"mqtt", ""},
+	}
 	ctx := context.Background()
-	logger.Println("Calling remote procedure to sum numbers with x_custom ppt scheme and cbor payload serializer")
-	callArgs := wamp.List{rand.Intn(100), rand.Intn(100)}
-	options := wamp.Dict{
-		wamp.OptPPTScheme:     "x_custom",
-		wamp.OptPPTSerializer: "cbor",
+	for _, c := range calls {
+		serializer := c.serializer
+		options := wamp.Dict{wamp.OptPPTScheme: c.scheme}
+		if serializer != "" {
+			options[wamp.OptPPTSerializer] = serializer
+		} else {
+			serializer = "native"
+		}
+		logger.Printf("Calling remote procedure to sum numbers with %s ppt scheme and %s payload serializer",
+			c.scheme, serializer)
+		callArgs := wamp.List{rand.Intn(100), rand.Intn(100)}
+		result, err := caller.Call(ctx, procedureName, options, callArgs, nil, nil)
+		if err != nil {
+			return err
+		}
+		if len(result.Arguments) == 0 {
+			return errors.New("result has no arguments")
+		}
+		sum, _ := wamp.AsInt64(result.Arguments[0])
+		logger.Println("Result is:", sum)
 	}
-	result, err := caller.Call(ctx, "sum", options, callArgs, nil, nil)
-	if err != nil {
-		logger.Fatal(err)
-	}
-	sum, _ := wamp.AsInt64(result.Arguments[0])
-	logger.Println("Result is:", sum)
-
-	logger.Println("Calling remote procedure to sum numbers with mqtt ppt scheme and msgpack payload serializer")
-	callArgs = wamp.List{rand.Intn(100), rand.Intn(100)}
-	options = wamp.Dict{
-		wamp.OptPPTScheme:     "mqtt",
-		wamp.OptPPTSerializer: "msgpack",
-	}
-	result, err = caller.Call(ctx, "sum", options, callArgs, nil, nil)
-	if err != nil {
-		logger.Fatal(err)
-	}
-	sum, _ = wamp.AsInt64(result.Arguments[0])
-	logger.Println("Result is:", sum)
-
-	logger.Println("Calling remote procedure to sum numbers with mqtt ppt scheme and native payload serializer")
-	callArgs = wamp.List{rand.Intn(100), rand.Intn(100)}
-	options = wamp.Dict{
-		wamp.OptPPTScheme: "mqtt",
-	}
-	result, err = caller.Call(ctx, "sum", options, callArgs, nil, nil)
-	if err != nil {
-		logger.Fatal(err)
-	}
-	sum, _ = wamp.AsInt64(result.Arguments[0])
-	logger.Println("Result is:", sum)
-
-	caller.Close()
+	return nil
 }
