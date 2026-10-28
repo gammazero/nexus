@@ -1,4 +1,4 @@
-<img src="doc/n-logo2.png">
+<img src="docs/n-logo2.png">
 
 # WAMP v2 router library, client library and router service
 
