@@ -1,6 +1,7 @@
 package router
 
 import (
+	"errors"
 	"fmt"
 	"maps"
 	"math/rand"
@@ -28,7 +29,12 @@ const (
 	// before it can send any other message, so a callee that produces results
 	// faster than its caller reads them is slowed to the caller's pace.
 	maxPendingYields = 64
+	// error message for peer not announcing PPT support.
+	pptNotSupportedMsg = "peer is trying to use Payload PassThru Mode without announcing support for it"
 )
+
+// Deprecated. Text only appears in error message details, not used as error.
+var ErrPPTNotSupportedByPeer = errors.New(pptNotSupportedMsg)
 
 // Role information for this dealer.
 var dealerRole = wamp.Dict{ //nolint:gochecknoglobals
@@ -966,7 +972,6 @@ func (d *dealer) syncCall(caller *wamp.Session, msg *wamp.Call) {
 		// Check and handle Payload PassThru Mode.
 		// @see https://wamp-proto.org/wamp_latest_ietf.html#name-payload-passthru-mode
 		if pptScheme, _ := invk.options[wamp.OptPPTScheme].(string); pptScheme != "" {
-
 			// Let's check: was ppt feature announced by caller?
 			if !caller.HasFeature(wamp.RoleCaller, wamp.FeaturePayloadPassthruMode) {
 				// It's protocol violation, so we need to abort connection.
@@ -1345,7 +1350,6 @@ func (d *dealer) syncYield(callee *wamp.Session, msg *wamp.Yield, progress, canR
 	// Check and handle Payload PassThru Mode
 	// @see https://wamp-proto.org/wamp_latest_ietf.html#name-payload-passthru-mode
 	if pptScheme, _ := msg.Options[wamp.OptPPTScheme].(string); pptScheme != "" {
-
 		// Let's check: was ppt feature announced by callee?
 		if !callee.HasFeature(wamp.RoleCallee, wamp.FeaturePayloadPassthruMode) {
 			// Notify caller that CALL was erred.
@@ -1353,14 +1357,14 @@ func (d *dealer) syncYield(callee *wamp.Session, msg *wamp.Yield, progress, canR
 				Type:    msg.MessageType(),
 				Request: msg.Request,
 				Details: wamp.Dict{
-					"error": ErrPPTNotSupportedByPeer.Error(),
+					"error": pptNotSupportedMsg,
 				},
 				Error: wamp.ErrFeatureNotSupported,
 			})
 			// Protocol violation, so need to abort connection.
 			abortMsg := wamp.Abort{Reason: wamp.ErrProtocolViolation}
 			abortMsg.Details = wamp.Dict{}
-			abortMsg.Details[wamp.OptMessage] = ErrPPTNotSupportedByPeer.Error()
+			abortMsg.Details[wamp.OptMessage] = pptNotSupportedMsg
 			callee.EndRecvAbort(&abortMsg)
 			return false
 		}
@@ -1372,7 +1376,7 @@ func (d *dealer) syncYield(callee *wamp.Session, msg *wamp.Yield, progress, canR
 				Type:    msg.MessageType(),
 				Request: msg.Request,
 				Details: wamp.Dict{
-					"error": ErrPPTNotSupportedByPeer.Error(),
+					"error": pptNotSupportedMsg,
 				},
 				Error: wamp.ErrFeatureNotSupported,
 			})

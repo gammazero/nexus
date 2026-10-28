@@ -776,7 +776,6 @@ func TestEventHistory(t *testing.T) {
 	// Publish all payloads to all topics to have a data to check.
 	for i := 1; i <= 5; i++ {
 		for _, topic := range topics {
-
 			publication := wamp.Publish{
 				Request:     wamp.ID(reqId),
 				Topic:       topic,

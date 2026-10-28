@@ -23,6 +23,7 @@ const metaID = wamp.ID(1)
 // reads nothing for this long is closed.
 const replyRoomTimeout = time.Minute
 
+// Testament scope.
 const (
 	destroyedScope = "destroyed"
 	detachedScope  = "detached"

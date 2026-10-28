@@ -1063,7 +1063,6 @@ func TestSubscriptionMetaProcedures(t *testing.T) {
 
 func TestDynamicRealmChange(t *testing.T) {
 	synctest.Test(t, func(t *testing.T) {
-
 		dr := newTestRouter(t)
 		err := dr.AddRealm(&RealmConfig{
 			URI:           testRealm2,

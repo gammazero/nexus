@@ -1725,7 +1725,6 @@ func (c *Client) runHandleEvent(msg *wamp.Event) {
 	// we can not reply with error, only log it.
 	// Although the router should handle it
 	if pptScheme, _ := msg.Details[wamp.OptPPTScheme].(string); pptScheme != "" {
-
 		if !isPPTSchemeValid(pptScheme) {
 			c.log.Printf("cannot process even with invalid ppt schema %q: %v", pptScheme, ErrPPTSchemeInvalid)
 			return
