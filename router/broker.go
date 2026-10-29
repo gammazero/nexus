@@ -112,7 +112,7 @@ func newBroker(logger stdlog.StdLog, config *RealmConfig) (*broker, error) {
 	case EventOverflowClose:
 		closeSlow = true
 	default:
-		return nil, configError{Err: fmt.Errorf("invalid event overflow: %q", config.EventOverflow)}
+		return nil, fmt.Errorf("broker config: invalid event overflow: %q", config.EventOverflow)
 	}
 	publishFilter := config.PublishFilterFactory
 	if publishFilter == nil {
@@ -143,8 +143,8 @@ func newBroker(logger stdlog.StdLog, config *RealmConfig) (*broker, error) {
 		debug:         config.Debug,
 		filterFactory: publishFilter,
 	}
-	if err := b.PreInitEventHistoryTopics(config.TopicEventHistoryConfigs); err != nil {
-		return nil, configError{Err: err}
+	if err := b.initEventHistory(config.TopicEventHistoryConfigs); err != nil {
+		return nil, fmt.Errorf("broker config: %w", err)
 	}
 	go b.run()
 	return b, nil
@@ -156,25 +156,23 @@ func (b *broker) role() wamp.Dict {
 	return brokerRole
 }
 
-// PreInitEventHistoryTopics initializes storage for event history enabled
-// topics.
-func (b *broker) PreInitEventHistoryTopics(evntCfgs []*TopicEventHistoryConfig) error {
-	for _, topicCfg := range evntCfgs {
+// initEventHistory initializes storage for event history enabled topics. It
+// must run before the broker goroutine starts.
+func (b *broker) initEventHistory(evntHistCfg []*TopicEventHistoryConfig) error {
+	const errSubject = "event history"
+	for _, topicCfg := range evntHistCfg {
 		if !topicCfg.Topic.ValidURI(b.strictURI, topicCfg.MatchPolicy) {
-			return fmt.Errorf("invalid topic/match configuration found: %s %s", topicCfg.Topic, topicCfg.MatchPolicy)
+			return fmt.Errorf("%s: invalid topic/match: %s %s", errSubject, topicCfg.Topic, topicCfg.MatchPolicy)
 		}
-
 		if topicCfg.Limit <= 0 {
-			return fmt.Errorf("invalid limit for topic configuration found: %d %s", topicCfg.Limit, topicCfg.Topic)
+			return fmt.Errorf("%s: invalid limit: %d %s", errSubject, topicCfg.Limit, topicCfg.Topic)
 		}
 
 		sub, _ := b.syncInitSubscription(topicCfg.Topic, topicCfg.MatchPolicy, nil)
-
 		b.eventHistoryStore[sub] = &historyStore{
 			matchPolicy: topicCfg.MatchPolicy,
 			limit:       topicCfg.Limit,
 		}
-
 	}
 	return nil
 }
@@ -221,13 +219,12 @@ func (b *broker) publish(pub *wamp.Session, msg *wamp.Publish) {
 	// Check and handle Payload PassThru Mode.
 	// @see https://wamp-proto.org/wamp_latest_ietf.html#name-payload-passthru-mode
 	if pptScheme, _ := msg.Options[wamp.OptPPTScheme].(string); pptScheme != "" {
-
 		// Let's check: was ppt feature announced by publisher?
 		if !pub.HasFeature(wamp.RolePublisher, wamp.FeaturePayloadPassthruMode) {
 			// It's protocol violation, so we need to abort connection.
 			abortMsg := wamp.Abort{Reason: wamp.ErrProtocolViolation}
 			abortMsg.Details = wamp.Dict{}
-			abortMsg.Details[wamp.OptMessage] = ErrPPTNotSupportedByPeer.Error()
+			abortMsg.Details[wamp.OptMessage] = pptNotSupportedMsg
 			// Let the realm end the session, so that it is removed from the
 			// broker and dealer before its peer is closed.
 			pub.EndRecvAbort(&abortMsg)
