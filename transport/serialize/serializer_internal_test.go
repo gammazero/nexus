@@ -91,3 +91,46 @@ func TestListToMsgAssignMap(t *testing.T) {
 	})
 	require.Error(t, err)
 }
+
+// TestAssignMapConvertedKeys checks that assignMap gets each value with the
+// key from src, not with the key converted for dst, which src may not have.
+func TestAssignMapConvertedKeys(t *testing.T) {
+	var dict wamp.Dict
+	err := assignMap(reflect.ValueOf(&dict).Elem(),
+		reflect.ValueOf(map[wamp.URI]any{"a.uri": 1}))
+	require.NoError(t, err)
+	require.Equal(t, wamp.Dict{"a.uri": 1}, dict)
+
+	err = assignMap(reflect.ValueOf(&dict).Elem(),
+		reflect.ValueOf(map[any]any{wamp.URI("a.uri"): 1, "b": 2}))
+	require.NoError(t, err)
+	require.Equal(t, wamp.Dict{"a.uri": 1, "b": 2}, dict)
+}
+
+// TestAssignMapIntegerKeys checks that an integer is not converted to a string
+// as Go does, by taking it as a rune, which gives a different key, or a key
+// that collides with another.
+func TestAssignMapIntegerKeys(t *testing.T) {
+	var dict wamp.Dict
+	err := assignMap(reflect.ValueOf(&dict).Elem(),
+		reflect.ValueOf(map[any]any{65: "x"}))
+	require.EqualError(t, err, "cannot convert src key '65', invalid type: "+
+		"type int not convertible to string")
+
+	err = assignMap(reflect.ValueOf(&dict).Elem(),
+		reflect.ValueOf(map[uint8]any{65: "x"}))
+	require.EqualError(t, err, "cannot convert src key '65', invalid type: "+
+		"type uint8 not convertible to string")
+
+	var strs map[string]string
+	err = assignMap(reflect.ValueOf(&strs).Elem(),
+		reflect.ValueOf(map[string]int{"a": 65}))
+	require.EqualError(t, err, "cannot convert src value for key 'a', "+
+		"invalid type: type int not convertible to string")
+
+	var strList []string
+	err = assignSlice(reflect.ValueOf(&strList).Elem(),
+		reflect.ValueOf([]int{65}))
+	require.EqualError(t, err, "cannot convert value at index 0: "+
+		"type int not convertible to string")
+}
