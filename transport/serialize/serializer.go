@@ -99,8 +99,10 @@ func convertType(val reflect.Value, typ reflect.Type) (reflect.Value, error) {
 	valType := val.Type()
 	// See if value is directly assignable.
 	if !valType.AssignableTo(typ) {
-		// Not directly assignable, so see if it is convertible.
-		if !valType.ConvertibleTo(typ) {
+		// Not directly assignable, so see if it is convertible. Go converts an integer
+		// to a string by taking it as a rune, which does not give the string of the
+		// number, so do not convert integers to strings.
+		if !valType.ConvertibleTo(typ) || (typ.Kind() == reflect.String && isInteger(valType.Kind())) {
 			return val, fmt.Errorf("type %s not convertible to %s",
 				valType.Kind(), typ.Kind())
 		}
@@ -110,6 +112,11 @@ func convertType(val reflect.Value, typ reflect.Type) (reflect.Value, error) {
 	return val, nil
 }
 
+// isInteger reports whether k is a signed or unsigned integer kind.
+func isInteger(k reflect.Kind) bool {
+	return k >= reflect.Int && k <= reflect.Uintptr
+}
+
 // assignMap takes the key-value pairs from src and copies them into dst. Types
 // are converted as needed.
 func assignMap(dst reflect.Value, src reflect.Value) error {
@@ -117,7 +124,8 @@ func assignMap(dst reflect.Value, src reflect.Value) error {
 	dstValType := dst.Type().Elem()
 
 	dst.Set(reflect.MakeMap(dst.Type()))
-	for _, k := range src.MapKeys() {
+	for _, srcKey := range src.MapKeys() {
+		k := srcKey
 		if k.Type().Kind() == reflect.Interface {
 			k = k.Elem()
 		}
@@ -126,7 +134,8 @@ func assignMap(dst reflect.Value, src reflect.Value) error {
 			return fmt.Errorf("cannot convert src key '%v', invalid type: %w",
 				k.Interface(), err)
 		}
-		v := src.MapIndex(k)
+		// Get the value with the key from src, which may not have the converted key.
+		v := src.MapIndex(srcKey)
 		if v, err = convertType(v, dstValType); err != nil {
 			return fmt.Errorf(
 				"cannot convert src value for key '%v', invalid type: %w",
