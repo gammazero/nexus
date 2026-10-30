@@ -152,12 +152,17 @@ func TestWSCookieAttributes(t *testing.T) {
 			require.NoError(t, err)
 			defer conn.Close()
 
+			var found bool
 			for _, c := range rsp.Cookies() {
 				if c.Name == "nexus-wamp-cookie" {
-					require.Equal(t, c.SameSite, tt.wantSameSite)
-					require.Equal(t, c.Secure, tt.wantIsSecure)
+					found = true
+					require.Equal(t, tt.wantSameSite, c.SameSite)
+					require.Equal(t, tt.wantIsSecure, c.Secure)
+					// Scripts in a browser cannot read the cookie.
+					require.True(t, c.HttpOnly, "cookie not HttpOnly")
 				}
 			}
+			require.True(t, found, "no tracking cookie")
 		})
 	}
 
