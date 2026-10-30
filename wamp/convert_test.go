@@ -182,6 +182,11 @@ func TestAsInt64(t *testing.T) {
 	require.False(t, ok, shouldFailMsg)
 }
 
+// float64er has a Float64 method, as serialize.Decimal does.
+type float64er float64
+
+func (f float64er) Float64() float64 { return float64(f) }
+
 func TestAsFloat64(t *testing.T) {
 	const (
 		failMsg       = "Failed to convert to float64"
@@ -191,6 +196,10 @@ func TestAsFloat64(t *testing.T) {
 	f64, ok := wamp.AsFloat64(float64(numConv))
 	require.True(t, ok, failMsg)
 	require.Equal(t, float64(numConv), f64, wrongValueMsg)
+
+	f64, ok = wamp.AsFloat64(float64er(12.5))
+	require.True(t, ok, failMsg)
+	require.Equal(t, 12.5, f64, wrongValueMsg)
 
 	_, ok = wamp.AsFloat64(float32(numConv))
 	require.True(t, ok, failMsg)
@@ -238,4 +247,12 @@ func TestListToStrings(t *testing.T) {
 
 	_, ok = wamp.ListToStrings(wamp.List{"hello", 123})
 	require.False(t, ok, "should not have converted")
+
+	strs, ok = wamp.ListToStrings(nil)
+	require.True(t, ok, "not convered")
+	require.Nil(t, strs, "bad conversion")
+
+	strs, ok = wamp.ListToStrings(wamp.List{})
+	require.True(t, ok, "not convered")
+	require.Nil(t, strs, "bad conversion")
 }
