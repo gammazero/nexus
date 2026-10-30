@@ -1378,9 +1378,11 @@ func (r *realm) testamentFlush(msg *wamp.Invocation) wamp.Message {
 // details. transport.auth is never allowed, because the data in transport.auth
 // may not be serializable and may expose auth information to session meta.
 //
-// The returned dictionary is always a copy, since it is sent to other sessions
-// and the session details may change after it is returned. Call this with the
-// session locked.
+// If transport has nothing left once auth is removed, transport is left out.
+//
+// The returned dictionary is a deep copy, made by wamp.NormalizeDict, since it
+// is sent to other sessions and the session details, including the dicts in
+// them, may change after it is returned. Call this with the session locked.
 func (r *realm) cleanSessionDetails(details wamp.Dict) wamp.Dict {
 	var clean wamp.Dict
 	// If in strict mode, only include allowed values.
@@ -1404,33 +1406,22 @@ func (r *realm) cleanSessionDetails(details wamp.Dict) wamp.Dict {
 		clean = maps.Clone(details)
 	}
 
-	// If there is no transport detail, all done.
-	transDict := wamp.DictChild(details, "transport")
-	if transDict == nil {
-		return clean
-	}
-
-	// If transport detail does not have auth, then use transport as-is.
-	authDict := wamp.DictChild(transDict, "auth")
-	if authDict == nil {
-		return clean
-	}
-
-	// If details.transport.auth exists, then provide version of transport
-	// detail without auth.
-	var altTrans wamp.Dict
-	for n, v := range transDict {
-		if n == "auth" {
-			continue
+	// Remove transport.auth before copying, so that it is never copied.
+	if transDict := wamp.DictChild(clean, "transport"); transDict != nil {
+		trans := make(wamp.Dict, len(transDict))
+		for n, v := range transDict {
+			if n != "auth" {
+				trans[n] = v
+			}
 		}
-		if altTrans == nil {
-			altTrans = wamp.Dict{}
+		if len(trans) == 0 {
+			delete(clean, "transport")
+		} else {
+			clean["transport"] = trans
 		}
-		altTrans[n] = v
 	}
-	clean["transport"] = altTrans
 
-	return clean
+	return wamp.NormalizeDict(clean)
 }
 
 // makeError returns a wamp.Error message with the given URI.
