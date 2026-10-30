@@ -2,8 +2,10 @@ package router //nolint:testpackage
 
 import (
 	"log"
+	"maps"
 	"os"
 	"slices"
+	"sync"
 	"testing"
 	"testing/synctest"
 	"time"
@@ -1095,4 +1097,66 @@ func TestDynamicRealmChange(t *testing.T) {
 			require.True(t, ok, "expected GOODBYE")
 		}
 	})
+}
+
+func TestModifySessionDetails(t *testing.T) {
+	for _, debug := range []bool{false, true} {
+		r := &realm{log: logger, debug: debug}
+		sess := wamp.NewSession(nil, 1, wamp.Dict{
+			"session":  wamp.ID(1),
+			"authid":   "alice",
+			"authrole": "user",
+			"color":    "red",
+		}, nil)
+
+		r.modifySessionDetails(sess, wamp.Dict{
+			"authid":  "bob",               // updated
+			"pi":      3.14,                // added
+			"color":   nil,                 // deleted
+			"missing": nil,                 // deleting what is not there
+			"nested":  wamp.Dict{"x": 1.0}, // added
+		})
+		require.Equal(t, wamp.Dict{
+			"session":  wamp.ID(1),
+			"authid":   "bob",
+			"authrole": "user",
+			"pi":       3.14,
+			"nested":   wamp.Dict{"x": 1.0},
+		}, sess.Details, "debug %v", debug)
+
+		// An empty or nil delta changes nothing.
+		before := maps.Clone(sess.Details)
+		r.modifySessionDetails(sess, wamp.Dict{})
+		r.modifySessionDetails(sess, nil)
+		require.Equal(t, before, sess.Details)
+	}
+}
+
+// TestModifySessionDetailsLocks checks that modifySessionDetails changes the
+// details with the session locked, and unlocks it when done. Run with -race to
+// check that it does not race with readers that hold the session lock.
+func TestModifySessionDetailsLocks(t *testing.T) {
+	r := &realm{log: logger}
+	sess := wamp.NewSession(nil, 1, wamp.Dict{"count": 0}, nil)
+
+	const count = 100
+	var wg sync.WaitGroup
+	wg.Go(func() {
+		for i := 1; i <= count; i++ {
+			r.modifySessionDetails(sess, wamp.Dict{"count": i})
+		}
+	})
+	wg.Go(func() {
+		for range count {
+			sess.Lock()
+			_ = sess.Details["count"]
+			sess.Unlock()
+		}
+	})
+	wg.Wait()
+
+	// The session is not left locked.
+	sess.Lock()
+	require.Equal(t, count, sess.Details["count"])
+	sess.Unlock()
 }
