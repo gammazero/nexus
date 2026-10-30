@@ -61,9 +61,11 @@ func listToMsg(msgType wamp.MessageType, vlist []any) (wamp.Message, error) {
 			f.Set(arg)
 			continue
 		}
-		// Cannot directly assign, so try to convert and assign.
-		if arg.Type().ConvertibleTo(f.Type()) {
-			f.Set(arg.Convert(f.Type()))
+		// Cannot directly assign, so try to convert and assign. convertType does not
+		// convert an integer to a string, so an integer for a URI field is an error
+		// below.
+		if v, err := convertType(arg, f.Type()); err == nil {
+			f.Set(v)
 			continue
 		}
 		// See if the list item and message field are same kind, error if not.
