@@ -58,6 +58,11 @@ type WebsocketServer struct {
 	// Serializer for binary frames. Defaults to MessagePackSerializer.
 	BinarySerializer serialize.Serializer
 
+	// EnableRequestCapture tells the server to include the upgrade HTTP
+	// request in the HELLO and session details. It is stored in
+	// Details.transport.auth.request|*http.Request making it available to
+	// authenticator and authorizer logic.
+	EnableRequestCapture bool
 	// EnableTrackingCookie tells the server to send a random-value cookie to
 	// the websocket client. A returning client may identify itself by sending
 	// a previously issued tracking cookie in a websocket request. If a request
@@ -65,6 +70,9 @@ type WebsocketServer struct {
 	// cookie is included in the HELLO and session details. The new tracking
 	// cookie that gets sent to the client (the cookie to expect for subsequent
 	// connections) is also stored in HELLO and session details.
+	//
+	// The cookie is HttpOnly, so scripts in a browser cannot read it. The
+	// browser still sends it with the websocket request.
 	//
 	// The cookie from the request, and the next cookie to expect, are stored
 	// in the HELLO and session details as:
@@ -84,11 +92,6 @@ type WebsocketServer struct {
 	//
 	// The "cookie" and "nextcookie" values are retrieved similarly.
 	EnableTrackingCookie bool
-	// EnableRequestCapture tells the server to include the upgrade HTTP
-	// request in the HELLO and session details. It is stored in
-	// Details.transport.auth.request|*http.Request making it available to
-	// authenticator and authorizer logic.
-	EnableRequestCapture bool
 	// TrackingCookieSameSiteAttribute defines which SameSite attribute will be
 	// assigned to the next auth cookie if EnableTrackingCookie is true.
 	TrackingCookieSameSiteAttribute http.SameSite
@@ -331,6 +334,7 @@ func (s *WebsocketServer) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 			nextCookie = &http.Cookie{
 				Name:     cookieName,
 				Value:    base64.URLEncoding.EncodeToString(b),
+				HttpOnly: true,
 				Secure:   s.TrackingCookieSecureAttribute,
 				SameSite: s.TrackingCookieSameSiteAttribute,
 			}
