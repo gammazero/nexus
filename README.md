@@ -3,6 +3,7 @@
 # WAMP v2 router library, client library and router service
 
 [![Main CI](https://github.com/gammazero/nexus/actions/workflows/main-golint.yml/badge.svg)](https://github.com/gammazero/nexus/actions/workflows/main-golint.yml)
+[![Coverage](https://img.shields.io/badge/coverage-56.1%25-orange)](https://github.com/gammazero/nexus/actions/workflows/main-golint.yml)
 [![License](https://img.shields.io/badge/License-MIT-blue.svg)](LICENSE)
 [![GoDoc](https://pkg.go.dev/badge/github.com/gammazero/nexus)](https://pkg.go.dev/github.com/gammazero/nexus)
 
