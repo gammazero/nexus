@@ -3,6 +3,7 @@ package serialize_test
 import (
 	"encoding/base64"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"reflect"
 	"sync"
@@ -568,4 +569,199 @@ func benchmarkSerialize(b *testing.B, s serialize.Serializer, msg wamp.Message) 
 			panic("deserialization error: " + err.Error())
 		}
 	}
+}
+
+// binaryDataExt returns functions that encode a BinaryData as its bytes, and
+// decode it from them.
+func binaryDataExt() (func(reflect.Value) ([]byte, error), func(reflect.Value, []byte) error) {
+	encode := func(v reflect.Value) ([]byte, error) { return v.Bytes(), nil }
+	decode := func(v reflect.Value, data []byte) error {
+		v.Elem().SetBytes(data)
+		return nil
+	}
+	return encode, decode
+}
+
+// initMsgpackHandle makes a new msgpack handle for the test, and another once
+// the test is done, so that extensions the test registers do not change other
+// tests.
+func initMsgpackHandle(t *testing.T) {
+	serialize.InitMsgpackHandle()
+	t.Cleanup(serialize.InitMsgpackHandle)
+}
+
+func TestMessagePackSerializeBytes(t *testing.T) {
+	initMsgpackHandle(t)
+	s := &serialize.MessagePackSerializer{}
+
+	// [6, {}, "wamp.close.normal"]
+	b, err := s.Serialize(&wamp.Goodbye{Details: wamp.Dict{}, Reason: wamp.CloseNormal})
+	require.NoError(t, err)
+	require.Equal(t, append([]byte{0x93, 0x06, 0x80, 0xb1},
+		"wamp.close.normal"...), b)
+
+	// An empty value at the end of the message is left out: [16, 1, {}, "t"].
+	b, err = s.Serialize(&wamp.Publish{Request: 1, Options: wamp.Dict{}, Topic: "t"})
+	require.NoError(t, err)
+	require.Equal(t, []byte{0x94, 0x10, 0x01, 0x80, 0xa1, 't'}, b)
+}
+
+func TestMsgpackRegisterExtension(t *testing.T) {
+	initMsgpackHandle(t)
+	encode, decode := binaryDataExt()
+	err := serialize.MsgpackRegisterExtension(
+		reflect.TypeFor[serialize.BinaryData](), 42, encode, decode)
+	require.NoError(t, err)
+
+	// The value is written as a msgpack extension with tag 42, and the bytes from
+	// encode: [16, 1, {}, "t", [ext(42, "hi")]].
+	s := &serialize.MessagePackSerializer{}
+	msg := &wamp.Publish{
+		Request:   1,
+		Options:   wamp.Dict{},
+		Topic:     "t",
+		Arguments: wamp.List{serialize.BinaryData("hi")},
+	}
+	b, err := s.Serialize(msg)
+	require.NoError(t, err)
+	require.Equal(t, []byte{
+		0x95, 0x10, 0x01, 0x80, 0xa1, 't', 0x91, 0xd5, 42, 'h', 'i',
+	}, b)
+
+	// It is read back as the registered type.
+	got, err := s.Deserialize(b)
+	require.NoError(t, err)
+	require.Equal(t, msg, got)
+
+	// Extensions cannot be registered once the handle has been used.
+	err = serialize.MsgpackRegisterExtension(
+		reflect.TypeFor[serialize.BinaryData](), 43, encode, decode)
+	require.EqualError(t, err, "cannot modify initialized Handle")
+}
+
+func TestMsgpackRegisterExtensionUnnamedType(t *testing.T) {
+	initMsgpackHandle(t)
+	encode, decode := binaryDataExt()
+	err := serialize.MsgpackRegisterExtension(
+		reflect.TypeFor[[]byte](), 42, encode, decode)
+	require.Error(t, err, "registered an extension for an unnamed type")
+}
+
+func TestMsgpackExtensionErrors(t *testing.T) {
+	_, decode := binaryDataExt()
+	msg := &wamp.Publish{
+		Request:   1,
+		Topic:     "t",
+		Arguments: wamp.List{serialize.BinaryData("hi")},
+	}
+	s := &serialize.MessagePackSerializer{}
+
+	// An error from encode is returned by Serialize.
+	initMsgpackHandle(t)
+	err := serialize.MsgpackRegisterExtension(
+		reflect.TypeFor[serialize.BinaryData](), 42,
+		func(reflect.Value) ([]byte, error) {
+			return nil, errors.New("cannot encode")
+		}, decode)
+	require.NoError(t, err)
+	_, err = s.Serialize(msg)
+	require.ErrorContains(t, err, "cannot encode")
+
+	// An error from decode is returned by Deserialize.
+	initMsgpackHandle(t)
+	encode, _ := binaryDataExt()
+	err = serialize.MsgpackRegisterExtension(
+		reflect.TypeFor[serialize.BinaryData](), 42, encode,
+		func(reflect.Value, []byte) error {
+			return errors.New("cannot decode")
+		})
+	require.NoError(t, err)
+	b, err := s.Serialize(msg)
+	require.NoError(t, err)
+	_, err = s.Deserialize(b)
+	require.ErrorContains(t, err, "cannot decode")
+}
+
+// TestDeserializeErrors checks that each serializer returns an error for data
+// that is not a valid message, without panicking.
+func TestDeserializeErrors(t *testing.T) {
+	const (
+		unsupportedFormat = "unsupported message format"
+		unsupportedType   = "unsupported message type"
+		invalidMessage    = "invalid message"
+	)
+	for _, tc := range []struct {
+		name   string
+		s      serialize.Serializer
+		data   []byte
+		expect string // empty if the error is from the decoder
+	}{
+		{"json not json", &serialize.JSONSerializer{}, []byte(`[1,`), ""},
+		{"json not a list", &serialize.JSONSerializer{}, []byte(`{"a":1}`), ""},
+		{"json empty", &serialize.JSONSerializer{}, []byte(`[]`), invalidMessage},
+		{"json string type", &serialize.JSONSerializer{}, []byte(`["hello"]`), unsupportedFormat},
+		{"json negative type", &serialize.JSONSerializer{}, []byte(`[-1]`), unsupportedFormat},
+		{"json float type", &serialize.JSONSerializer{}, []byte(`[1.5]`), unsupportedFormat},
+		{"json unknown type", &serialize.JSONSerializer{}, []byte(`[999]`), unsupportedType},
+
+		{"cbor not cbor", &serialize.CBORSerializer{}, []byte{0x83, 0x01}, ""},
+		{"cbor empty", &serialize.CBORSerializer{}, []byte{0x80}, invalidMessage},
+		{"cbor string type", &serialize.CBORSerializer{}, []byte{0x81, 0x61, 'a'}, unsupportedFormat},
+		{"cbor negative type", &serialize.CBORSerializer{}, []byte{0x81, 0x20}, unsupportedFormat},
+		{"cbor unknown type", &serialize.CBORSerializer{}, []byte{0x81, 0x19, 0x03, 0xe7}, unsupportedType},
+
+		{"msgpack not msgpack", &serialize.MessagePackSerializer{}, []byte{0x93, 0x01}, ""},
+		{"msgpack empty", &serialize.MessagePackSerializer{}, []byte{0x90}, invalidMessage},
+		{"msgpack string type", &serialize.MessagePackSerializer{}, []byte{0x91, 0xa1, 'a'}, unsupportedFormat},
+		// A uint64 type that does not fit in an int.
+		{"msgpack huge type", &serialize.MessagePackSerializer{}, []byte{
+			0x91, 0xcf, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff,
+		}, unsupportedFormat},
+		{"msgpack negative type", &serialize.MessagePackSerializer{}, []byte{0x91, 0xff}, unsupportedType},
+		{"msgpack unknown type", &serialize.MessagePackSerializer{}, []byte{0x91, 0xcd, 0x03, 0xe7}, unsupportedType},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			msg, err := tc.s.Deserialize(tc.data)
+			require.Error(t, err, "got %#v", msg)
+			require.Nil(t, msg)
+			if tc.expect != "" {
+				require.EqualError(t, err, tc.expect)
+			}
+		})
+	}
+}
+
+func TestBinaryDataUnmarshalJSON(t *testing.T) {
+	// Empty binary data.
+	var b serialize.BinaryData
+	require.NoError(t, b.UnmarshalJSON([]byte(`"\u0000"`)))
+	require.Empty(t, b)
+
+	// Binary data in a JSON message is decoded as such when unmarshaled into
+	// BinaryData.
+	var args []serialize.BinaryData
+	data := fmt.Sprintf(`["\u0000%s","\u0000%s"]`,
+		base64.StdEncoding.EncodeToString([]byte("one")),
+		base64.StdEncoding.EncodeToString([]byte("two")))
+	require.NoError(t, json.Unmarshal([]byte(data), &args))
+	require.Equal(t, []serialize.BinaryData{
+		serialize.BinaryData("one"), serialize.BinaryData("two"),
+	}, args)
+
+	// A string that does not start with NUL is not binary data, including an
+	// empty string.
+	err := b.UnmarshalJSON([]byte(`"aGVsbG8="`))
+	require.EqualError(t, err, "binary string does not start with NUL")
+	err = b.UnmarshalJSON([]byte(`""`))
+	require.EqualError(t, err, "binary string does not start with NUL")
+	err = json.Unmarshal([]byte(`[""]`), &args)
+	require.EqualError(t, err, "binary string does not start with NUL")
+
+	// The data after the NUL must be base64.
+	err = b.UnmarshalJSON([]byte(`"\u0000not base64!"`))
+	require.ErrorContains(t, err, "illegal base64 data")
+
+	// A value that is not valid JSON is an error.
+	err = b.UnmarshalJSON([]byte(`"unterminated`))
+	require.Error(t, err)
 }

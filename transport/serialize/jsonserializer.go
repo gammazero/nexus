@@ -4,6 +4,7 @@ import (
 	"encoding/base64"
 	"errors"
 	"reflect"
+	"strings"
 
 	"github.com/ugorji/go/codec"
 
@@ -82,7 +83,7 @@ func (b *BinaryData) UnmarshalJSON(v []byte) error {
 	if err != nil {
 		return err
 	}
-	if s[0] != '\x00' {
+	if !strings.HasPrefix(s, "\x00") {
 		return errors.New("binary string does not start with NUL")
 	}
 	*b, err = base64.StdEncoding.DecodeString(s[1:])
