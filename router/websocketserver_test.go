@@ -5,6 +5,7 @@ import (
 	"context"
 	"fmt"
 	"log"
+	"maps"
 	"net/http"
 	"net/http/httptest"
 	"strings"
@@ -530,4 +531,192 @@ func TestPeerDescription(t *testing.T) {
 	got = peerDescription("10.0.0.7:4321", []string{strings.Repeat("a", 10000)})
 	require.Equal(t, `10.0.0.7:4321, X-Forwarded-For "`+
 		strings.Repeat("a", maxForwardedForLog)+`..."`, got)
+}
+
+func TestCheckOrigin(t *testing.T) {
+	newRequest := func(origin string) *http.Request {
+		r := httptest.NewRequest(http.MethodGet, "http://router.example.com/ws", nil)
+		if origin != "" {
+			r.Header.Set("Origin", origin)
+		}
+		return r
+	}
+	exacts := []string{"exact.example.org"}
+	globs := []string{"*.glob.example.net"}
+
+	// No Origin header, as from a client that is not a browser.
+	require.True(t, checkOrigin(nil, nil, newRequest("")))
+
+	// The Origin host is the request host, compared without case.
+	require.True(t, checkOrigin(nil, nil, newRequest("https://Router.Example.com")))
+
+	// An Origin that is not a URL is denied.
+	require.False(t, checkOrigin(exacts, globs, newRequest("http://[::1")))
+	require.False(t, checkOrigin(exacts, globs, newRequest("%zz")))
+
+	// The Origin host matches an exact host or a glob, without case.
+	require.True(t, checkOrigin(exacts, globs, newRequest("http://EXACT.example.org")))
+	require.True(t, checkOrigin(exacts, globs, newRequest("http://a.Glob.example.net")))
+
+	// Any other host is denied, including with no allowed hosts.
+	require.False(t, checkOrigin(exacts, globs, newRequest("http://other.example.org")))
+	require.False(t, checkOrigin(exacts, globs, newRequest("http://glob.example.net")))
+	require.False(t, checkOrigin(nil, nil, newRequest("http://other.example.org")))
+}
+
+func TestAddProtocol(t *testing.T) {
+	s := NewWebsocketServer(nil)
+
+	err := s.addProtocol("custom.proto", websocket.CloseMessage, &serialize.JSONSerializer{})
+	require.EqualError(t, err, fmt.Sprintf("invalid payload type: %d", websocket.CloseMessage))
+
+	err = s.addProtocol(jsonWebsocketProtocol, websocket.TextMessage, &serialize.JSONSerializer{})
+	require.EqualError(t, err, "protocol already registered: "+jsonWebsocketProtocol)
+
+	// A new protocol is registered with its payload type and serializer.
+	ser := &serialize.CBORSerializer{}
+	require.NoError(t, s.addProtocol("custom.proto", websocket.BinaryMessage, ser))
+	require.Equal(t, protocol{websocket.BinaryMessage, ser}, s.protocols["custom.proto"])
+	err = s.addProtocol("custom.proto", websocket.TextMessage, &serialize.JSONSerializer{})
+	require.EqualError(t, err, "protocol already registered: custom.proto")
+}
+
+// TestAddProtocolNegotiated checks that a client can connect with a protocol
+// added by addProtocol.
+func TestAddProtocolNegotiated(t *testing.T) {
+	r, err := NewRouter(routerConfig, logger)
+	require.NoError(t, err)
+	defer r.Close()
+
+	s := NewWebsocketServer(r)
+	require.NoError(t, s.addProtocol("custom.json", websocket.TextMessage,
+		&serialize.JSONSerializer{}))
+	server := httptest.NewServer(s)
+	defer server.Close()
+
+	dialer := websocket.Dialer{Subprotocols: []string{"custom.json"}}
+	conn, rsp, err := dialer.DialContext(context.Background(),
+		"ws"+strings.TrimPrefix(server.URL, "http"), nil)
+	require.NoError(t, err)
+	defer conn.Close()
+	defer rsp.Body.Close()
+	require.Equal(t, "custom.json", conn.Subprotocol())
+
+	hello, err := (&serialize.JSONSerializer{}).Serialize(
+		&wamp.Hello{Realm: testRealm, Details: maps.Clone(clientRoles)})
+	require.NoError(t, err)
+	require.NoError(t, conn.WriteMessage(websocket.TextMessage, hello))
+	_, msg, err := conn.ReadMessage()
+	require.NoError(t, err)
+	require.True(t, strings.HasPrefix(string(msg), "[2,"), "expected WELCOME, got %s", msg)
+}
+
+// fakeWSConn is a transport.WebsocketConnection that gives ReadMessage the
+// messages sent on in, and sends what is written to out.
+type fakeWSConn struct {
+	proto     string
+	readType  int
+	in        chan []byte
+	out       chan fakeWSMessage
+	closed    chan struct{}
+	closeOnce sync.Once
+}
+
+type fakeWSMessage struct {
+	messageType int
+	data        []byte
+}
+
+func newFakeWSConn(proto string, readType int) *fakeWSConn {
+	return &fakeWSConn{
+		proto:    proto,
+		readType: readType,
+		in:       make(chan []byte, 1),
+		out:      make(chan fakeWSMessage, 4),
+		closed:   make(chan struct{}),
+	}
+}
+
+func (c *fakeWSConn) Close() error {
+	c.closeOnce.Do(func() { close(c.closed) })
+	return nil
+}
+
+func (c *fakeWSConn) WriteControl(int, []byte, time.Time) error { return nil }
+
+func (c *fakeWSConn) WriteMessage(messageType int, data []byte) error {
+	select {
+	case c.out <- fakeWSMessage{messageType, bytes.Clone(data)}:
+		return nil
+	case <-c.closed:
+		return websocket.ErrCloseSent
+	}
+}
+
+func (c *fakeWSConn) ReadMessage() (int, []byte, error) {
+	select {
+	case data := <-c.in:
+		return c.readType, data, nil
+	case <-c.closed:
+		return 0, nil, &websocket.CloseError{Code: websocket.CloseNormalClosure}
+	}
+}
+
+func (c *fakeWSConn) SetPongHandler(func(string) error) {}
+func (c *fakeWSConn) SetPingHandler(func(string) error) {}
+func (c *fakeWSConn) Subprotocol() string               { return c.proto }
+
+// TestHandleWebsocketDefaultProtocols checks that handleWebsocket uses the
+// serializer and payload type of each WAMP protocol even when the server does
+// not have it registered, since a websocket implementation other than gorilla
+// may not reject an unregistered protocol, and closes a connection with any
+// other protocol.
+func TestHandleWebsocketDefaultProtocols(t *testing.T) {
+	for _, tc := range []struct {
+		proto       string
+		payloadType int
+		serializer  serialize.Serializer
+	}{
+		{jsonWebsocketProtocol, websocket.TextMessage, &serialize.JSONSerializer{}},
+		{msgpackWebsocketProtocol, websocket.BinaryMessage, &serialize.MessagePackSerializer{}},
+		{cborWebsocketProtocol, websocket.BinaryMessage, &serialize.CBORSerializer{}},
+	} {
+		t.Run(tc.proto, func(t *testing.T) {
+			r := newTestRouter(t)
+			s := NewWebsocketServer(r)
+			s.protocols = map[string]protocol{} // none registered
+
+			conn := newFakeWSConn(tc.proto, tc.payloadType)
+			defer conn.Close()
+			hello, err := tc.serializer.Serialize(
+				&wamp.Hello{Realm: testRealm, Details: maps.Clone(clientRoles)})
+			require.NoError(t, err)
+			conn.in <- hello
+
+			s.handleWebsocket(conn, nil, "test peer")
+
+			select {
+			case out := <-conn.out:
+				require.Equal(t, tc.payloadType, out.messageType)
+				msg, err := tc.serializer.Deserialize(out.data)
+				require.NoError(t, err)
+				require.IsType(t, &wamp.Welcome{}, msg)
+			case <-time.After(time.Second):
+				require.FailNow(t, "no WELCOME")
+			}
+		})
+	}
+
+	t.Run("unknown", func(t *testing.T) {
+		r := newTestRouter(t)
+		s := NewWebsocketServer(r)
+		conn := newFakeWSConn("wamp.2.unknown", websocket.TextMessage)
+		s.handleWebsocket(conn, nil, "test peer")
+		select {
+		case <-conn.closed:
+		default:
+			require.FailNow(t, "connection not closed")
+		}
+		require.Empty(t, conn.out, "message sent on connection")
+	})
 }
