@@ -327,7 +327,7 @@ func (s *WebsocketServer) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		b := make([]byte, 18)
 		_, err := rand.Read(b)
 		if err == nil {
-			// Create next auth cookie with 20 byte random value.
+			// Create next auth cookie with an 18-byte random value.
 			nextCookie = &http.Cookie{
 				Name:     cookieName,
 				Value:    base64.URLEncoding.EncodeToString(b),
