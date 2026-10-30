@@ -7,7 +7,6 @@ import (
 	"io"
 	"log"
 	"os"
-	"regexp"
 	"sync"
 	"sync/atomic"
 	"testing"
@@ -1046,12 +1045,12 @@ func (ks *serverKeyStore) AuthRole(authid string) (string, error) {
 
 // ---- network testing ----
 
+// TestConnectContext checks that ConnectNet with a canceled context fails with
+// an error that is context.Canceled. The error text is not checked, because it
+// depends on whether the dial is canceled while resolving the host name or
+// after, which can be either for localhost. The IP address URLs check a dial
+// canceled after the address is known.
 func TestConnectContext(t *testing.T) {
-	const (
-		expect     = "dial tcp: (.*)operation was canceled"
-		unixExpect = "dial unix /tmp/wamp.sock: operation was canceled"
-	)
-
 	cfg := client.Config{
 		Realm:           testRealm,
 		ResponseTimeout: 500 * time.Millisecond,
@@ -1060,29 +1059,18 @@ func TestConnectContext(t *testing.T) {
 	}
 	ctx, cancel := context.WithCancel(context.Background())
 	cancel()
-	_, err := client.ConnectNet(ctx, "http://localhost:9999/ws", cfg)
-	require.Error(t, err)
-	resStrMatch, _ := regexp.MatchString(expect, err.Error())
-	require.True(t, resStrMatch)
-
-	_, err = client.ConnectNet(ctx, "https://localhost:9999/ws", cfg)
-	require.Error(t, err)
-	resStrMatch, _ = regexp.MatchString(expect, err.Error())
-	require.True(t, resStrMatch)
-
-	_, err = client.ConnectNet(ctx, "tcp://localhost:9999", cfg)
-	require.Error(t, err)
-	resStrMatch, _ = regexp.MatchString(expect, err.Error())
-	require.True(t, resStrMatch)
-
-	_, err = client.ConnectNet(ctx, "tcps://localhost:9999", cfg)
-	require.Error(t, err)
-	resStrMatch, _ = regexp.MatchString(expect, err.Error())
-	require.True(t, resStrMatch)
-
-	_, err = client.ConnectNet(ctx, "unix:///tmp/wamp.sock", cfg)
-	require.Error(t, err)
-	require.EqualError(t, err, unixExpect)
+	for _, routerURL := range []string{
+		"http://localhost:9999/ws",
+		"https://localhost:9999/ws",
+		"tcp://localhost:9999",
+		"tcps://localhost:9999",
+		"http://127.0.0.1:9999/ws",
+		"tcp://127.0.0.1:9999",
+		"unix:///tmp/wamp.sock",
+	} {
+		_, err := client.ConnectNet(ctx, routerURL, cfg)
+		require.ErrorIs(t, err, context.Canceled, routerURL)
+	}
 }
 
 func createTestServer(t *testing.T) (router.Router, io.Closer) {
