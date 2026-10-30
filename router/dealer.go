@@ -33,7 +33,11 @@ const (
 	pptNotSupportedMsg = "peer is trying to use Payload PassThru Mode without announcing support for it"
 )
 
-// Deprecated. Text only appears in error message details, not used as error.
+// ErrPPTNotSupportedByPeer is the error for a peer that uses Payload PassThru
+// Mode without announcing support for it.
+//
+// Deprecated: The router does not return this error. Its text is sent only as
+// the message in the details of an ERROR or ABORT.
 var ErrPPTNotSupportedByPeer = errors.New(pptNotSupportedMsg)
 
 // Role information for this dealer.

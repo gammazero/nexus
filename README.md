@@ -5,7 +5,7 @@
 [![Main CI](https://github.com/gammazero/nexus/actions/workflows/main-golint.yml/badge.svg)](https://github.com/gammazero/nexus/actions/workflows/main-golint.yml)
 [![Coverage](https://img.shields.io/badge/coverage-73.0%25-yellow)](https://github.com/gammazero/nexus/actions/workflows/main-golint.yml)
 [![License](https://img.shields.io/badge/License-MIT-blue.svg)](LICENSE)
-[![GoDoc](https://pkg.go.dev/badge/github.com/gammazero/nexus)](https://pkg.go.dev/github.com/gammazero/nexus)
+[![GoDoc](https://pkg.go.dev/badge/github.com/gammazero/nexus/v3)](https://pkg.go.dev/github.com/gammazero/nexus/v3)
 
 **nexus** is a [WAMP](http://wamp-proto.org/) v2 router library, client library, and a router service, that implements
 most of the features defined in the WAMP-protocol advanced profile. The nexus project is written in
@@ -17,7 +17,7 @@ functionality. The router and client interoperate with other WAMP implementation
 See the [**nexus project Wiki**](https://github.com/gammazero/nexus/wiki) for documentation, examples, and
 operational details.
 
-[![GoDoc](https://pkg.go.dev/badge/github.com/gammazero/nexus)](https://pkg.go.dev/github.com/gammazero/nexus) for
+[![GoDoc](https://pkg.go.dev/badge/github.com/gammazero/nexus/v3)](https://pkg.go.dev/github.com/gammazero/nexus/v3) for
 API documentation.
 
 ## What is WAMP and nexus
@@ -203,6 +203,7 @@ The currently maintained version of this module is 3.x. Earlier major versions a
 | TLS for websockets                | Yes        |
 | TLS for rawsockets                | Yes        |
 | challenge-response authentication | Yes        |
+| cryptosign authentication         | Yes        |
 | cookie authentication             | Yes        |
 | ticket authentication             | Yes        |
 | batched WS transport              | No         |

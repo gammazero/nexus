@@ -24,6 +24,9 @@ Annotated config file example:
         "key_file": "",               // to enable secure connections
         "keep_alive": 30,
         "enable_compression": false,
+        "enable_tracking_cookie": false, // Send a random-value cookie that identifies the client
+                                         // when it reconnects.
+        "enable_request_capture": false, // Put the HTTP upgrade request in the session details.
         "allow_origins": ["*"],       // For CORS checking
         "out_queue_size": 0           // Limit on number of pending messages to send to each client. 0 - default (64).
     },
@@ -55,6 +58,8 @@ Annotated config file example:
 	                                                // to include in addition to the standard details
                 "enable_meta_kill": false,   // enables the wamp.session.kill* session meta procedures.
                 "enable_meta_modify": false, // enables the wamp.session.modify_details session meta procedures.
+                "strict_request_ids": false, // Abort a session whose request IDs do not start at 1 and
+                                             // increase by 1. Clients that use random IDs break.
                 "event_backlog": 0,          // Messages that wait for a slow client beyond its out_queue_size.
                                              // 0 - default (out_queue_size).
                 "event_overflow": "drop",    // When an EVENT does not fit: "drop" (default) drops it,
