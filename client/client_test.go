@@ -19,6 +19,7 @@ import (
 	"github.com/gammazero/nexus/v3/router"
 	"github.com/gammazero/nexus/v3/router/auth"
 	"github.com/gammazero/nexus/v3/stdlog"
+	"github.com/gammazero/nexus/v3/transport"
 	"github.com/gammazero/nexus/v3/wamp"
 	"github.com/gammazero/nexus/v3/wamp/crsign"
 )
@@ -1673,5 +1674,191 @@ func TestRouterClosesStuckClient(t *testing.T) {
 		for range requests {
 			<-errs
 		}
+	})
+}
+
+func TestHasFeature(t *testing.T) {
+	synctest.Test(t, func(t *testing.T) {
+		cl, _, _ := connectedTestClients(t)
+
+		// The client has the features that the router declared in WELCOME.
+		require.True(t, cl.HasFeature(wamp.RoleDealer, wamp.FeatureCallCanceling))
+		require.True(t, cl.HasFeature(wamp.RoleBroker, wamp.FeaturePatternSub))
+
+		// A feature of another role is not a feature of this role.
+		require.False(t, cl.HasFeature(wamp.RoleBroker, wamp.FeatureCallCanceling))
+		require.False(t, cl.HasFeature(wamp.RoleDealer, wamp.FeaturePatternSub))
+
+		// The router does not declare client roles or unknown features.
+		require.False(t, cl.HasFeature(wamp.RoleCallee, wamp.FeatureCallCanceling))
+		require.False(t, cl.HasFeature(wamp.RoleDealer, "no_such_feature"))
+	})
+}
+
+func TestSubscribeChan(t *testing.T) {
+	synctest.Test(t, func(t *testing.T) {
+		sub, pub, _ := connectedTestClients(t)
+
+		events := make(chan *wamp.Event, 1)
+		err := sub.SubscribeChan(testTopic, events, nil)
+		require.NoError(t, err)
+		subID, ok := sub.SubscriptionID(testTopic)
+		require.True(t, ok, "no subscription ID for topic")
+
+		err = pub.Publish(testTopic, nil, wamp.List{"hello"}, nil)
+		require.NoError(t, err)
+		synctest.Wait()
+		select {
+		case ev := <-events:
+			require.Equal(t, subID, ev.Subscription)
+			require.Equal(t, wamp.List{"hello"}, ev.Arguments)
+		default:
+			require.FailNow(t, "event not written to channel")
+		}
+
+		// An error subscribing is returned.
+		wcTopic := "nexus..topic"
+		err = sub.SubscribeChan(wcTopic, events, nil)
+		require.ErrorContains(t, err, string(wamp.ErrInvalidURI))
+		_, ok = sub.SubscriptionID(wcTopic)
+		require.False(t, ok, "subscribed after error")
+
+		// Options are passed to the router.
+		err = sub.SubscribeChan(wcTopic, events,
+			wamp.Dict{wamp.OptMatch: wamp.MatchWildcard})
+		require.NoError(t, err)
+		err = pub.Publish("nexus.test.topic", nil, wamp.List{"wildcard"}, nil)
+		require.NoError(t, err)
+		synctest.Wait()
+		select {
+		case ev := <-events:
+			require.Equal(t, wamp.List{"wildcard"}, ev.Arguments)
+		default:
+			require.FailNow(t, "wildcard event not written to channel")
+		}
+	})
+}
+
+func TestSetCallCancelMode(t *testing.T) {
+	testCases := []struct {
+		name string
+		// from is the mode set before setting mode.
+		from    string
+		mode    string
+		wantErr bool
+		// wantMode is the mode in the CANCEL that the client sends.
+		wantMode string
+	}{
+		{name: "skip", mode: wamp.CancelModeSkip, wantMode: wamp.CancelModeSkip},
+		{name: "kill", mode: wamp.CancelModeKill, wantMode: wamp.CancelModeKill},
+		{name: "killnowait", mode: wamp.CancelModeKillNoWait,
+			wantMode: wamp.CancelModeKillNoWait},
+		{name: "default", from: wamp.CancelModeSkip, mode: "",
+			wantMode: wamp.CancelModeKillNoWait},
+		{name: "invalid", from: wamp.CancelModeKill, mode: "bogus", wantErr: true,
+			wantMode: wamp.CancelModeKill},
+	}
+	for _, tc := range testCases {
+		t.Run(tc.name, func(t *testing.T) {
+			synctest.Test(t, func(t *testing.T) {
+				cliPeer, rtrPeer := transport.LinkedPeers()
+
+				// Fake router that answers a CANCEL with ERROR.
+				calls := make(chan *wamp.Call, 1)
+				cancels := make(chan *wamp.Cancel, 1)
+				go func() {
+					<-rtrPeer.Recv() // HELLO
+					rtrPeer.Send() <- &wamp.Welcome{ID: 1, Details: wamp.Dict{
+						"roles": wamp.Dict{"broker": wamp.Dict{}, "dealer": wamp.Dict{}},
+					}}
+					for msg := range rtrPeer.Recv() {
+						switch msg := msg.(type) {
+						case *wamp.Call:
+							calls <- msg
+						case *wamp.Cancel:
+							cancels <- msg
+							rtrPeer.Send() <- &wamp.Error{
+								Type:    wamp.CALL,
+								Request: msg.Request,
+								Details: wamp.Dict{},
+								Error:   wamp.ErrCanceled,
+							}
+						}
+					}
+				}()
+
+				c, err := client.NewClient(cliPeer, client.Config{
+					Realm:           testRealm,
+					ResponseTimeout: 500 * time.Millisecond,
+					Logger:          logger,
+				})
+				require.NoError(t, err)
+				defer c.Close()
+
+				if tc.from != "" {
+					require.NoError(t, c.SetCallCancelMode(tc.from))
+				}
+				err = c.SetCallCancelMode(tc.mode)
+				if tc.wantErr {
+					require.EqualError(t, err, `cancel mode not one of: "kill", "killnowait", "skip"`)
+				} else {
+					require.NoError(t, err)
+				}
+
+				ctx, cancel := context.WithCancel(context.Background())
+				errChan := make(chan error, 1)
+				go func() {
+					_, e := c.Call(ctx, "nexus.test.proc", nil, nil, nil, nil)
+					errChan <- e
+				}()
+				call := <-calls
+				cancel()
+				cnl := <-cancels
+				require.Equal(t, call.Request, cnl.Request)
+				require.Equal(t, tc.wantMode, cnl.Options[wamp.OptMode])
+				require.ErrorIs(t, <-errChan, context.Canceled)
+			})
+		})
+	}
+}
+
+func TestRouterGoodbye(t *testing.T) {
+	synctest.Test(t, func(t *testing.T) {
+		cl1, cl2, r := connectedTestClients(t)
+		require.Nil(t, cl1.RouterGoodbye(), "goodbye before disconnect")
+
+		// The router replies to the client's GOODBYE.
+		require.NoError(t, cl1.Close())
+		<-cl1.Done()
+		goodbye := cl1.RouterGoodbye()
+		require.NotNil(t, goodbye)
+		require.Equal(t, wamp.ErrGoodbyeAndOut, goodbye.Reason)
+
+		// The router sends GOODBYE to a killed session.
+		cl3 := newTestClient(t, r)
+		_, err := cl2.Call(context.Background(),
+			string(wamp.MetaProcSessionKill), nil, wamp.List{cl3.ID()},
+			wamp.Dict{"reason": "com.test.kill", "message": "killed"}, nil)
+		require.NoError(t, err)
+		<-cl3.Done()
+		goodbye = cl3.RouterGoodbye()
+		require.NotNil(t, goodbye)
+		require.Equal(t, wamp.URI("com.test.kill"), goodbye.Reason)
+		require.Equal(t, "killed", goodbye.Details["message"])
+
+		// The router sends GOODBYE to all sessions when it shuts down.
+		require.Nil(t, cl2.RouterGoodbye(), "goodbye before disconnect")
+		// RouterGoodbye can be called while the GOODBYE arrives.
+		calledDone := make(chan struct{})
+		go func() {
+			defer close(calledDone)
+			cl2.RouterGoodbye()
+		}()
+		r.Close()
+		<-calledDone
+		<-cl2.Done()
+		goodbye = cl2.RouterGoodbye()
+		require.NotNil(t, goodbye)
+		require.Equal(t, wamp.ErrSystemShutdown, goodbye.Reason)
 	})
 }
