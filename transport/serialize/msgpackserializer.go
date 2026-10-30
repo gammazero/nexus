@@ -35,8 +35,10 @@ func InitMsgpackHandle() {
 // re-register any extensions, since InitMsgpackHandle discards all previously
 // registered extensions.
 //
-// To deregister an Extension, call MsgpackRegisterExtension with nil encode
-// and/or nil decode.
+// Calling MsgpackRegisterExtension with nil encode or decode does not remove
+// the extension. The type is still written as an extension with the tag, but
+// the value is encoded by the codec instead of by encode. To remove an
+// extension, call InitMsgpackHandle and then register the extensions to keep.
 func MsgpackRegisterExtension(rt reflect.Type, tag byte, encode func(reflect.Value) ([]byte, error), decode func(reflect.Value, []byte) error) error { //nolint:lll
 	if encode == nil || decode == nil {
 		return mh.SetBytesExt(rt, uint64(tag), nil)
