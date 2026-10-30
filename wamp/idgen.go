@@ -2,16 +2,18 @@ package wamp
 
 import (
 	"crypto/rand"
-	"math/big"
+	"encoding/binary"
 	"sync"
 )
 
 // MaxID is the maximum valid WAMP ID.
 const MaxID = 1 << 53
 
-// GlobalID generates a random WAMP ID.
+// GlobalID generates a random WAMP ID in the range [1, MaxID].
 func GlobalID() ID {
-	return ID(uint64(secureInt63n(MaxID)) + 1) //nolint:gosec // G115 ok, secureInt63n never negative.
+	var b [8]byte
+	rand.Read(b[:])
+	return ID(binary.LittleEndian.Uint64(b[:])&(MaxID-1) + 1)
 }
 
 // IDGen is generator for WAMP request IDs. Create with new(IDGen).
@@ -66,20 +68,4 @@ func (g *SyncIDGen) Release(id ID) {
 	g.lock.Lock()
 	defer g.lock.Unlock()
 	g.IDGen.Release(id)
-}
-
-// secureInt63n generates a cryptographically secure random int64 in the range [0, n).
-// It panics if n <= 0.
-func secureInt63n(n int64) int64 {
-	if n <= 0 {
-		panic("n must be positive")
-	}
-
-	max := big.NewInt(n)
-	result, err := rand.Int(rand.Reader, max)
-	if err != nil {
-		panic(err)
-	}
-
-	return result.Int64()
 }

@@ -195,3 +195,129 @@ func BenchmarkNotNormalized(b *testing.B) {
 		checkRoles(sess)
 	}
 }
+
+func TestNormalizeDict(t *testing.T) {
+	// Values that are not maps are not converted.
+	require.Nil(t, wamp.NormalizeDict(nil))
+	require.Nil(t, wamp.NormalizeDict("hello"))
+	require.Nil(t, wamp.NormalizeDict([]any{1, 2}))
+
+	empty := wamp.NormalizeDict(map[string]int{})
+	require.NotNil(t, empty)
+	require.Empty(t, empty)
+
+	require.Equal(t, wamp.Dict{"a": true, "b": false},
+		wamp.NormalizeDict(map[string]bool{"a": true, "b": false}))
+
+	// Nested maps are converted to Dict, and a []any to List. Other values remain
+	// the same.
+	nested := map[string]any{
+		"roles": map[string]map[string]int{
+			"caller": {"timeout": 5},
+		},
+		"list":    []any{1, "two"},
+		"strings": []string{"a", "b"},
+		"dict":    wamp.Dict{"x": map[string]string{"y": "z"}},
+		"nil":     nil,
+	}
+	expect := wamp.Dict{
+		"roles": wamp.Dict{
+			"caller": wamp.Dict{"timeout": 5},
+		},
+		"list":    wamp.List{1, "two"},
+		"strings": []string{"a", "b"},
+		"dict":    wamp.Dict{"x": wamp.Dict{"y": "z"}},
+		"nil":     nil,
+	}
+	require.Equal(t, expect, wamp.NormalizeDict(nested))
+
+	// The original is not changed.
+	require.IsType(t, map[string]map[string]int{}, nested["roles"])
+	require.IsType(t, []any{}, nested["list"])
+	require.IsType(t, map[string]string{}, nested["dict"].(wamp.Dict)["x"])
+
+	// Keys that are not strings are left out. Keys whose underlying type is string
+	// are kept.
+	anyKeys := map[any]any{
+		"a":             1,
+		2:               "b",
+		nil:             "c",
+		wamp.URI("uri"): "d",
+		"e":             map[any]any{"f": 4, 5: 6},
+	}
+	require.Equal(t,
+		wamp.Dict{"a": 1, "uri": "d", "e": wamp.Dict{"f": 4}},
+		wamp.NormalizeDict(anyKeys))
+	require.Empty(t, wamp.NormalizeDict(map[int]string{1: "a"}))
+	require.Equal(t, wamp.Dict{"x": 1},
+		wamp.NormalizeDict(map[wamp.URI]int{"x": 1}))
+}
+
+func TestNormalizeDictLists(t *testing.T) {
+	type namedList []any
+
+	// Maps in lists, and in lists in lists, are converted.
+	listMaps := map[string]any{
+		"list": []any{
+			map[string]any{"a": 1},
+			[]any{map[any]any{"b": 2}},
+			"c",
+		},
+		"wamplist": wamp.List{map[string]int{"d": 3}},
+		"named":    namedList{map[string]any{"e": 4}},
+	}
+	expect := wamp.Dict{
+		"list": wamp.List{
+			wamp.Dict{"a": 1},
+			wamp.List{wamp.Dict{"b": 2}},
+			"c",
+		},
+		"wamplist": wamp.List{wamp.Dict{"d": 3}},
+		"named":    wamp.List{wamp.Dict{"e": 4}},
+	}
+	require.Equal(t, expect, wamp.NormalizeDict(listMaps))
+
+	// The original lists are not changed.
+	orig := listMaps["list"].([]any)
+	require.IsType(t, map[string]any{}, orig[0])
+	require.IsType(t, map[any]any{}, orig[1].([]any)[0])
+	require.IsType(t, map[string]int{}, listMaps["wamplist"].(wamp.List)[0])
+
+	// A []any is converted whatever the type of the map's values.
+	require.Equal(t, wamp.Dict{"a": wamp.List{1, 2}},
+		wamp.NormalizeDict(map[string][]any{"a": {1, 2}}))
+	require.Equal(t, wamp.Dict{"a": wamp.List{wamp.Dict{"b": 1}}},
+		wamp.NormalizeDict(wamp.Dict{"a": []any{wamp.Dict{"b": 1}}}))
+
+	// A nil []any stays nil, as a List.
+	got := wamp.NormalizeDict(map[string]any{"a": []any(nil)})
+	require.IsType(t, wamp.List(nil), got["a"])
+	require.Nil(t, got["a"])
+}
+
+func TestDictChild(t *testing.T) {
+	child := wamp.Dict{"auth": "ticket"}
+	dict := wamp.Dict{
+		"dict":   child,
+		"map":    map[string]any{"cookie": "abc"},
+		"string": "hello",
+		"nil":    nil,
+	}
+
+	// A Dict child is returned as is, not copied.
+	got := wamp.DictChild(dict, "dict")
+	require.Equal(t, child, got)
+	got["added"] = true
+	require.Equal(t, true, child["added"])
+
+	// A child that is another map type is converted, and the parent is not
+	// changed.
+	require.Equal(t, wamp.Dict{"cookie": "abc"}, wamp.DictChild(dict, "map"))
+	require.IsType(t, map[string]any{}, dict["map"])
+
+	// Missing, nil, and non-map children give nil.
+	require.Nil(t, wamp.DictChild(dict, "missing"))
+	require.Nil(t, wamp.DictChild(dict, "nil"))
+	require.Nil(t, wamp.DictChild(dict, "string"))
+	require.Nil(t, wamp.DictChild(nil, "dict"))
+}

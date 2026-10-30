@@ -44,3 +44,12 @@ func TestMessage(t *testing.T) {
 	m := wamp.NewMessage(99999)
 	require.Nil(t, m, "Message should be nil for bad type")
 }
+
+func TestIsGoodbyeAck(t *testing.T) {
+	require.True(t, wamp.IsGoodbyeAck(&wamp.Goodbye{Reason: wamp.CloseGoodbyeAndOut}))
+
+	require.False(t, wamp.IsGoodbyeAck(&wamp.Goodbye{Reason: wamp.CloseNormal}))
+	require.False(t, wamp.IsGoodbyeAck(&wamp.Goodbye{}), "no reason")
+	require.False(t, wamp.IsGoodbyeAck(&wamp.Abort{Reason: wamp.CloseGoodbyeAndOut}), "not a goodbye")
+	require.False(t, wamp.IsGoodbyeAck(nil))
+}

@@ -9,43 +9,105 @@ import (
 // Dict is a dictionary that maps keys to objects in a WAMP message.
 type Dict map[string]any
 
-// NormalizeDict takes a dict and creates a new normalized dict where all
-// map[string]xxx are converted to Dict. Values that cannot be converted, or
-// are already the correct map type, remain the same.
+// NormalizeDict returns a copy of the map v as a Dict, or nil if v is not a
+// map. Every map nested in v, including one that is already a Dict, is also
+// copied as a Dict, and every []any or List nested in v is copied as a List,
+// so that maps in lists are converted too. Entries whose keys are not strings
+// are left out. Other values remain the same.
 //
 // This is used for initial conversion of hello details. The original dict is
 // not mutated.
 func NormalizeDict(v any) Dict {
-	val := reflect.ValueOf(v)
-	if val.Kind() != reflect.Map {
+	switch m := v.(type) {
+	case Dict:
+		return normalizeMap(m)
+	case map[string]any:
+		return normalizeMap(Dict(m))
+	case map[any]any:
+		dict := make(Dict, len(m))
+		for k, val := range m {
+			if key, ok := stringKey(k); ok {
+				dict[key] = normalizeValue(val)
+			}
+		}
+		return dict
+	}
+
+	// Some other map type.
+	rv := reflect.ValueOf(v)
+	if rv.Kind() != reflect.Map {
 		return nil
 	}
-	dict := Dict{}
-	for _, key := range val.MapKeys() {
-		if key.Kind() == reflect.Interface {
-			key = key.Elem()
+	dict := make(Dict, rv.Len())
+	iter := rv.MapRange()
+	for iter.Next() {
+		if key, ok := stringKey(iter.Key().Interface()); ok {
+			dict[key] = normalizeValue(iter.Value().Interface())
 		}
-		if key.Kind() != reflect.String {
-			continue
-		}
-		cv := val.MapIndex(key)
-		newVal := NormalizeDict(cv.Interface())
-		if newVal == nil {
-			// If the value is any representing []any, then convert the slice
-			// to a List type.
-			if cv.Kind() == reflect.Interface && cv.Elem().Kind() == reflect.Slice {
-				cv = cv.Elem()
-				listType := reflect.TypeFor[List]()
-				if cv.Type().ConvertibleTo(listType) {
-					cv = cv.Convert(listType)
-				}
-			}
-			dict[key.String()] = cv.Interface()
-			continue
-		}
-		dict[key.String()] = newVal
 	}
 	return dict
+}
+
+// normalizeMap returns a copy of m with its values normalized.
+func normalizeMap(m Dict) Dict {
+	dict := make(Dict, len(m))
+	for k, v := range m {
+		dict[k] = normalizeValue(v)
+	}
+	return dict
+}
+
+// normalizeList returns a copy of list with its elements normalized.
+func normalizeList(list List) List {
+	if list == nil {
+		return nil
+	}
+	out := make(List, len(list))
+	for i, v := range list {
+		out[i] = normalizeValue(v)
+	}
+	return out
+}
+
+// normalizeValue returns v as a Dict if it is a map, and as a List if it is a
+// []any or other slice that converts to a List, normalizing the values in it.
+// Otherwise, it returns v.
+func normalizeValue(v any) any {
+	switch v := v.(type) {
+	case nil, string, bool, int, int64, uint64, float64, []byte, URI, ID:
+		return v
+	case Dict, map[string]any, map[any]any:
+		return NormalizeDict(v)
+	case List:
+		return normalizeList(v)
+	case []any:
+		return normalizeList(v)
+	}
+
+	rv := reflect.ValueOf(v)
+	switch rv.Kind() {
+	case reflect.Map:
+		return NormalizeDict(v)
+	case reflect.Slice:
+		listType := reflect.TypeFor[List]()
+		if rv.Type().ConvertibleTo(listType) {
+			return normalizeList(rv.Convert(listType).Interface().(List))
+		}
+	}
+	return v
+}
+
+// stringKey returns k as a string if it is a string, or of a type whose
+// underlying type is string, such as URI.
+func stringKey(k any) (string, bool) {
+	if s, ok := k.(string); ok {
+		return s, true
+	}
+	rv := reflect.ValueOf(k)
+	if rv.Kind() == reflect.String {
+		return rv.String(), true
+	}
+	return "", false
 }
 
 // DictChild returns the child dictionary for the given key, or nil if not

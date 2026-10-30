@@ -91,7 +91,9 @@ func TestRPCProgressiveCallInterrupt(t *testing.T) {
 	// Connect callee session.
 	callee := connectClient(t)
 
-	callerKiller := make(chan struct{})
+	// Buffered, so that the signal is not lost if the first progressive result
+	// arrives before the test waits for it.
+	callerKiller := make(chan struct{}, 1)
 	callerClosed := make(chan struct{})
 	sentFinal := make(chan struct{})
 
@@ -315,7 +317,9 @@ func TestRPCProgressiveCallTimeout(t *testing.T) {
 	// Connect callee session.
 	callee := connectClient(t)
 
-	gotProgRsp := make(chan struct{})
+	// Buffered, so that the signal is not lost if the first progressive result
+	// arrives before the test waits for it.
+	gotProgRsp := make(chan struct{}, 1)
 	releaseCallee := make(chan struct{})
 	sendProgErr := make(chan error)
 
