@@ -1,4 +1,5 @@
-SERVICE_DIR = nexusd
+SERVICE_DIR = cmd/nexusd
+VERSION = $(shell git describe --tags)
 
 .PHONY: all vet test service clean install uninstall test-coverage coverage-badge coverage
 
@@ -54,20 +55,18 @@ coverage-badge: test-coverage
 
 # Top-level: tests with coverage + badge regen. Run before pushing.
 coverage: coverage-badge
+	@rm -f coverage.out coverage.txt
 
-service: $(SERVICE_DIR)/nexusd
+service:
+	go build -ldflags="-X 'github.com/gammazero/nexus/v3/router.Version=${VERSION}'" ./$(SERVICE_DIR)/
 
-$(SERVICE_DIR)/nexusd:
-	@$(MAKE) -C $(SERVICE_DIR)
-
-install: service
-	@$(MAKE) -C $(SERVICE_DIR) install
+install:
+	go install -ldflags="-X 'github.com/gammazero/nexus/v3/router.Version=${VERSION}'" ./$(SERVICE_DIR)/
 
 uninstall:
-	@$(MAKE) -C $(SERVICE_DIR) uninstall
+	rm -f $(GOPATH)/bin/nexusd
 
 clean:
-	@$(MAKE) -C $(SERVICE_DIR) clean
-	@rm -f $(SERVICE_DIR)/*.log
-	@GO111MODULE=off go clean ./...
-	@GO111MODULE=off go clean -cache
+	rm -f nexusd
+	go clean ./...
+	go clean -cache
