@@ -1,13 +1,17 @@
-<img src="docs/n-logo2.png">
-
-# WAMP v2 router library, client library and router service
+<h1 align="center">
+  <br>
+  <a href="https://github.com/gammazero/nexus/blob/main/docs/nexus-logo-patch/nexus-logo-patch-med.png/"><img src="docs/nexus-logo-patch/nexus-logo-patch-med.png" alt="nexus logo" title="nexus logo" width="200"></a>
+  <br>
+ nexus: WAMP v2 Router and Client in Go
+  <br>
+</h1>
 
 [![Main CI](https://github.com/gammazero/nexus/actions/workflows/main-golint.yml/badge.svg)](https://github.com/gammazero/nexus/actions/workflows/main-golint.yml)
-[![Coverage](https://img.shields.io/badge/coverage-73.0%25-yellow)](https://github.com/gammazero/nexus/actions/workflows/main-golint.yml)
+[![Coverage](https://img.shields.io/badge/coverage-73.3%25-yellow)](https://github.com/gammazero/nexus/actions/workflows/main-golint.yml)
 [![License](https://img.shields.io/badge/License-MIT-blue.svg)](LICENSE)
 [![GoDoc](https://pkg.go.dev/badge/github.com/gammazero/nexus/v3)](https://pkg.go.dev/github.com/gammazero/nexus/v3)
 
-**nexus** is a [WAMP](http://wamp-proto.org/) v2 router library, client library, and a router service, that implements
+**nexus** is a [WAMP](http://wamp-proto.org/) v2 **router library**, **client library**, and a **router service**, that implements
 most of the features defined in the WAMP-protocol advanced profile. The nexus project is written in
 [Go](http://golang.org/) and designed for highly concurrent asynchronous I/O. The nexus router provides extended
 functionality. The router and client interoperate with other WAMP implementations.
