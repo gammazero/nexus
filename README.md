@@ -50,19 +50,17 @@ and routed RPC messaging.
 ### Install nexusd router service from source
 
 ```
-go get -d github.com/gammazero/nexus/nexusd
-cd ${GOPATH}/src/github.com/gammazero/nexus/nexusd
-make install
+go install github.com/gammazero/nexus/v3/nexusd@latest
 ```
 
 Run `nexusd -help` to see usage information. Although `nexusd` can be run using only command line flags,
-a [configuration file](https://raw.githubusercontent.com/gammazero/nexus/main/nexusd/etc/nexus.json) offers much
+a [configuration file](https://raw.githubusercontent.com/gammazero/nexus/main/cmd/nexusd/etc/nexus.json) offers much
 more configurability.
 
 ### Create configuration file and run nexusd service
 
 ```
-cp ${GOPATH}/src/github.com/gammazero/nexus/nexusd/etc/nexus.json ./
+wget https://raw.githubusercontent.com/gammazero/nexus/main/cmd/nexusd/etc/nexus.json
 vi nexus.json
 nexusd -c nexus.json
 ```
@@ -112,22 +110,22 @@ an unprivileged user.
 ## Examples
 
 Look at the examples to see how to create simple clients and servers. Follow the
-[README.md](https://github.com/gammazero/nexus/blob/main/examples/README.md) in the `nexus/examples` directory.
+[examples/README.md](https://github.com/gammazero/nexus/blob/main/examples/README.md).
 Examples of using advanced profile features are also available in the
 [wiki documentation](https://github.com/gammazero/nexus/wiki).
 
-https://github.com/gammazero/nexus/tree/main/examples
+See [examples](https://github.com/gammazero/nexus/tree/main/examples)
 
 The examples include interoperability examples to demonstrate nexus working with different WAMP implementations.
 Each of these has its own README.md that describes how to set up the environment and run the examples.
 
-https://github.com/gammazero/nexus/tree/main/examples/interop
+See [examples/interop](https://github.com/gammazero/nexus/tree/main/examples/interop)
 
 The nexusd service is also an example stand-alone WAMP router. All the router options are configurable in nexusd
 using a configuration file, and one is provided in the `nexusd/etc/` directory. This can be used as starting point
 to write your own WAMP router service.
 
-https://github.com/gammazero/nexus/tree/main/nexusd
+See [nexusd](https://github.com/gammazero/nexus/tree/main/cmd/nexusd)
 
 ## Contributing
 
