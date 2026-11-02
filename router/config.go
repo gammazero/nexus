@@ -120,7 +120,7 @@ type RealmConfig struct {
 	// default.
 	EventOverflow string `json:"event_overflow"`
 
-	TopicEventHistoryConfigs []*TopicEventHistoryConfig `json:"event_history"`
+	EventHistory []*TopicEventHistoryConfig `json:"event_history"`
 
 	// PublishFilterFactory is a function used to create a PublishFilter to
 	// check which sessions a publication should be sent to.

@@ -143,7 +143,7 @@ func newBroker(logger stdlog.StdLog, config *RealmConfig) (*broker, error) {
 		debug:         config.Debug,
 		filterFactory: publishFilter,
 	}
-	if err := b.initEventHistory(config.TopicEventHistoryConfigs); err != nil {
+	if err := b.initEventHistory(config.EventHistory); err != nil {
 		return nil, fmt.Errorf("broker config: %w", err)
 	}
 	go b.run()

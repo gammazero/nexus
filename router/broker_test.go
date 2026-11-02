@@ -27,7 +27,7 @@ func (p *testPeer) Close()                    {}
 func (p *testPeer) IsLocal() bool { return true }
 
 func newTestBroker(t *testing.T, eventCfgs []*TopicEventHistoryConfig) *broker {
-	b, err := newBroker(logger, &RealmConfig{AllowDisclose: true, Debug: debug, TopicEventHistoryConfigs: eventCfgs})
+	b, err := newBroker(logger, &RealmConfig{AllowDisclose: true, Debug: debug, EventHistory: eventCfgs})
 	require.NoError(t, err, "Can not initialize broker")
 	t.Cleanup(func() {
 		b.close()

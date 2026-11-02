@@ -23,7 +23,7 @@ func newEventHistoryRouter(t *testing.T, topic wamp.URI, limit int) router.Route
 				URI:           "nexus.test.history",
 				StrictURI:     false,
 				AnonymousAuth: true,
-				TopicEventHistoryConfigs: []*router.TopicEventHistoryConfig{
+				EventHistory: []*router.TopicEventHistoryConfig{
 					{
 						Topic:       topic,
 						MatchPolicy: wamp.MatchExact,
