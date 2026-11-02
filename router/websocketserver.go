@@ -34,7 +34,7 @@ type protocol struct {
 	serializer  serialize.Serializer
 }
 
-// WebsocketServer handles websocket connections.
+// WebsocketServer handles WebSocket connections.
 //
 // # Origin Considerations
 //
@@ -46,7 +46,7 @@ type protocol struct {
 // AllowOrigins() for details.
 type WebsocketServer struct {
 	// Upgrader specifies parameters for upgrading an HTTP connection to a
-	// websocket connection. See:
+	// WebSocket connection. See:
 	// https://godoc.org/github.com/gorilla/websocket#Upgrader
 	//
 	// If Upgrader.Error is set, it must write the HTTP error response. The server
@@ -64,15 +64,15 @@ type WebsocketServer struct {
 	// authenticator and authorizer logic.
 	EnableRequestCapture bool
 	// EnableTrackingCookie tells the server to send a random-value cookie to
-	// the websocket client. A returning client may identify itself by sending
-	// a previously issued tracking cookie in a websocket request. If a request
+	// the WebSocket client. A returning client may identify itself by sending
+	// a previously issued tracking cookie in a WebSocket request. If a request
 	// header received by the server contains the tracking cookie, then the
 	// cookie is included in the HELLO and session details. The new tracking
 	// cookie that gets sent to the client (the cookie to expect for subsequent
 	// connections) is also stored in HELLO and session details.
 	//
 	// The cookie is HttpOnly, so scripts in a browser cannot read it. The
-	// browser still sends it with the websocket request.
+	// browser still sends it with the WebSocket request.
 	//
 	// The cookie from the request, and the next cookie to expect, are stored
 	// in the HELLO and session details as:
@@ -99,10 +99,10 @@ type WebsocketServer struct {
 	// be marked as secure and thus only sent over encrypted connections.
 	TrackingCookieSecureAttribute bool
 
-	// KeepAlive configures a websocket "ping/pong" heartbeat when set to a
-	// non-zero value. KeepAlive is the interval between websocket "pings". If
+	// KeepAlive configures a WebSocket "ping/pong" heartbeat when set to a
+	// non-zero value. KeepAlive is the interval between WebSocket "pings". If
 	// a "pong" response is not received after 2 intervals have elapsed then
-	// the websocket connection is closed.
+	// the WebSocket connection is closed.
 	KeepAlive time.Duration
 
 	// OutQueueSize is the maximum number of pending outbound messages, per client.
@@ -123,15 +123,15 @@ type WebsocketServer struct {
 	protocols map[string]protocol
 }
 
-// NewWebsocketServer takes a router instance and creates a new websocket
+// NewWebsocketServer takes a router instance and creates a new WebSocket
 // server.
 //
-// Optional websocket server configuration can be set, after creating the
+// Optional WebSocket server configuration can be set, after creating the
 // server instance, by setting WebsocketServer.Upgrader and other
 // WebsocketServer members directly. Then use WebsocketServer.AllowOrigins()
 // function to specify what origins to allow for CORS support.
 //
-// To run the websocket server, call one of the server's
+// To run the WebSocket server, call one of the server's
 // ListenAndServe methods:
 //
 //	s := NewWebsocketServer(r)
@@ -165,7 +165,7 @@ func NewWebsocketServer(r Router) *WebsocketServer {
 // AllowOrigins configures the server to allow connections when the Origin host
 // matches a specified glob pattern.
 //
-// If the origin request header in the websocket upgrade request is present,
+// If the origin request header in the WebSocket upgrade request is present,
 // then the connection is allowed if the Origin host is equal to the Host
 // request header or Origin matches one of the allowed patterns. A pattern is
 // in the form of a shell glob as described here:
@@ -411,7 +411,7 @@ func (s *WebsocketServer) selectSubprotocol(r *http.Request) string {
 	return ""
 }
 
-// handleWebsocket attaches a websocket connection to the router. peerDesc
+// handleWebsocket attaches a WebSocket connection to the router. peerDesc
 // identifies the remote end in log lines.
 func (s *WebsocketServer) handleWebsocket(conn transport.WebsocketConnection, transportDetails wamp.Dict, peerDesc string) { //nolint:lll
 	var serializer serialize.Serializer
@@ -422,7 +422,7 @@ func (s *WebsocketServer) handleWebsocket(conn transport.WebsocketConnection, tr
 		payloadType = proto.payloadType
 	} else {
 		// Although gorilla rejects connections with unregistered protocols,
-		// other websocket implementations may not.
+		// other WebSocket implementations may not.
 		switch conn.Subprotocol() {
 		case jsonWebsocketProtocol:
 			serializer = &serialize.JSONSerializer{}
@@ -439,7 +439,7 @@ func (s *WebsocketServer) handleWebsocket(conn transport.WebsocketConnection, tr
 		}
 	}
 
-	// Create a websocket peer from the websocket connection and attach the
+	// Create a WebSocket peer from the WebSocket connection and attach the
 	// peer to the router.
 	qsize := s.OutQueueSize
 	if qsize == 0 {

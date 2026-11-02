@@ -1,9 +1,3 @@
-// Package auth provides interfaces for implementing authentication logic that
-// the WAMP router can use.
-//
-// In addition to the authentication interfaces, this package provides default
-// implementations for the following authentication methods: "wampcra",
-// "ticket", "cryptosign", "anonymous".
 package auth
 
 import (

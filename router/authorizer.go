@@ -10,6 +10,8 @@ type Authorizer interface {
 	// returned if there is a failure to determine authorization. This error is
 	// included in the ERROR response to the client.
 	//
+	// # Message Interceptor
+	//
 	// Since the Authorizer accesses both the sending session and the message
 	// through a pointer, the authorizer can alter the content of both the
 	// sending session and the message. This allows the authorizer to also work
