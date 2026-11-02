@@ -20,3 +20,5 @@ nexusd/nexusd
 
 # GoLand Folder
 .idea
+
+.DS_Store
