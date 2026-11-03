@@ -2,17 +2,19 @@
 
 To get started using nexus as a stand-alone service, without writing any code, follow these steps:
 
-1. [Install](https://github.com/gammazero/nexus/wiki/Getting-Started#installation) the nexus package.
-2. [Build](https://github.com/gammazero/nexus/wiki/Getting-Started#build-the-router) `nexusd`, the nexus router service.
-3. [Configure](https://github.com/gammazero/nexus/wiki/Getting-Started#configure-the-router) `nexusd` by editing the configuration file, if needed.
-4. [Run](https://github.com/gammazero/nexus/wiki/Getting-Started#run-the-router) the `nexusd` router service.
+1. [Install](#install-the-nexus-package) the nexus package.
+2. [Build](#build-the-router) `nexusd`, the nexus router service.
+3. [Configure](#configure-the-router) `nexusd` by editing the configuration file, if needed.
+4. [Run](#run-the-router) the `nexusd` router service.
 
 ## Install the nexus package
+
 ```
 git clone git@github.com:gammazero/nexus.git
 ```
 
 ## Build the Router
+
 ```
 cd nexus/cmd/nexusd/
 make build
@@ -20,7 +22,12 @@ make build
 
 ## Configure the Router
 
-Edit the file `nexusd/etc/nexus.json` to configure the router.  This is a JSON file that specifies settings for a router and for the realms within that router.  It is not necessary to include items that have an empty, `0`, or `false` value.  They are included in the default config so that you are aware of their presence.  The default config file looks like this:
+Edit the file `cmd/nexusd/etc/nexus.json` to configure the router.
+This is a JSON file that specifies settings for a router and for the realms within that router.
+It is not necessary to include items that have an empty, `0`, or `false` value.
+They are included in the default config so that you are aware of their presence.
+The default config file looks like this:
+
 ```json
 {
     "websocket": {
@@ -47,6 +54,7 @@ Edit the file `nexusd/etc/nexus.json` to configure the router.  This is a JSON f
                 "strict_uri": false,
                 "allow_disclose": true,
                 "anonymous_auth": true,
+                "debug": true,
                 "meta_strict": false,
                 "meta_include_session_details": [],
                 "enable_meta_kill": false,
@@ -70,7 +78,6 @@ Edit the file `nexusd/etc/nexus.json` to configure the router.  This is a JSON f
                 ]
             }
         ],
-        "debug": true,
         "mem_stats_log_sec": 0
     }
 }
@@ -78,7 +85,10 @@ Edit the file `nexusd/etc/nexus.json` to configure the router.  This is a JSON f
 
 If `log_path` is not specified or is "", then nexusd will log to stdout.
 
-Automatic creation of realms is enabled by specifying a `realm_template` in the config file.  This means that when a client joins a realm, that the realm is automatically created within the router if it does not already exist.  Here is an example realm template config:
+Automatic creation of realms is enabled by specifying a `realm_template` in the config file.
+This means that when a client joins a realm, that the realm is automatically created within the router if it does not already exist.
+Here is an example realm template config:
+
 ```json
 {
     ...
@@ -86,24 +96,35 @@ Automatic creation of realms is enabled by specifying a `realm_template` in the 
         "realm_template": {
             "anonymous_auth": true,
             "allow_disclose": true
-        },          
+        }
     }
 }
 ```
 
 ## Run the Router
+
+Use the `-c` flag to give the path to the config file.
+From the `cmd/nexusd` directory, run the router with the default config file:
+
 ```
-./nexusd
+./nexusd -c etc/nexus.json
 ```
 
-If the config file is not in `./etc/nexus.json`, then use the `-c` flag and give a path to the config file:
+nexusd does not read a config file unless `-c` is given.
+Without a config file, it needs at least one of the `-ws`, `-tcp` or `-unix` flags to give an address to listen on, and the `-realm` flag to give the URI of a realm to create.
+For example:
+
 ```
-./nexusd -c /path/to/conf/nexusd.conf
-````
+./nexusd -ws :8080 -realm realm1
+```
+
+The `-verbose` flag enables debug logging for every realm.
+Run `./nexusd -h` to see all the flags.
 
 ## Configuration Details
 
 The configuration file is loaded into the following structure:
+
 ```go
 type Config struct {
 	// Websocket configuration parameters.
@@ -163,7 +184,8 @@ type Config struct {
 
 Note: All boolean values default to `false` if not specified.
 
-Within the `"router"` section of the config, the value `"realms"` is a list of realms to be configured on the router.  Each realm in the list has the form:
+Within the `"router"` section of the config, the value `"realms"` is a list of realms to be configured on the router.
+Each realm in the list has the form:
 
 ```json
 {
@@ -171,11 +193,18 @@ Within the `"router"` section of the config, the value `"realms"` is a list of r
     "strict_uri": boolean,
     "allow_disclose": boolean,
     "anonymous_auth": boolean,
+    "debug": boolean,
+    "require_local_auth": boolean,
+    "require_local_authz": boolean,
     "meta_strict": boolean,
     "meta_include_session_details": [string, ..],
     "enable_meta_kill": boolean,
-    "enable_meta_modify": boolean
+    "enable_meta_modify": boolean,
+    "strict_request_ids": boolean,
+    "event_backlog": number,
+    "event_overflow": string,
+    "event_history": [{"topic": string, "match": string, "limit": number}, ..]
 }
 ```
 
-Documentation of these options is in the godoc reference for [`RealmConfig`](https://pkg.go.dev/github.com/gammazero/nexus/v3/router#RealmConfig)
+Documentation of these options is in the godoc reference for [`RealmConfig`](https://pkg.go.dev/github.com/gammazero/nexus/v3/router#RealmConfig), and in the [nexusd README](../cmd/nexusd/README.md).

@@ -23,6 +23,7 @@
                 "strict_uri": false,
                 "allow_disclose": true,
                 "anonymous_auth": true,
+                "debug": true,
                 "meta_strict": false,
                 "meta_include_session_details": [],
                 "enable_meta_kill": false,
@@ -46,7 +47,6 @@
                 ]
             }
         ],
-        "debug": true,
         "mem_stats_log_sec": 0
     }
 }

@@ -71,7 +71,7 @@ const (
 //	        "wampcra": clientCRAuthFunc,
 //	    },
 //	}
-//	cli, err = client.ConnectNet(routerAddr, cfg)
+//	cli, err = client.ConnectNet(ctx, routerAddr, cfg)
 func RespondChallenge(secret string, c *wamp.Challenge, h func() hash.Hash) string {
 	ch, _ := wamp.AsString(c.Extra["challenge"])
 	// If the client needed to lookup a user's key, this would require decoding
