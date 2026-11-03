@@ -39,18 +39,18 @@ func init() {
 
 var clientRoles = wamp.Dict{
 	wamp.DetailRoles: wamp.Dict{
-		"subscriber": wamp.Dict{
+		wamp.RoleSubscriber: wamp.Dict{
 			wamp.DetailFeatures: wamp.Dict{
 				"publisher_identification": true,
 			},
 		},
-		"publisher": wamp.Dict{
+		wamp.RolePublisher: wamp.Dict{
 			wamp.DetailFeatures: wamp.Dict{
 				"subscriber_blackwhite_listing": true,
 			},
 		},
-		"callee": wamp.Dict{},
-		"caller": wamp.Dict{
+		wamp.RoleCallee: wamp.Dict{},
+		wamp.RoleCaller: wamp.Dict{
 			wamp.DetailFeatures: wamp.Dict{
 				"call_timeout": true,
 			},

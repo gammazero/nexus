@@ -28,10 +28,10 @@ func joinProgressive(t *testing.T, r Router) (callee, caller *wamp.Session) {
 		wamp.FeatureCallCanceling:       true,
 	}
 	callee = joinWithRoles(t, r, wamp.Dict{
-		wamp.DetailRoles: wamp.Dict{"callee": wamp.Dict{wamp.DetailFeatures: features}},
+		wamp.DetailRoles: wamp.Dict{wamp.RoleCallee: wamp.Dict{wamp.DetailFeatures: features}},
 	})
 	caller = joinWithRoles(t, r, wamp.Dict{
-		wamp.DetailRoles: wamp.Dict{"caller": wamp.Dict{wamp.DetailFeatures: features}},
+		wamp.DetailRoles: wamp.Dict{wamp.RoleCaller: wamp.Dict{wamp.DetailFeatures: features}},
 	})
 	callee.Send() <- &wamp.Register{Request: 1, Procedure: progTimeoutProc}
 	recvType[*wamp.Registered](t, callee)

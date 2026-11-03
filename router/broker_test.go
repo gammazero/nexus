@@ -351,7 +351,7 @@ func TestPPTPubSub(t *testing.T) {
 
 	greetDetails := wamp.Dict{
 		wamp.DetailRoles: wamp.Dict{
-			"publisher": wamp.Dict{
+			wamp.RolePublisher: wamp.Dict{
 				wamp.DetailFeatures: wamp.Dict{
 					wamp.FeaturePayloadPassthruMode: true,
 				},
@@ -488,7 +488,7 @@ func TestSubscriberBlackWhiteListing(t *testing.T) {
 
 		details = wamp.Dict{
 			wamp.DetailRoles: wamp.Dict{
-				"publisher": wamp.Dict{
+				wamp.RolePublisher: wamp.Dict{
 					wamp.DetailFeatures: wamp.Dict{
 						"subscriber_blackwhite_listing": true,
 					},
@@ -582,7 +582,7 @@ func TestPublisherExclusion(t *testing.T) {
 
 		details := wamp.Dict{
 			wamp.DetailRoles: wamp.Dict{
-				"publisher": wamp.Dict{
+				wamp.RolePublisher: wamp.Dict{
 					wamp.DetailFeatures: wamp.Dict{
 						"publisher_exclusion": true,
 					},
@@ -629,7 +629,7 @@ func TestPublisherIdentification(t *testing.T) {
 
 	details := wamp.Dict{
 		wamp.DetailRoles: wamp.Dict{
-			"subscriber": wamp.Dict{
+			wamp.RoleSubscriber: wamp.Dict{
 				wamp.DetailFeatures: wamp.Dict{
 					"publisher_identification": true,
 				},
@@ -678,7 +678,7 @@ func TestRemoteSubscribersShareEvent(t *testing.T) {
 	broker := newTestBroker(t, nil)
 	pubIdentDetails := wamp.Dict{
 		wamp.DetailRoles: wamp.Dict{
-			"subscriber": wamp.Dict{
+			wamp.RoleSubscriber: wamp.Dict{
 				wamp.DetailFeatures: wamp.Dict{
 					"publisher_identification": true,
 				},

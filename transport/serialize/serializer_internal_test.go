@@ -74,7 +74,7 @@ func TestListToMsgAssignMap(t *testing.T) {
 	msg, err := listToMsg(wamp.HELLO, []any{
 		int64(wamp.HELLO),
 		"realm1",
-		map[any]any{"agent": "test", wamp.DetailRoles: map[any]any{"caller": true}},
+		map[any]any{"agent": "test", wamp.DetailRoles: map[any]any{wamp.RoleCaller: true}},
 	})
 	require.NoError(t, err)
 	hello, ok := msg.(*wamp.Hello)
@@ -82,7 +82,7 @@ func TestListToMsgAssignMap(t *testing.T) {
 	require.Equal(t, wamp.URI("realm1"), hello.Realm)
 	require.Equal(t, wamp.Dict{
 		"agent":          "test",
-		wamp.DetailRoles: map[any]any{"caller": true},
+		wamp.DetailRoles: map[any]any{wamp.RoleCaller: true},
 	}, hello.Details)
 
 	// A map that cannot be assigned is an error.

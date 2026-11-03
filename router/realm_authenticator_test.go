@@ -67,7 +67,7 @@ func TestRealmExposesURIToAuthenticator(t *testing.T) {
 		Realm: realmURI,
 		Details: wamp.Dict{
 			wamp.DetailAuthMethods: wamp.List{"capture-realm"},
-			wamp.DetailRoles:       wamp.Dict{"caller": wamp.Dict{}},
+			wamp.DetailRoles:       wamp.Dict{wamp.RoleCaller: wamp.Dict{}},
 		},
 	}
 	client.Send() <- hello
@@ -119,7 +119,7 @@ func TestRealmURINotInSessionDetails(t *testing.T) {
 			Realm: realmURI,
 			Details: wamp.Dict{
 				wamp.DetailAuthMethods: wamp.List{"capture-realm"},
-				wamp.DetailRoles:       wamp.Dict{"subscriber": wamp.Dict{}},
+				wamp.DetailRoles:       wamp.Dict{wamp.RoleSubscriber: wamp.Dict{}},
 			},
 		}
 		msg, err := wamp.RecvTimeout(client, 2*time.Second)

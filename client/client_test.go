@@ -126,9 +126,9 @@ func TestJoinRealm(t *testing.T) {
 		require.NotEqual(t, wamp.ID(0), cl.ID(), "Expected non-0 client id")
 
 		realmInfo := cl.RealmDetails()
-		_, err := wamp.DictValue(realmInfo, []string{wamp.DetailRoles, "broker"})
+		_, err := wamp.DictValue(realmInfo, []string{wamp.DetailRoles, wamp.RoleBroker})
 		require.NoError(t, err, "Router missing broker role")
-		_, err = wamp.DictValue(realmInfo, []string{wamp.DetailRoles, "dealer"})
+		_, err = wamp.DictValue(realmInfo, []string{wamp.DetailRoles, wamp.RoleDealer})
 		require.NoError(t, err, "Router missing dealer role")
 
 		cl.Close()
@@ -1769,7 +1769,7 @@ func TestSetCallCancelMode(t *testing.T) {
 				go func() {
 					<-rtrPeer.Recv() // HELLO
 					rtrPeer.Send() <- &wamp.Welcome{ID: 1, Details: wamp.Dict{
-						wamp.DetailRoles: wamp.Dict{"broker": wamp.Dict{}, "dealer": wamp.Dict{}},
+						wamp.DetailRoles: wamp.Dict{wamp.RoleBroker: wamp.Dict{}, wamp.RoleDealer: wamp.Dict{}},
 					}}
 					for msg := range rtrPeer.Recv() {
 						switch msg := msg.(type) {

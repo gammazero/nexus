@@ -29,7 +29,7 @@ var dataItem = []map[string]any{{
 func hasPubBWListingFeature(details wamp.Dict) bool {
 	path := []string{
 		wamp.DetailRoles,
-		"publisher",
+		wamp.RolePublisher,
 		wamp.DetailFeatures,
 		"subscriber_blackwhite_listing",
 	}
@@ -40,14 +40,14 @@ func hasPubBWListingFeature(details wamp.Dict) bool {
 func detailRolesFeatures() wamp.Dict {
 	return wamp.Dict{
 		wamp.DetailRoles: wamp.Dict{
-			"publisher": wamp.Dict{
+			wamp.RolePublisher: wamp.Dict{
 				wamp.DetailFeatures: wamp.Dict{
 					"subscriber_blackwhite_listing": true,
 				},
 			},
-			"subscriber": wamp.Dict{},
-			"callee":     wamp.Dict{},
-			"caller":     wamp.Dict{},
+			wamp.RoleSubscriber: wamp.Dict{},
+			wamp.RoleCallee:     wamp.Dict{},
+			wamp.RoleCaller:     wamp.Dict{},
 		},
 		"nothere": nil,
 	}

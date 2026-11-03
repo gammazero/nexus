@@ -49,7 +49,7 @@ func TestCloseDuringProgressiveCall(t *testing.T) {
 	const procName = wamp.URI("nexus.test.progproc")
 	calleeRoles := wamp.Dict{
 		wamp.DetailRoles: wamp.Dict{
-			"callee": wamp.Dict{
+			wamp.RoleCallee: wamp.Dict{
 				wamp.DetailFeatures: wamp.Dict{
 					wamp.FeatureProgCallInvocations: true,
 					wamp.FeatureCallCanceling:       true,
@@ -59,7 +59,7 @@ func TestCloseDuringProgressiveCall(t *testing.T) {
 	}
 	callerRoles := wamp.Dict{
 		wamp.DetailRoles: wamp.Dict{
-			"caller": wamp.Dict{
+			wamp.RoleCaller: wamp.Dict{
 				wamp.DetailFeatures: wamp.Dict{
 					wamp.FeatureProgCallInvocations: true,
 				},

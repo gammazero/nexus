@@ -63,7 +63,7 @@ func TestCleanSessionDetails(t *testing.T) {
 func TestCleanSessionDetailsDeepCopy(t *testing.T) {
 	r := &realm{}
 	authextra := wamp.Dict{"pubkey": "abc"}
-	roles := wamp.List{"caller", wamp.Dict{"callee": true}}
+	roles := wamp.List{wamp.RoleCaller, wamp.Dict{wamp.RoleCallee: true}}
 	transport := wamp.Dict{"type": "rawsocket", "info": wamp.Dict{"x": 1}}
 	details := wamp.Dict{
 		wamp.DetailAuthExtra: authextra,
@@ -75,12 +75,12 @@ func TestCleanSessionDetailsDeepCopy(t *testing.T) {
 	require.Equal(t, details, clean)
 
 	authextra["pubkey"] = "changed"
-	roles[1].(wamp.Dict)["callee"] = false
+	roles[1].(wamp.Dict)[wamp.RoleCallee] = false
 	transport["type"] = "websocket"
 	transport["info"].(wamp.Dict)["x"] = 2
 	require.Equal(t, wamp.Dict{
 		wamp.DetailAuthExtra: wamp.Dict{"pubkey": "abc"},
-		wamp.DetailRoles:     wamp.List{"caller", wamp.Dict{"callee": true}},
+		wamp.DetailRoles:     wamp.List{wamp.RoleCaller, wamp.Dict{wamp.RoleCallee: true}},
 		wamp.DetailTransport: wamp.Dict{"type": "rawsocket", "info": wamp.Dict{"x": 1}},
 	}, clean)
 }
@@ -199,10 +199,10 @@ func requireAbortedLast(t *testing.T, cli *wamp.Session) {
 func TestAbortedLocalSession(t *testing.T) {
 	const proc = wamp.URI("nexus.test.abortproc")
 	pptOptions := wamp.Dict{wamp.OptPPTScheme: "x_test", wamp.OptPPTSerializer: "native"}
-	pptCallee := wamp.Dict{wamp.DetailRoles: wamp.Dict{"callee": wamp.Dict{wamp.DetailFeatures: wamp.Dict{
+	pptCallee := wamp.Dict{wamp.DetailRoles: wamp.Dict{wamp.RoleCallee: wamp.Dict{wamp.DetailFeatures: wamp.Dict{
 		wamp.FeaturePayloadPassthruMode: true,
 	}}}}
-	pptCaller := wamp.Dict{wamp.DetailRoles: wamp.Dict{"caller": wamp.Dict{wamp.DetailFeatures: wamp.Dict{
+	pptCaller := wamp.Dict{wamp.DetailRoles: wamp.Dict{wamp.RoleCaller: wamp.Dict{wamp.DetailFeatures: wamp.Dict{
 		wamp.FeaturePayloadPassthruMode: true,
 	}}}}
 

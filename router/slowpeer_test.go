@@ -176,13 +176,13 @@ func TestSlowSubscriberClosed(t *testing.T) {
 // and registers procedures with progressive results and call canceling.
 var progressiveRoles = wamp.Dict{ //nolint:gochecknoglobals
 	wamp.DetailRoles: wamp.Dict{
-		"subscriber": wamp.Dict{},
-		"publisher":  wamp.Dict{},
-		"caller": wamp.Dict{wamp.DetailFeatures: wamp.Dict{
+		wamp.RoleSubscriber: wamp.Dict{},
+		wamp.RolePublisher:  wamp.Dict{},
+		wamp.RoleCaller: wamp.Dict{wamp.DetailFeatures: wamp.Dict{
 			wamp.FeatureProgCallResults: true,
 			wamp.FeatureCallCanceling:   true,
 		}},
-		"callee": wamp.Dict{wamp.DetailFeatures: wamp.Dict{
+		wamp.RoleCallee: wamp.Dict{wamp.DetailFeatures: wamp.Dict{
 			wamp.FeatureProgCallResults: true,
 			wamp.FeatureCallCanceling:   true,
 		}},

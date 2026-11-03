@@ -10,22 +10,22 @@ import (
 )
 
 func checkRoles(sess *wamp.Session) error {
-	if !sess.HasRole("caller") {
+	if !sess.HasRole(wamp.RoleCaller) {
 		return errors.New("session does not have caller role")
 	}
-	if !sess.HasRole("publisher") {
+	if !sess.HasRole(wamp.RolePublisher) {
 		return errors.New("session does not have publisher role")
 	}
 	if sess.HasRole("foo") {
 		return errors.New("session has role foo")
 	}
-	if sess.HasFeature("caller", "bar") {
+	if sess.HasFeature(wamp.RoleCaller, "bar") {
 		return errors.New("caller has feature bar")
 	}
-	if !sess.HasFeature("caller", "call_timeout") {
+	if !sess.HasFeature(wamp.RoleCaller, "call_timeout") {
 		return errors.New("caller missing feature call_timeout")
 	}
-	if sess.HasFeature("publisher", "call_timeout") {
+	if sess.HasFeature(wamp.RolePublisher, "call_timeout") {
 		return errors.New("publisher has feature call_timeout")
 	}
 	return nil
@@ -33,7 +33,7 @@ func checkRoles(sess *wamp.Session) error {
 
 func recognizeRole(roleName string) bool {
 	switch roleName {
-	case "publisher", "subscriber", "caller", "callee":
+	case wamp.RolePublisher, wamp.RoleSubscriber, wamp.RoleCaller, wamp.RoleCallee:
 	default:
 		return false
 	}
@@ -43,16 +43,16 @@ func recognizeRole(roleName string) bool {
 func TestHasRoleFeatureLookup(t *testing.T) {
 	dict := wamp.Dict{}
 	clientRoles := map[string]wamp.Dict{
-		"publisher": {},
-		"subscriber": {
+		wamp.RolePublisher: {},
+		wamp.RoleSubscriber: {
 			"junk": struct{}{}},
-		"callee": {
+		wamp.RoleCallee: {
 			"Hello": "world"},
-		"caller":  {},
-		"badrole": {},
+		wamp.RoleCaller: {},
+		"badrole":       {},
 	}
 	boolMap := map[string]bool{"call_timeout": true}
-	clientRoles["caller"][wamp.DetailFeatures] = boolMap
+	clientRoles[wamp.RoleCaller][wamp.DetailFeatures] = boolMap
 	dict[wamp.DetailRoles] = clientRoles
 
 	err := checkRoles(wamp.NewSession(nil, 0, nil, dict))
@@ -80,14 +80,14 @@ func TestHasRoleFeatureLookup(t *testing.T) {
 
 	dict = wamp.Dict{
 		wamp.DetailRoles: wamp.Dict{
-			"subscriber": wamp.Dict{
+			wamp.RoleSubscriber: wamp.Dict{
 				wamp.DetailFeatures: wamp.Dict{
 					"publisher_identification": true,
 				},
 			},
-			"publisher": struct{}{},
-			"callee":    struct{}{},
-			"caller": wamp.Dict{
+			wamp.RolePublisher: struct{}{},
+			wamp.RoleCallee:    struct{}{},
+			wamp.RoleCaller: wamp.Dict{
 				wamp.DetailFeatures: wamp.Dict{
 					"call_timeout": true,
 				},
@@ -156,15 +156,15 @@ func TestOptions(t *testing.T) {
 func BenchmarkNormalized(b *testing.B) {
 	dict := wamp.Dict{}
 	clientRoles := map[string]wamp.Dict{
-		"publisher": {},
-		"subscriber": {
+		wamp.RolePublisher: {},
+		wamp.RoleSubscriber: {
 			"junk": struct{}{}},
-		"callee": {
+		wamp.RoleCallee: {
 			"Hello": "world"},
-		"caller": {},
+		wamp.RoleCaller: {},
 	}
 	boolMap := map[string]bool{"call_timeout": true}
-	clientRoles["caller"][wamp.DetailFeatures] = boolMap
+	clientRoles[wamp.RoleCaller][wamp.DetailFeatures] = boolMap
 	dict[wamp.DetailRoles] = clientRoles
 
 	b.ResetTimer()
@@ -178,15 +178,15 @@ func BenchmarkNormalized(b *testing.B) {
 func BenchmarkNotNormalized(b *testing.B) {
 	dict := wamp.Dict{}
 	clientRoles := map[string]wamp.Dict{
-		"publisher": {},
-		"subscriber": {
+		wamp.RolePublisher: {},
+		wamp.RoleSubscriber: {
 			"junk": struct{}{}},
-		"callee": {
+		wamp.RoleCallee: {
 			"Hello": "world"},
-		"caller": {},
+		wamp.RoleCaller: {},
 	}
 	boolMap := map[string]bool{"call_timeout": true}
-	clientRoles["caller"][wamp.DetailFeatures] = boolMap
+	clientRoles[wamp.RoleCaller][wamp.DetailFeatures] = boolMap
 	dict[wamp.DetailRoles] = clientRoles
 
 	b.ResetTimer()
@@ -213,7 +213,7 @@ func TestNormalizeDict(t *testing.T) {
 	// the same.
 	nested := map[string]any{
 		wamp.DetailRoles: map[string]map[string]int{
-			"caller": {"timeout": 5},
+			wamp.RoleCaller: {"timeout": 5},
 		},
 		"list":    []any{1, "two"},
 		"strings": []string{"a", "b"},
@@ -222,7 +222,7 @@ func TestNormalizeDict(t *testing.T) {
 	}
 	expect := wamp.Dict{
 		wamp.DetailRoles: wamp.Dict{
-			"caller": wamp.Dict{"timeout": 5},
+			wamp.RoleCaller: wamp.Dict{"timeout": 5},
 		},
 		"list":    wamp.List{1, "two"},
 		"strings": []string{"a", "b"},

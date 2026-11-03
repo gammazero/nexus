@@ -29,7 +29,7 @@ func TestLateReplyDoesNotBlockClient(t *testing.T) {
 			defer rtrPeer.Close()
 			<-rtrPeer.Recv() // HELLO
 			rtrPeer.Send() <- &wamp.Welcome{ID: 1, Details: wamp.Dict{
-				wamp.DetailRoles: wamp.Dict{"broker": wamp.Dict{}, "dealer": wamp.Dict{}},
+				wamp.DetailRoles: wamp.Dict{wamp.RoleBroker: wamp.Dict{}, wamp.RoleDealer: wamp.Dict{}},
 			}}
 			for msg := range rtrPeer.Recv() {
 				switch m := msg.(type) {
@@ -75,7 +75,7 @@ func earlyRouter(rtr wamp.Peer, delay time.Duration, gotErr chan<- bool) {
 	defer rtr.Close()
 	<-rtr.Recv() // HELLO
 	rtr.Send() <- &wamp.Welcome{ID: 1, Details: wamp.Dict{
-		wamp.DetailRoles: wamp.Dict{"broker": wamp.Dict{}, "dealer": wamp.Dict{}},
+		wamp.DetailRoles: wamp.Dict{wamp.RoleBroker: wamp.Dict{}, wamp.RoleDealer: wamp.Dict{}},
 	}}
 	for msg := range rtr.Recv() {
 		switch m := msg.(type) {

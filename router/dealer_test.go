@@ -316,7 +316,7 @@ func TestCancelOnCalleeGone(t *testing.T) {
 
 	calleeRoles := wamp.Dict{
 		wamp.DetailRoles: wamp.Dict{
-			"callee": wamp.Dict{
+			wamp.RoleCallee: wamp.Dict{
 				wamp.DetailFeatures: wamp.Dict{
 					"call_canceling": true,
 				},
@@ -414,7 +414,7 @@ func TestCallTimeoutOnClient(t *testing.T) {
 
 	calleeRoles := wamp.Dict{
 		wamp.DetailRoles: wamp.Dict{
-			"callee": wamp.Dict{
+			wamp.RoleCallee: wamp.Dict{
 				wamp.DetailFeatures: wamp.Dict{
 					"call_canceling": true,
 					"call_timeout":   true,
@@ -475,7 +475,7 @@ func TestCancelCallModeKill(t *testing.T) {
 
 	calleeRoles := wamp.Dict{
 		wamp.DetailRoles: wamp.Dict{
-			"callee": wamp.Dict{
+			wamp.RoleCallee: wamp.Dict{
 				wamp.DetailFeatures: wamp.Dict{
 					"call_canceling": true,
 				},
@@ -539,7 +539,7 @@ func TestCancelCallModeKillNoWait(t *testing.T) {
 
 	calleeRoles := wamp.Dict{
 		wamp.DetailRoles: wamp.Dict{
-			"callee": wamp.Dict{
+			wamp.RoleCallee: wamp.Dict{
 				wamp.DetailFeatures: wamp.Dict{
 					"call_canceling": true,
 				},
@@ -604,7 +604,7 @@ func TestCancelCallModeSkip(t *testing.T) {
 		callee := newTestPeer()
 		calleeRoles := wamp.Dict{
 			wamp.DetailRoles: wamp.Dict{
-				"callee": wamp.Dict{
+				wamp.RoleCallee: wamp.Dict{
 					wamp.DetailFeatures: wamp.Dict{
 						"call_canceling": true,
 					},
@@ -658,7 +658,7 @@ func TestSharedRegistrationRoundRobin(t *testing.T) {
 
 	calleeRoles := wamp.Dict{
 		wamp.DetailRoles: wamp.Dict{
-			"callee": wamp.Dict{
+			wamp.RoleCallee: wamp.Dict{
 				wamp.DetailFeatures: wamp.Dict{
 					"shared_registration": true,
 				},
@@ -752,7 +752,7 @@ func TestSharedRegistrationFirst(t *testing.T) {
 
 	calleeRoles := wamp.Dict{
 		wamp.DetailRoles: wamp.Dict{
-			"callee": wamp.Dict{
+			wamp.RoleCallee: wamp.Dict{
 				wamp.DetailFeatures: wamp.Dict{
 					"shared_registration": true,
 				},
@@ -908,7 +908,7 @@ func TestSharedRegistrationLast(t *testing.T) {
 
 	calleeRoles := wamp.Dict{
 		wamp.DetailRoles: wamp.Dict{
-			"callee": wamp.Dict{
+			wamp.RoleCallee: wamp.Dict{
 				wamp.DetailFeatures: wamp.Dict{
 					"shared_registration": true,
 				},
@@ -1025,7 +1025,7 @@ func TestPatternBasedRegistration(t *testing.T) {
 
 	calleeRoles := wamp.Dict{
 		wamp.DetailRoles: wamp.Dict{
-			"callee": wamp.Dict{
+			wamp.RoleCallee: wamp.Dict{
 				wamp.DetailFeatures: wamp.Dict{
 					"shared_registration": true,
 				},
@@ -1127,7 +1127,7 @@ func TestCallerIdentification(t *testing.T) {
 
 	calleeRoles := wamp.Dict{
 		wamp.DetailRoles: wamp.Dict{
-			"callee": wamp.Dict{
+			wamp.RoleCallee: wamp.Dict{
 				wamp.DetailFeatures: wamp.Dict{
 					"caller_identification": true,
 				},
@@ -1264,7 +1264,7 @@ func TestRegisterSharedJoinBlockedAckDelivered(t *testing.T) {
 
 	calleeRoles := wamp.Dict{
 		wamp.DetailRoles: wamp.Dict{
-			"callee": wamp.Dict{
+			wamp.RoleCallee: wamp.Dict{
 				wamp.DetailFeatures: wamp.Dict{"shared_registration": true},
 			},
 		},
@@ -1443,7 +1443,7 @@ func TestDealerYieldDeadlineFromLastProgress(t *testing.T) {
 func TestDealerYieldDeadlineCancels(t *testing.T) {
 	synctest.Test(t, func(t *testing.T) {
 		d, _ := newTestDealer(t)
-		calleeRoles := wamp.Dict{wamp.DetailRoles: wamp.Dict{"callee": wamp.Dict{
+		calleeRoles := wamp.Dict{wamp.DetailRoles: wamp.Dict{wamp.RoleCallee: wamp.Dict{
 			wamp.DetailFeatures: wamp.Dict{wamp.FeatureCallCanceling: true},
 		}}}
 		callee := wamp.NewSession(newTestPeer(), 0, nil, calleeRoles)
@@ -1569,7 +1569,7 @@ func TestDealerCloseWhileCallTimesOut(t *testing.T) {
 // its backlog without limit.
 func TestYieldErrorsDoNotGrowBacklog(t *testing.T) {
 	d, _ := newTestDealer(t)
-	pptCallee := wamp.Dict{wamp.DetailRoles: wamp.Dict{"callee": wamp.Dict{wamp.DetailFeatures: wamp.Dict{
+	pptCallee := wamp.Dict{wamp.DetailRoles: wamp.Dict{wamp.RoleCallee: wamp.Dict{wamp.DetailFeatures: wamp.Dict{
 		wamp.FeaturePayloadPassthruMode: true,
 	}}}}
 	callee := wamp.NewSession(newTestPeer(), 0, nil, pptCallee)

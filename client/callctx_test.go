@@ -25,7 +25,7 @@ func TestCallContextWhileSendBlocked(t *testing.T) {
 		defer rtrPeer.Close()
 		<-rtrPeer.Recv() // HELLO
 		rtrPeer.Send() <- &wamp.Welcome{ID: 1, Details: wamp.Dict{
-			wamp.DetailRoles: wamp.Dict{"broker": wamp.Dict{}, "dealer": wamp.Dict{}},
+			wamp.DetailRoles: wamp.Dict{wamp.RoleBroker: wamp.Dict{}, wamp.RoleDealer: wamp.Dict{}},
 		}}
 		// Stop reading, so that the client's sends block.
 		<-resume
