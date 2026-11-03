@@ -51,7 +51,7 @@ func TestWelcomeQueuedBeforeSessionIsVisible(t *testing.T) {
 	slow := &slowFirstSendPeer{Peer: server, wait: time.Second}
 
 	details := maps.Clone(clientRoles)
-	details["authid"] = "victim"
+	details[wamp.DetailAuthID] = "victim"
 	go func() {
 		client.Send() <- &wamp.Hello{Realm: testRealm, Details: details}
 	}()
@@ -66,14 +66,14 @@ func TestWelcomeQueuedBeforeSessionIsVisible(t *testing.T) {
 		require.NoError(t, err)
 		ev, ok := msg.(*wamp.Event)
 		require.Truef(t, ok, "expected on_join EVENT, got %s", msg.MessageType())
-		if d := ev.Arguments[0].(wamp.Dict); d["authid"] == "victim" {
+		if d := ev.Arguments[0].(wamp.Dict); d[wamp.DetailAuthID] == "victim" {
 			joined = d
 		}
 	}
 	killer.Send() <- &wamp.Call{
 		Request:   2,
 		Procedure: wamp.MetaProcSessionKill,
-		Arguments: wamp.List{joined["session"]},
+		Arguments: wamp.List{joined[wamp.DetailSession]},
 		Options:   wamp.Dict{},
 	}
 	msg, err = wamp.RecvTimeout(killer, time.Second)

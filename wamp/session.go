@@ -117,7 +117,7 @@ func (s *Session) Roles() Dict {
 			for feature := range features {
 				featDict[feature] = true
 			}
-			roleDict["features"] = featDict
+			roleDict[DetailFeatures] = featDict
 		}
 		roles[role] = roleDict
 	}
@@ -208,7 +208,7 @@ func (s *Session) Abort() *Abort {
 // setRoles extracts the specified roles from HELLO or WELCOME details, and
 // configures the session with the roles and features for each role.
 func (s *Session) setRoles(details Dict) {
-	_roles, ok := details["roles"]
+	_roles, ok := details[DetailRoles]
 	if !ok {
 		s.roles = nil // no roles
 		return
@@ -229,7 +229,7 @@ func (s *Session) setRoles(details Dict) {
 				continue
 			}
 		}
-		_features, ok := roleDict["features"]
+		_features, ok := roleDict[DetailFeatures]
 		if !ok {
 			continue
 		}

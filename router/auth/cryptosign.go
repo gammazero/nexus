@@ -31,7 +31,7 @@ func NewCryptoSignAuthenticator(keyStore KeyStore, timeout time.Duration) *Crypt
 func (cr *CryptoSignAuthenticator) AuthMethod() string { return "cryptosign" }
 
 func (cr *CryptoSignAuthenticator) Authenticate(sid wamp.ID, details wamp.Dict, client wamp.Peer) (*wamp.Welcome, error) { //nolint:lll
-	authid, _ := wamp.AsString(details["authid"])
+	authid, _ := wamp.AsString(details[wamp.DetailAuthID])
 	if authid == "" {
 		return nil, errors.New("missing authid")
 	}
@@ -47,10 +47,10 @@ func (cr *CryptoSignAuthenticator) Authenticate(sid wamp.ID, details wamp.Dict, 
 			// Create welcome details containing auth info.
 			welcome := &wamp.Welcome{
 				Details: wamp.Dict{
-					"authid":       authid,
-					"authrole":     authrole,
-					"authmethod":   cr.AuthMethod(),
-					"authprovider": cr.keyStore.Provider(),
+					wamp.DetailAuthID:       authid,
+					wamp.DetailAuthRole:     authrole,
+					wamp.DetailAuthMethod:   cr.AuthMethod(),
+					wamp.DetailAuthProvider: cr.keyStore.Provider(),
 				},
 			}
 			if err = ks.OnWelcome(authid, welcome, details); err != nil {
@@ -110,10 +110,10 @@ func (cr *CryptoSignAuthenticator) Authenticate(sid wamp.ID, details wamp.Dict, 
 	// Create welcome message containing auth info.
 	welcome := &wamp.Welcome{
 		Details: wamp.Dict{
-			"authid":       authid,
-			"authrole":     authrole,
-			"authmethod":   cr.AuthMethod(),
-			"authprovider": cr.keyStore.Provider(),
+			wamp.DetailAuthID:       authid,
+			wamp.DetailAuthRole:     authrole,
+			wamp.DetailAuthMethod:   cr.AuthMethod(),
+			wamp.DetailAuthProvider: cr.keyStore.Provider(),
 		},
 	}
 
@@ -150,7 +150,7 @@ func (cr *CryptoSignAuthenticator) extractChannelBinding(details wamp.Dict) []by
 	if details == nil {
 		return nil
 	}
-	authextra, ok := wamp.AsDict(details["authextra"])
+	authextra, ok := wamp.AsDict(details[wamp.DetailAuthExtra])
 	if !ok {
 		return nil
 	}

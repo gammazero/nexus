@@ -36,10 +36,10 @@ func (a *AnonymousAuth) Authenticate(sid wamp.ID, details wamp.Dict, client wamp
 	// Create welcome details containing auth info.
 	return &wamp.Welcome{
 		Details: wamp.Dict{
-			"authid":       strconv.FormatUint(uint64(wamp.GlobalID()), 16),
-			"authrole":     a.AuthRole,
-			"authprovider": "static",
-			"authmethod":   a.AuthMethod(),
+			wamp.DetailAuthID:       strconv.FormatUint(uint64(wamp.GlobalID()), 16),
+			wamp.DetailAuthRole:     a.AuthRole,
+			wamp.DetailAuthProvider: "static",
+			wamp.DetailAuthMethod:   a.AuthMethod(),
 		},
 	}, nil
 }

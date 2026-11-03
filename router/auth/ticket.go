@@ -38,7 +38,7 @@ func (t *TicketAuthenticator) Authenticate(sid wamp.ID, details wamp.Dict, clien
 	// The HELLO.Details.authid|string is the authentication ID (e.g. username)
 	// the client wishes to authenticate as. For Ticket-based authentication,
 	// this MUST be provided.
-	authID, _ := wamp.AsString(details["authid"])
+	authID, _ := wamp.AsString(details[wamp.DetailAuthID])
 	if authID == "" {
 		return nil, errors.New("missing authid")
 	}
@@ -54,10 +54,10 @@ func (t *TicketAuthenticator) Authenticate(sid wamp.ID, details wamp.Dict, clien
 			// Create welcome details containing auth info.
 			welcome := &wamp.Welcome{
 				Details: wamp.Dict{
-					"authid":       authID,
-					"authrole":     authrole,
-					"authmethod":   t.AuthMethod(),
-					"authprovider": t.keyStore.Provider(),
+					wamp.DetailAuthID:       authID,
+					wamp.DetailAuthRole:     authrole,
+					wamp.DetailAuthMethod:   t.AuthMethod(),
+					wamp.DetailAuthProvider: t.keyStore.Provider(),
 				},
 			}
 			if err = ks.OnWelcome(authID, welcome, details); err != nil {
@@ -107,10 +107,10 @@ func (t *TicketAuthenticator) Authenticate(sid wamp.ID, details wamp.Dict, clien
 	// Create welcome details containing auth info.
 	welcome := &wamp.Welcome{
 		Details: wamp.Dict{
-			"authid":       authID,
-			"authmethod":   t.AuthMethod(),
-			"authrole":     authrole,
-			"authprovider": t.keyStore.Provider(),
+			wamp.DetailAuthID:       authID,
+			wamp.DetailAuthMethod:   t.AuthMethod(),
+			wamp.DetailAuthRole:     authrole,
+			wamp.DetailAuthProvider: t.keyStore.Provider(),
 		},
 	}
 

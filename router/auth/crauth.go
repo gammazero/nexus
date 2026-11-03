@@ -32,7 +32,7 @@ func NewCRAuthenticator(keyStore KeyStore, timeout time.Duration) *CRAuthenticat
 func (cr *CRAuthenticator) AuthMethod() string { return "wampcra" }
 
 func (cr *CRAuthenticator) Authenticate(sid wamp.ID, details wamp.Dict, client wamp.Peer) (*wamp.Welcome, error) {
-	authid, _ := wamp.AsString(details["authid"])
+	authid, _ := wamp.AsString(details[wamp.DetailAuthID])
 	if authid == "" {
 		return nil, errors.New("missing authid")
 	}
@@ -49,10 +49,10 @@ func (cr *CRAuthenticator) Authenticate(sid wamp.ID, details wamp.Dict, client w
 			// Create welcome details containing auth info.
 			welcome := &wamp.Welcome{
 				Details: wamp.Dict{
-					"authid":       authid,
-					"authrole":     authrole,
-					"authmethod":   cr.AuthMethod(),
-					"authprovider": cr.keyStore.Provider(),
+					wamp.DetailAuthID:       authid,
+					wamp.DetailAuthRole:     authrole,
+					wamp.DetailAuthMethod:   cr.AuthMethod(),
+					wamp.DetailAuthProvider: cr.keyStore.Provider(),
 				},
 			}
 			if err = ks.OnWelcome(authid, welcome, details); err != nil {
@@ -118,10 +118,10 @@ func (cr *CRAuthenticator) Authenticate(sid wamp.ID, details wamp.Dict, client w
 	// Create welcome message containing auth info.
 	welcome := &wamp.Welcome{
 		Details: wamp.Dict{
-			"authid":       authid,
-			"authrole":     authrole,
-			"authmethod":   cr.AuthMethod(),
-			"authprovider": cr.keyStore.Provider(),
+			wamp.DetailAuthID:       authid,
+			wamp.DetailAuthRole:     authrole,
+			wamp.DetailAuthMethod:   cr.AuthMethod(),
+			wamp.DetailAuthProvider: cr.keyStore.Provider(),
 		},
 	}
 

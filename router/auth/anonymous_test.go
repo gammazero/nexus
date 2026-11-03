@@ -15,15 +15,15 @@ func TestAnonAuth(t *testing.T) {
 	}
 
 	details := wamp.Dict{
-		"authid":      "someone",
-		"authmethods": []string{"anonymous"}}
+		wamp.DetailAuthID:      "someone",
+		wamp.DetailAuthMethods: []string{"anonymous"}}
 	welcome, err := anonAuth.Authenticate(wamp.ID(101), details, nil)
 	require.NoError(t, err)
 
 	require.NotNil(t, welcome, "received nil welcome msg")
 	require.Equal(t, wamp.WELCOME, welcome.MessageType())
-	s, _ := wamp.AsString(welcome.Details["authmethod"])
+	s, _ := wamp.AsString(welcome.Details[wamp.DetailAuthMethod])
 	require.Equal(t, "anonymous", s, "invalid authmethod in welcome details")
-	s, _ = wamp.AsString(welcome.Details["authrole"])
+	s, _ = wamp.AsString(welcome.Details[wamp.DetailAuthRole])
 	require.Equal(t, "guest", s, "incorrect authrole in welcome details")
 }

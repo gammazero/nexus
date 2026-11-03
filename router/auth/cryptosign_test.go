@@ -118,16 +118,16 @@ func TestCryptoSignAuthenticateValidSignature(t *testing.T) {
 	ks, priv := newCryptoSignKeyStore(t)
 	a := auth.NewCryptoSignAuthenticator(ks, time.Second)
 
-	welcome, err := authenticate(t, a, wamp.Dict{"authid": "alice"},
+	welcome, err := authenticate(t, a, wamp.Dict{wamp.DetailAuthID: "alice"},
 		func(ch *wamp.Challenge) wamp.Message {
 			return &wamp.Authenticate{Signature: signChallenge(t, ch, priv)}
 		})
 	require.NoError(t, err)
 	require.NotNil(t, welcome)
-	require.Equal(t, "cryptosign", welcome.Details["authmethod"])
-	require.Equal(t, "users", welcome.Details["authrole"])
-	require.Equal(t, "alice", welcome.Details["authid"])
-	require.Equal(t, "test-cryptosign", welcome.Details["authprovider"])
+	require.Equal(t, "cryptosign", welcome.Details[wamp.DetailAuthMethod])
+	require.Equal(t, "users", welcome.Details[wamp.DetailAuthRole])
+	require.Equal(t, "alice", welcome.Details[wamp.DetailAuthID])
+	require.Equal(t, "test-cryptosign", welcome.Details[wamp.DetailAuthProvider])
 }
 
 // TestCryptoSignAuthenticateBadSignature checks that a challenge signed with a
@@ -138,7 +138,7 @@ func TestCryptoSignAuthenticateBadSignature(t *testing.T) {
 	require.NoError(t, err)
 	a := auth.NewCryptoSignAuthenticator(ks, time.Second)
 
-	welcome, err := authenticate(t, a, wamp.Dict{"authid": "alice"},
+	welcome, err := authenticate(t, a, wamp.Dict{wamp.DetailAuthID: "alice"},
 		func(ch *wamp.Challenge) wamp.Message {
 			return &wamp.Authenticate{Signature: signChallenge(t, ch, wrongPriv)}
 		})
@@ -152,7 +152,7 @@ func TestCryptoSignAuthenticateMalformedSignature(t *testing.T) {
 	ks, _ := newCryptoSignKeyStore(t)
 	a := auth.NewCryptoSignAuthenticator(ks, time.Second)
 
-	welcome, err := authenticate(t, a, wamp.Dict{"authid": "alice"},
+	welcome, err := authenticate(t, a, wamp.Dict{wamp.DetailAuthID: "alice"},
 		func(*wamp.Challenge) wamp.Message {
 			return &wamp.Authenticate{Signature: hex.EncodeToString(make([]byte, 32))}
 		})
@@ -166,7 +166,7 @@ func TestCryptoSignAuthenticateNonHexSignature(t *testing.T) {
 	ks, _ := newCryptoSignKeyStore(t)
 	a := auth.NewCryptoSignAuthenticator(ks, time.Second)
 
-	welcome, err := authenticate(t, a, wamp.Dict{"authid": "alice"},
+	welcome, err := authenticate(t, a, wamp.Dict{wamp.DetailAuthID: "alice"},
 		func(*wamp.Challenge) wamp.Message {
 			return &wamp.Authenticate{Signature: "not-valid-hex!"}
 		})
@@ -181,7 +181,7 @@ func TestCryptoSignAuthenticateUnexpectedMessageType(t *testing.T) {
 	ks, _ := newCryptoSignKeyStore(t)
 	a := auth.NewCryptoSignAuthenticator(ks, time.Second)
 
-	welcome, err := authenticate(t, a, wamp.Dict{"authid": "alice"},
+	welcome, err := authenticate(t, a, wamp.Dict{wamp.DetailAuthID: "alice"},
 		func(*wamp.Challenge) wamp.Message {
 			return &wamp.Goodbye{Reason: wamp.ErrCloseRealm}
 		})
@@ -195,7 +195,7 @@ func TestCryptoSignAuthenticateUnknownAuthid(t *testing.T) {
 	ks, _ := newCryptoSignKeyStore(t)
 	a := auth.NewCryptoSignAuthenticator(ks, time.Second)
 
-	welcome, err := authenticate(t, a, wamp.Dict{"authid": "mallory"}, nil)
+	welcome, err := authenticate(t, a, wamp.Dict{wamp.DetailAuthID: "mallory"}, nil)
 	require.ErrorContains(t, err, "no such user")
 	require.Nil(t, welcome)
 }
@@ -219,7 +219,7 @@ func TestCryptoSignAuthenticateTimeout(t *testing.T) {
 		a := auth.NewCryptoSignAuthenticator(ks, time.Second)
 
 		start := time.Now()
-		welcome, err := authenticate(t, a, wamp.Dict{"authid": "alice"}, nil)
+		welcome, err := authenticate(t, a, wamp.Dict{wamp.DetailAuthID: "alice"}, nil)
 		require.Error(t, err)
 		require.Nil(t, welcome)
 		require.Equal(t, time.Second, time.Since(start))
@@ -234,7 +234,7 @@ func TestCryptoSignNewAuthenticatorDefaultTimeout(t *testing.T) {
 		ks, priv := newCryptoSignKeyStore(t)
 		a := auth.NewCryptoSignAuthenticator(ks, 0)
 
-		welcome, err := authenticate(t, a, wamp.Dict{"authid": "alice"},
+		welcome, err := authenticate(t, a, wamp.Dict{wamp.DetailAuthID: "alice"},
 			func(ch *wamp.Challenge) wamp.Message {
 				time.Sleep(30 * time.Second)
 				return &wamp.Authenticate{Signature: signChallenge(t, ch, priv)}
@@ -277,10 +277,10 @@ func TestCryptoSignAuthenticateBypassSuccess(t *testing.T) {
 	}
 	a := auth.NewCryptoSignAuthenticator(bks, time.Second)
 
-	welcome, err := authenticate(t, a, wamp.Dict{"authid": "alice"}, nil)
+	welcome, err := authenticate(t, a, wamp.Dict{wamp.DetailAuthID: "alice"}, nil)
 	require.NoError(t, err)
 	require.NotNil(t, welcome)
-	require.Equal(t, "cryptosign", welcome.Details["authmethod"])
+	require.Equal(t, "cryptosign", welcome.Details[wamp.DetailAuthMethod])
 	require.Equal(t, true, welcome.Details["authbycookie"])
 }
 
@@ -295,7 +295,7 @@ func TestCryptoSignAuthenticateBypassOnWelcomeError(t *testing.T) {
 	}
 	a := auth.NewCryptoSignAuthenticator(bks, time.Second)
 
-	welcome, err := authenticate(t, a, wamp.Dict{"authid": "alice"}, nil)
+	welcome, err := authenticate(t, a, wamp.Dict{wamp.DetailAuthID: "alice"}, nil)
 	require.ErrorContains(t, err, "OnWelcome refused")
 	require.Nil(t, welcome)
 }
@@ -310,14 +310,14 @@ func TestCryptoSignRejectsReplay(t *testing.T) {
 	a := auth.NewCryptoSignAuthenticator(ks, time.Second)
 
 	var captured string
-	_, err := authenticate(t, a, wamp.Dict{"authid": "alice"},
+	_, err := authenticate(t, a, wamp.Dict{wamp.DetailAuthID: "alice"},
 		func(ch *wamp.Challenge) wamp.Message {
 			captured = signChallenge(t, ch, priv)
 			return &wamp.Authenticate{Signature: captured}
 		})
 	require.NoError(t, err)
 
-	welcome, err := authenticate(t, a, wamp.Dict{"authid": "alice"},
+	welcome, err := authenticate(t, a, wamp.Dict{wamp.DetailAuthID: "alice"},
 		func(*wamp.Challenge) wamp.Message {
 			return &wamp.Authenticate{Signature: captured}
 		})
@@ -327,7 +327,7 @@ func TestCryptoSignRejectsReplay(t *testing.T) {
 	other := make([]byte, 32)
 	_, err = rand.Read(other)
 	require.NoError(t, err)
-	welcome, err = authenticate(t, a, wamp.Dict{"authid": "alice"},
+	welcome, err = authenticate(t, a, wamp.Dict{wamp.DetailAuthID: "alice"},
 		func(*wamp.Challenge) wamp.Message {
 			return &wamp.Authenticate{Signature: hex.EncodeToString(sign.Sign(nil, other, priv))}
 		})

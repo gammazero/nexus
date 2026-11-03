@@ -110,7 +110,7 @@ func BenchmarkFanout(b *testing.B) {
 		ev := &wamp.Event{
 			Subscription: wamp.GlobalID(),
 			Publication:  wamp.GlobalID(),
-			Details:      wamp.Dict{"topic": "com.example.sensor.temperature"},
+			Details:      wamp.Dict{wamp.DetailTopic: "com.example.sensor.temperature"},
 			Arguments:    wamp.List{strings.Repeat("x", size), 42, true},
 			ArgumentsKw:  wamp.Dict{"unit": "C", "seq": 12345},
 		}

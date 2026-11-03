@@ -52,8 +52,8 @@ func TestHasRoleFeatureLookup(t *testing.T) {
 		"badrole": {},
 	}
 	boolMap := map[string]bool{"call_timeout": true}
-	clientRoles["caller"]["features"] = boolMap
-	dict["roles"] = clientRoles
+	clientRoles["caller"][wamp.DetailFeatures] = boolMap
+	dict[wamp.DetailRoles] = clientRoles
 
 	err := checkRoles(wamp.NewSession(nil, 0, nil, dict))
 	require.NoError(t, err)
@@ -63,7 +63,7 @@ func TestHasRoleFeatureLookup(t *testing.T) {
 
 	dict = wamp.NormalizeDict(dict)
 
-	roleVals, err := wamp.DictValue(dict, []string{"roles"})
+	roleVals, err := wamp.DictValue(dict, []string{wamp.DetailRoles})
 	require.NoError(t, err)
 
 	for k := range roleVals.(wamp.Dict) {
@@ -79,21 +79,21 @@ func TestHasRoleFeatureLookup(t *testing.T) {
 	require.NoError(t, err)
 
 	dict = wamp.Dict{
-		"roles": wamp.Dict{
+		wamp.DetailRoles: wamp.Dict{
 			"subscriber": wamp.Dict{
-				"features": wamp.Dict{
+				wamp.DetailFeatures: wamp.Dict{
 					"publisher_identification": true,
 				},
 			},
 			"publisher": struct{}{},
 			"callee":    struct{}{},
 			"caller": wamp.Dict{
-				"features": wamp.Dict{
+				wamp.DetailFeatures: wamp.Dict{
 					"call_timeout": true,
 				},
 			},
 		},
-		"authmethods": []string{"anonymous", "ticket"},
+		wamp.DetailAuthMethods: []string{"anonymous", "ticket"},
 	}
 	err = checkRoles(wamp.NewSession(nil, 0, nil, dict))
 	require.NoError(t, err)
@@ -164,8 +164,8 @@ func BenchmarkNormalized(b *testing.B) {
 		"caller": {},
 	}
 	boolMap := map[string]bool{"call_timeout": true}
-	clientRoles["caller"]["features"] = boolMap
-	dict["roles"] = clientRoles
+	clientRoles["caller"][wamp.DetailFeatures] = boolMap
+	dict[wamp.DetailRoles] = clientRoles
 
 	b.ResetTimer()
 	dict = wamp.NormalizeDict(dict)
@@ -186,8 +186,8 @@ func BenchmarkNotNormalized(b *testing.B) {
 		"caller": {},
 	}
 	boolMap := map[string]bool{"call_timeout": true}
-	clientRoles["caller"]["features"] = boolMap
-	dict["roles"] = clientRoles
+	clientRoles["caller"][wamp.DetailFeatures] = boolMap
+	dict[wamp.DetailRoles] = clientRoles
 
 	b.ResetTimer()
 	sess := &wamp.Session{Details: dict}
@@ -212,7 +212,7 @@ func TestNormalizeDict(t *testing.T) {
 	// Nested maps are converted to Dict, and a []any to List. Other values remain
 	// the same.
 	nested := map[string]any{
-		"roles": map[string]map[string]int{
+		wamp.DetailRoles: map[string]map[string]int{
 			"caller": {"timeout": 5},
 		},
 		"list":    []any{1, "two"},
@@ -221,7 +221,7 @@ func TestNormalizeDict(t *testing.T) {
 		"nil":     nil,
 	}
 	expect := wamp.Dict{
-		"roles": wamp.Dict{
+		wamp.DetailRoles: wamp.Dict{
 			"caller": wamp.Dict{"timeout": 5},
 		},
 		"list":    wamp.List{1, "two"},
@@ -232,7 +232,7 @@ func TestNormalizeDict(t *testing.T) {
 	require.Equal(t, expect, wamp.NormalizeDict(nested))
 
 	// The original is not changed.
-	require.IsType(t, map[string]map[string]int{}, nested["roles"])
+	require.IsType(t, map[string]map[string]int{}, nested[wamp.DetailRoles])
 	require.IsType(t, []any{}, nested["list"])
 	require.IsType(t, map[string]string{}, nested["dict"].(wamp.Dict)["x"])
 

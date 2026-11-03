@@ -60,7 +60,7 @@ func TestMetaEventOnJoin(t *testing.T) {
 		if details == nil {
 			return errors.New("argument was not wamp.Dict")
 		}
-		onJoinID, _ = wamp.AsID(details["session"])
+		onJoinID, _ = wamp.AsID(details[wamp.DetailSession])
 		return nil
 	}
 
@@ -283,9 +283,15 @@ func TestMetaProcSessionGet(t *testing.T) {
 	require.NotZero(t, len(result.Arguments), "Missing result argument")
 	dict, ok := wamp.AsDict(result.Arguments[0])
 	require.True(t, ok, "Could not convert result to wamp.Dict")
-	resultID, _ := wamp.AsID(dict["session"])
+	resultID, _ := wamp.AsID(dict[wamp.DetailSession])
 	require.Equal(t, sess.ID(), resultID, "Wrong session ID in result")
-	for _, attr := range []string{"authid", "authrole", "authmethod", "authprovider"} {
+	authAttrs := []string{
+		wamp.DetailAuthID,
+		wamp.DetailAuthRole,
+		wamp.DetailAuthMethod,
+		wamp.DetailAuthProvider,
+	}
+	for _, attr := range authAttrs {
 		_, ok = dict[attr]
 		require.Truef(t, ok, "Result missing: %s", attr)
 	}

@@ -156,7 +156,7 @@ func TestSessionModifyDetails(t *testing.T) {
 	// Call meta procedure to modify details.
 	ctx, cancel := context.WithTimeout(context.Background(), time.Second)
 	defer cancel()
-	delta := wamp.Dict{"pi": 3.14, "authid": "bob"}
+	delta := wamp.Dict{"pi": 3.14, wamp.DetailAuthID: "bob"}
 	args := wamp.List{cli.ID(), delta}
 	result, err := cli.Call(ctx, metaModifyDetails, nil, args, nil, nil)
 	require.NoError(t, err)
@@ -172,7 +172,7 @@ func TestSessionModifyDetails(t *testing.T) {
 	require.True(t, ok, "Could not convert result to wamp.Dict")
 	pi, _ := wamp.AsFloat64(details["pi"])
 	require.Equal(t, 3.14, pi)
-	authid, _ := wamp.AsString(details["authid"])
+	authid, _ := wamp.AsString(details[wamp.DetailAuthID])
 	require.Equal(t, "bob", authid)
 }
 

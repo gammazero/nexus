@@ -122,10 +122,10 @@ func TestSpecSessionWelcomeDetails(t *testing.T) {
 	details := cli.RealmDetails()
 	require.NotNil(t, details, "WELCOME details missing")
 
-	authrole, _ := wamp.AsString(details["authrole"])
+	authrole, _ := wamp.AsString(details[wamp.DetailAuthRole])
 	require.NotEmpty(t, authrole, "WELCOME details missing authrole")
 
-	authmethod, _ := wamp.AsString(details["authmethod"])
+	authmethod, _ := wamp.AsString(details[wamp.DetailAuthMethod])
 	require.NotEmpty(t, authmethod, "WELCOME details missing authmethod")
 	// Local in-process connections set authmethod=local; networked anonymous
 	// connections set authmethod=anonymous. Both are valid for the default test
@@ -141,7 +141,7 @@ func TestSpecSessionRouterRoleAdvertised(t *testing.T) {
 	cli := connectClient(t)
 
 	details := cli.RealmDetails()
-	roles, _ := wamp.AsDict(details["roles"])
+	roles, _ := wamp.AsDict(details[wamp.DetailRoles])
 	require.NotEmpty(t, roles, "WELCOME details missing roles dict")
 
 	_, hasBroker := roles[string(wamp.RoleBroker)]

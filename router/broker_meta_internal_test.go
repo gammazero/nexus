@@ -115,10 +115,10 @@ func TestSyncPubSubMeta(t *testing.T) {
 		}
 
 		// The topic is in the details only for pattern-based subscriptions.
-		require.NotContains(t, evtExact.Details, detailTopic)
-		require.NotContains(t, evtRemote1.Details, detailTopic)
-		require.Equal(t, metaTopic, evtPrefix.Details[detailTopic])
-		require.Equal(t, metaTopic, evtWildcard.Details[detailTopic])
+		require.NotContains(t, evtExact.Details, wamp.DetailTopic)
+		require.NotContains(t, evtRemote1.Details, wamp.DetailTopic)
+		require.Equal(t, metaTopic, evtPrefix.Details[wamp.DetailTopic])
+		require.Equal(t, metaTopic, evtWildcard.Details[wamp.DetailTopic])
 
 		// Remote subscribers share one EVENT, and a local subscriber gets its own.
 		require.Same(t, evtRemote1, evtRemote2, "remote subscribers not shared")
@@ -180,10 +180,10 @@ func TestSyncPubSubCreateMeta(t *testing.T) {
 		}
 
 		// The topic is in the details only for pattern-based subscriptions.
-		require.NotContains(t, evtLocal1.Details, detailTopic)
-		require.NotContains(t, evtRemote1.Details, detailTopic)
-		require.Equal(t, metaTopic, evtPrefix.Details[detailTopic])
-		require.Equal(t, metaTopic, evtWildcard.Details[detailTopic])
+		require.NotContains(t, evtLocal1.Details, wamp.DetailTopic)
+		require.NotContains(t, evtRemote1.Details, wamp.DetailTopic)
+		require.Equal(t, metaTopic, evtPrefix.Details[wamp.DetailTopic])
+		require.Equal(t, metaTopic, evtWildcard.Details[wamp.DetailTopic])
 
 		// Remote subscribers share one EVENT, and each local subscriber gets its own,
 		// so that a local subscriber changing its EVENT, even the dict in its

@@ -12,7 +12,6 @@ const (
 	OptMessage         = "message"
 	OptError           = "error"
 	OptMode            = "mode"
-	OptProcedure       = "procedure"
 	OptProgress        = "progress"
 	OptReason          = "reason"
 	OptReceiveProgress = "receive_progress"

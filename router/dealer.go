@@ -42,7 +42,7 @@ var ErrPPTNotSupportedByPeer = errors.New(pptNotSupportedMsg)
 
 // Role information for this dealer.
 var dealerRole = wamp.Dict{ //nolint:gochecknoglobals
-	"features": wamp.Dict{
+	wamp.DetailFeatures: wamp.Dict{
 		wamp.FeatureCallCanceling:       true,
 		wamp.FeatureCallTimeout:         true,
 		wamp.FeatureCallerIdent:         true,
@@ -299,7 +299,7 @@ func (d *dealer) register(callee *wamp.Session, msg *wamp.Register) {
 	// allow disclose for trusted clients
 	if !d.allowDisclose && disclose {
 		callee.Lock()
-		authrole, _ := wamp.AsString(callee.Details["authrole"])
+		authrole, _ := wamp.AsString(callee.Details[wamp.DetailAuthRole])
 		callee.Unlock()
 		if authrole != "trusted" {
 			callee.SendReply(&wamp.Error{
@@ -1007,7 +1007,7 @@ func (d *dealer) syncCall(caller *wamp.Session, msg *wamp.Call) {
 		// registration was created, and this was allowed by the dealer.
 		if reg.disclose {
 			if callee.ID == metaID {
-				details[wamp.RoleCaller] = caller.ID
+				details[wamp.DetailCaller] = caller.ID
 			}
 			discloseCaller(caller, details)
 		} else {
@@ -1051,7 +1051,7 @@ func (d *dealer) syncCall(caller *wamp.Session, msg *wamp.Call) {
 		if reg.match != wamp.MatchExact {
 			// According to the spec, a router must provide the actual
 			// procedure to the client.
-			details[wamp.OptProcedure] = msg.Procedure
+			details[wamp.DetailProcedure] = msg.Procedure
 		}
 
 		// Generate the invocationID now that it is certain that the invocation
@@ -1852,14 +1852,15 @@ func (d *dealer) regCountCallees(msg *wamp.Invocation) wamp.Message {
 
 // discloseCaller adds caller identity information to INVOCATION.Details.
 func discloseCaller(caller *wamp.Session, details wamp.Dict) {
-	details[wamp.RoleCaller] = caller.ID
+	details[wamp.DetailCaller] = caller.ID
 	// These values are not required by the specification, but are here for
 	// compatibility with Crossbar.
 	caller.Lock()
-	for _, f := range []string{"authid", "authrole"} {
-		if val, ok := caller.Details[f]; ok {
-			details[fmt.Sprintf("%s_%s", wamp.RoleCaller, f)] = val
-		}
+	if val, ok := caller.Details[wamp.DetailAuthID]; ok {
+		details[wamp.DetailCallerAuthID] = val
+	}
+	if val, ok := caller.Details[wamp.DetailAuthRole]; ok {
+		details[wamp.DetailCallerAuthRole] = val
 	}
 	caller.Unlock()
 }

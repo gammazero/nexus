@@ -26,8 +26,8 @@ func subscribeMetaOnJoin(subscriber *client.Client, logger *log.Logger) error {
 	onJoin := func(event *wamp.Event) {
 		if len(event.Arguments) != 0 {
 			if details, ok := wamp.AsDict(event.Arguments[0]); ok {
-				onJoinID, _ := wamp.AsID(details["session"])
-				authid, _ := wamp.AsString(details["authid"])
+				onJoinID, _ := wamp.AsID(details[wamp.DetailSession])
+				authid, _ := wamp.AsString(details[wamp.DetailAuthID])
 				logger.Printf("Client %v joined realm (authid=%s)\n", onJoinID, authid)
 				return
 			}

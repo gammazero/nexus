@@ -379,23 +379,23 @@ func TestStopSendingSendsNothingMore(t *testing.T) {
 
 func TestSessionRoles(t *testing.T) {
 	details := Dict{
-		"roles": Dict{
-			"subscriber": Dict{"features": Dict{
+		DetailRoles: Dict{
+			"subscriber": Dict{DetailFeatures: Dict{
 				"publisher_identification":   true,
 				"pattern_based_subscription": false,
 			}},
-			"caller": map[string]any{"features": map[string]any{
+			"caller": map[string]any{DetailFeatures: map[string]any{
 				"progressive_call_results": true,
 			}},
-			"callee":    Dict{"features": Dict{}, "other": 1},
-			"publisher": Dict{"features": "none"},
+			"callee":    Dict{DetailFeatures: Dict{}, "other": 1},
+			"publisher": Dict{DetailFeatures: "none"},
 			"dealer":    true,
 		},
 	}
 	expected := Dict{
-		"subscriber": Dict{"features": Dict{"publisher_identification": true}},
-		"caller":     Dict{"features": Dict{"progressive_call_results": true}},
-		"callee":     Dict{"features": Dict{}},
+		"subscriber": Dict{DetailFeatures: Dict{"publisher_identification": true}},
+		"caller":     Dict{DetailFeatures: Dict{"progressive_call_results": true}},
+		"callee":     Dict{DetailFeatures: Dict{}},
 		"publisher":  Dict{},
 		"dealer":     Dict{},
 	}
@@ -404,11 +404,11 @@ func TestSessionRoles(t *testing.T) {
 
 	// Changing the returned dict does not change the session.
 	roles := sess.Roles()
-	roles["caller"].(Dict)["features"].(Dict)["call_canceling"] = true
-	delete(roles["subscriber"].(Dict)["features"].(Dict),
+	roles["caller"].(Dict)[DetailFeatures].(Dict)["call_canceling"] = true
+	delete(roles["subscriber"].(Dict)[DetailFeatures].(Dict),
 		"publisher_identification")
-	roles["callee"].(Dict)["features"] = Dict{"shared_registration": true}
-	roles["publisher"].(Dict)["features"] = Dict{"x": true}
+	roles["callee"].(Dict)[DetailFeatures] = Dict{"shared_registration": true}
+	roles["publisher"].(Dict)[DetailFeatures] = Dict{"x": true}
 	delete(roles, "dealer")
 	roles["broker"] = Dict{}
 	require.Equal(t, expected, sess.Roles())
@@ -421,10 +421,10 @@ func TestSessionRoles(t *testing.T) {
 	for _, details := range []Dict{
 		nil,
 		{},
-		{"roles": nil},
-		{"roles": Dict{}},
-		{"roles": map[string]any{}},
-		{"roles": "caller"},
+		{DetailRoles: nil},
+		{DetailRoles: Dict{}},
+		{DetailRoles: map[string]any{}},
+		{DetailRoles: "caller"},
 	} {
 		require.Nil(t, NewSession(nil, 1, nil, details).Roles(),
 			"details %v", details)
@@ -433,8 +433,8 @@ func TestSessionRoles(t *testing.T) {
 
 func TestSessionRolesConcurrent(t *testing.T) {
 	details := Dict{
-		"roles": Dict{
-			"caller": Dict{"features": Dict{"call_canceling": true}},
+		DetailRoles: Dict{
+			"caller": Dict{DetailFeatures: Dict{"call_canceling": true}},
 		},
 	}
 	sess := NewSession(nil, 1, nil, details)
@@ -444,21 +444,21 @@ func TestSessionRolesConcurrent(t *testing.T) {
 		wg.Go(func() {
 			for range 100 {
 				roles := sess.Roles()
-				roles["caller"].(Dict)["features"].(Dict)["call_canceling"] = i
+				roles["caller"].(Dict)[DetailFeatures].(Dict)["call_canceling"] = i
 				roles["callee"] = Dict{}
 			}
 		})
 	}
 	wg.Wait()
 
-	require.Equal(t, details["roles"], sess.Roles())
+	require.Equal(t, details[DetailRoles], sess.Roles())
 	require.True(t, sess.HasFeature("caller", "call_canceling"))
 }
 
 func TestSessionHasFeature(t *testing.T) {
 	details := Dict{
-		"roles": Dict{
-			"caller": Dict{"features": Dict{
+		DetailRoles: Dict{
+			"caller": Dict{DetailFeatures: Dict{
 				"call_timeout":   true,
 				"call_canceling": false,
 			}},

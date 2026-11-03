@@ -38,25 +38,25 @@ func init() {
 }
 
 var clientRoles = wamp.Dict{
-	"roles": wamp.Dict{
+	wamp.DetailRoles: wamp.Dict{
 		"subscriber": wamp.Dict{
-			"features": wamp.Dict{
+			wamp.DetailFeatures: wamp.Dict{
 				"publisher_identification": true,
 			},
 		},
 		"publisher": wamp.Dict{
-			"features": wamp.Dict{
+			wamp.DetailFeatures: wamp.Dict{
 				"subscriber_blackwhite_listing": true,
 			},
 		},
 		"callee": wamp.Dict{},
 		"caller": wamp.Dict{
-			"features": wamp.Dict{
+			wamp.DetailFeatures: wamp.Dict{
 				"call_timeout": true,
 			},
 		},
 	},
-	"authmethods": wamp.List{"anonymous", "ticket"},
+	wamp.DetailAuthMethods: wamp.List{"anonymous", "ticket"},
 }
 
 func newTestRouter(t *testing.T) Router {
@@ -95,7 +95,7 @@ func testClientInRealm(t *testing.T, r Router, realm wamp.URI) *wamp.Session {
 	// Run as goroutine since Send will block until message read by router, if
 	// client uses unbuffered channel.
 	details := clientRoles
-	details["authid"] = "user1"
+	details[wamp.DetailAuthID] = "user1"
 	details["xyzzy"] = "plugh"
 	go func() {
 		client.Send() <- &wamp.Hello{Realm: realm, Details: details}
@@ -728,7 +728,7 @@ func TestGetSessionMetaProcedures(t *testing.T) {
 		require.NotZero(t, len(result.Arguments), "missing expected arguemnt")
 		details, ok := result.Arguments[0].(wamp.Dict)
 		require.True(t, ok, "expected dict type arg")
-		sid, _ := wamp.AsID(details["session"])
+		sid, _ := wamp.AsID(details[wamp.DetailSession])
 		require.Equal(t, sessID, sid, "wrong session ID")
 	})
 }
@@ -1103,25 +1103,25 @@ func TestModifySessionDetails(t *testing.T) {
 	for _, debug := range []bool{false, true} {
 		r := &realm{log: logger, debug: debug}
 		sess := wamp.NewSession(nil, 1, wamp.Dict{
-			"session":  wamp.ID(1),
-			"authid":   "alice",
-			"authrole": "user",
-			"color":    "red",
+			wamp.DetailSession:  wamp.ID(1),
+			wamp.DetailAuthID:   "alice",
+			wamp.DetailAuthRole: "user",
+			"color":             "red",
 		}, nil)
 
 		r.modifySessionDetails(sess, wamp.Dict{
-			"authid":  "bob",               // updated
-			"pi":      3.14,                // added
-			"color":   nil,                 // deleted
-			"missing": nil,                 // deleting what is not there
-			"nested":  wamp.Dict{"x": 1.0}, // added
+			wamp.DetailAuthID: "bob",               // updated
+			"pi":              3.14,                // added
+			"color":           nil,                 // deleted
+			"missing":         nil,                 // deleting what is not there
+			"nested":          wamp.Dict{"x": 1.0}, // added
 		})
 		require.Equal(t, wamp.Dict{
-			"session":  wamp.ID(1),
-			"authid":   "bob",
-			"authrole": "user",
-			"pi":       3.14,
-			"nested":   wamp.Dict{"x": 1.0},
+			wamp.DetailSession:  wamp.ID(1),
+			wamp.DetailAuthID:   "bob",
+			wamp.DetailAuthRole: "user",
+			"pi":                3.14,
+			"nested":            wamp.Dict{"x": 1.0},
 		}, sess.Details, "debug %v", debug)
 
 		// An empty or nil delta changes nothing.

@@ -20,7 +20,7 @@ func TestSpecPatternSubscribePrefix(t *testing.T) {
 
 	got := make(chan wamp.URI, 4)
 	handler := func(ev *wamp.Event) {
-		topic, _ := wamp.AsURI(ev.Details["topic"])
+		topic, _ := wamp.AsURI(ev.Details[wamp.DetailTopic])
 		got <- topic
 	}
 	require.NoError(t, sub.Subscribe("com.app.alarm",
@@ -63,7 +63,7 @@ func TestSpecPatternSubscribeWildcard(t *testing.T) {
 	sub := connectClient(t)
 	got := make(chan wamp.URI, 4)
 	handler := func(ev *wamp.Event) {
-		topic, _ := wamp.AsURI(ev.Details["topic"])
+		topic, _ := wamp.AsURI(ev.Details[wamp.DetailTopic])
 		got <- topic
 	}
 	// "com..fire" matches anything in the second segment.
@@ -131,7 +131,7 @@ func TestSpecPatternRegisterPrefix(t *testing.T) {
 	callee := connectClient(t)
 	got := make(chan wamp.URI, 4)
 	handler := func(_ context.Context, inv *wamp.Invocation) client.InvokeResult {
-		proc, _ := wamp.AsURI(inv.Details["procedure"])
+		proc, _ := wamp.AsURI(inv.Details[wamp.DetailProcedure])
 		got <- proc
 		return client.InvokeResult{Args: wamp.List{string(proc)}}
 	}
@@ -161,7 +161,7 @@ func TestSpecPatternRegisterWildcard(t *testing.T) {
 	callee := connectClient(t)
 	got := make(chan wamp.URI, 4)
 	handler := func(_ context.Context, inv *wamp.Invocation) client.InvokeResult {
-		proc, _ := wamp.AsURI(inv.Details["procedure"])
+		proc, _ := wamp.AsURI(inv.Details[wamp.DetailProcedure])
 		got <- proc
 		return client.InvokeResult{}
 	}

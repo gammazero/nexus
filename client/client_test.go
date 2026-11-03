@@ -126,9 +126,9 @@ func TestJoinRealm(t *testing.T) {
 		require.NotEqual(t, wamp.ID(0), cl.ID(), "Expected non-0 client id")
 
 		realmInfo := cl.RealmDetails()
-		_, err := wamp.DictValue(realmInfo, []string{"roles", "broker"})
+		_, err := wamp.DictValue(realmInfo, []string{wamp.DetailRoles, "broker"})
 		require.NoError(t, err, "Router missing broker role")
-		_, err = wamp.DictValue(realmInfo, []string{"roles", "dealer"})
+		_, err = wamp.DictValue(realmInfo, []string{wamp.DetailRoles, "dealer"})
 		require.NoError(t, err, "Router missing dealer role")
 
 		cl.Close()
@@ -178,7 +178,7 @@ func TestClientJoinRealmWithCRAuth(t *testing.T) {
 		cfg := client.Config{
 			Realm: "nexus.test.auth",
 			HelloDetails: wamp.Dict{
-				"authid": "jdoe",
+				wamp.DetailAuthID: "jdoe",
 			},
 			AuthHandlers: map[string]client.AuthFunc{
 				"wampcra": clientAuthFunc,
@@ -204,7 +204,7 @@ func TestSubscribe(t *testing.T) {
 				errChan <- errors.New("event missing or bad args")
 				return
 			}
-			origTopic, _ := wamp.AsURI(event.Details["topic"])
+			origTopic, _ := wamp.AsURI(event.Details[wamp.DetailTopic])
 			if origTopic != wamp.URI(testTopic) {
 				errChan <- errors.New("wrong original topic")
 				return
@@ -1159,7 +1159,7 @@ func newNetTestKillerWithConfig(t *testing.T, routerURL string, clientConfig *cl
 			logger.Println("Client joined realm - no data provided")
 			return
 		}
-		onJoinID, _ := wamp.AsID(details["session"])
+		onJoinID, _ := wamp.AsID(details[wamp.DetailSession])
 		logger.Printf("Client %v joined realm\n", onJoinID)
 
 		go func() {
@@ -1472,10 +1472,10 @@ func TestRouterFeatures(t *testing.T) {
 
 	routerFeatures := r.RouterFeatures()
 
-	dealerFeatures := (*routerFeatures)["roles"].(wamp.Dict)[wamp.RoleDealer].(wamp.Dict)
+	dealerFeatures := (*routerFeatures)[wamp.DetailRoles].(wamp.Dict)[wamp.RoleDealer].(wamp.Dict)
 	require.GreaterOrEqual(t, len(dealerFeatures), 1, "dealer features are missed")
 
-	brokerFeatures := (*routerFeatures)["roles"].(wamp.Dict)[wamp.RoleBroker].(wamp.Dict)
+	brokerFeatures := (*routerFeatures)[wamp.DetailRoles].(wamp.Dict)[wamp.RoleBroker].(wamp.Dict)
 	require.GreaterOrEqual(t, len(brokerFeatures), 1, "broker features are missed")
 }
 
@@ -1769,7 +1769,7 @@ func TestSetCallCancelMode(t *testing.T) {
 				go func() {
 					<-rtrPeer.Recv() // HELLO
 					rtrPeer.Send() <- &wamp.Welcome{ID: 1, Details: wamp.Dict{
-						"roles": wamp.Dict{"broker": wamp.Dict{}, "dealer": wamp.Dict{}},
+						wamp.DetailRoles: wamp.Dict{"broker": wamp.Dict{}, "dealer": wamp.Dict{}},
 					}}
 					for msg := range rtrPeer.Recv() {
 						switch msg := msg.(type) {
