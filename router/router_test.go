@@ -73,13 +73,13 @@ func newTestRouterRealm(t *testing.T, configure func(*RealmConfig)) Router {
 		AllowDisclose:    false,
 		EnableMetaKill:   true,
 		EnableMetaModify: true,
+		Debug:            debug,
 	}
 	if configure != nil {
 		configure(realmConfig)
 	}
 	config := &Config{
 		RealmConfigs: []*RealmConfig{realmConfig},
-		Debug:        debug,
 	}
 
 	r, err := NewRouter(config, logger)
@@ -195,11 +195,11 @@ func newStrictIDsTestRouter(t *testing.T, authz Authorizer) Router {
 				AnonymousAuth:    true,
 				StrictRequestIDs: true,
 				Authorizer:       authz,
+				Debug:            debug,
 				// Test sessions are local, so authorize them too.
 				RequireLocalAuthz: authz != nil,
 			},
 		},
-		Debug: debug,
 	}
 	r, err := NewRouter(config, logger)
 	require.NoError(t, err)

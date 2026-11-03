@@ -20,10 +20,6 @@ type Config struct {
 	// allows unauthenticated clients to create new realms.
 	RealmTemplate *RealmConfig `json:"realm_template"`
 
-	// Debug enables debug logging for the router, and for the realm, broker and
-	// dealer of every realm. To enable it for only some realms, set Debug in their
-	// RealmConfig instead.
-	Debug bool
 	// Interval in seconds for logging memory stats. 0 to disable. Logs Alloc,
 	// Mallocs, Frees, and NumGC. For a description of these, see
 	// https://golang.org/pkg/runtime/#MemStats

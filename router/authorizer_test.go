@@ -52,9 +52,9 @@ func TestAuthorizer(t *testing.T) {
 				URI:               testRealm,
 				Authorizer:        &testAuthz{},
 				RequireLocalAuthz: true,
+				Debug:             debug,
 			},
 		},
-		Debug: debug,
 	}
 	r, err := NewRouter(config, logger)
 	require.NoError(t, err)
@@ -84,9 +84,9 @@ func TestAuthorizerBypassLocal(t *testing.T) {
 			{
 				URI:        testRealm,
 				Authorizer: &testAuthzMod{},
+				Debug:      debug,
 			},
 		},
-		Debug: debug,
 	}
 	r, err := NewRouter(config, logger)
 	require.NoError(t, err)
@@ -108,9 +108,9 @@ func TestAuthorizerModify(t *testing.T) {
 				URI:               testRealm,
 				Authorizer:        &testAuthzMod{},
 				RequireLocalAuthz: true,
+				Debug:             debug,
 			},
 		},
-		Debug: debug,
 	}
 	r, err := NewRouter(config, logger)
 	require.NoError(t, err)
@@ -147,9 +147,9 @@ func TestAuthorizerRace(t *testing.T) {
 				URI:               testRealm,
 				Authorizer:        &testAuthzMod{},
 				RequireLocalAuthz: true,
+				Debug:             debug,
 			},
 		},
-		Debug: debug,
 	}
 	r, err := NewRouter(config, logger)
 	require.NoError(t, err)
@@ -248,9 +248,9 @@ func newAuthzRouter(t *testing.T, authz Authorizer, metaModify bool) Router {
 				Authorizer:        authz,
 				RequireLocalAuthz: true,
 				EnableMetaModify:  metaModify,
+				Debug:             debug,
 			},
 		},
-		Debug: debug,
 	}, logger)
 	require.NoError(t, err)
 	t.Cleanup(r.Close)

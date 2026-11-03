@@ -120,7 +120,18 @@ func checkRealmConfig(config *RealmConfig) error {
 
 // newRealm creates a new realm with the given RealmConfig, broker and dealer.
 // The config must have been checked with checkRealmConfig.
-func newRealm(config *RealmConfig, broker *broker, dealer *dealer, logger stdlog.StdLog) *realm {
+func newRealm(config *RealmConfig, logger stdlog.StdLog) (*realm, error) {
+	err := checkRealmConfig(config)
+	if err != nil {
+		return nil, err
+	}
+
+	broker, err := newBroker(logger, config)
+	if err != nil {
+		return nil, err
+	}
+	dealer := newDealer(logger, config)
+
 	r := &realm{
 		uri:         config.URI,
 		broker:      broker,
@@ -178,7 +189,7 @@ func newRealm(config *RealmConfig, broker *broker, dealer *dealer, logger stdlog
 	go r.metaProcedureHandler()
 	go r.run()
 
-	return r
+	return r, nil
 }
 
 func (r *realm) run() {

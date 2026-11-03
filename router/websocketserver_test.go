@@ -31,7 +31,6 @@ var (
 				AllowDisclose: true,
 			},
 		},
-		Debug: false,
 	}
 )
 

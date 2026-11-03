@@ -67,7 +67,9 @@ func main() {
 		os.Exit(1)
 	}
 	if verbose {
-		conf.Router.Debug = true
+		for _, rc := range conf.Router.RealmConfigs {
+			rc.Debug = true
+		}
 	}
 	if wsAddr != "" {
 		conf.WebSocket.Address = wsAddr
