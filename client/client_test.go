@@ -44,9 +44,9 @@ func init() {
 }
 
 func getTestRouter(t *testing.T, realmConfig *router.RealmConfig) router.Router {
+	realmConfig.Debug = os.Getenv(debugRouterEnv) != ""
 	config := &router.Config{
 		RealmConfigs: []*router.RealmConfig{realmConfig},
-		Debug:        os.Getenv(debugRouterEnv) != "",
 	}
 	r, err := router.NewRouter(config, logger)
 	require.NoError(t, err)

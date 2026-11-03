@@ -83,8 +83,7 @@ type router struct {
 	closed        bool
 	closeOnce     sync.Once
 
-	log   stdlog.StdLog
-	debug bool
+	log stdlog.StdLog
 
 	stopMemStats    chan struct{}
 	memStatsStopped chan struct{}
@@ -104,7 +103,6 @@ func NewRouter(config *Config, logger stdlog.StdLog) (Router, error) {
 		stopped:       make(chan struct{}),
 		realmTemplate: config.RealmTemplate,
 		log:           logger,
-		debug:         config.Debug,
 	}
 
 	for _, realmConfig := range config.RealmConfigs {
@@ -178,9 +176,6 @@ func (r *router) AttachClient(client wamp.Peer, transportDetails wamp.Dict) erro
 		client.Close()
 		return errors.New("did not receive HELLO: " + err.Error())
 	}
-	if r.debug {
-		r.log.Printf("New client sent: %s: %+v", msg.MessageType(), msg)
-	}
 
 	// A WAMP session is initiated by the Client sending a HELLO message to the
 	// Router. The HELLO message MUST be the very first message sent by the
@@ -239,6 +234,10 @@ func (r *router) AttachClient(client wamp.Peer, transportDetails wamp.Dict) erro
 	err = <-sync
 	if err != nil {
 		return err
+	}
+
+	if realm.debug {
+		r.log.Printf("New client sent: %s: %+v", msg.MessageType(), msg)
 	}
 
 	hello.Details = wamp.NormalizeDict(hello.Details)
@@ -424,24 +423,13 @@ func (r *router) addRealm(config *RealmConfig) (*realm, error) {
 	if _, ok := r.realms[config.URI]; ok {
 		return nil, errors.New("realm already exists: " + string(config.URI))
 	}
-	if err := checkRealmConfig(config); err != nil {
-		return nil, err
-	}
-
-	if r.debug && !config.Debug {
-		// Config.Debug enables debug logging for every realm. Set it in a
-		// copy, so that the caller's config is not changed.
-		cfg := *config
-		cfg.Debug = true
-		config = &cfg
-	}
-	broker, err := newBroker(r.log, config)
+	realm, err := newRealm(config, r.log)
 	if err != nil {
 		return nil, err
 	}
-	realm := newRealm(config, broker, newDealer(r.log, config), r.log)
 	r.realms[config.URI] = realm
 	r.log.Println("Added realm:", config.URI)
+
 	return realm, nil
 }
 
