@@ -1,0 +1,11 @@
+# Relay client
+
+Nexus does not include a relay client.
+This describes how one may be built using the nexus client library.
+
+A relay client relays messages from one WAMP router to another.
+Messages received from one router via a relay client are forwarded to a different router.
+This may be useful for hierarchical routing.
+Suppose there is an event delivered from an external (public) WAMP router to a relay client that acts as a subscriber to the external router.
+That relay acts as a publisher to an internal (private) router to which it re-publishes the message to be delivered to subscribers within the private domain.
+A similar relay client can be used for forwarding RPC calls and relaying the responses back to the caller.

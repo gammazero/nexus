@@ -11,39 +11,44 @@
 [![License](https://img.shields.io/badge/License-MIT-blue.svg)](LICENSE)
 [![GoDoc](https://pkg.go.dev/badge/github.com/gammazero/nexus/v3)](https://pkg.go.dev/github.com/gammazero/nexus/v3)
 
-**nexus** is a [WAMP](http://wamp-proto.org/) v2 **router library**, **client library**, and a **router service**, that implements
-most of the features defined in the WAMP-protocol advanced profile. The nexus project is written in
-[Go](http://golang.org/) and designed for highly concurrent asynchronous I/O. The nexus router provides extended
-functionality. The router and client interoperate with other WAMP implementations.
+**nexus** is a [WAMP](http://wamp-proto.org/) v2 **router library**, **client library**, and a **router service**, that implements most of the features defined in the WAMP-protocol advanced profile.
+The nexus project is written in [Go](http://golang.org/) and designed for highly concurrent asynchronous I/O.
+The nexus router provides extended functionality.
+The router and client interoperate with other WAMP implementations.
 
 ## Documentation
 
-See the [**nexus project Wiki**](https://github.com/gammazero/nexus/wiki) for documentation, examples, and
-operational details.
+See the [**docs**](docs) directory for documentation, examples, and operational details:
+
+- [Nexus Overview](docs/nexus-overview.md)
+- [Understanding WAMP](docs/what-is-wamp.md)
+- [Getting Started](docs/getting-started.md) with the nexusd router service
+- [Creating a WAMP router with nexus](docs/router-example.md)
+- [Creating an Example Subscriber Client](docs/client-subscriber-example.md)
+- [Authenticators](docs/authenticators.md) and [Authorizers](docs/authorizers.md)
+- [Cookie and Request Authentication and Authorization](docs/cookies-and-request-auth.md)
+- [Router Concurrency](docs/router-concurrency.md) and [Client Concurrency](docs/client-concurrency.md)
+- [Extended Functionality](docs/extended-functionality.md)
+- [Relay Client](docs/relay-client.md)
 
 [![GoDoc](https://pkg.go.dev/badge/github.com/gammazero/nexus/v3)](https://pkg.go.dev/github.com/gammazero/nexus/v3) for
 API documentation.
 
 ## What is WAMP and nexus
 
-The Web Application Messaging Protocol (WAMP) is an open standard WebSocket subprotocol that provides two application
-messaging patterns in one unified protocol:
-[Remote Procedure Calls](http://wamp-proto.org/faq/index.html#rpc) and
-[Publish & Subscribe](http://wamp-proto.org/faq/index.html#pubsub). WAMP is also referred to as WAMP-proto it
-distinguish it from [other uses](https://en.wikipedia.org/wiki/WAMP_(disambiguation) of the acronym.
+The Web Application Messaging Protocol (WAMP) is an open standard WebSocket subprotocol that provides two application messaging patterns in one unified protocol:
+[Remote Procedure Calls](http://wamp-proto.org/faq/index.html#rpc) and [Publish & Subscribe](http://wamp-proto.org/faq/index.html#pubsub).
+WAMP is also referred to as WAMP-proto it distinguish it from [other uses](https://en.wikipedia.org/wiki/WAMP_(disambiguation) of the acronym.
 
-Using WAMP you can build distributed systems out of application components which are loosely coupled and communicate
-in (soft) real-time.
+Using WAMP you can build distributed systems out of application components which are loosely coupled and communicate in (soft) real-time.
 
 Nexus is a software package that provides a WAMP router library, client library, and stand-alone WAMP router service.
-This nexus package provides a messaging system for building distributed applications and services. Endpoints using
-websockets, TCP sockets, Unix sockets, and in-process connections may all communicate with each other via pub/sub
-and routed RPC messaging.
+This nexus package provides a messaging system for building distributed applications and services.
+Endpoints using websockets, TCP sockets, Unix sockets, and in-process connections may all communicate with each other via pub/sub and routed RPC messaging.
 
- - The router library can be used to build custom WAMP routers or to embed a WAMP router in an application.
- - The client library can be used to build clients that connect to any WAMP server, or to communicate in-process
-   with a WAMP router embedded in the same application.
- - The router service can be run as-is to provide WAMP routing.
+- The router library can be used to build custom WAMP routers or to embed a WAMP router in an application.
+- The client library can be used to build clients that connect to any WAMP server, or to communicate in-process with a WAMP router embedded in the same application.
+- The router service can be run as-is to provide WAMP routing.
 
 ## Installation
 
@@ -53,9 +58,8 @@ and routed RPC messaging.
 go install github.com/gammazero/nexus/v3/nexusd@latest
 ```
 
-Run `nexusd -help` to see usage information. Although `nexusd` can be run using only command line flags,
-a [configuration file](https://raw.githubusercontent.com/gammazero/nexus/main/cmd/nexusd/etc/nexus.json) offers much
-more configurability.
+Run `nexusd -help` to see usage information.
+Although `nexusd` can be run using only command line flags, a [configuration file](https://raw.githubusercontent.com/gammazero/nexus/main/cmd/nexusd/etc/nexus.json) offers much more configurability.
 
 ### Create configuration file and run nexusd service
 
@@ -74,9 +78,10 @@ cd nexus/examples
 
 ## Building routers and clients with nexus
 
-The nexus router library is used to build a WAMP router or embed one in your service. The nexus client library is
-used to build WAMP clients into you goloang applications. To use either of these libraries, import the v3 version of
-the appropriate packages. Version v3 is the only currently supported version.
+The nexus router library is used to build a WAMP router or embed one in your service.
+The nexus client library is used to build WAMP clients into you goloang applications.
+To use either of these libraries, import the v3 version of the appropriate packages.
+Version v3 is the only currently supported version.
 
 ```go
 import (
@@ -94,25 +99,25 @@ docker pull ghcr.io/gammazero/nexusd:latest
 docker run ghcr.io/gammazero/nexusd:latest
 ```
 
-Now it just works. By default, the router accepts connections on port `8080` and allows anonymous communication with
-clients using `realm1`. You can change the values or get help by passing options to the container process:
+Now it just works.
+By default, the router accepts connections on port `8080` and allows anonymous communication with clients using `realm1`.
+You can change the values or get help by passing options to the container process:
 
 ```
 docker run ghcr.io/gammazero/nexusd:latest --ws 0.0.0.0:8888 --realm autobahn
 docker run ghcr.io/gammazero/nexusd:latest --help
 ```
 
-Alternatively, you can mount the nexusd configuration file to the container, and get a more customizable and secure
-environment. See the nexusd configuration reference for details. Finally, you can also run the container process as
-an unprivileged user.
+Alternatively, you can mount the nexusd configuration file to the container, and get a more customizable and secure environment.
+See the nexusd configuration reference for details.
+Finally, you can also run the container process as an unprivileged user.
 
 
 ## Examples
 
-Look at the examples to see how to create simple clients and servers. Follow the
-[examples/README.md](https://github.com/gammazero/nexus/blob/main/examples/README.md).
-Examples of using advanced profile features are also available in the
-[wiki documentation](https://github.com/gammazero/nexus/wiki).
+Look at the examples to see how to create simple clients and servers.
+Follow the[examples/README.md](https://github.com/gammazero/nexus/blob/main/examples/README.md).
+Examples of using advanced profile features are also available in the [documentation](docs).
 
 See [examples](https://github.com/gammazero/nexus/tree/main/examples)
 
@@ -121,41 +126,35 @@ Each of these has its own README.md that describes how to set up the environment
 
 See [examples/interop](https://github.com/gammazero/nexus/tree/main/examples/interop)
 
-The nexusd service is also an example stand-alone WAMP router. All the router options are configurable in nexusd
-using a configuration file, and one is provided in the `nexusd/etc/` directory. This can be used as starting point
-to write your own WAMP router service.
+The nexusd service is also an example stand-alone WAMP router.
+All the router options are configurable in nexusd using a configuration file, and one is provided in the `cmd/nexusd/etc/` directory.
+This can be used as starting point to write your own WAMP router service.
 
 See [nexusd](https://github.com/gammazero/nexus/tree/main/cmd/nexusd)
 
 ## Contributing
 
-Please read the [Contributing](https://github.com/gammazero/nexus/blob/main/CONTRIBUTING.md#contributing-to-nexus)
-guide if you are interested in becoming a contributor to this project.
+Please read the [Contributing](https://github.com/gammazero/nexus/blob/main/CONTRIBUTING.md#contributing-to-nexus) guide if you are interested in becoming a contributor to this project.
 
-Please report any problems, or request changes and new functionality by opening
-an [issue](https://github.com/gammazero/nexus/issues).
+Please report any problems, or request changes and new functionality by opening an [issue](https://github.com/gammazero/nexus/issues).
 
 ## Nexus Features
 
-- **Concurrent Asynchronous I/O** Nexus supports large numbers of clients concurrently sending and receiving messages,
-  and never blocks on I/O, even if a client becomes unresponsive. See
-  [Router Concurrency](https://github.com/gammazero/nexus/wiki/Router-Concurrency) and
-  [Client Concurrency](https://github.com/gammazero/nexus/wiki/Client-Concurrency) for details.
-- **WAMP Advanced Profile Features**  This project implements most of the advanced profile features in WAMP v2.
-  See [current feature support](https://github.com/gammazero/nexus#advanced-profile-feature-support) provided by nexus.
-  Nexus also offers extended functionality for retrieving session information and for message filtering, giving clients
-  more ability to decide where to send messages.
-- **Flexibility** Multiple transports and serialization options are supported, and more are being developed to maximize
-  interoperability. Currently, nexus provides websocket, rawsocket (tcp and unix), and local (in-process) transports.
-  [JSON](https://en.wikipedia.org/wiki/JSON), [MessagePack](http://msgpack.org/index.html), and
-  [CBOR](https://tools.ietf.org/html/rfc7049) serialization is available over websockets and rawsockets.
-- **Security** TLS is available over websockets and rawsockets with client and server APIs that allow configuration
-  of TLS. The nexus router library also provides interfaces for integration of client authentication and authorization
-  logic.
+- **Concurrent Asynchronous I/O** Nexus supports large numbers of clients concurrently sending and receiving messages, and never blocks on I/O, even if a client becomes unresponsive.
+See [Router Concurrency](docs/router-concurrency.md) and [Client Concurrency](docs/client-concurrency.md) for details.
+- **WAMP Advanced Profile Features** This project implements most of the advanced profile features in WAMP v2.
+See [current feature support](https://github.com/gammazero/nexus#advanced-profile-feature-support) provided by nexus.
+Nexus also offers extended functionality for retrieving session information and for message filtering, giving clients more ability to decide where to send messages.
+- **Flexibility** Multiple transports and serialization options are supported, and more are being developed to maximize interoperability.
+Currently, nexus provides websocket, rawsocket (tcp and unix), and local (in-process) transports.
+[JSON](https://en.wikipedia.org/wiki/JSON), [MessagePack](http://msgpack.org/index.html), and [CBOR](https://tools.ietf.org/html/rfc7049) serialization is available over websockets and rawsockets.
+- **Security** TLS is available over websockets and rawsockets with client and server APIs that allow configuration of TLS.
+The nexus router library also provides interfaces for integration of client authentication and authorization logic.
 
 ### Status
 
-The currently maintained version of this module is 3.x. Earlier major versions are no longer supported.
+The currently maintained version of this module is 3.x.
+Earlier major versions are no longer supported.
 
 ## Advanced Profile Feature Support
 
@@ -214,6 +213,5 @@ The currently maintained version of this module is 3.x. Earlier major versions a
 
 ## Extended Functionality
 
-Nexus provides [extended functionality](https://github.com/gammazero/nexus/wiki/Extended-Functionality) around
-subscriber black/white listing and in the information available via the session meta API. This enhances the
-ability of clients to make decisions about message recipients.
+Nexus provides [extended functionality](docs/extended-functionality.md) around subscriber black/white listing and in the information available via the session meta API.
+This enhances the ability of clients to make decisions about message recipients.
