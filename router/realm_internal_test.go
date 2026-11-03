@@ -1,10 +1,8 @@
 package router
 
 import (
-	"bytes"
 	"errors"
 	"maps"
-	"sync"
 	"testing"
 	"testing/synctest"
 	"time"
@@ -156,25 +154,6 @@ func TestCleanSessionDetailsTransport(t *testing.T) {
 		wamp.DetailTransport: wamp.Dict{wamp.DetailAuth: wamp.Dict{wamp.DetailCookie: "secret"}},
 	})
 	require.Equal(t, wamp.Dict{wamp.DetailAuthID: "user1"}, clean)
-}
-
-// syncBuffer is a bytes.Buffer that is safe to write from several goroutines,
-// as the router's logger does.
-type syncBuffer struct {
-	mu  sync.Mutex
-	buf bytes.Buffer
-}
-
-func (b *syncBuffer) Write(p []byte) (int, error) {
-	b.mu.Lock()
-	defer b.mu.Unlock()
-	return b.buf.Write(p)
-}
-
-func (b *syncBuffer) String() string {
-	b.mu.Lock()
-	defer b.mu.Unlock()
-	return b.buf.String()
 }
 
 // requireAbortedLast reads the messages for cli until the router closes it,

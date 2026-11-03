@@ -69,6 +69,21 @@ const (
 	DetailProcedure = "procedure"
 )
 
+// Keys for values in the subscription and registration details that the
+// subscription and registration meta API returns, and that its on_create meta
+// events carry. These details also hold OptMatch, and for a registration,
+// OptInvoke.
+const (
+	// DetailID is the ID of the subscription or registration.
+	DetailID = "id"
+	// DetailCreated is the time that the subscription or registration was
+	// created, as an ISO 8601 string.
+	DetailCreated = "created"
+	// DetailURI is the topic of the subscription, or the procedure of the
+	// registration.
+	DetailURI = "uri"
+)
+
 // Keys for the authentication values that nexus adds to the transport
 // details of a websocket session. These are not defined by WAMP. The values
 // are found under the DetailAuth key of the DetailTransport dictionary in

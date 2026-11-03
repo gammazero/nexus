@@ -167,10 +167,10 @@ func TestSyncPubSubCreateMeta(t *testing.T) {
 		expectArgs := wamp.List{
 			cause.sess.ID,
 			wamp.Dict{
-				"id":          sub.id,
-				"created":     sub.created,
-				"uri":         sub.topic,
-				wamp.OptMatch: sub.match,
+				wamp.DetailID:      sub.id,
+				wamp.DetailCreated: sub.created,
+				wamp.DetailURI:     sub.topic,
+				wamp.OptMatch:      sub.match,
 			},
 		}
 		pubID := evtLocal1.Publication
@@ -191,7 +191,7 @@ func TestSyncPubSubCreateMeta(t *testing.T) {
 		require.Same(t, evtRemote1, evtRemote2, "remote subscribers not shared")
 		require.NotSame(t, evtLocal1, evtLocal2)
 		require.NotSame(t, evtLocal1, evtRemote1)
-		evtLocal1.Arguments[1].(wamp.Dict)["uri"] = "changed"
+		evtLocal1.Arguments[1].(wamp.Dict)[wamp.DetailURI] = "changed"
 		evtLocal1.Details["changed"] = true
 		require.Equal(t, expectArgs, evtLocal2.Arguments)
 		require.Equal(t, expectArgs, evtRemote1.Arguments)

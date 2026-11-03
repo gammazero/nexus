@@ -23,6 +23,11 @@ const metaID = wamp.ID(1)
 // reads nothing for this long is closed.
 const replyRoomTimeout = time.Minute
 
+// trustedAuthRole is the authrole of the realm's meta session, and of local
+// clients that join the realm without authenticating. A trusted callee may
+// request caller disclosure even when the realm does not allow it.
+const trustedAuthRole = "trusted"
+
 // Testament scope.
 const (
 	destroyedScope = "destroyed"
@@ -321,7 +326,7 @@ func (r *realm) createMetaSession() {
 	r.dealer.setMetaPeer(cli)
 
 	// This session is the local leg of the router uplink.
-	r.metaSess = wamp.NewSession(rtr, metaID, wamp.Dict{wamp.DetailAuthRole: "trusted"}, nil)
+	r.metaSess = wamp.NewSession(rtr, metaID, wamp.Dict{wamp.DetailAuthRole: trustedAuthRole}, nil)
 
 	// Run the handler for messages from the meta session.
 	go func() {
@@ -809,7 +814,7 @@ func (r *realm) authClient(sid wamp.ID, client wamp.Peer, details wamp.Dict) (*w
 		}
 		details = wamp.Dict{
 			wamp.DetailAuthID:       authid,
-			wamp.DetailAuthRole:     "trusted",
+			wamp.DetailAuthRole:     trustedAuthRole,
 			wamp.DetailAuthMethod:   "local",
 			wamp.DetailAuthProvider: "static",
 			wamp.DetailRoles: wamp.Dict{

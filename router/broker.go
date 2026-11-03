@@ -768,10 +768,10 @@ func (b *broker) syncPubSubCreateMeta(subSessID wamp.ID, sub *subscription) {
 				Arguments: wamp.List{
 					subSessID,
 					wamp.Dict{
-						"id":          sub.id,
-						"created":     sub.created,
-						"uri":         sub.topic,
-						wamp.OptMatch: sub.match,
+						wamp.DetailID:      sub.id,
+						wamp.DetailCreated: sub.created,
+						wamp.DetailURI:     sub.topic,
+						wamp.OptMatch:      sub.match,
 					},
 				},
 			}
@@ -997,10 +997,10 @@ func (b *broker) subGet(msg *wamp.Invocation) wamp.Message {
 			b.actionChan <- func() {
 				if sub, ok := b.subscriptions[subID]; ok {
 					dict = wamp.Dict{
-						"id":          subID,
-						"created":     sub.created,
-						"uri":         sub.topic,
-						wamp.OptMatch: sub.match,
+						wamp.DetailID:      subID,
+						wamp.DetailCreated: sub.created,
+						wamp.DetailURI:     sub.topic,
+						wamp.OptMatch:      sub.match,
 					}
 				}
 				close(sync)

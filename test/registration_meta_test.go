@@ -72,12 +72,12 @@ func TestMetaEventRegOnCreateRegOnRegister(t *testing.T) {
 		if !ok {
 			return errors.New("argument 0 (session) was not wamp.ID")
 		}
-		onCreateID, _ = wamp.AsID(dict["id"])
-		if u, _ := wamp.AsURI(dict["uri"]); u != wamp.URI("some.proc") {
+		onCreateID, _ = wamp.AsID(dict[wamp.DetailID])
+		if u, _ := wamp.AsURI(dict[wamp.DetailURI]); u != wamp.URI("some.proc") {
 			return fmt.Errorf(
 				"on_create had wrong procedure, got '%v' want 'some.proc'", u)
 		}
-		if s, _ := wamp.AsString(dict["created"]); s == "" {
+		if s, _ := wamp.AsString(dict[wamp.DetailCreated]); s == "" {
 			return errors.New("on_create missing created time")
 		}
 		return nil

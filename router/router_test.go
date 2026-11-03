@@ -853,9 +853,9 @@ func TestRegistrationMetaProcedures(t *testing.T) {
 		require.NotZero(t, len(result.Arguments), "missing expected arguemnt")
 		dict, ok = result.Arguments[0].(wamp.Dict)
 		require.True(t, ok, "expected wamp.Dict")
-		regID, _ = wamp.AsID(dict["id"])
+		regID, _ = wamp.AsID(dict[wamp.DetailID])
 		require.Equal(t, registrationID, regID, "received wrong registration")
-		uri, _ := wamp.AsURI(dict["uri"])
+		uri, _ := wamp.AsURI(dict[wamp.DetailURI])
 		require.Equal(t, testProcedure, uri, "registration has wrong uri")
 
 		// ----- Test wamp.registration.list_callees meta procedure -----
@@ -1017,9 +1017,9 @@ func TestSubscriptionMetaProcedures(t *testing.T) {
 		require.NotZero(t, len(result.Arguments), "missing expected arguemnt")
 		dict, ok = result.Arguments[0].(wamp.Dict)
 		require.True(t, ok, "expected wamp.Dict")
-		subID, _ = wamp.AsID(dict["id"])
+		subID, _ = wamp.AsID(dict[wamp.DetailID])
 		require.Equal(t, subscriptionID, subID, "received wrong subscription")
-		uri, _ := wamp.AsURI(dict["uri"])
+		uri, _ := wamp.AsURI(dict[wamp.DetailURI])
 		require.Equal(t, testTopic, uri, "subscription has wrong uri")
 
 		// ----- Test wamp.subscription.list_subscribers meta procedure -----

@@ -331,8 +331,10 @@ func (s *WebsocketServer) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		b := make([]byte, 18)
 		_, err := rand.Read(b)
 		if err == nil {
-			// Create next auth cookie with an 18-byte random value.
-			nextCookie = &http.Cookie{
+			// Create next auth cookie with an 18-byte random value. Secure and
+			// SameSite are set by the TrackingCookieSecureAttribute and
+			// TrackingCookieSameSiteAttribute fields.
+			nextCookie = &http.Cookie{ //nolint:gosec // G124: attributes are configurable
 				Name:     cookieName,
 				Value:    base64.URLEncoding.EncodeToString(b),
 				HttpOnly: true,

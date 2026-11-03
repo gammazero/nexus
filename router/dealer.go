@@ -301,7 +301,7 @@ func (d *dealer) register(callee *wamp.Session, msg *wamp.Register) {
 		callee.Lock()
 		authrole, _ := wamp.AsString(callee.Details[wamp.DetailAuthRole])
 		callee.Unlock()
-		if authrole != "trusted" {
+		if authrole != trustedAuthRole {
 			callee.SendReply(&wamp.Error{
 				Type:    msg.MessageType(),
 				Request: msg.Request,
@@ -738,11 +738,11 @@ func (d *dealer) syncRegister(callee *wamp.Session, msg *wamp.Register, match, i
 			// created through a registration request for an URI which was
 			// previously without a registration.
 			details := wamp.Dict{
-				"id":           regID,
-				"created":      created,
-				"uri":          msg.Procedure,
-				wamp.OptMatch:  match,
-				wamp.OptInvoke: invokePolicy,
+				wamp.DetailID:      regID,
+				wamp.DetailCreated: created,
+				wamp.DetailURI:     msg.Procedure,
+				wamp.OptMatch:      match,
+				wamp.OptInvoke:     invokePolicy,
 			}
 			metaPubs = append(metaPubs, &wamp.Publish{
 				Request:   wamp.GlobalID(),
@@ -1757,11 +1757,11 @@ func (d *dealer) regGet(msg *wamp.Invocation) wamp.Message {
 			d.actionChan <- func() {
 				if reg, ok := d.registrations[regID]; ok {
 					dict = wamp.Dict{
-						"id":           regID,
-						"created":      reg.created,
-						"uri":          reg.procedure,
-						wamp.OptMatch:  reg.match,
-						wamp.OptInvoke: reg.policy,
+						wamp.DetailID:      regID,
+						wamp.DetailCreated: reg.created,
+						wamp.DetailURI:     reg.procedure,
+						wamp.OptMatch:      reg.match,
+						wamp.OptInvoke:     reg.policy,
 					}
 				}
 				close(sync)
