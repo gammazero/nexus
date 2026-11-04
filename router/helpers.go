@@ -38,8 +38,8 @@ func pptOptionsToDetails(options wamp.Dict, details wamp.Dict) {
 	if val, ok := options[wamp.OptPPTCipher]; ok {
 		details[wamp.OptPPTCipher] = val.(string)
 	}
-	if val, ok := options[wamp.OptPPTKeyId]; ok {
-		details[wamp.OptPPTKeyId] = val.(string)
+	if val, ok := options[wamp.OptPPTKeyID]; ok {
+		details[wamp.OptPPTKeyID] = val.(string)
 	}
 }
 

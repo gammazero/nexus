@@ -62,7 +62,7 @@ func TestJoinRealmWithCRCookieAuth(t *testing.T) {
 	if scheme == "ws" || scheme == "wss" {
 		jar, err := cookiejar.New(nil)
 		require.NoError(t, err, "failed to create CookieJar")
-		cfg.WsCfg.Jar = jar
+		cfg.WSConfig.Jar = jar
 	}
 
 	cli := connectClientCfg(t, cfg)
@@ -78,7 +78,7 @@ func TestJoinRealmWithCRCookieAuth(t *testing.T) {
 	cli.Close()
 
 	// If websocket, then should be authenticated by cookie this time.
-	if cfg.WsCfg.Jar != nil {
+	if cfg.WSConfig.Jar != nil {
 		ok, _ := wamp.AsBool(details["authbycookie"])
 		require.True(t, ok, "should have been authenticated by cookie")
 	} else {

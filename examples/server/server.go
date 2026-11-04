@@ -121,20 +121,20 @@ func main() {
 
 	// Run TLS websocket server.
 	wsAddrTLS := fmt.Sprintf("%s:%d", netAddr, wssPort)
-	wsTlsCloser, err := wss.ListenAndServeTLS(wsAddrTLS, nil, certPath, keyPath)
+	wsTLSCloser, err := wss.ListenAndServeTLS(wsAddrTLS, nil, certPath, keyPath)
 	if err != nil {
 		log.Fatal(err)
 	}
-	defer wsTlsCloser.Close() //nolint:errcheck
+	defer wsTLSCloser.Close() //nolint:errcheck
 	log.Printf("TLS Websocket server listening on wss://%s/", wsAddrTLS)
 
 	// Run TLS TCP rawsocket server.
 	tcpAddrTLS := fmt.Sprintf("%s:%d", netAddr, tcpsPort)
-	tcpTlsCloser, err := rss.ListenAndServeTLS("tcp", tcpAddrTLS, nil, certPath, keyPath)
+	tcpTLSCloser, err := rss.ListenAndServeTLS("tcp", tcpAddrTLS, nil, certPath, keyPath)
 	if err != nil {
 		log.Fatal(err)
 	}
-	defer tcpTlsCloser.Close() //nolint:errcheck
+	defer tcpTLSCloser.Close() //nolint:errcheck
 	log.Printf("TLS RawSocket TCP server listening on tcps://%s/", tcpAddrTLS)
 
 	// Wait for SIGINT (CTRL-c), then close servers and exit.

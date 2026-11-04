@@ -41,8 +41,8 @@ func main() {
 	defer cli.Close()
 
 	publishEvents(cli)
-	callRpc(cli)
-	callRpcProgressiveResults(cli)
+	callRPC(cli)
+	callRPCProgressiveResults(cli)
 }
 
 func publishEvents(publisher *client.Client) {
@@ -59,7 +59,7 @@ func publishEvents(publisher *client.Client) {
 	}
 }
 
-func callRpc(caller *client.Client) {
+func callRPC(caller *client.Client) {
 	// Call procedure to sum arguments
 	ctx := context.Background()
 	result, err := caller.Call(ctx, procedure, nil, wamp.List{2, 3}, nil, nil)
@@ -71,7 +71,7 @@ func callRpc(caller *client.Client) {
 	fmt.Println("Call result:", val)
 }
 
-func callRpcProgressiveResults(caller *client.Client) {
+func callRPCProgressiveResults(caller *client.Client) {
 	progHandler := func(result *wamp.Result) {
 		progResult := result.Arguments[0].(string)
 		fmt.Println("Received chunk:", progResult)

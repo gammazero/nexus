@@ -19,7 +19,7 @@ const (
 	OptPPTScheme       = "ppt_scheme"
 	OptPPTSerializer   = "ppt_serializer"
 	OptPPTCipher       = "ppt_cipher"
-	OptPPTKeyId        = "ppt_keyid"
+	OptPPTKeyID        = "ppt_keyid"
 	OptSticky          = "sticky"
 	OptForwardTimeout  = "forward_timeout"
 

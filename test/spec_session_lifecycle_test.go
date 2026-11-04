@@ -188,7 +188,7 @@ func TestSpecSessionContextCancelDuringConnect(t *testing.T) {
 		ResponseTimeout: clientResponseTimeout,
 	}
 	if scheme == "wss" || scheme == "tcps" {
-		cfg.TlsCfg = &tls.Config{InsecureSkipVerify: true} //nolint:gosec
+		cfg.TLSConfig = &tls.Config{InsecureSkipVerify: true} //nolint:gosec
 	}
 
 	ctx, cancel := context.WithCancel(context.Background())

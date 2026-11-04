@@ -53,7 +53,7 @@ type Config struct {
 	// Provide a tls.Config to connect the client using TLS. The zero
 	// configuration specifies using defaults. A nil tls.Config means do not
 	// use TLS.
-	TlsCfg *tls.Config
+	TLSConfig *tls.Config
 
 	// For local clients only. This configures the router-to-client queue size and
 	// is the maximum number of messages that are enqueued for the client to read.
@@ -77,5 +77,5 @@ type Config struct {
 	RecvLimit int
 
 	// Websocket transport configuration.
-	WsCfg transport.WebsocketConfig
+	WSConfig transport.WebsocketConfig
 }

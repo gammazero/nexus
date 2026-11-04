@@ -362,7 +362,7 @@ func TestPPTPubSub(t *testing.T) {
 		wamp.OptPPTScheme:     "x_custom",
 		wamp.OptPPTSerializer: "native",
 		wamp.OptPPTCipher:     "ppt_cipher",
-		wamp.OptPPTKeyId:      "ppt_keyid",
+		wamp.OptPPTKeyID:      "ppt_keyid",
 	}
 	publisher = newTestPeer()
 	pubSess = wamp.NewSession(publisher, 0, nil, greetDetails)
@@ -771,33 +771,33 @@ func TestEventHistory(t *testing.T) {
 	pubSess := wamp.NewSession(publisher, 0, nil, nil)
 
 	topics := []wamp.URI{"nexus.test.exact.topic", "nexus.test.prefix.catch", "nexus.test.wildcard.topic", "nexus.test.wildcard.miss"}
-	reqId := 25501
+	reqID := 25501
 
 	// Publish all payloads to all topics to have a data to check.
 	for i := 1; i <= 5; i++ {
 		for _, topic := range topics {
 			publication := wamp.Publish{
-				Request:     wamp.ID(reqId),
+				Request:     wamp.ID(reqID),
 				Topic:       topic,
-				Arguments:   wamp.List{reqId},
+				Arguments:   wamp.List{reqID},
 				ArgumentsKw: wamp.Dict{"topic": string(topic)},
 			}
 			broker.publish(pubSess, &publication)
-			reqId++
+			reqID++
 		}
 	}
 
 	// Publish some events that should not be saved in event store.
 	for _, topic := range topics {
 		publication := wamp.Publish{
-			Request:     wamp.ID(reqId),
+			Request:     wamp.ID(reqID),
 			Topic:       topic,
 			Options:     wamp.Dict{"exclude": 12345},
-			Arguments:   wamp.List{reqId},
+			Arguments:   wamp.List{reqID},
 			ArgumentsKw: wamp.Dict{"topic": string(topic)},
 		}
 		broker.publish(pubSess, &publication)
-		reqId++
+		reqID++
 	}
 
 	// Examine what is stored in the Event Store.
@@ -849,15 +849,15 @@ func TestEventHistory(t *testing.T) {
 
 	// Test Event History MetaRPCs.
 	topic = wamp.URI("nexus.test.exact.topic")
-	subId := broker.topicSubscription[topic].id
+	subID := broker.topicSubscription[topic].id
 	inv := wamp.Invocation{
-		Request:      wamp.ID(reqId),
+		Request:      wamp.ID(reqID),
 		Registration: 0,
 		Details:      wamp.Dict{},
-		Arguments:    wamp.List{subId},
+		Arguments:    wamp.List{subID},
 		ArgumentsKw:  wamp.Dict{"limit": 10},
 	}
-	reqId++
+	reqID++
 
 	msg := broker.subEventHistory(&inv)
 	yield, ok := msg.(*wamp.Yield)
@@ -868,15 +868,15 @@ func TestEventHistory(t *testing.T) {
 	require.Truef(t, limitReached, "is_limit_reached for topic %s should be true", topic)
 
 	topic = wamp.URI("nexus")
-	subId = broker.pfxTopicSubscription[topic].id
+	subID = broker.pfxTopicSubscription[topic].id
 	inv = wamp.Invocation{
-		Request:      wamp.ID(reqId),
+		Request:      wamp.ID(reqID),
 		Registration: 0,
 		Details:      wamp.Dict{},
-		Arguments:    wamp.List{subId},
+		Arguments:    wamp.List{subID},
 		ArgumentsKw:  wamp.Dict{"limit": 10},
 	}
-	reqId++
+	reqID++
 
 	msg = broker.subEventHistory(&inv)
 	yield, ok = msg.(*wamp.Yield)
@@ -887,13 +887,13 @@ func TestEventHistory(t *testing.T) {
 	require.Falsef(t, limitReached, "is_limit_reached for topic %s should be false", topic)
 
 	inv = wamp.Invocation{
-		Request:      wamp.ID(reqId),
+		Request:      wamp.ID(reqID),
 		Registration: 0,
 		Details:      wamp.Dict{},
-		Arguments:    wamp.List{subId},
+		Arguments:    wamp.List{subID},
 		ArgumentsKw:  wamp.Dict{"limit": 1000},
 	}
-	reqId++
+	reqID++
 
 	msg = broker.subEventHistory(&inv)
 	yield, ok = msg.(*wamp.Yield)
@@ -901,13 +901,13 @@ func TestEventHistory(t *testing.T) {
 	require.Equalf(t, 20, len(yield.Arguments), "MetaRPC eventHistoryLast for topic %s should return 20 records", topic)
 
 	inv = wamp.Invocation{
-		Request:      wamp.ID(reqId),
+		Request:      wamp.ID(reqID),
 		Registration: 0,
 		Details:      wamp.Dict{},
-		Arguments:    wamp.List{subId},
+		Arguments:    wamp.List{subID},
 		ArgumentsKw:  wamp.Dict{"after_time": (time.Now().Add(-1 * time.Hour)).Format(time.RFC3339)},
 	}
-	reqId++
+	reqID++
 
 	msg = broker.subEventHistory(&inv)
 	yield, ok = msg.(*wamp.Yield)
@@ -915,13 +915,13 @@ func TestEventHistory(t *testing.T) {
 	require.Equalf(t, 20, len(yield.Arguments), "MetaRPC subEventHistory for topic %s should return 20 records", topic)
 
 	inv = wamp.Invocation{
-		Request:      wamp.ID(reqId),
+		Request:      wamp.ID(reqID),
 		Registration: 0,
 		Details:      wamp.Dict{},
-		Arguments:    wamp.List{subId},
+		Arguments:    wamp.List{subID},
 		ArgumentsKw:  wamp.Dict{"from_time": (time.Now().Add(-1 * time.Hour)).Format(time.RFC3339)},
 	}
-	reqId++
+	reqID++
 
 	msg = broker.subEventHistory(&inv)
 	yield, ok = msg.(*wamp.Yield)
@@ -929,13 +929,13 @@ func TestEventHistory(t *testing.T) {
 	require.Equalf(t, 20, len(yield.Arguments), "MetaRPC subEventHistory for topic %s should return 20 records", topic)
 
 	inv = wamp.Invocation{
-		Request:      wamp.ID(reqId),
+		Request:      wamp.ID(reqID),
 		Registration: 0,
 		Details:      wamp.Dict{},
-		Arguments:    wamp.List{subId},
+		Arguments:    wamp.List{subID},
 		ArgumentsKw:  wamp.Dict{"before_time": (time.Now().Add(1 * time.Hour)).Format(time.RFC3339)},
 	}
-	reqId++
+	reqID++
 
 	msg = broker.subEventHistory(&inv)
 	yield, ok = msg.(*wamp.Yield)
@@ -943,13 +943,13 @@ func TestEventHistory(t *testing.T) {
 	require.Equalf(t, 20, len(yield.Arguments), "MetaRPC subEventHistory for topic %s should return 20 records", topic)
 
 	inv = wamp.Invocation{
-		Request:      wamp.ID(reqId),
+		Request:      wamp.ID(reqID),
 		Registration: 0,
 		Details:      wamp.Dict{},
-		Arguments:    wamp.List{subId},
+		Arguments:    wamp.List{subID},
 		ArgumentsKw:  wamp.Dict{"until_time": (time.Now().Add(1 * time.Hour)).Format(time.RFC3339)},
 	}
-	reqId++
+	reqID++
 
 	msg = broker.subEventHistory(&inv)
 	yield, ok = msg.(*wamp.Yield)
@@ -957,16 +957,16 @@ func TestEventHistory(t *testing.T) {
 	require.Equalf(t, 20, len(yield.Arguments), "MetaRPC subEventHistory for topic %s should return 20 records", topic)
 
 	inv = wamp.Invocation{
-		Request:      wamp.ID(reqId),
+		Request:      wamp.ID(reqID),
 		Registration: 0,
 		Details:      wamp.Dict{},
-		Arguments:    wamp.List{subId},
+		Arguments:    wamp.List{subID},
 		ArgumentsKw: wamp.Dict{
 			"after_time":  (time.Now().Add(-1 * time.Hour)).Format(time.RFC3339),
 			"before_time": (time.Now().Add(1 * time.Hour)).Format(time.RFC3339),
 		},
 	}
-	reqId++
+	reqID++
 
 	msg = broker.subEventHistory(&inv)
 	yield, ok = msg.(*wamp.Yield)
@@ -974,13 +974,13 @@ func TestEventHistory(t *testing.T) {
 	require.Equalf(t, 20, len(yield.Arguments), "MetaRPC subEventHistory for topic %s should return 20 records", topic)
 
 	inv = wamp.Invocation{
-		Request:      wamp.ID(reqId),
+		Request:      wamp.ID(reqID),
 		Registration: 0,
 		Details:      wamp.Dict{},
-		Arguments:    wamp.List{subId},
+		Arguments:    wamp.List{subID},
 		ArgumentsKw:  wamp.Dict{"topic": "nexus.test.exact.topic"},
 	}
-	reqId++
+	reqID++
 
 	msg = broker.subEventHistory(&inv)
 	yield, ok = msg.(*wamp.Yield)
@@ -990,15 +990,15 @@ func TestEventHistory(t *testing.T) {
 	// Let's test filtering based on publication ID
 	topic = wamp.URI("nexus")
 	subscription = broker.pfxTopicSubscription[topic]
-	pubId := broker.eventHistoryStore[subscription].entries.At(4).event.Publication
+	pubID := broker.eventHistoryStore[subscription].entries.At(4).event.Publication
 	inv = wamp.Invocation{
-		Request:      wamp.ID(reqId),
+		Request:      wamp.ID(reqID),
 		Registration: 0,
 		Details:      wamp.Dict{},
-		Arguments:    wamp.List{subId},
-		ArgumentsKw:  wamp.Dict{"from_publication": pubId},
+		Arguments:    wamp.List{subID},
+		ArgumentsKw:  wamp.Dict{"from_publication": pubID},
 	}
-	reqId++
+	reqID++
 
 	msg = broker.subEventHistory(&inv)
 	yield, ok = msg.(*wamp.Yield)
@@ -1006,13 +1006,13 @@ func TestEventHistory(t *testing.T) {
 	require.Equalf(t, 16, len(yield.Arguments), "MetaRPC subEventHistory for topic %s should return 16 records", topic)
 
 	inv = wamp.Invocation{
-		Request:      wamp.ID(reqId),
+		Request:      wamp.ID(reqID),
 		Registration: 0,
 		Details:      wamp.Dict{},
-		Arguments:    wamp.List{subId},
-		ArgumentsKw:  wamp.Dict{"after_publication": pubId},
+		Arguments:    wamp.List{subID},
+		ArgumentsKw:  wamp.Dict{"after_publication": pubID},
 	}
-	reqId++
+	reqID++
 
 	msg = broker.subEventHistory(&inv)
 	yield, ok = msg.(*wamp.Yield)
@@ -1020,13 +1020,13 @@ func TestEventHistory(t *testing.T) {
 	require.Equalf(t, 15, len(yield.Arguments), "MetaRPC subEventHistory for topic %s should return 15 records", topic)
 
 	inv = wamp.Invocation{
-		Request:      wamp.ID(reqId),
+		Request:      wamp.ID(reqID),
 		Registration: 0,
 		Details:      wamp.Dict{},
-		Arguments:    wamp.List{subId},
-		ArgumentsKw:  wamp.Dict{"before_publication": pubId},
+		Arguments:    wamp.List{subID},
+		ArgumentsKw:  wamp.Dict{"before_publication": pubID},
 	}
-	reqId++
+	reqID++
 
 	msg = broker.subEventHistory(&inv)
 	yield, ok = msg.(*wamp.Yield)
@@ -1034,13 +1034,13 @@ func TestEventHistory(t *testing.T) {
 	require.Equalf(t, 4, len(yield.Arguments), "MetaRPC subEventHistory for topic %s should return 4 records", topic)
 
 	inv = wamp.Invocation{
-		Request:      wamp.ID(reqId),
+		Request:      wamp.ID(reqID),
 		Registration: 0,
 		Details:      wamp.Dict{},
-		Arguments:    wamp.List{subId},
-		ArgumentsKw:  wamp.Dict{"until_publication": pubId},
+		Arguments:    wamp.List{subID},
+		ArgumentsKw:  wamp.Dict{"until_publication": pubID},
 	}
-	reqId++
+	reqID++
 
 	msg = broker.subEventHistory(&inv)
 	yield, ok = msg.(*wamp.Yield)
@@ -1049,11 +1049,11 @@ func TestEventHistory(t *testing.T) {
 
 	// Let's test reverse order
 	inv = wamp.Invocation{
-		Request:      wamp.ID(reqId),
+		Request:      wamp.ID(reqID),
 		Registration: 0,
 		Details:      wamp.Dict{},
-		Arguments:    wamp.List{subId},
-		ArgumentsKw:  wamp.Dict{"until_publication": pubId, "reverse": true, "limit": 3},
+		Arguments:    wamp.List{subID},
+		ArgumentsKw:  wamp.Dict{"until_publication": pubID, "reverse": true, "limit": 3},
 	}
 
 	msg = broker.subEventHistory(&inv)
@@ -1068,7 +1068,7 @@ func TestEventHistory(t *testing.T) {
 
 	// Let's test with zero args
 	inv = wamp.Invocation{
-		Request:      wamp.ID(reqId),
+		Request:      wamp.ID(reqID),
 		Registration: 0,
 		Details:      wamp.Dict{},
 		Arguments:    wamp.List{},

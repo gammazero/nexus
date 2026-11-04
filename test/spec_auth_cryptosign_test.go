@@ -91,15 +91,15 @@ func TestSpecAuthCryptoSignSucceeds(t *testing.T) {
 	}
 	synctest.Test(t, func(t *testing.T) {
 		const (
-			testAuthid   = "alice"
-			testAuthrole = "admin"
+			testAuthID   = "alice"
+			testAuthRole = "admin"
 		)
-		r, priv := newCryptosignRouter(t, testAuthid, testAuthrole)
+		r, priv := newCryptosignRouter(t, testAuthID, testAuthRole)
 
 		cfg := client.Config{
 			Realm: "nexus.test.cryptosign",
 			HelloDetails: wamp.Dict{
-				wamp.DetailAuthID:      testAuthid,
+				wamp.DetailAuthID:      testAuthID,
 				wamp.DetailAuthMethods: wamp.List{"cryptosign"},
 			},
 			AuthHandlers: map[string]client.AuthFunc{
@@ -117,7 +117,7 @@ func TestSpecAuthCryptoSignSucceeds(t *testing.T) {
 		authmethod, _ := wamp.AsString(cli.RealmDetails()[wamp.DetailAuthMethod])
 		require.Equal(t, "cryptosign", authmethod)
 		authrole, _ := wamp.AsString(cli.RealmDetails()[wamp.DetailAuthRole])
-		require.Equal(t, testAuthrole, authrole)
+		require.Equal(t, testAuthRole, authrole)
 	})
 }
 
@@ -128,8 +128,8 @@ func TestSpecAuthCryptoSignBadSignature(t *testing.T) {
 		t.Skip("dedicated router; runs only on local in-process scheme")
 	}
 	synctest.Test(t, func(t *testing.T) {
-		const testAuthid = "alice"
-		r, _ := newCryptosignRouter(t, testAuthid, "admin")
+		const testAuthID = "alice"
+		r, _ := newCryptosignRouter(t, testAuthID, "admin")
 
 		// Generate a different keypair so signatures won't verify.
 		_, otherPriv, err := sign.GenerateKey(rand.Reader)
@@ -138,7 +138,7 @@ func TestSpecAuthCryptoSignBadSignature(t *testing.T) {
 		cfg := client.Config{
 			Realm: "nexus.test.cryptosign",
 			HelloDetails: wamp.Dict{
-				wamp.DetailAuthID:      testAuthid,
+				wamp.DetailAuthID:      testAuthID,
 				wamp.DetailAuthMethods: wamp.List{"cryptosign"},
 			},
 			AuthHandlers: map[string]client.AuthFunc{

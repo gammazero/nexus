@@ -134,10 +134,10 @@ const (
 	MetaProcSessionKill = URI("wamp.session.kill")
 
 	// Kill all currently connected sessions that have the specified authid.
-	MetaProcSessionKillByAuthid = URI("wamp.session.kill_by_authid")
+	MetaProcSessionKillByAuthID = URI("wamp.session.kill_by_authid")
 
 	// Kill all currently connected sessions that have the specified authrole.
-	MetaProcSessionKillByAuthrole = URI("wamp.session.kill_by_authrole")
+	MetaProcSessionKillByAuthRole = URI("wamp.session.kill_by_authrole")
 
 	// Kill all currently connected sessions in the caller's realm.
 	MetaProcSessionKillAll = URI("wamp.session.kill_all")

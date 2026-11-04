@@ -22,9 +22,9 @@ const (
 	defaultAddr  = "localhost"
 	defaultUnix  = "/tmp/exmpl_nexus_sock"
 
-	defaultWsPort   = 8080
-	defaultWssPort  = 8443
-	defaultTcpPort  = 8000
+	defaultWSPort   = 8080
+	defaultWSSPort  = 8443
+	defaultTCPPort  = 8000
 	defaultTcpsPort = 8001
 )
 
@@ -39,7 +39,7 @@ func NewClient(logger *log.Logger) (*client.Client, error) {
 	flag.StringVar(&addr, "addr", "",
 		fmt.Sprintf("router address. (default %q or %q for network or unix socket)", defaultAddr, defaultUnix))
 	flag.IntVar(&port, "port", 0,
-		fmt.Sprintf("router port. (default %d, %d, %d, %d for scheme ws, wss, tcp, tcps)", defaultWsPort, defaultWssPort, defaultTcpPort, defaultTcpsPort))
+		fmt.Sprintf("router port. (default %d, %d, %d, %d for scheme ws, wss, tcp, tcps)", defaultWSPort, defaultWSSPort, defaultTCPPort, defaultTcpsPort))
 	flag.StringVar(&realm, "realm", defaultRealm, "realm name")
 	flag.StringVar(&scheme, "scheme", "ws", "[ws, wss, tcp, tcps, unix]")
 	flag.StringVar(&serType, "serialize", "json", "\"json\" or \"msgpack\" or \"cbor\"")
@@ -127,10 +127,10 @@ func NewClient(logger *log.Logger) (*client.Client, error) {
 			tlscfg.ServerName = cert.Subject.CommonName
 		}
 
-		cfg.TlsCfg = tlscfg
+		cfg.TLSConfig = tlscfg
 	}
 	if compress {
-		cfg.WsCfg.EnableCompression = true
+		cfg.WSConfig.EnableCompression = true
 	}
 
 	// Create client with requested transport type.
@@ -139,17 +139,17 @@ func NewClient(logger *log.Logger) (*client.Client, error) {
 	switch scheme {
 	case "http", "ws":
 		if port == 0 {
-			port = defaultWsPort
+			port = defaultWSPort
 		}
 		addr = fmt.Sprintf("ws://%s:%d/ws", addr, port)
 	case "https", "wss":
 		if port == 0 {
-			port = defaultWssPort
+			port = defaultWSSPort
 		}
 		addr = fmt.Sprintf("wss://%s:%d/ws", addr, port)
 	case "tcp":
 		if port == 0 {
-			port = defaultTcpPort
+			port = defaultTCPPort
 		}
 		addr = fmt.Sprintf("tcp://%s:%d/", addr, port)
 	case "tcps":

@@ -107,7 +107,7 @@ func TestSessionKillAll(t *testing.T) {
 	})
 }
 
-func TestSessionKillByAuthid(t *testing.T) {
+func TestSessionKillByAuthID(t *testing.T) {
 	synctest.Test(t, func(t *testing.T) {
 		r := newTestRouter(t)
 
@@ -122,7 +122,7 @@ func TestSessionKillByAuthid(t *testing.T) {
 		// except the requesting client.
 		cli1.Send() <- &wamp.Call{
 			Request:     wamp.GlobalID(),
-			Procedure:   wamp.MetaProcSessionKillByAuthid,
+			Procedure:   wamp.MetaProcSessionKillByAuthID,
 			Arguments:   wamp.List{cli1.Details[wamp.DetailAuthID]},
 			ArgumentsKw: wamp.Dict{"reason": reason, "message": message},
 		}
@@ -156,7 +156,7 @@ func TestSessionKillByAuthid(t *testing.T) {
 	})
 }
 
-func TestSessionKillByAuthrole(t *testing.T) {
+func TestSessionKillByAuthRole(t *testing.T) {
 	synctest.Test(t, func(t *testing.T) {
 		r := newTestRouter(t)
 
@@ -166,8 +166,8 @@ func TestSessionKillByAuthrole(t *testing.T) {
 		cli2 := testClient(t, r)
 		cli3 := testClient(t, r)
 
-		callerAuthrole, _ := wamp.AsString(cli1.Details[wamp.DetailAuthRole])
-		require.NotEmpty(t, callerAuthrole, "test setup should give clients a non-empty authrole")
+		callerAuthRole, _ := wamp.AsString(cli1.Details[wamp.DetailAuthRole])
+		require.NotEmpty(t, callerAuthRole, "test setup should give clients a non-empty authrole")
 
 		reason := wamp.URI("foo.bar.baz")
 		message := "kicked by authrole"
@@ -176,8 +176,8 @@ func TestSessionKillByAuthrole(t *testing.T) {
 		// has the same authrole and must be excluded from the kill set.
 		cli1.Send() <- &wamp.Call{
 			Request:     wamp.GlobalID(),
-			Procedure:   wamp.MetaProcSessionKillByAuthrole,
-			Arguments:   wamp.List{callerAuthrole},
+			Procedure:   wamp.MetaProcSessionKillByAuthRole,
+			Arguments:   wamp.List{callerAuthRole},
 			ArgumentsKw: wamp.Dict{"reason": reason, "message": message},
 		}
 
@@ -207,17 +207,17 @@ func TestSessionKillByAuthrole(t *testing.T) {
 	})
 }
 
-// TestSessionKillByAuthroleMissingArg pins the no-argument error
+// TestSessionKillByAuthRoleMissingArg pins the no-argument error
 // path: kill_by_authrole with no Arguments must return
 // wamp.error.no_such_session.
-func TestSessionKillByAuthroleMissingArg(t *testing.T) {
+func TestSessionKillByAuthRoleMissingArg(t *testing.T) {
 	synctest.Test(t, func(t *testing.T) {
 		r := newTestRouter(t)
 		cli := testClient(t, r)
 
 		cli.Send() <- &wamp.Call{
 			Request:   wamp.GlobalID(),
-			Procedure: wamp.MetaProcSessionKillByAuthrole,
+			Procedure: wamp.MetaProcSessionKillByAuthRole,
 			// Arguments intentionally empty.
 		}
 
@@ -229,19 +229,19 @@ func TestSessionKillByAuthroleMissingArg(t *testing.T) {
 	})
 }
 
-// TestSessionKillByAuthroleInvalidReasonURI pins the URI-validation
+// TestSessionKillByAuthRoleInvalidReasonURI pins the URI-validation
 // error path: a malformed reason URI is rejected with
 // wamp.error.invalid_uri.
-func TestSessionKillByAuthroleInvalidReasonURI(t *testing.T) {
+func TestSessionKillByAuthRoleInvalidReasonURI(t *testing.T) {
 	synctest.Test(t, func(t *testing.T) {
 		r := newTestRouter(t)
 		cli := testClient(t, r)
-		callerAuthrole, _ := wamp.AsString(cli.Details[wamp.DetailAuthRole])
+		callerAuthRole, _ := wamp.AsString(cli.Details[wamp.DetailAuthRole])
 
 		cli.Send() <- &wamp.Call{
 			Request:   wamp.GlobalID(),
-			Procedure: wamp.MetaProcSessionKillByAuthrole,
-			Arguments: wamp.List{callerAuthrole},
+			Procedure: wamp.MetaProcSessionKillByAuthRole,
+			Arguments: wamp.List{callerAuthRole},
 			ArgumentsKw: wamp.Dict{
 				"reason": "not a valid uri at all",
 			},
@@ -319,9 +319,9 @@ func requireGoodbye(t *testing.T, cli *wamp.Session, reason wamp.URI, message st
 	require.Equal(t, message, m)
 }
 
-// TestRouterKillSessionsByAuthid checks that Router.KillSessionsByAuthid
+// TestRouterKillSessionsByAuthID checks that Router.KillSessionsByAuthID
 // closes every session with the authid, and only those, from Go code.
-func TestRouterKillSessionsByAuthid(t *testing.T) {
+func TestRouterKillSessionsByAuthID(t *testing.T) {
 	synctest.Test(t, func(t *testing.T) {
 		r := newTestRouter(t)
 		cli1 := testClient(t, r)
@@ -329,12 +329,12 @@ func TestRouterKillSessionsByAuthid(t *testing.T) {
 		authid, _ := wamp.AsString(cli1.Details[wamp.DetailAuthID])
 		require.NotEmpty(t, authid)
 
-		n, err := killer(t, r).KillSessionsByAuthid(testRealm, "nobody", "", "")
+		n, err := killer(t, r).KillSessionsByAuthID(testRealm, "nobody", "", "")
 		require.NoError(t, err)
 		require.Zero(t, n)
 
 		reason := wamp.URI("nexus.test.kicked")
-		n, err = killer(t, r).KillSessionsByAuthid(testRealm, authid, reason, "bye")
+		n, err = killer(t, r).KillSessionsByAuthID(testRealm, authid, reason, "bye")
 		require.NoError(t, err)
 		require.Equal(t, 2, n)
 		requireGoodbye(t, cli1, reason, "bye")
@@ -342,17 +342,17 @@ func TestRouterKillSessionsByAuthid(t *testing.T) {
 	})
 }
 
-// TestRouterKillSessionsByAuthrole checks the same for
-// Router.KillSessionsByAuthrole, and that an empty reason sends
+// TestRouterKillSessionsByAuthRole checks the same for
+// Router.KillSessionsByAuthRole, and that an empty reason sends
 // wamp.close.normal.
-func TestRouterKillSessionsByAuthrole(t *testing.T) {
+func TestRouterKillSessionsByAuthRole(t *testing.T) {
 	synctest.Test(t, func(t *testing.T) {
 		r := newTestRouter(t)
 		cli := testClient(t, r)
 		authrole, _ := wamp.AsString(cli.Details[wamp.DetailAuthRole])
 		require.NotEmpty(t, authrole)
 
-		n, err := killer(t, r).KillSessionsByAuthrole(testRealm, authrole, "", "")
+		n, err := killer(t, r).KillSessionsByAuthRole(testRealm, authrole, "", "")
 		require.NoError(t, err)
 		require.Equal(t, 1, n)
 		requireGoodbye(t, cli, wamp.CloseNormal, "")
@@ -364,10 +364,10 @@ func TestRouterKillSessionsErrors(t *testing.T) {
 	synctest.Test(t, func(t *testing.T) {
 		r := newTestRouter(t)
 
-		_, err := killer(t, r).KillSessionsByAuthid("nexus.no.such.realm", "x", "", "")
+		_, err := killer(t, r).KillSessionsByAuthID("nexus.no.such.realm", "x", "", "")
 		require.ErrorContains(t, err, "no realm")
 
-		_, err = killer(t, r).KillSessionsByAuthrole(testRealm, "x", "not a valid uri", "")
+		_, err = killer(t, r).KillSessionsByAuthRole(testRealm, "x", "not a valid uri", "")
 		require.ErrorContains(t, err, "invalid reason URI")
 	})
 }
@@ -382,7 +382,7 @@ func TestRouterKillSessionsWhileRemovingRealm(t *testing.T) {
 			uri := wamp.URI(fmt.Sprintf("nexus.test.removing%d", i))
 			require.NoError(t, r.AddRealm(&RealmConfig{URI: uri, AnonymousAuth: true}))
 			go r.RemoveRealm(uri)
-			_, _ = killer(t, r).KillSessionsByAuthid(uri, "x", "", "")
+			_, _ = killer(t, r).KillSessionsByAuthID(uri, "x", "", "")
 			synctest.Wait()
 		}
 	})

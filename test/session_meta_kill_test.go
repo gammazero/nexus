@@ -13,8 +13,8 @@ import (
 
 const (
 	metaKill           = string(wamp.MetaProcSessionKill)
-	metaKillByAuthid   = string(wamp.MetaProcSessionKillByAuthid)
-	metaKillByAuthrole = string(wamp.MetaProcSessionKillByAuthrole)
+	metaKillByAuthID   = string(wamp.MetaProcSessionKillByAuthID)
+	metaKillByAuthRole = string(wamp.MetaProcSessionKillByAuthRole)
 	metaKillAll        = string(wamp.MetaProcSessionKillAll)
 
 	metaModifyDetails = string(wamp.MetaProcSessionModifyDetails)

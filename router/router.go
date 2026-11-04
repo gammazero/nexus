@@ -53,21 +53,21 @@ type Router interface {
 // Router that NewRouter returns implements it:
 //
 //	if killer, ok := r.(router.SessionKiller); ok {
-//		n, err := killer.KillSessionsByAuthid(realm, authid, "", "")
+//		n, err := killer.KillSessionsByAuthID(realm, authid, "", "")
 //	}
 type SessionKiller interface {
-	// KillSessionsByAuthid closes every session in the realm that has the
+	// KillSessionsByAuthID closes every session in the realm that has the
 	// authid, as the wamp.session.kill_by_authid meta procedure does. Each
 	// session is sent GOODBYE with the reason, wamp.close.normal if reason is
 	// empty, and the message, if not empty. It returns the number of sessions
 	// closed, or an error if the realm does not exist or the reason is not a
 	// valid URI.
-	KillSessionsByAuthid(realm wamp.URI, authid string, reason wamp.URI, message string) (int, error)
+	KillSessionsByAuthID(realm wamp.URI, authid string, reason wamp.URI, message string) (int, error)
 
-	// KillSessionsByAuthrole closes every session in the realm that has the
+	// KillSessionsByAuthRole closes every session in the realm that has the
 	// authrole, as the wamp.session.kill_by_authrole meta procedure does, and
-	// otherwise works like KillSessionsByAuthid.
-	KillSessionsByAuthrole(realm wamp.URI, authrole string, reason wamp.URI, message string) (int, error)
+	// otherwise works like KillSessionsByAuthID.
+	KillSessionsByAuthRole(realm wamp.URI, authrole string, reason wamp.URI, message string) (int, error)
 }
 
 var _ SessionKiller = (*router)(nil)
@@ -386,14 +386,14 @@ func (r *router) RemoveRealm(name wamp.URI) {
 	}
 }
 
-// KillSessionsByAuthid closes every session in the realm that has the authid.
-func (r *router) KillSessionsByAuthid(realm wamp.URI, authid string, reason wamp.URI, message string) (int, error) { //nolint:lll
+// KillSessionsByAuthID closes every session in the realm that has the authid.
+func (r *router) KillSessionsByAuthID(realm wamp.URI, authid string, reason wamp.URI, message string) (int, error) { //nolint:lll
 	return r.killSessionsByDetail(realm, wamp.DetailAuthID, authid, reason, message)
 }
 
-// KillSessionsByAuthrole closes every session in the realm that has the
+// KillSessionsByAuthRole closes every session in the realm that has the
 // authrole.
-func (r *router) KillSessionsByAuthrole(realm wamp.URI, authrole string, reason wamp.URI, message string) (int, error) { //nolint:lll
+func (r *router) KillSessionsByAuthRole(realm wamp.URI, authrole string, reason wamp.URI, message string) (int, error) { //nolint:lll
 	return r.killSessionsByDetail(realm, wamp.DetailAuthRole, authrole, reason, message)
 }
 

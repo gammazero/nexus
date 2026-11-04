@@ -10,9 +10,9 @@ import (
 	"github.com/gammazero/nexus/v3/wamp"
 )
 
-func BenchmarkRpcIntegerList(b *testing.B) {
+func BenchmarkRPCIntegerList(b *testing.B) {
 	args := wamp.List{make([]int, 128)}
-	benchmarkRpc(b, sum, args, func(result *wamp.Result) {
+	benchmarkRPC(b, sum, args, func(result *wamp.Result) {
 		v, ok := wamp.AsInt64(result.Arguments[0])
 		if !ok {
 			panic("Can not typecast result to int64")
@@ -23,9 +23,9 @@ func BenchmarkRpcIntegerList(b *testing.B) {
 	})
 }
 
-func BenchmarkRpcShortString(b *testing.B) {
+func BenchmarkRPCShortString(b *testing.B) {
 	shortString := randomString(128)
-	benchmarkRpc(b, identity, wamp.List{shortString}, func(result *wamp.Result) {
+	benchmarkRPC(b, identity, wamp.List{shortString}, func(result *wamp.Result) {
 		v, ok := wamp.AsString(result.Arguments[0])
 		if !ok {
 			panic("Can not typecast result to int64")
@@ -36,9 +36,9 @@ func BenchmarkRpcShortString(b *testing.B) {
 	})
 }
 
-func BenchmarkRpcLargeString(b *testing.B) {
+func BenchmarkRPCLargeString(b *testing.B) {
 	largeString := randomString(4096)
-	benchmarkRpc(b, identity, wamp.List{largeString}, func(result *wamp.Result) {
+	benchmarkRPC(b, identity, wamp.List{largeString}, func(result *wamp.Result) {
 		v, ok := wamp.AsString(result.Arguments[0])
 		if !ok {
 			panic("Can not typecast result to int64")
@@ -49,14 +49,14 @@ func BenchmarkRpcLargeString(b *testing.B) {
 	})
 }
 
-func BenchmarkRpcDict(b *testing.B) {
+func BenchmarkRPCDict(b *testing.B) {
 	dict := wamp.Dict{}
 	for range 8 {
 		dict[randomString(8)] = randomString(8)
 	}
 	args := wamp.List{dict}
 
-	benchmarkRpc(b, identity, args, func(result *wamp.Result) {
+	benchmarkRPC(b, identity, args, func(result *wamp.Result) {
 		v, ok := wamp.AsDict(result.Arguments[0])
 		if !ok {
 			panic("Can not typecast result to int64")
@@ -145,7 +145,7 @@ func BenchmarkRPCProgress(b *testing.B) {
 	server.Close()
 }
 
-func benchmarkRpc(b *testing.B, action client.InvocationHandler, callArgs wamp.List, verify func(*wamp.Result)) {
+func benchmarkRPC(b *testing.B, action client.InvocationHandler, callArgs wamp.List, verify func(*wamp.Result)) {
 	cfg := client.Config{
 		Realm:           testRealm,
 		ResponseTimeout: clientResponseTimeout,
