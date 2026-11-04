@@ -123,7 +123,7 @@ func TestSessionKillByAuthid(t *testing.T) {
 		cli1.Send() <- &wamp.Call{
 			Request:     wamp.GlobalID(),
 			Procedure:   wamp.MetaProcSessionKillByAuthid,
-			Arguments:   wamp.List{cli1.Details["authid"]},
+			Arguments:   wamp.List{cli1.Details[wamp.DetailAuthID]},
 			ArgumentsKw: wamp.Dict{"reason": reason, "message": message},
 		}
 
@@ -166,7 +166,7 @@ func TestSessionKillByAuthrole(t *testing.T) {
 		cli2 := testClient(t, r)
 		cli3 := testClient(t, r)
 
-		callerAuthrole, _ := wamp.AsString(cli1.Details["authrole"])
+		callerAuthrole, _ := wamp.AsString(cli1.Details[wamp.DetailAuthRole])
 		require.NotEmpty(t, callerAuthrole, "test setup should give clients a non-empty authrole")
 
 		reason := wamp.URI("foo.bar.baz")
@@ -236,7 +236,7 @@ func TestSessionKillByAuthroleInvalidReasonURI(t *testing.T) {
 	synctest.Test(t, func(t *testing.T) {
 		r := newTestRouter(t)
 		cli := testClient(t, r)
-		callerAuthrole, _ := wamp.AsString(cli.Details["authrole"])
+		callerAuthrole, _ := wamp.AsString(cli.Details[wamp.DetailAuthRole])
 
 		cli.Send() <- &wamp.Call{
 			Request:   wamp.GlobalID(),
@@ -264,7 +264,7 @@ func TestSessionModifyDetails(t *testing.T) {
 
 		// Call session meta-procedure to get session information.
 		callID := wamp.GlobalID()
-		delta := wamp.Dict{"xyzzy": nil, "pi": 3.14, "authid": "bob"}
+		delta := wamp.Dict{"xyzzy": nil, "pi": 3.14, wamp.DetailAuthID: "bob"}
 		caller.Send() <- &wamp.Call{
 			Request:   callID,
 			Procedure: wamp.MetaProcSessionModifyDetails,
@@ -291,7 +291,7 @@ func TestSessionModifyDetails(t *testing.T) {
 		require.NotZero(t, len(result.Arguments), "missing expected argument")
 		details, ok := result.Arguments[0].(wamp.Dict)
 		require.True(t, ok, "expected dict type arg")
-		authid, _ := wamp.AsString(details["authid"])
+		authid, _ := wamp.AsString(details[wamp.DetailAuthID])
 		require.Equal(t, "bob", authid)
 		_, ok = details["xyzzy"]
 		require.False(t, ok, "xyzzy should have been delete from details")
@@ -326,7 +326,7 @@ func TestRouterKillSessionsByAuthid(t *testing.T) {
 		r := newTestRouter(t)
 		cli1 := testClient(t, r)
 		cli2 := testClient(t, r)
-		authid, _ := wamp.AsString(cli1.Details["authid"])
+		authid, _ := wamp.AsString(cli1.Details[wamp.DetailAuthID])
 		require.NotEmpty(t, authid)
 
 		n, err := killer(t, r).KillSessionsByAuthid(testRealm, "nobody", "", "")
@@ -349,7 +349,7 @@ func TestRouterKillSessionsByAuthrole(t *testing.T) {
 	synctest.Test(t, func(t *testing.T) {
 		r := newTestRouter(t)
 		cli := testClient(t, r)
-		authrole, _ := wamp.AsString(cli.Details["authrole"])
+		authrole, _ := wamp.AsString(cli.Details[wamp.DetailAuthRole])
 		require.NotEmpty(t, authrole)
 
 		n, err := killer(t, r).KillSessionsByAuthrole(testRealm, authrole, "", "")

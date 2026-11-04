@@ -27,21 +27,27 @@ var dataItem = []map[string]any{{
 //}
 
 func hasPubBWListingFeature(details wamp.Dict) bool {
-	b, _ := wamp.DictFlag(details, []string{"roles", "publisher", "features", "subscriber_blackwhite_listing"})
+	path := []string{
+		wamp.DetailRoles,
+		wamp.RolePublisher,
+		wamp.DetailFeatures,
+		"subscriber_blackwhite_listing",
+	}
+	b, _ := wamp.DictFlag(details, path)
 	return b
 }
 
 func detailRolesFeatures() wamp.Dict {
 	return wamp.Dict{
-		"roles": wamp.Dict{
-			"publisher": wamp.Dict{
-				"features": wamp.Dict{
+		wamp.DetailRoles: wamp.Dict{
+			wamp.RolePublisher: wamp.Dict{
+				wamp.DetailFeatures: wamp.Dict{
 					"subscriber_blackwhite_listing": true,
 				},
 			},
-			"subscriber": wamp.Dict{},
-			"callee":     wamp.Dict{},
-			"caller":     wamp.Dict{},
+			wamp.RoleSubscriber: wamp.Dict{},
+			wamp.RoleCallee:     wamp.Dict{},
+			wamp.RoleCaller:     wamp.Dict{},
 		},
 		"nothere": nil,
 	}

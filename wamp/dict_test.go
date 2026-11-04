@@ -10,22 +10,22 @@ import (
 )
 
 func checkRoles(sess *wamp.Session) error {
-	if !sess.HasRole("caller") {
+	if !sess.HasRole(wamp.RoleCaller) {
 		return errors.New("session does not have caller role")
 	}
-	if !sess.HasRole("publisher") {
+	if !sess.HasRole(wamp.RolePublisher) {
 		return errors.New("session does not have publisher role")
 	}
 	if sess.HasRole("foo") {
 		return errors.New("session has role foo")
 	}
-	if sess.HasFeature("caller", "bar") {
+	if sess.HasFeature(wamp.RoleCaller, "bar") {
 		return errors.New("caller has feature bar")
 	}
-	if !sess.HasFeature("caller", "call_timeout") {
+	if !sess.HasFeature(wamp.RoleCaller, "call_timeout") {
 		return errors.New("caller missing feature call_timeout")
 	}
-	if sess.HasFeature("publisher", "call_timeout") {
+	if sess.HasFeature(wamp.RolePublisher, "call_timeout") {
 		return errors.New("publisher has feature call_timeout")
 	}
 	return nil
@@ -33,7 +33,7 @@ func checkRoles(sess *wamp.Session) error {
 
 func recognizeRole(roleName string) bool {
 	switch roleName {
-	case "publisher", "subscriber", "caller", "callee":
+	case wamp.RolePublisher, wamp.RoleSubscriber, wamp.RoleCaller, wamp.RoleCallee:
 	default:
 		return false
 	}
@@ -43,17 +43,17 @@ func recognizeRole(roleName string) bool {
 func TestHasRoleFeatureLookup(t *testing.T) {
 	dict := wamp.Dict{}
 	clientRoles := map[string]wamp.Dict{
-		"publisher": {},
-		"subscriber": {
+		wamp.RolePublisher: {},
+		wamp.RoleSubscriber: {
 			"junk": struct{}{}},
-		"callee": {
+		wamp.RoleCallee: {
 			"Hello": "world"},
-		"caller":  {},
-		"badrole": {},
+		wamp.RoleCaller: {},
+		"badrole":       {},
 	}
 	boolMap := map[string]bool{"call_timeout": true}
-	clientRoles["caller"]["features"] = boolMap
-	dict["roles"] = clientRoles
+	clientRoles[wamp.RoleCaller][wamp.DetailFeatures] = boolMap
+	dict[wamp.DetailRoles] = clientRoles
 
 	err := checkRoles(wamp.NewSession(nil, 0, nil, dict))
 	require.NoError(t, err)
@@ -63,7 +63,7 @@ func TestHasRoleFeatureLookup(t *testing.T) {
 
 	dict = wamp.NormalizeDict(dict)
 
-	roleVals, err := wamp.DictValue(dict, []string{"roles"})
+	roleVals, err := wamp.DictValue(dict, []string{wamp.DetailRoles})
 	require.NoError(t, err)
 
 	for k := range roleVals.(wamp.Dict) {
@@ -79,21 +79,21 @@ func TestHasRoleFeatureLookup(t *testing.T) {
 	require.NoError(t, err)
 
 	dict = wamp.Dict{
-		"roles": wamp.Dict{
-			"subscriber": wamp.Dict{
-				"features": wamp.Dict{
+		wamp.DetailRoles: wamp.Dict{
+			wamp.RoleSubscriber: wamp.Dict{
+				wamp.DetailFeatures: wamp.Dict{
 					"publisher_identification": true,
 				},
 			},
-			"publisher": struct{}{},
-			"callee":    struct{}{},
-			"caller": wamp.Dict{
-				"features": wamp.Dict{
+			wamp.RolePublisher: struct{}{},
+			wamp.RoleCallee:    struct{}{},
+			wamp.RoleCaller: wamp.Dict{
+				wamp.DetailFeatures: wamp.Dict{
 					"call_timeout": true,
 				},
 			},
 		},
-		"authmethods": []string{"anonymous", "ticket"},
+		wamp.DetailAuthMethods: []string{"anonymous", "ticket"},
 	}
 	err = checkRoles(wamp.NewSession(nil, 0, nil, dict))
 	require.NoError(t, err)
@@ -156,16 +156,16 @@ func TestOptions(t *testing.T) {
 func BenchmarkNormalized(b *testing.B) {
 	dict := wamp.Dict{}
 	clientRoles := map[string]wamp.Dict{
-		"publisher": {},
-		"subscriber": {
+		wamp.RolePublisher: {},
+		wamp.RoleSubscriber: {
 			"junk": struct{}{}},
-		"callee": {
+		wamp.RoleCallee: {
 			"Hello": "world"},
-		"caller": {},
+		wamp.RoleCaller: {},
 	}
 	boolMap := map[string]bool{"call_timeout": true}
-	clientRoles["caller"]["features"] = boolMap
-	dict["roles"] = clientRoles
+	clientRoles[wamp.RoleCaller][wamp.DetailFeatures] = boolMap
+	dict[wamp.DetailRoles] = clientRoles
 
 	b.ResetTimer()
 	dict = wamp.NormalizeDict(dict)
@@ -178,16 +178,16 @@ func BenchmarkNormalized(b *testing.B) {
 func BenchmarkNotNormalized(b *testing.B) {
 	dict := wamp.Dict{}
 	clientRoles := map[string]wamp.Dict{
-		"publisher": {},
-		"subscriber": {
+		wamp.RolePublisher: {},
+		wamp.RoleSubscriber: {
 			"junk": struct{}{}},
-		"callee": {
+		wamp.RoleCallee: {
 			"Hello": "world"},
-		"caller": {},
+		wamp.RoleCaller: {},
 	}
 	boolMap := map[string]bool{"call_timeout": true}
-	clientRoles["caller"]["features"] = boolMap
-	dict["roles"] = clientRoles
+	clientRoles[wamp.RoleCaller][wamp.DetailFeatures] = boolMap
+	dict[wamp.DetailRoles] = clientRoles
 
 	b.ResetTimer()
 	sess := &wamp.Session{Details: dict}
@@ -212,8 +212,8 @@ func TestNormalizeDict(t *testing.T) {
 	// Nested maps are converted to Dict, and a []any to List. Other values remain
 	// the same.
 	nested := map[string]any{
-		"roles": map[string]map[string]int{
-			"caller": {"timeout": 5},
+		wamp.DetailRoles: map[string]map[string]int{
+			wamp.RoleCaller: {"timeout": 5},
 		},
 		"list":    []any{1, "two"},
 		"strings": []string{"a", "b"},
@@ -221,8 +221,8 @@ func TestNormalizeDict(t *testing.T) {
 		"nil":     nil,
 	}
 	expect := wamp.Dict{
-		"roles": wamp.Dict{
-			"caller": wamp.Dict{"timeout": 5},
+		wamp.DetailRoles: wamp.Dict{
+			wamp.RoleCaller: wamp.Dict{"timeout": 5},
 		},
 		"list":    wamp.List{1, "two"},
 		"strings": []string{"a", "b"},
@@ -232,7 +232,7 @@ func TestNormalizeDict(t *testing.T) {
 	require.Equal(t, expect, wamp.NormalizeDict(nested))
 
 	// The original is not changed.
-	require.IsType(t, map[string]map[string]int{}, nested["roles"])
+	require.IsType(t, map[string]map[string]int{}, nested[wamp.DetailRoles])
 	require.IsType(t, []any{}, nested["list"])
 	require.IsType(t, map[string]string{}, nested["dict"].(wamp.Dict)["x"])
 

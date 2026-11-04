@@ -27,7 +27,7 @@ func sharedTestEvent() *wamp.Event {
 	return &wamp.Event{
 		Subscription: 1,
 		Publication:  2,
-		Details:      wamp.Dict{"topic": "nexus.test.topic"},
+		Details:      wamp.Dict{wamp.DetailTopic: "nexus.test.topic"},
 		Arguments:    wamp.List{"hello", 42},
 	}
 }

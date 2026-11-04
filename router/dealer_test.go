@@ -315,9 +315,9 @@ func TestCancelOnCalleeGone(t *testing.T) {
 	dealer, metaClient := newTestDealer(t)
 
 	calleeRoles := wamp.Dict{
-		"roles": wamp.Dict{
-			"callee": wamp.Dict{
-				"features": wamp.Dict{
+		wamp.DetailRoles: wamp.Dict{
+			wamp.RoleCallee: wamp.Dict{
+				wamp.DetailFeatures: wamp.Dict{
 					"call_canceling": true,
 				},
 			},
@@ -413,9 +413,9 @@ func TestCallTimeoutOnClient(t *testing.T) {
 	callTimeout := 800
 
 	calleeRoles := wamp.Dict{
-		"roles": wamp.Dict{
-			"callee": wamp.Dict{
-				"features": wamp.Dict{
+		wamp.DetailRoles: wamp.Dict{
+			wamp.RoleCallee: wamp.Dict{
+				wamp.DetailFeatures: wamp.Dict{
 					"call_canceling": true,
 					"call_timeout":   true,
 				},
@@ -474,9 +474,9 @@ func TestCancelCallModeKill(t *testing.T) {
 	dealer, metaClient := newTestDealer(t)
 
 	calleeRoles := wamp.Dict{
-		"roles": wamp.Dict{
-			"callee": wamp.Dict{
-				"features": wamp.Dict{
+		wamp.DetailRoles: wamp.Dict{
+			wamp.RoleCallee: wamp.Dict{
+				wamp.DetailFeatures: wamp.Dict{
 					"call_canceling": true,
 				},
 			},
@@ -538,9 +538,9 @@ func TestCancelCallModeKillNoWait(t *testing.T) {
 	dealer, metaClient := newTestDealer(t)
 
 	calleeRoles := wamp.Dict{
-		"roles": wamp.Dict{
-			"callee": wamp.Dict{
-				"features": wamp.Dict{
+		wamp.DetailRoles: wamp.Dict{
+			wamp.RoleCallee: wamp.Dict{
+				wamp.DetailFeatures: wamp.Dict{
 					"call_canceling": true,
 				},
 			},
@@ -603,9 +603,9 @@ func TestCancelCallModeSkip(t *testing.T) {
 		// Register a procedure.
 		callee := newTestPeer()
 		calleeRoles := wamp.Dict{
-			"roles": wamp.Dict{
-				"callee": wamp.Dict{
-					"features": wamp.Dict{
+			wamp.DetailRoles: wamp.Dict{
+				wamp.RoleCallee: wamp.Dict{
+					wamp.DetailFeatures: wamp.Dict{
 						"call_canceling": true,
 					},
 				},
@@ -657,9 +657,9 @@ func TestSharedRegistrationRoundRobin(t *testing.T) {
 	dealer, metaClient := newTestDealer(t)
 
 	calleeRoles := wamp.Dict{
-		"roles": wamp.Dict{
-			"callee": wamp.Dict{
-				"features": wamp.Dict{
+		wamp.DetailRoles: wamp.Dict{
+			wamp.RoleCallee: wamp.Dict{
+				wamp.DetailFeatures: wamp.Dict{
 					"shared_registration": true,
 				},
 			},
@@ -751,9 +751,9 @@ func TestSharedRegistrationFirst(t *testing.T) {
 	dealer, metaClient := newTestDealer(t)
 
 	calleeRoles := wamp.Dict{
-		"roles": wamp.Dict{
-			"callee": wamp.Dict{
-				"features": wamp.Dict{
+		wamp.DetailRoles: wamp.Dict{
+			wamp.RoleCallee: wamp.Dict{
+				wamp.DetailFeatures: wamp.Dict{
 					"shared_registration": true,
 				},
 			},
@@ -907,9 +907,9 @@ func TestSharedRegistrationLast(t *testing.T) {
 	dealer, metaClient := newTestDealer(t)
 
 	calleeRoles := wamp.Dict{
-		"roles": wamp.Dict{
-			"callee": wamp.Dict{
-				"features": wamp.Dict{
+		wamp.DetailRoles: wamp.Dict{
+			wamp.RoleCallee: wamp.Dict{
+				wamp.DetailFeatures: wamp.Dict{
 					"shared_registration": true,
 				},
 			},
@@ -1024,9 +1024,9 @@ func TestPatternBasedRegistration(t *testing.T) {
 	dealer, metaClient := newTestDealer(t)
 
 	calleeRoles := wamp.Dict{
-		"roles": wamp.Dict{
-			"callee": wamp.Dict{
-				"features": wamp.Dict{
+		wamp.DetailRoles: wamp.Dict{
+			wamp.RoleCallee: wamp.Dict{
+				wamp.DetailFeatures: wamp.Dict{
 					"shared_registration": true,
 				},
 			},
@@ -1063,7 +1063,7 @@ func TestPatternBasedRegistration(t *testing.T) {
 	require.True(t, ok, "expected INVOCATION")
 	details, ok := wamp.AsDict(inv.Details)
 	require.True(t, ok, "INVOCATION missing details")
-	proc, _ := wamp.AsURI(details[wamp.OptProcedure])
+	proc, _ := wamp.AsURI(details[wamp.DetailProcedure])
 	require.Equal(t, testProcedure, proc, "INVOCATION has missing or incorrect procedure detail")
 
 	// Callee responds with a YIELD message
@@ -1126,9 +1126,9 @@ func TestCallerIdentification(t *testing.T) {
 	dealer, metaClient := newTestDealer(t)
 
 	calleeRoles := wamp.Dict{
-		"roles": wamp.Dict{
-			"callee": wamp.Dict{
-				"features": wamp.Dict{
+		wamp.DetailRoles: wamp.Dict{
+			wamp.RoleCallee: wamp.Dict{
+				wamp.DetailFeatures: wamp.Dict{
 					"caller_identification": true,
 				},
 			},
@@ -1165,7 +1165,7 @@ func TestCallerIdentification(t *testing.T) {
 
 	// Test that invocation contains caller ID.
 
-	id, _ := wamp.AsID(inv.Details["caller"])
+	id, _ := wamp.AsID(inv.Details[wamp.DetailCaller])
 	require.Equal(t, callerID, id, "Did not get expected caller ID. Invocation.Details")
 }
 
@@ -1263,9 +1263,9 @@ func TestRegisterSharedJoinBlockedAckDelivered(t *testing.T) {
 	dealer, metaClient := newTestDealer(t)
 
 	calleeRoles := wamp.Dict{
-		"roles": wamp.Dict{
-			"callee": wamp.Dict{
-				"features": wamp.Dict{"shared_registration": true},
+		wamp.DetailRoles: wamp.Dict{
+			wamp.RoleCallee: wamp.Dict{
+				wamp.DetailFeatures: wamp.Dict{"shared_registration": true},
 			},
 		},
 	}
@@ -1443,8 +1443,8 @@ func TestDealerYieldDeadlineFromLastProgress(t *testing.T) {
 func TestDealerYieldDeadlineCancels(t *testing.T) {
 	synctest.Test(t, func(t *testing.T) {
 		d, _ := newTestDealer(t)
-		calleeRoles := wamp.Dict{"roles": wamp.Dict{"callee": wamp.Dict{
-			"features": wamp.Dict{wamp.FeatureCallCanceling: true},
+		calleeRoles := wamp.Dict{wamp.DetailRoles: wamp.Dict{wamp.RoleCallee: wamp.Dict{
+			wamp.DetailFeatures: wamp.Dict{wamp.FeatureCallCanceling: true},
 		}}}
 		callee := wamp.NewSession(newTestPeer(), 0, nil, calleeRoles)
 		d.register(callee, &wamp.Register{Request: 1, Procedure: testProcedure})
@@ -1569,7 +1569,7 @@ func TestDealerCloseWhileCallTimesOut(t *testing.T) {
 // its backlog without limit.
 func TestYieldErrorsDoNotGrowBacklog(t *testing.T) {
 	d, _ := newTestDealer(t)
-	pptCallee := wamp.Dict{"roles": wamp.Dict{"callee": wamp.Dict{"features": wamp.Dict{
+	pptCallee := wamp.Dict{wamp.DetailRoles: wamp.Dict{wamp.RoleCallee: wamp.Dict{wamp.DetailFeatures: wamp.Dict{
 		wamp.FeaturePayloadPassthruMode: true,
 	}}}}
 	callee := wamp.NewSession(newTestPeer(), 0, nil, pptCallee)

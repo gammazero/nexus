@@ -23,6 +23,11 @@ const metaID = wamp.ID(1)
 // reads nothing for this long is closed.
 const replyRoomTimeout = time.Minute
 
+// trustedAuthRole is the authrole of the realm's meta session, and of local
+// clients that join the realm without authenticating. A trusted callee may
+// request caller disclosure even when the realm does not allow it.
+const trustedAuthRole = "trusted"
+
 // Testament scope.
 const (
 	destroyedScope = "destroyed"
@@ -321,7 +326,7 @@ func (r *realm) createMetaSession() {
 	r.dealer.setMetaPeer(cli)
 
 	// This session is the local leg of the router uplink.
-	r.metaSess = wamp.NewSession(rtr, metaID, wamp.Dict{"authrole": "trusted"}, nil)
+	r.metaSess = wamp.NewSession(rtr, metaID, wamp.Dict{wamp.DetailAuthRole: trustedAuthRole}, nil)
 
 	// Run the handler for messages from the meta session.
 	go func() {
@@ -435,8 +440,8 @@ func (r *realm) onLeave(sess *wamp.Session, shutdown, killAll bool) {
 		Topic:   wamp.MetaEventSessionOnLeave,
 		Arguments: wamp.List{
 			sess.ID,
-			sess.Details["authid"],
-			sess.Details["authrole"]},
+			sess.Details[wamp.DetailAuthID],
+			sess.Details[wamp.DetailAuthRole]},
 	}
 }
 
@@ -803,16 +808,16 @@ func (r *realm) authClient(sid wamp.ID, client wamp.Peer, details wamp.Dict) (*w
 	// If the client is local, then no authentication is required.
 	if client.IsLocal() && !r.localAuth {
 		// Create welcome details for local client.
-		authid, _ := wamp.AsString(details["authid"])
+		authid, _ := wamp.AsString(details[wamp.DetailAuthID])
 		if authid == "" {
 			authid = strconv.FormatUint(uint64(wamp.GlobalID()), 16)
 		}
 		details = wamp.Dict{
-			"authid":       authid,
-			"authrole":     "trusted",
-			"authmethod":   "local",
-			"authprovider": "static",
-			"roles": wamp.Dict{
+			wamp.DetailAuthID:       authid,
+			wamp.DetailAuthRole:     trustedAuthRole,
+			wamp.DetailAuthMethod:   "local",
+			wamp.DetailAuthProvider: "static",
+			wamp.DetailRoles: wamp.Dict{
 				wamp.RoleBroker: r.broker.role(),
 				wamp.RoleDealer: r.dealer.role(),
 			},
@@ -822,7 +827,7 @@ func (r *realm) authClient(sid wamp.ID, client wamp.Peer, details wamp.Dict) (*w
 
 	// The default authentication method is "WAMP-Anonymous" if client does not
 	// specify otherwise.
-	_authmethods, _ := wamp.AsList(details["authmethods"])
+	_authmethods, _ := wamp.AsList(details[wamp.DetailAuthMethods])
 	if len(_authmethods) == 0 {
 		_authmethods = append(_authmethods, "anonymous")
 	}
@@ -863,8 +868,8 @@ func (r *realm) authClient(sid wamp.ID, client wamp.Peer, details wamp.Dict) (*w
 	if err != nil {
 		return nil, err
 	}
-	welcome.Details["authmethod"] = method
-	welcome.Details["roles"] = wamp.Dict{
+	welcome.Details[wamp.DetailAuthMethod] = method
+	welcome.Details[wamp.DetailRoles] = wamp.Dict{
 		wamp.RoleBroker: r.broker.role(),
 		wamp.RoleDealer: r.dealer.role(),
 	}
@@ -1032,7 +1037,7 @@ func (r *realm) sessionCount(msg *wamp.Invocation) wamp.Message {
 			var nclients int
 			for _, sess := range r.clients {
 				sess.Lock()
-				authrole, _ := wamp.AsString(sess.Details["authrole"])
+				authrole, _ := wamp.AsString(sess.Details[wamp.DetailAuthRole])
 				sess.Unlock()
 				if slices.Contains(filter, authrole) {
 					nclients++
@@ -1089,7 +1094,7 @@ func (r *realm) sessionList(msg *wamp.Invocation) wamp.Message {
 			var ids []wamp.ID
 			for sid, sess := range r.clients {
 				sess.Lock()
-				authrole, _ := wamp.AsString(sess.Details["authrole"])
+				authrole, _ := wamp.AsString(sess.Details[wamp.DetailAuthRole])
 				sess.Unlock()
 				if slices.Contains(filter, authrole) {
 					ids = append(ids, sid)
@@ -1153,7 +1158,7 @@ func (r *realm) sessionKill(msg *wamp.Invocation) wamp.Message {
 	if !ok {
 		return makeError(msg.Request, wamp.ErrNoSuchSession)
 	}
-	caller, _ := wamp.AsID(msg.Details["caller"])
+	caller, _ := wamp.AsID(msg.Details[wamp.DetailCaller])
 	if caller == sid {
 		return makeError(msg.Request, wamp.ErrNoSuchSession)
 	}
@@ -1194,8 +1199,8 @@ func (r *realm) sessionKillByAuthid(msg *wamp.Invocation) wamp.Message {
 	}
 	message, _ := wamp.AsString(msg.ArgumentsKw["message"])
 
-	caller, _ := wamp.AsID(msg.Details["caller"])
-	count := r.killSessionsByDetail("authid", authid, reason, message, caller)
+	caller, _ := wamp.AsID(msg.Details[wamp.DetailCaller])
+	count := r.killSessionsByDetail(wamp.DetailAuthID, authid, reason, message, caller)
 	return &wamp.Yield{
 		Request:   msg.Request,
 		Arguments: wamp.List{count},
@@ -1222,8 +1227,8 @@ func (r *realm) sessionKillByAuthrole(msg *wamp.Invocation) wamp.Message {
 	}
 	message, _ := wamp.AsString(msg.ArgumentsKw["message"])
 
-	caller, _ := wamp.AsID(msg.Details["caller"])
-	count := r.killSessionsByDetail("authrole", authrole, reason, message, caller)
+	caller, _ := wamp.AsID(msg.Details[wamp.DetailCaller])
+	count := r.killSessionsByDetail(wamp.DetailAuthRole, authrole, reason, message, caller)
 	return &wamp.Yield{
 		Request:   msg.Request,
 		Arguments: wamp.List{count},
@@ -1240,7 +1245,7 @@ func (r *realm) sessionKillAll(msg *wamp.Invocation) wamp.Message {
 	}
 	message, _ := wamp.AsString(msg.ArgumentsKw["message"])
 
-	caller, _ := wamp.AsID(msg.Details["caller"])
+	caller, _ := wamp.AsID(msg.Details[wamp.DetailCaller])
 	count := r.killAllSessions(reason, message, caller)
 	return &wamp.Yield{
 		Request:   msg.Request,
@@ -1271,7 +1276,7 @@ func (r *realm) sessionModifyDetails(msg *wamp.Invocation) wamp.Message {
 		return makeError(msg.Request, wamp.ErrInvalidArgument)
 	}
 	// Not allowed to modify session ID.
-	if _, ok = delta["session"]; ok {
+	if _, ok = delta[wamp.DetailSession]; ok {
 		return makeError(msg.Request, wamp.ErrInvalidArgument)
 	}
 
@@ -1296,7 +1301,7 @@ func (r *realm) sessionModifyDetails(msg *wamp.Invocation) wamp.Message {
 // detached (when session resumption is implemented) or destroyed (when the
 // transport is lost).
 func (r *realm) testamentAdd(msg *wamp.Invocation) wamp.Message {
-	caller, ok := wamp.AsID(msg.Details["caller"])
+	caller, ok := wamp.AsID(msg.Details[wamp.DetailCaller])
 	if !ok || len(msg.Arguments) < 3 {
 		return makeError(msg.Request, wamp.ErrInvalidArgument)
 	}
@@ -1351,7 +1356,7 @@ func (r *realm) testamentAdd(msg *wamp.Invocation) wamp.Message {
 // optional keyword argument "scope" that has the value "detached" or
 // "destroyed".
 func (r *realm) testamentFlush(msg *wamp.Invocation) wamp.Message {
-	caller, ok := wamp.AsID(msg.Details["caller"])
+	caller, ok := wamp.AsID(msg.Details[wamp.DetailCaller])
 	if !ok {
 		return makeError(msg.Request, wamp.ErrInvalidArgument)
 	}
@@ -1398,7 +1403,14 @@ func (r *realm) cleanSessionDetails(details wamp.Dict) wamp.Dict {
 	var clean wamp.Dict
 	// If in strict mode, only include allowed values.
 	if r.metaStrict {
-		stdItems := []string{"session", "authid", "authrole", "authmethod", "authprovider", "transport"}
+		stdItems := []string{
+			wamp.DetailSession,
+			wamp.DetailAuthID,
+			wamp.DetailAuthRole,
+			wamp.DetailAuthMethod,
+			wamp.DetailAuthProvider,
+			wamp.DetailTransport,
+		}
 
 		clean = make(wamp.Dict, len(stdItems)+len(r.metaIncDetails))
 		// Copy standard details.
@@ -1418,17 +1430,17 @@ func (r *realm) cleanSessionDetails(details wamp.Dict) wamp.Dict {
 	}
 
 	// Remove transport.auth before copying, so that it is never copied.
-	if transDict := wamp.DictChild(clean, "transport"); transDict != nil {
+	if transDict := wamp.DictChild(clean, wamp.DetailTransport); transDict != nil {
 		trans := make(wamp.Dict, len(transDict))
 		for n, v := range transDict {
-			if n != "auth" {
+			if n != wamp.DetailAuth {
 				trans[n] = v
 			}
 		}
 		if len(trans) == 0 {
-			delete(clean, "transport")
+			delete(clean, wamp.DetailTransport)
 		} else {
-			clean["transport"] = trans
+			clean[wamp.DetailTransport] = trans
 		}
 	}
 

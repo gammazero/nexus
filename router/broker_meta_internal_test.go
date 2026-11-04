@@ -115,10 +115,10 @@ func TestSyncPubSubMeta(t *testing.T) {
 		}
 
 		// The topic is in the details only for pattern-based subscriptions.
-		require.NotContains(t, evtExact.Details, detailTopic)
-		require.NotContains(t, evtRemote1.Details, detailTopic)
-		require.Equal(t, metaTopic, evtPrefix.Details[detailTopic])
-		require.Equal(t, metaTopic, evtWildcard.Details[detailTopic])
+		require.NotContains(t, evtExact.Details, wamp.DetailTopic)
+		require.NotContains(t, evtRemote1.Details, wamp.DetailTopic)
+		require.Equal(t, metaTopic, evtPrefix.Details[wamp.DetailTopic])
+		require.Equal(t, metaTopic, evtWildcard.Details[wamp.DetailTopic])
 
 		// Remote subscribers share one EVENT, and a local subscriber gets its own.
 		require.Same(t, evtRemote1, evtRemote2, "remote subscribers not shared")
@@ -167,10 +167,10 @@ func TestSyncPubSubCreateMeta(t *testing.T) {
 		expectArgs := wamp.List{
 			cause.sess.ID,
 			wamp.Dict{
-				"id":          sub.id,
-				"created":     sub.created,
-				"uri":         sub.topic,
-				wamp.OptMatch: sub.match,
+				wamp.DetailID:      sub.id,
+				wamp.DetailCreated: sub.created,
+				wamp.DetailURI:     sub.topic,
+				wamp.OptMatch:      sub.match,
 			},
 		}
 		pubID := evtLocal1.Publication
@@ -180,10 +180,10 @@ func TestSyncPubSubCreateMeta(t *testing.T) {
 		}
 
 		// The topic is in the details only for pattern-based subscriptions.
-		require.NotContains(t, evtLocal1.Details, detailTopic)
-		require.NotContains(t, evtRemote1.Details, detailTopic)
-		require.Equal(t, metaTopic, evtPrefix.Details[detailTopic])
-		require.Equal(t, metaTopic, evtWildcard.Details[detailTopic])
+		require.NotContains(t, evtLocal1.Details, wamp.DetailTopic)
+		require.NotContains(t, evtRemote1.Details, wamp.DetailTopic)
+		require.Equal(t, metaTopic, evtPrefix.Details[wamp.DetailTopic])
+		require.Equal(t, metaTopic, evtWildcard.Details[wamp.DetailTopic])
 
 		// Remote subscribers share one EVENT, and each local subscriber gets its own,
 		// so that a local subscriber changing its EVENT, even the dict in its
@@ -191,7 +191,7 @@ func TestSyncPubSubCreateMeta(t *testing.T) {
 		require.Same(t, evtRemote1, evtRemote2, "remote subscribers not shared")
 		require.NotSame(t, evtLocal1, evtLocal2)
 		require.NotSame(t, evtLocal1, evtRemote1)
-		evtLocal1.Arguments[1].(wamp.Dict)["uri"] = "changed"
+		evtLocal1.Arguments[1].(wamp.Dict)[wamp.DetailURI] = "changed"
 		evtLocal1.Details["changed"] = true
 		require.Equal(t, expectArgs, evtLocal2.Arguments)
 		require.Equal(t, expectArgs, evtRemote1.Arguments)

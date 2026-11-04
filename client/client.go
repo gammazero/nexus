@@ -1223,10 +1223,6 @@ func (c *Client) SendProgress(ctx context.Context, args wamp.List, kwArgs wamp.D
 // names to functions that handle each auth type. This can be nil if router is
 // expected to allow anonymous authentication.
 func joinRealm(peer wamp.Peer, cfg Config) (*wamp.Welcome, error) {
-	const (
-		helloAuthmethods = "authmethods"
-		helloRoles       = "roles"
-	)
 	if cfg.Realm == "" {
 		return nil, errors.New("realm not specified")
 	}
@@ -1234,15 +1230,15 @@ func joinRealm(peer wamp.Peer, cfg Config) (*wamp.Welcome, error) {
 	if details == nil {
 		details = wamp.Dict{}
 	}
-	if _, ok := details[helloRoles]; !ok {
-		details[helloRoles] = clientRoles
+	if _, ok := details[wamp.DetailRoles]; !ok {
+		details[wamp.DetailRoles] = clientRoles
 	}
 	if len(cfg.AuthHandlers) > 0 {
 		authmethods := make(wamp.List, 0, len(cfg.AuthHandlers))
 		for am := range cfg.AuthHandlers {
 			authmethods = append(authmethods, am)
 		}
-		details[helloAuthmethods] = authmethods
+		details[wamp.DetailAuthMethods] = authmethods
 	}
 
 	peer.Send() <- &wamp.Hello{Realm: wamp.URI(cfg.Realm), Details: details}

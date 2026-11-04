@@ -32,7 +32,7 @@ func TestJoinRealmWithCRAuth(t *testing.T) {
 	cfg := client.Config{
 		Realm: testAuthRealm,
 		HelloDetails: wamp.Dict{
-			"authid": "jdoe",
+			wamp.DetailAuthID: "jdoe",
 		},
 		AuthHandlers: map[string]client.AuthFunc{
 			"wampcra": clientAuthFunc,
@@ -43,7 +43,7 @@ func TestJoinRealmWithCRAuth(t *testing.T) {
 	cli := connectClientCfg(t, cfg)
 
 	realmDetails := cli.RealmDetails()
-	s, _ := wamp.AsString(realmDetails["authrole"])
+	s, _ := wamp.AsString(realmDetails[wamp.DetailAuthRole])
 	require.Equal(t, "user", s, "missing or incorrect authrole")
 }
 
@@ -51,7 +51,7 @@ func TestJoinRealmWithCRCookieAuth(t *testing.T) {
 	cfg := client.Config{
 		Realm: testAuthRealm,
 		HelloDetails: wamp.Dict{
-			"authid": "jdoe",
+			wamp.DetailAuthID: "jdoe",
 		},
 		AuthHandlers: map[string]client.AuthFunc{
 			"wampcra": clientAuthFunc,
@@ -93,7 +93,7 @@ func TestJoinRealmWithCRAuthBad(t *testing.T) {
 	cfg := client.Config{
 		Realm: testAuthRealm,
 		HelloDetails: wamp.Dict{
-			"authid": "malory",
+			wamp.DetailAuthID: "malory",
 		},
 		AuthHandlers: map[string]client.AuthFunc{
 			"wampcra": clientAuthFunc,
@@ -182,12 +182,12 @@ func TestSpecAuthAnonymousSucceeds(t *testing.T) {
 
 	cfg := client.Config{
 		Realm:           testRealm,
-		HelloDetails:    wamp.Dict{"authmethods": wamp.List{"anonymous"}},
+		HelloDetails:    wamp.Dict{wamp.DetailAuthMethods: wamp.List{"anonymous"}},
 		ResponseTimeout: clientResponseTimeout,
 	}
 	cli := connectClientCfg(t, cfg)
 	details := cli.RealmDetails()
-	authrole, _ := wamp.AsString(details["authrole"])
+	authrole, _ := wamp.AsString(details[wamp.DetailAuthRole])
 	require.NotEmpty(t, authrole, "anonymous welcome must include authrole")
 }
 
@@ -199,8 +199,8 @@ func TestSpecAuthCRABadAuthMethod(t *testing.T) {
 	cfg := client.Config{
 		Realm: testAuthRealm,
 		HelloDetails: wamp.Dict{
-			"authid":      "jdoe",
-			"authmethods": wamp.List{"no_such_method"},
+			wamp.DetailAuthID:      "jdoe",
+			wamp.DetailAuthMethods: wamp.List{"no_such_method"},
 		},
 		ResponseTimeout: time.Second,
 	}
@@ -222,8 +222,8 @@ func TestSpecAuthTicketSucceeds(t *testing.T) {
 	cfg := client.Config{
 		Realm: testAuthRealm,
 		HelloDetails: wamp.Dict{
-			"authid":      "jdoe",
-			"authmethods": wamp.List{"ticket"},
+			wamp.DetailAuthID:      "jdoe",
+			wamp.DetailAuthMethods: wamp.List{"ticket"},
 		},
 		AuthHandlers: map[string]client.AuthFunc{
 			"ticket": ticketHandler,
@@ -232,10 +232,10 @@ func TestSpecAuthTicketSucceeds(t *testing.T) {
 	}
 	cli := connectClientCfg(t, cfg)
 
-	authrole, _ := wamp.AsString(cli.RealmDetails()["authrole"])
+	authrole, _ := wamp.AsString(cli.RealmDetails()[wamp.DetailAuthRole])
 	require.Equal(t, "user", authrole, "ticket auth must set authrole from KeyStore")
 
-	authmethod, _ := wamp.AsString(cli.RealmDetails()["authmethod"])
+	authmethod, _ := wamp.AsString(cli.RealmDetails()[wamp.DetailAuthMethod])
 	require.Equal(t, "ticket", authmethod)
 }
 
@@ -251,8 +251,8 @@ func TestSpecAuthTicketBad(t *testing.T) {
 	cfg := client.Config{
 		Realm: testAuthRealm,
 		HelloDetails: wamp.Dict{
-			"authid":      "jdoe",
-			"authmethods": wamp.List{"ticket"},
+			wamp.DetailAuthID:      "jdoe",
+			wamp.DetailAuthMethods: wamp.List{"ticket"},
 		},
 		AuthHandlers: map[string]client.AuthFunc{
 			"ticket": ticketHandler,
@@ -275,8 +275,8 @@ func TestSpecAuthTicketUnknownUser(t *testing.T) {
 	cfg := client.Config{
 		Realm: testAuthRealm,
 		HelloDetails: wamp.Dict{
-			"authid":      "no_such_user",
-			"authmethods": wamp.List{"ticket"},
+			wamp.DetailAuthID:      "no_such_user",
+			wamp.DetailAuthMethods: wamp.List{"ticket"},
 		},
 		AuthHandlers: map[string]client.AuthFunc{
 			"ticket": ticketHandler,
@@ -326,13 +326,13 @@ func (ks *serverKeyStore) AuthRole(authid string) (string, error) {
 
 func (ks *serverKeyStore) AlreadyAuth(authid string, details wamp.Dict) bool {
 	// Verify that the request has been captured.
-	_, err := wamp.DictValue(details, []string{"transport", "auth", "request"})
+	_, err := wamp.DictValue(details, []string{wamp.DetailTransport, wamp.DetailAuth, wamp.DetailRequest})
 	if err != nil {
 		// Not authorized - pretend request is needed for some reason.
 		return false
 	}
 
-	v, err := wamp.DictValue(details, []string{"transport", "auth", "cookie"})
+	v, err := wamp.DictValue(details, []string{wamp.DetailTransport, wamp.DetailAuth, wamp.DetailCookie})
 	if err != nil {
 		// No tracking cookie - client not recognized, so not auth.
 		return false
@@ -351,7 +351,7 @@ func (ks *serverKeyStore) AlreadyAuth(authid string, details wamp.Dict) bool {
 }
 
 func (ks *serverKeyStore) OnWelcome(authid string, welcome *wamp.Welcome, details wamp.Dict) error {
-	v, err := wamp.DictValue(details, []string{"transport", "auth", "nextcookie"})
+	v, err := wamp.DictValue(details, []string{wamp.DetailTransport, wamp.DetailAuth, wamp.DetailNextCookie})
 	if err != nil {
 		// Tracking cookie not enabled, return no error.
 		return nil //nolint:nilerr

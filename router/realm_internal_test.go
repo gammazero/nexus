@@ -1,10 +1,8 @@
 package router
 
 import (
-	"bytes"
 	"errors"
 	"maps"
-	"sync"
 	"testing"
 	"testing/synctest"
 	"time"
@@ -18,14 +16,14 @@ import (
 // entries, and a transport detail that has auth.
 func testSessionDetails() wamp.Dict {
 	return wamp.Dict{
-		"session":      wamp.ID(123),
-		"authid":       "user1",
-		"authrole":     "user",
-		"authmethod":   "ticket",
-		"authprovider": "static",
-		"transport": wamp.Dict{
-			"type": "websocket",
-			"auth": wamp.Dict{"cookie": "secret"},
+		wamp.DetailSession:      wamp.ID(123),
+		wamp.DetailAuthID:       "user1",
+		wamp.DetailAuthRole:     "user",
+		wamp.DetailAuthMethod:   "ticket",
+		wamp.DetailAuthProvider: "static",
+		wamp.DetailTransport: wamp.Dict{
+			"type":          "websocket",
+			wamp.DetailAuth: wamp.Dict{wamp.DetailCookie: "secret"},
 		},
 		"xyzzy": "plugh",
 		"foo":   "bar",
@@ -39,7 +37,7 @@ func TestCleanSessionDetails(t *testing.T) {
 	// All details are kept, except transport.auth.
 	clean := r.cleanSessionDetails(details)
 	expect := testSessionDetails()
-	expect["transport"] = wamp.Dict{"type": "websocket"}
+	expect[wamp.DetailTransport] = wamp.Dict{"type": "websocket"}
 	require.Equal(t, expect, clean)
 
 	// The session details are not changed.
@@ -49,12 +47,12 @@ func TestCleanSessionDetails(t *testing.T) {
 	// other.
 	clean["added"] = true
 	delete(clean, "xyzzy")
-	clean["transport"].(wamp.Dict)["added"] = true
+	clean[wamp.DetailTransport].(wamp.Dict)["added"] = true
 	require.Equal(t, testSessionDetails(), details)
 	details["later"] = true
-	details["transport"].(wamp.Dict)["later"] = true
+	details[wamp.DetailTransport].(wamp.Dict)["later"] = true
 	require.NotContains(t, clean, "later")
-	require.NotContains(t, clean["transport"], "later")
+	require.NotContains(t, clean[wamp.DetailTransport], "later")
 }
 
 // TestCleanSessionDetailsDeepCopy checks that dicts and lists in the details
@@ -63,25 +61,25 @@ func TestCleanSessionDetails(t *testing.T) {
 func TestCleanSessionDetailsDeepCopy(t *testing.T) {
 	r := &realm{}
 	authextra := wamp.Dict{"pubkey": "abc"}
-	roles := wamp.List{"caller", wamp.Dict{"callee": true}}
+	roles := wamp.List{wamp.RoleCaller, wamp.Dict{wamp.RoleCallee: true}}
 	transport := wamp.Dict{"type": "rawsocket", "info": wamp.Dict{"x": 1}}
 	details := wamp.Dict{
-		"authextra": authextra,
-		"roles":     roles,
-		"transport": transport,
+		wamp.DetailAuthExtra: authextra,
+		wamp.DetailRoles:     roles,
+		wamp.DetailTransport: transport,
 	}
 
 	clean := r.cleanSessionDetails(details)
 	require.Equal(t, details, clean)
 
 	authextra["pubkey"] = "changed"
-	roles[1].(wamp.Dict)["callee"] = false
+	roles[1].(wamp.Dict)[wamp.RoleCallee] = false
 	transport["type"] = "websocket"
 	transport["info"].(wamp.Dict)["x"] = 2
 	require.Equal(t, wamp.Dict{
-		"authextra": wamp.Dict{"pubkey": "abc"},
-		"roles":     wamp.List{"caller", wamp.Dict{"callee": true}},
-		"transport": wamp.Dict{"type": "rawsocket", "info": wamp.Dict{"x": 1}},
+		wamp.DetailAuthExtra: wamp.Dict{"pubkey": "abc"},
+		wamp.DetailRoles:     wamp.List{wamp.RoleCaller, wamp.Dict{wamp.RoleCallee: true}},
+		wamp.DetailTransport: wamp.Dict{"type": "rawsocket", "info": wamp.Dict{"x": 1}},
 	}, clean)
 }
 
@@ -97,84 +95,65 @@ func TestCleanSessionDetailsStrict(t *testing.T) {
 	// are not added.
 	clean := r.cleanSessionDetails(details)
 	require.Equal(t, wamp.Dict{
-		"session":      wamp.ID(123),
-		"authid":       "user1",
-		"authrole":     "user",
-		"authmethod":   "ticket",
-		"authprovider": "static",
-		"transport":    wamp.Dict{"type": "websocket"},
-		"xyzzy":        "plugh",
+		wamp.DetailSession:      wamp.ID(123),
+		wamp.DetailAuthID:       "user1",
+		wamp.DetailAuthRole:     "user",
+		wamp.DetailAuthMethod:   "ticket",
+		wamp.DetailAuthProvider: "static",
+		wamp.DetailTransport:    wamp.Dict{"type": "websocket"},
+		"xyzzy":                 "plugh",
 	}, clean)
 	require.Equal(t, testSessionDetails(), details)
 
 	// Standard details that the session does not have are not added.
-	clean = r.cleanSessionDetails(wamp.Dict{"authid": "user1", "foo": "bar"})
-	require.Equal(t, wamp.Dict{"authid": "user1"}, clean)
+	clean = r.cleanSessionDetails(wamp.Dict{wamp.DetailAuthID: "user1", "foo": "bar"})
+	require.Equal(t, wamp.Dict{wamp.DetailAuthID: "user1"}, clean)
 }
 
 func TestCleanSessionDetailsTransport(t *testing.T) {
 	r := &realm{}
 
 	// No transport detail.
-	clean := r.cleanSessionDetails(wamp.Dict{"authid": "user1"})
-	require.Equal(t, wamp.Dict{"authid": "user1"}, clean)
+	clean := r.cleanSessionDetails(wamp.Dict{wamp.DetailAuthID: "user1"})
+	require.Equal(t, wamp.Dict{wamp.DetailAuthID: "user1"}, clean)
 
 	// A transport detail without auth is kept.
 	clean = r.cleanSessionDetails(wamp.Dict{
-		"transport": wamp.Dict{"type": "rawsocket"},
+		wamp.DetailTransport: wamp.Dict{"type": "rawsocket"},
 	})
-	require.Equal(t, wamp.Dict{"transport": wamp.Dict{"type": "rawsocket"}}, clean)
+	require.Equal(t, wamp.Dict{wamp.DetailTransport: wamp.Dict{"type": "rawsocket"}}, clean)
 
 	// An auth that is not a dict is removed too.
 	clean = r.cleanSessionDetails(wamp.Dict{
-		"transport": wamp.Dict{"type": "rawsocket", "auth": "secret"},
+		wamp.DetailTransport: wamp.Dict{"type": "rawsocket", wamp.DetailAuth: "secret"},
 	})
-	require.Equal(t, wamp.Dict{"transport": wamp.Dict{"type": "rawsocket"}}, clean)
+	require.Equal(t, wamp.Dict{wamp.DetailTransport: wamp.Dict{"type": "rawsocket"}}, clean)
 
 	// A transport detail of another map type has auth removed.
 	details := wamp.Dict{
-		"transport": map[string]any{
-			"type": "websocket",
-			"auth": map[string]any{"cookie": "secret"},
+		wamp.DetailTransport: map[string]any{
+			"type":          "websocket",
+			wamp.DetailAuth: map[string]any{wamp.DetailCookie: "secret"},
 		},
 	}
 	clean = r.cleanSessionDetails(details)
-	require.Equal(t, wamp.Dict{"type": "websocket"}, clean["transport"])
-	require.Contains(t, details["transport"], "auth")
+	require.Equal(t, wamp.Dict{"type": "websocket"}, clean[wamp.DetailTransport])
+	require.Contains(t, details[wamp.DetailTransport], wamp.DetailAuth)
 
 	// A transport detail that has only auth is left out.
 	clean = r.cleanSessionDetails(wamp.Dict{
-		"authid":    "user1",
-		"transport": wamp.Dict{"auth": wamp.Dict{"cookie": "secret"}},
+		wamp.DetailAuthID:    "user1",
+		wamp.DetailTransport: wamp.Dict{wamp.DetailAuth: wamp.Dict{wamp.DetailCookie: "secret"}},
 	})
-	require.Equal(t, wamp.Dict{"authid": "user1"}, clean)
+	require.Equal(t, wamp.Dict{wamp.DetailAuthID: "user1"}, clean)
 
 	// The same in strict mode.
 	strict := &realm{metaStrict: true}
 	clean = strict.cleanSessionDetails(wamp.Dict{
-		"authid":    "user1",
-		"transport": wamp.Dict{"auth": wamp.Dict{"cookie": "secret"}},
+		wamp.DetailAuthID:    "user1",
+		wamp.DetailTransport: wamp.Dict{wamp.DetailAuth: wamp.Dict{wamp.DetailCookie: "secret"}},
 	})
-	require.Equal(t, wamp.Dict{"authid": "user1"}, clean)
-}
-
-// syncBuffer is a bytes.Buffer that is safe to write from several goroutines,
-// as the router's logger does.
-type syncBuffer struct {
-	mu  sync.Mutex
-	buf bytes.Buffer
-}
-
-func (b *syncBuffer) Write(p []byte) (int, error) {
-	b.mu.Lock()
-	defer b.mu.Unlock()
-	return b.buf.Write(p)
-}
-
-func (b *syncBuffer) String() string {
-	b.mu.Lock()
-	defer b.mu.Unlock()
-	return b.buf.String()
+	require.Equal(t, wamp.Dict{wamp.DetailAuthID: "user1"}, clean)
 }
 
 // requireAbortedLast reads the messages for cli until the router closes it,
@@ -199,10 +178,10 @@ func requireAbortedLast(t *testing.T, cli *wamp.Session) {
 func TestAbortedLocalSession(t *testing.T) {
 	const proc = wamp.URI("nexus.test.abortproc")
 	pptOptions := wamp.Dict{wamp.OptPPTScheme: "x_test", wamp.OptPPTSerializer: "native"}
-	pptCallee := wamp.Dict{"roles": wamp.Dict{"callee": wamp.Dict{"features": wamp.Dict{
+	pptCallee := wamp.Dict{wamp.DetailRoles: wamp.Dict{wamp.RoleCallee: wamp.Dict{wamp.DetailFeatures: wamp.Dict{
 		wamp.FeaturePayloadPassthruMode: true,
 	}}}}
-	pptCaller := wamp.Dict{"roles": wamp.Dict{"caller": wamp.Dict{"features": wamp.Dict{
+	pptCaller := wamp.Dict{wamp.DetailRoles: wamp.Dict{wamp.RoleCaller: wamp.Dict{wamp.DetailFeatures: wamp.Dict{
 		wamp.FeaturePayloadPassthruMode: true,
 	}}}}
 
@@ -267,7 +246,7 @@ func TestAbortedLocalSession(t *testing.T) {
 func metaInvocation(caller wamp.ID, args wamp.List, kwargs wamp.Dict) *wamp.Invocation {
 	return &wamp.Invocation{
 		Request:     1,
-		Details:     wamp.Dict{"caller": caller},
+		Details:     wamp.Dict{wamp.DetailCaller: caller},
 		Arguments:   args,
 		ArgumentsKw: kwargs,
 	}
@@ -369,7 +348,7 @@ func TestSessionModifyDetailsArgs(t *testing.T) {
 			"no delta":        {wamp.List{target.ID}, wamp.ErrInvalidArgument},
 			"bad session ID":  {wamp.List{"x", delta}, wamp.ErrInvalidArgument},
 			"delta not dict":  {wamp.List{target.ID, "red"}, wamp.ErrInvalidArgument},
-			"changes session": {wamp.List{target.ID, wamp.Dict{"session": 1}}, wamp.ErrInvalidArgument},
+			"changes session": {wamp.List{target.ID, wamp.Dict{wamp.DetailSession: 1}}, wamp.ErrInvalidArgument},
 			"meta session":    {wamp.List{rlm.metaSess.ID, delta}, wamp.ErrNoSuchSession},
 			"unknown session": {wamp.List{wamp.GlobalID(), delta}, wamp.ErrNoSuchSession},
 		} {
@@ -377,7 +356,7 @@ func TestSessionModifyDetailsArgs(t *testing.T) {
 			requireMetaError(t, rsp, tc.uri)
 			details := sessionDetailsOf(rlm, target.ID)
 			require.NotContains(t, details, "color", name)
-			require.Equal(t, target.ID, details["session"], name)
+			require.Equal(t, target.ID, details[wamp.DetailSession], name)
 		}
 
 		rsp := rlm.sessionModifyDetails(
@@ -599,22 +578,22 @@ func TestAuthClient(t *testing.T) {
 		// are empty, are skipped.
 		for _, details := range []wamp.Dict{
 			{},
-			{"authmethods": wamp.List{}},
-			{"authmethods": wamp.List{5, "", "anonymous"}},
+			{wamp.DetailAuthMethods: wamp.List{}},
+			{wamp.DetailAuthMethods: wamp.List{5, "", "anonymous"}},
 		} {
 			welcome, err := rlm.authClient(1, remote, details)
 			require.NoError(t, err, "details %v", details)
-			require.Equal(t, "anonymous", welcome.Details["authmethod"])
-			require.Equal(t, roles, welcome.Details["roles"])
+			require.Equal(t, "anonymous", welcome.Details[wamp.DetailAuthMethod])
+			require.Equal(t, roles, welcome.Details[wamp.DetailRoles])
 		}
 
 		_, err := rlm.authClient(1, remote, wamp.Dict{
-			"authmethods": wamp.List{5, ""},
+			wamp.DetailAuthMethods: wamp.List{5, ""},
 		})
 		require.EqualError(t, err, "no authentication supplied")
 
 		_, err = rlm.authClient(1, remote, wamp.Dict{
-			"authmethods": wamp.List{"ticket", "wampcra"},
+			wamp.DetailAuthMethods: wamp.List{"ticket", "wampcra"},
 		})
 		require.EqualError(t, err, "could not authenticate with any method")
 
@@ -622,27 +601,27 @@ func TestAuthClient(t *testing.T) {
 		// local authentication.
 		local := newTestPeer()
 		welcome, err := rlm.authClient(1, local, wamp.Dict{
-			"authid":      "alice",
-			"authmethods": wamp.List{"ticket"},
+			wamp.DetailAuthID:      "alice",
+			wamp.DetailAuthMethods: wamp.List{"ticket"},
 		})
 		require.NoError(t, err)
 		require.Equal(t, wamp.Dict{
-			"authid":       "alice",
-			"authrole":     "trusted",
-			"authmethod":   "local",
-			"authprovider": "static",
-			"roles":        roles,
+			wamp.DetailAuthID:       "alice",
+			wamp.DetailAuthRole:     "trusted",
+			wamp.DetailAuthMethod:   "local",
+			wamp.DetailAuthProvider: "static",
+			wamp.DetailRoles:        roles,
 		}, welcome.Details)
 
 		// A local client without an authid is given one.
 		welcome, err = rlm.authClient(1, local, wamp.Dict{})
 		require.NoError(t, err)
-		authid, _ := wamp.AsString(welcome.Details["authid"])
+		authid, _ := wamp.AsString(welcome.Details[wamp.DetailAuthID])
 		require.NotEmpty(t, authid)
 
 		rlm.localAuth = true
 		_, err = rlm.authClient(1, local, wamp.Dict{
-			"authmethods": wamp.List{"ticket"},
+			wamp.DetailAuthMethods: wamp.List{"ticket"},
 		})
 		require.EqualError(t, err, "could not authenticate with any method")
 	})

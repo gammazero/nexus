@@ -72,12 +72,12 @@ func TestMetaEventOnCreateOnSubscribe(t *testing.T) {
 		if !ok {
 			return errors.New("argument 0 (session) was not wamp.ID")
 		}
-		onCreateID, _ = wamp.AsID(dict["id"])
-		if u, _ := wamp.AsURI(dict["uri"]); u != wamp.URI("some.topic") {
+		onCreateID, _ = wamp.AsID(dict[wamp.DetailID])
+		if u, _ := wamp.AsURI(dict[wamp.DetailURI]); u != wamp.URI("some.topic") {
 			return fmt.Errorf(
 				"on_create had wrong topic, got '%v' want 'some.topic'", u)
 		}
-		if s, _ := wamp.AsString(dict["created"]); s == "" {
+		if s, _ := wamp.AsString(dict[wamp.DetailCreated]); s == "" {
 			return errors.New("on_create missing created time")
 		}
 		return nil
@@ -249,11 +249,11 @@ func TestMetaProcSubGet(t *testing.T) {
 	require.NoError(t, err)
 	subDetails, ok := wamp.AsDict(result.Arguments[0])
 	require.True(t, ok, "Result argument is not dict")
-	id, _ := wamp.AsID(subDetails["id"])
+	id, _ := wamp.AsID(subDetails[wamp.DetailID])
 	require.Equal(t, subID, id, "Received wrong subscription ID")
-	m, _ := wamp.AsString(subDetails["match"])
+	m, _ := wamp.AsString(subDetails[wamp.OptMatch])
 	require.Equal(t, "wildcard", m, "subscription does not have wildcard policy")
-	uri, _ := wamp.AsURI(subDetails["uri"])
+	uri, _ := wamp.AsURI(subDetails[wamp.DetailURI])
 	require.Equal(t, wamp.URI(testTopicWC), uri, "subscription has wrong topic URI")
 
 	err = subscriber.Unsubscribe(testTopicWC)

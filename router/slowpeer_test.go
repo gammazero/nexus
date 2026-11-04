@@ -175,14 +175,14 @@ func TestSlowSubscriberClosed(t *testing.T) {
 // progressiveRoles are HELLO details for a client that subscribes, and calls
 // and registers procedures with progressive results and call canceling.
 var progressiveRoles = wamp.Dict{ //nolint:gochecknoglobals
-	"roles": wamp.Dict{
-		"subscriber": wamp.Dict{},
-		"publisher":  wamp.Dict{},
-		"caller": wamp.Dict{"features": wamp.Dict{
+	wamp.DetailRoles: wamp.Dict{
+		wamp.RoleSubscriber: wamp.Dict{},
+		wamp.RolePublisher:  wamp.Dict{},
+		wamp.RoleCaller: wamp.Dict{wamp.DetailFeatures: wamp.Dict{
 			wamp.FeatureProgCallResults: true,
 			wamp.FeatureCallCanceling:   true,
 		}},
-		"callee": wamp.Dict{"features": wamp.Dict{
+		wamp.RoleCallee: wamp.Dict{wamp.DetailFeatures: wamp.Dict{
 			wamp.FeatureProgCallResults: true,
 			wamp.FeatureCallCanceling:   true,
 		}},

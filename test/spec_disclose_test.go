@@ -62,7 +62,7 @@ func TestSpecDiscloseCaller(t *testing.T) {
 		const procName = "spec.disclose.caller"
 		gotCaller := make(chan wamp.ID, 1)
 		require.NoError(t, callee.Register(procName, func(_ context.Context, inv *wamp.Invocation) client.InvokeResult {
-			id, _ := wamp.AsID(inv.Details["caller"])
+			id, _ := wamp.AsID(inv.Details[wamp.DetailCaller])
 			gotCaller <- id
 			return client.InvokeResult{}
 		}, nil))
@@ -106,7 +106,7 @@ func TestSpecDiscloseCallerAbsentByDefault(t *testing.T) {
 
 		select {
 		case details := <-gotDetails:
-			_, has := details["caller"]
+			_, has := details[wamp.DetailCaller]
 			require.False(t, has, "INVOCATION must NOT include caller field without disclose_me")
 		case <-time.After(time.Second):
 			t.Fatal("call did not deliver INVOCATION")
@@ -131,7 +131,7 @@ func TestSpecDisclosePublisher(t *testing.T) {
 		const topic = "spec.disclose.topic"
 		gotPub := make(chan wamp.ID, 1)
 		require.NoError(t, sub.Subscribe(topic, func(ev *wamp.Event) {
-			id, _ := wamp.AsID(ev.Details["publisher"])
+			id, _ := wamp.AsID(ev.Details[wamp.DetailPublisher])
 			gotPub <- id
 		}, nil))
 

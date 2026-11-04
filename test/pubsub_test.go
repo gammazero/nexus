@@ -80,7 +80,7 @@ func TestPubSubWildcard(t *testing.T) {
 			errChan <- errors.New("bad arg")
 			return
 		}
-		origTopic, _ := wamp.AsURI(event.Details["topic"])
+		origTopic, _ := wamp.AsURI(event.Details[wamp.DetailTopic])
 		if origTopic != testTopic {
 			errChan <- errors.New("wrong original topic")
 			return

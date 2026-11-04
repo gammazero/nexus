@@ -56,7 +56,7 @@ func (ks *testKeyStore) PasswordInfo(authid string) (string, int, int) {
 func (ks *testKeyStore) Provider() string { return ks.provider }
 
 func (ks *testKeyStore) AlreadyAuth(authid string, details wamp.Dict) bool {
-	v, err := wamp.DictValue(details, []string{"transport", "auth", "cookie"})
+	v, err := wamp.DictValue(details, []string{wamp.DetailTransport, wamp.DetailAuth, wamp.DetailCookie})
 	if err != nil {
 		// No tracking cookie, so not auth.
 		return false
@@ -71,7 +71,7 @@ func (ks *testKeyStore) AlreadyAuth(authid string, details wamp.Dict) bool {
 }
 
 func (ks *testKeyStore) OnWelcome(authid string, welcome *wamp.Welcome, details wamp.Dict) error {
-	v, err := wamp.DictValue(details, []string{"transport", "auth", "nextcookie"})
+	v, err := wamp.DictValue(details, []string{wamp.DetailTransport, wamp.DetailAuth, wamp.DetailNextCookie})
 	if err != nil {
 		return err
 	}
@@ -137,38 +137,38 @@ func TestTicketAuth(t *testing.T) {
 	require.Nil(t, welcome)
 
 	// Test with unknown authid.
-	details["authid"] = "unknown"
+	details[wamp.DetailAuthID] = "unknown"
 	_, err = ticketAuth.Authenticate(sid, details, rp)
 	require.Error(t, err, "expected error from unknown authid")
 
 	// Test with known authid.
-	details["authid"] = "jdoe"
+	details[wamp.DetailAuthID] = "jdoe"
 	// Provide tracking cookie to ientify this client in the future.
 	nextCookie := &http.Cookie{Name: "nexus-wamp-cookie", Value: "a1b2c3"}
-	authDict := wamp.Dict{"nextcookie": nextCookie}
-	details["transport"] = wamp.Dict{"auth": authDict}
+	authDict := wamp.Dict{wamp.DetailNextCookie: nextCookie}
+	details[wamp.DetailTransport] = wamp.Dict{wamp.DetailAuth: authDict}
 
 	welcome, err = ticketAuth.Authenticate(sid, details, rp)
 	require.NoError(t, err, "challenge failed")
 	require.NotNil(t, welcome, "received nil welcome msg")
 	require.Equal(t, wamp.WELCOME, welcome.MessageType())
-	s, _ := wamp.AsString(welcome.Details["authmethod"])
+	s, _ := wamp.AsString(welcome.Details[wamp.DetailAuthMethod])
 	require.Equal(t, "ticket", s, "invalid authmethod in welcome details")
-	s, _ = wamp.AsString(welcome.Details["authrole"])
+	s, _ = wamp.AsString(welcome.Details[wamp.DetailAuthRole])
 	require.Equal(t, "user", s, "incorrect authrole in welcome details")
 	ok, _ := wamp.AsBool(welcome.Details["authbycookie"])
 	require.False(t, ok, "authbycookie set incorrectly to true")
 	tks.ticket = "bad"
 
 	// Test with bad ticket.
-	details["authid"] = "jdoe"
+	details[wamp.DetailAuthID] = "jdoe"
 	_, err = ticketAuth.Authenticate(sid, details, rp)
 	require.Error(t, err, "expected error with bad ticket")
 
 	// Supply the previous tracking cookie in transport.auth. This will
 	// identify the previously authenticated client.
-	authDict["cookie"] = &http.Cookie{Name: "nexus-wamp-cookie", Value: "a1b2c3"}
-	authDict["nextcookie"] = &http.Cookie{Name: "nexus-wamp-cookie", Value: "xyz123"}
+	authDict[wamp.DetailCookie] = &http.Cookie{Name: "nexus-wamp-cookie", Value: "a1b2c3"}
+	authDict[wamp.DetailNextCookie] = &http.Cookie{Name: "nexus-wamp-cookie", Value: "xyz123"}
 	welcome, err = ticketAuth.Authenticate(sid, details, rp)
 	// Event though ticket is bad, cookie from previous good session should
 	// authenticate client.
@@ -194,34 +194,34 @@ func TestCRAuth(t *testing.T) {
 	require.Error(t, err, "expected error with missing authid")
 
 	// Test with unknown authid.
-	details["authid"] = "unknown"
+	details[wamp.DetailAuthID] = "unknown"
 	_, err = crAuth.Authenticate(sid, details, rp)
 	require.Error(t, err, "expected error from unknown authid")
 
 	// Test with known authid.
-	details["authid"] = "jdoe"
+	details[wamp.DetailAuthID] = "jdoe"
 	nextCookie := &http.Cookie{Name: "nexus-wamp-cookie", Value: "a1b2c3"}
-	authDict := wamp.Dict{"nextcookie": nextCookie}
-	details["transport"] = wamp.Dict{"auth": authDict}
+	authDict := wamp.Dict{wamp.DetailNextCookie: nextCookie}
+	details[wamp.DetailTransport] = wamp.Dict{wamp.DetailAuth: authDict}
 
 	welcome, err := crAuth.Authenticate(sid, details, rp)
 	require.NoError(t, err, "challenge failed")
 	require.NotNil(t, welcome, "received nil welcome msg")
 	require.Equal(t, wamp.WELCOME, welcome.MessageType(), "expected WELCOME message")
-	s, _ := wamp.AsString(welcome.Details["authmethod"])
+	s, _ := wamp.AsString(welcome.Details[wamp.DetailAuthMethod])
 	require.Equal(t, "wampcra", s, "invalid authmethod in welcome details")
-	s, _ = wamp.AsString(welcome.Details["authrole"])
+	s, _ = wamp.AsString(welcome.Details[wamp.DetailAuthRole])
 	require.Equal(t, "user", s, "incorrect authrole in welcome details")
 
 	tks.secret = "bad"
 
 	// Test with bad ticket.
-	details["authid"] = "jdoe"
+	details[wamp.DetailAuthID] = "jdoe"
 	_, err = crAuth.Authenticate(sid, details, rp)
 	require.Error(t, err, "expected error with bad key")
 
-	authDict["cookie"] = &http.Cookie{Name: "nexus-wamp-cookie", Value: "a1b2c3"}
-	authDict["nextcookie"] = &http.Cookie{Name: "nexus-wamp-cookie", Value: "xyz123"}
+	authDict[wamp.DetailCookie] = &http.Cookie{Name: "nexus-wamp-cookie", Value: "a1b2c3"}
+	authDict[wamp.DetailNextCookie] = &http.Cookie{Name: "nexus-wamp-cookie", Value: "xyz123"}
 	_, err = crAuth.Authenticate(sid, details, rp)
 	require.NoError(t, err, "challenge failed")
 }

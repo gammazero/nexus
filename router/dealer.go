@@ -42,7 +42,7 @@ var ErrPPTNotSupportedByPeer = errors.New(pptNotSupportedMsg)
 
 // Role information for this dealer.
 var dealerRole = wamp.Dict{ //nolint:gochecknoglobals
-	"features": wamp.Dict{
+	wamp.DetailFeatures: wamp.Dict{
 		wamp.FeatureCallCanceling:       true,
 		wamp.FeatureCallTimeout:         true,
 		wamp.FeatureCallerIdent:         true,
@@ -299,9 +299,9 @@ func (d *dealer) register(callee *wamp.Session, msg *wamp.Register) {
 	// allow disclose for trusted clients
 	if !d.allowDisclose && disclose {
 		callee.Lock()
-		authrole, _ := wamp.AsString(callee.Details["authrole"])
+		authrole, _ := wamp.AsString(callee.Details[wamp.DetailAuthRole])
 		callee.Unlock()
-		if authrole != "trusted" {
+		if authrole != trustedAuthRole {
 			callee.SendReply(&wamp.Error{
 				Type:    msg.MessageType(),
 				Request: msg.Request,
@@ -738,11 +738,11 @@ func (d *dealer) syncRegister(callee *wamp.Session, msg *wamp.Register, match, i
 			// created through a registration request for an URI which was
 			// previously without a registration.
 			details := wamp.Dict{
-				"id":           regID,
-				"created":      created,
-				"uri":          msg.Procedure,
-				wamp.OptMatch:  match,
-				wamp.OptInvoke: invokePolicy,
+				wamp.DetailID:      regID,
+				wamp.DetailCreated: created,
+				wamp.DetailURI:     msg.Procedure,
+				wamp.OptMatch:      match,
+				wamp.OptInvoke:     invokePolicy,
 			}
 			metaPubs = append(metaPubs, &wamp.Publish{
 				Request:   wamp.GlobalID(),
@@ -1007,7 +1007,7 @@ func (d *dealer) syncCall(caller *wamp.Session, msg *wamp.Call) {
 		// registration was created, and this was allowed by the dealer.
 		if reg.disclose {
 			if callee.ID == metaID {
-				details[wamp.RoleCaller] = caller.ID
+				details[wamp.DetailCaller] = caller.ID
 			}
 			discloseCaller(caller, details)
 		} else {
@@ -1051,7 +1051,7 @@ func (d *dealer) syncCall(caller *wamp.Session, msg *wamp.Call) {
 		if reg.match != wamp.MatchExact {
 			// According to the spec, a router must provide the actual
 			// procedure to the client.
-			details[wamp.OptProcedure] = msg.Procedure
+			details[wamp.DetailProcedure] = msg.Procedure
 		}
 
 		// Generate the invocationID now that it is certain that the invocation
@@ -1757,11 +1757,11 @@ func (d *dealer) regGet(msg *wamp.Invocation) wamp.Message {
 			d.actionChan <- func() {
 				if reg, ok := d.registrations[regID]; ok {
 					dict = wamp.Dict{
-						"id":           regID,
-						"created":      reg.created,
-						"uri":          reg.procedure,
-						wamp.OptMatch:  reg.match,
-						wamp.OptInvoke: reg.policy,
+						wamp.DetailID:      regID,
+						wamp.DetailCreated: reg.created,
+						wamp.DetailURI:     reg.procedure,
+						wamp.OptMatch:      reg.match,
+						wamp.OptInvoke:     reg.policy,
 					}
 				}
 				close(sync)
@@ -1852,14 +1852,15 @@ func (d *dealer) regCountCallees(msg *wamp.Invocation) wamp.Message {
 
 // discloseCaller adds caller identity information to INVOCATION.Details.
 func discloseCaller(caller *wamp.Session, details wamp.Dict) {
-	details[wamp.RoleCaller] = caller.ID
+	details[wamp.DetailCaller] = caller.ID
 	// These values are not required by the specification, but are here for
 	// compatibility with Crossbar.
 	caller.Lock()
-	for _, f := range []string{"authid", "authrole"} {
-		if val, ok := caller.Details[f]; ok {
-			details[fmt.Sprintf("%s_%s", wamp.RoleCaller, f)] = val
-		}
+	if val, ok := caller.Details[wamp.DetailAuthID]; ok {
+		details[wamp.DetailCallerAuthID] = val
+	}
+	if val, ok := caller.Details[wamp.DetailAuthRole]; ok {
+		details[wamp.DetailCallerAuthRole] = val
 	}
 	caller.Unlock()
 }

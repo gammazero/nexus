@@ -12,6 +12,18 @@ import (
 	"github.com/gammazero/nexus/v3/wamp"
 )
 
+// sendWelcomeFirst makes a fake router queue its WELCOME before it reads the
+// client's HELLO. The client waits ResponseTimeout for the WELCOME only after
+// the router has read its HELLO, so the WELCOME is already there however late
+// the router's goroutine runs. The tests here use a ResponseTimeout of a few
+// milliseconds, which a slow machine could otherwise miss when joining.
+func sendWelcomeFirst(rtr wamp.Peer) {
+	rtr.Send() <- &wamp.Welcome{ID: 1, Details: wamp.Dict{
+		wamp.DetailRoles: wamp.Dict{wamp.RoleBroker: wamp.Dict{}, wamp.RoleDealer: wamp.Dict{}},
+	}}
+	<-rtr.Recv() // HELLO
+}
+
 // TestLateReplyDoesNotBlockClient verifies that a reply that arrives just
 // after the client stopped waiting for it does not block the client. The
 // goroutine that receives from the router used to block forever handing such
@@ -27,10 +39,7 @@ func TestLateReplyDoesNotBlockClient(t *testing.T) {
 		cliPeer, rtrPeer := transport.LinkedPeers()
 		go func() {
 			defer rtrPeer.Close()
-			<-rtrPeer.Recv() // HELLO
-			rtrPeer.Send() <- &wamp.Welcome{ID: 1, Details: wamp.Dict{
-				"roles": wamp.Dict{"broker": wamp.Dict{}, "dealer": wamp.Dict{}},
-			}}
+			sendWelcomeFirst(rtrPeer)
 			for msg := range rtrPeer.Recv() {
 				switch m := msg.(type) {
 				case *wamp.Subscribe:
@@ -73,10 +82,7 @@ func TestLateReplyDoesNotBlockClient(t *testing.T) {
 // waits before each SUBSCRIBED or REGISTERED.
 func earlyRouter(rtr wamp.Peer, delay time.Duration, gotErr chan<- bool) {
 	defer rtr.Close()
-	<-rtr.Recv() // HELLO
-	rtr.Send() <- &wamp.Welcome{ID: 1, Details: wamp.Dict{
-		"roles": wamp.Dict{"broker": wamp.Dict{}, "dealer": wamp.Dict{}},
-	}}
+	sendWelcomeFirst(rtr)
 	for msg := range rtr.Recv() {
 		switch m := msg.(type) {
 		case *wamp.Subscribe:

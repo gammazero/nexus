@@ -99,8 +99,8 @@ func TestSpecAuthCryptoSignSucceeds(t *testing.T) {
 		cfg := client.Config{
 			Realm: "nexus.test.cryptosign",
 			HelloDetails: wamp.Dict{
-				"authid":      testAuthid,
-				"authmethods": wamp.List{"cryptosign"},
+				wamp.DetailAuthID:      testAuthid,
+				wamp.DetailAuthMethods: wamp.List{"cryptosign"},
 			},
 			AuthHandlers: map[string]client.AuthFunc{
 				"cryptosign": func(c *wamp.Challenge) (string, wamp.Dict) {
@@ -114,9 +114,9 @@ func TestSpecAuthCryptoSignSucceeds(t *testing.T) {
 		require.NoError(t, err)
 		defer cli.Close()
 
-		authmethod, _ := wamp.AsString(cli.RealmDetails()["authmethod"])
+		authmethod, _ := wamp.AsString(cli.RealmDetails()[wamp.DetailAuthMethod])
 		require.Equal(t, "cryptosign", authmethod)
-		authrole, _ := wamp.AsString(cli.RealmDetails()["authrole"])
+		authrole, _ := wamp.AsString(cli.RealmDetails()[wamp.DetailAuthRole])
 		require.Equal(t, testAuthrole, authrole)
 	})
 }
@@ -138,8 +138,8 @@ func TestSpecAuthCryptoSignBadSignature(t *testing.T) {
 		cfg := client.Config{
 			Realm: "nexus.test.cryptosign",
 			HelloDetails: wamp.Dict{
-				"authid":      testAuthid,
-				"authmethods": wamp.List{"cryptosign"},
+				wamp.DetailAuthID:      testAuthid,
+				wamp.DetailAuthMethods: wamp.List{"cryptosign"},
 			},
 			AuthHandlers: map[string]client.AuthFunc{
 				"cryptosign": func(c *wamp.Challenge) (string, wamp.Dict) {
@@ -166,8 +166,8 @@ func TestSpecAuthCryptoSignUnknownUser(t *testing.T) {
 		cfg := client.Config{
 			Realm: "nexus.test.cryptosign",
 			HelloDetails: wamp.Dict{
-				"authid":      "no-such-user",
-				"authmethods": wamp.List{"cryptosign"},
+				wamp.DetailAuthID:      "no-such-user",
+				wamp.DetailAuthMethods: wamp.List{"cryptosign"},
 			},
 			AuthHandlers: map[string]client.AuthFunc{
 				"cryptosign": func(c *wamp.Challenge) (string, wamp.Dict) {

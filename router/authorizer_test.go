@@ -432,8 +432,8 @@ func TestAuthorizeReplacedDetailsIgnored(t *testing.T) {
 	recvType[*wamp.Subscribed](t, cli)
 
 	details := sessionDetails(t, reader, 1, cli.ID)
-	require.Equal(t, cli.Details["authid"], details["authid"])
-	require.Equal(t, cli.Details["authrole"], details["authrole"])
+	require.Equal(t, cli.Details[wamp.DetailAuthID], details[wamp.DetailAuthID])
+	require.Equal(t, cli.Details[wamp.DetailAuthRole], details[wamp.DetailAuthRole])
 }
 
 // TestApplyDetailChanges checks which changes from before to after are

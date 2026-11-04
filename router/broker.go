@@ -13,13 +13,9 @@ import (
 	"github.com/gammazero/nexus/v3/wamp"
 )
 
-const (
-	detailTopic = "topic"
-)
-
 // Role information for this broker.
 var brokerRole = wamp.Dict{ //nolint:gochecknoglobals
-	"features": wamp.Dict{
+	wamp.DetailFeatures: wamp.Dict{
 		wamp.FeaturePatternSub:           true,
 		wamp.FeaturePubExclusion:         true,
 		wamp.FeaturePubIdent:             true,
@@ -728,7 +724,7 @@ func (b *broker) syncPubSubMeta(metaTopic wamp.URI, subSessID, subID wamp.ID) {
 				Arguments:    wamp.List{subSessID, subID},
 			}
 			if sendTopic {
-				evt.Details[detailTopic] = metaTopic
+				evt.Details[wamp.DetailTopic] = metaTopic
 			}
 			return evt
 		}
@@ -772,15 +768,15 @@ func (b *broker) syncPubSubCreateMeta(subSessID wamp.ID, sub *subscription) {
 				Arguments: wamp.List{
 					subSessID,
 					wamp.Dict{
-						"id":          sub.id,
-						"created":     sub.created,
-						"uri":         sub.topic,
-						wamp.OptMatch: sub.match,
+						wamp.DetailID:      sub.id,
+						wamp.DetailCreated: sub.created,
+						wamp.DetailURI:     sub.topic,
+						wamp.OptMatch:      sub.match,
 					},
 				},
 			}
 			if sendTopic {
-				evt.Details[detailTopic] = wamp.MetaEventSubOnCreate
+				evt.Details[wamp.DetailTopic] = wamp.MetaEventSubOnCreate
 			}
 			return evt
 		}
@@ -850,7 +846,7 @@ func prepareEvent(pub *wamp.Session, msg *wamp.Publish, pubID wamp.ID, sub *subs
 	// a Broker MUST supply the original PUBLISH.Topic as provided by the
 	// Publisher in EVENT.Details.topic|uri.
 	if sendTopic {
-		event.Details[detailTopic] = msg.Topic
+		event.Details[wamp.DetailTopic] = msg.Topic
 	}
 	if disclose && subscriber != nil && subscriber.HasFeature(wamp.RoleSubscriber, wamp.FeaturePubIdent) {
 		disclosePublisher(pub, event.Details)
@@ -878,14 +874,15 @@ func prepareEvent(pub *wamp.Session, msg *wamp.Publish, pubID wamp.ID, sub *subs
 
 // disclosePublisher adds publisher identity information to EVENT.Details.
 func disclosePublisher(pub *wamp.Session, details wamp.Dict) {
-	details[wamp.RolePublisher] = pub.ID
+	details[wamp.DetailPublisher] = pub.ID
 	// These values are not required by the specification, but are here for
 	// compatibility with Crossbar.
 	pub.Lock()
-	for _, f := range []string{"authid", "authrole"} {
-		if val, ok := pub.Details[f]; ok {
-			details[fmt.Sprintf("%s_%s", wamp.RolePublisher, f)] = val
-		}
+	if val, ok := pub.Details[wamp.DetailAuthID]; ok {
+		details[wamp.DetailPublisherAuthID] = val
+	}
+	if val, ok := pub.Details[wamp.DetailAuthRole]; ok {
+		details[wamp.DetailPublisherAuthRole] = val
 	}
 	pub.Unlock()
 }
@@ -1000,10 +997,10 @@ func (b *broker) subGet(msg *wamp.Invocation) wamp.Message {
 			b.actionChan <- func() {
 				if sub, ok := b.subscriptions[subID]; ok {
 					dict = wamp.Dict{
-						"id":          subID,
-						"created":     sub.created,
-						"uri":         sub.topic,
-						wamp.OptMatch: sub.match,
+						wamp.DetailID:      subID,
+						wamp.DetailCreated: sub.created,
+						wamp.DetailURI:     sub.topic,
+						wamp.OptMatch:      sub.match,
 					}
 				}
 				close(sync)
@@ -1322,7 +1319,7 @@ func (b *broker) subEventHistory(msg *wamp.Invocation) wamp.Message {
 						}
 					}
 
-					eventTopic, ok := entry.event.Details["topic"]
+					eventTopic, ok := entry.event.Details[wamp.DetailTopic]
 					if len(topicUri) > 0 && (!ok || eventTopic != topicUri) {
 						continue
 					}

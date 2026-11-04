@@ -248,7 +248,7 @@ func TestSpecFilterEligibleAuthRole(t *testing.T) {
 
 	authedCfg := client.Config{
 		Realm:        testAuthRealm,
-		HelloDetails: wamp.Dict{"authid": "jdoe"},
+		HelloDetails: wamp.Dict{wamp.DetailAuthID: "jdoe"},
 		AuthHandlers: map[string]client.AuthFunc{
 			"wampcra": clientAuthFunc,
 		},

@@ -247,7 +247,7 @@ func ExampleClient_Subscribe() {
 	patHandler := func(event *wamp.Event) {
 		// Events received for pattern-based (prefix and wildcard)
 		// subscriptions contain the matched topic in the details.
-		eventTopic, _ := wamp.AsURI(event.Details["topic"])
+		eventTopic, _ := wamp.AsURI(event.Details[wamp.DetailTopic])
 		eventData, _ := wamp.AsString(event.Arguments[0])
 		log.Printf("Event data for topic %s: %s", eventTopic, eventData)
 	}

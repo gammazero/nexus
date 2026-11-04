@@ -84,13 +84,14 @@ type WebsocketServer struct {
 	// from details as follows:
 	//
 	//     req *http.Request
-	//     path := []string{"transport", "auth", "request"}
+	//     path := []string{wamp.DetailTransport, wamp.DetailAuth, wamp.DetailRequest}
 	//     v, err := wamp.DictValue(details, path)
 	//     if err == nil {
 	//         req = v.(*http.Request)
 	//     }
 	//
-	// The "cookie" and "nextcookie" values are retrieved similarly.
+	// The wamp.DetailCookie and wamp.DetailNextCookie values are retrieved
+	// similarly.
 	EnableTrackingCookie bool
 	// TrackingCookieSameSiteAttribute defines which SameSite attribute will be
 	// assigned to the next auth cookie if EnableTrackingCookie is true.
@@ -325,13 +326,15 @@ func (s *WebsocketServer) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		const cookieName = "nexus-wamp-cookie"
 		if reqCk, err := r.Cookie(cookieName); err == nil {
 			// Received tracking cookie.
-			authDict["cookie"] = reqCk
+			authDict[wamp.DetailCookie] = reqCk
 		}
 		b := make([]byte, 18)
 		_, err := rand.Read(b)
 		if err == nil {
-			// Create next auth cookie with an 18-byte random value.
-			nextCookie = &http.Cookie{
+			// Create next auth cookie with an 18-byte random value. Secure and
+			// SameSite are set by the TrackingCookieSecureAttribute and
+			// TrackingCookieSameSiteAttribute fields.
+			nextCookie = &http.Cookie{ //nolint:gosec // G124: attributes are configurable
 				Name:     cookieName,
 				Value:    base64.URLEncoding.EncodeToString(b),
 				HttpOnly: true,
@@ -339,7 +342,7 @@ func (s *WebsocketServer) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 				SameSite: s.TrackingCookieSameSiteAttribute,
 			}
 			http.SetCookie(w, nextCookie)
-			authDict["nextcookie"] = nextCookie
+			authDict[wamp.DetailNextCookie] = nextCookie
 		}
 	}
 
@@ -349,7 +352,7 @@ func (s *WebsocketServer) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		if authDict == nil {
 			authDict = wamp.Dict{}
 		}
-		authDict["request"] = r
+		authDict[wamp.DetailRequest] = r
 	}
 
 	// Per RFC 6455 §4.2.2, the server selects the subprotocol from the client's
@@ -378,7 +381,7 @@ func (s *WebsocketServer) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	}
 
 	peerDesc := peerDescription(r.RemoteAddr, r.Header.Values("X-Forwarded-For"))
-	s.handleWebsocket(conn, wamp.Dict{"auth": authDict}, peerDesc)
+	s.handleWebsocket(conn, wamp.Dict{wamp.DetailAuth: authDict}, peerDesc)
 }
 
 // addProtocol registers a serializer for protocol and payload type.

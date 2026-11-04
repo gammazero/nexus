@@ -125,7 +125,7 @@ func TestSpecErrorURIMatrix(t *testing.T) {
 				_, err := connectClientCfgErr(client.Config{
 					Realm: testAuthRealm,
 					HelloDetails: wamp.Dict{
-						"authid": "malory",
+						wamp.DetailAuthID: "malory",
 					},
 					AuthHandlers: map[string]client.AuthFunc{
 						"wampcra": clientAuthFunc,

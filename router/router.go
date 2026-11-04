@@ -261,7 +261,7 @@ func (r *router) AttachClient(client wamp.Peer, transportDetails wamp.Dict) erro
 
 	// Include any transport details with HELLO.Details.
 	if len(transportDetails) != 0 {
-		hello.Details["transport"] = transportDetails
+		hello.Details[wamp.DetailTransport] = transportDetails
 	}
 
 	// Handle any necessary client auth. This results in either a WELCOME
@@ -281,18 +281,18 @@ func (r *router) AttachClient(client wamp.Peer, transportDetails wamp.Dict) erro
 	// only.
 	sessDetails := make(wamp.Dict, len(hello.Details)+len(welcome.Details))
 	for k, v := range hello.Details {
-		if k == "authmethods" || k == "roles" {
+		if k == wamp.DetailAuthMethods || k == wamp.DetailRoles {
 			continue
 		}
 		sessDetails[k] = v
 	}
 	for k, v := range welcome.Details {
-		if k == "roles" {
+		if k == wamp.DetailRoles {
 			continue
 		}
 		sessDetails[k] = v
 	}
-	sessDetails["session"] = sid
+	sessDetails[wamp.DetailSession] = sid
 
 	sess.Details = sessDetails
 
@@ -352,7 +352,7 @@ func (r *router) AddRealm(config *RealmConfig) error {
 // RouterFeatures exposes WAMP features current version provides.
 func (r *router) RouterFeatures() *wamp.Dict {
 	return &wamp.Dict{
-		"roles": wamp.Dict{
+		wamp.DetailRoles: wamp.Dict{
 			wamp.RoleBroker: brokerRole,
 			wamp.RoleDealer: dealerRole,
 		},
@@ -388,13 +388,13 @@ func (r *router) RemoveRealm(name wamp.URI) {
 
 // KillSessionsByAuthid closes every session in the realm that has the authid.
 func (r *router) KillSessionsByAuthid(realm wamp.URI, authid string, reason wamp.URI, message string) (int, error) { //nolint:lll
-	return r.killSessionsByDetail(realm, "authid", authid, reason, message)
+	return r.killSessionsByDetail(realm, wamp.DetailAuthID, authid, reason, message)
 }
 
 // KillSessionsByAuthrole closes every session in the realm that has the
 // authrole.
 func (r *router) KillSessionsByAuthrole(realm wamp.URI, authrole string, reason wamp.URI, message string) (int, error) { //nolint:lll
-	return r.killSessionsByDetail(realm, "authrole", authrole, reason, message)
+	return r.killSessionsByDetail(realm, wamp.DetailAuthRole, authrole, reason, message)
 }
 
 // killSessionsByDetail closes every session in the realm whose session detail

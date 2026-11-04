@@ -350,9 +350,9 @@ func TestPPTPubSub(t *testing.T) {
 	require.Equal(t, wamp.ErrProtocolViolation, abort.Reason)
 
 	greetDetails := wamp.Dict{
-		"roles": wamp.Dict{
-			"publisher": wamp.Dict{
-				"features": wamp.Dict{
+		wamp.DetailRoles: wamp.Dict{
+			wamp.RolePublisher: wamp.Dict{
+				wamp.DetailFeatures: wamp.Dict{
 					wamp.FeaturePayloadPassthruMode: true,
 				},
 			},
@@ -411,7 +411,7 @@ func TestPrefixPatternBasedSubscription(t *testing.T) {
 	rsp = <-sess.Recv()
 	evt, ok := rsp.(*wamp.Event)
 	require.True(t, ok, "expected EVENT")
-	_topic, ok := evt.Details["topic"]
+	_topic, ok := evt.Details[wamp.DetailTopic]
 	require.True(t, ok, "event missing topic")
 	topic := _topic.(wamp.URI)
 	require.Equal(t, testTopic, topic, "wrong topic received")
@@ -459,7 +459,7 @@ func TestWildcardPatternBasedSubscription(t *testing.T) {
 	rsp = <-sess.Recv()
 	evt, ok := rsp.(*wamp.Event)
 	require.True(t, ok, "expected EVENT")
-	_topic, ok := evt.Details["topic"]
+	_topic, ok := evt.Details[wamp.DetailTopic]
 	require.True(t, ok, "event missing topic")
 	topic := _topic.(wamp.URI)
 	require.Equal(t, testTopic, topic, "wrong topic received")
@@ -470,8 +470,8 @@ func TestSubscriberBlackWhiteListing(t *testing.T) {
 		broker := newTestBroker(t, nil)
 		subscriber := newTestPeer()
 		details := wamp.Dict{
-			"authid":   "jdoe",
-			"authrole": "admin",
+			wamp.DetailAuthID:   "jdoe",
+			wamp.DetailAuthRole: "admin",
 		}
 		sess := wamp.NewSession(subscriber, wamp.GlobalID(), details, nil)
 		testTopic := wamp.URI("nexus.test.topic")
@@ -487,9 +487,9 @@ func TestSubscriberBlackWhiteListing(t *testing.T) {
 		publisher := newTestPeer()
 
 		details = wamp.Dict{
-			"roles": wamp.Dict{
-				"publisher": wamp.Dict{
-					"features": wamp.Dict{
+			wamp.DetailRoles: wamp.Dict{
+				wamp.RolePublisher: wamp.Dict{
+					wamp.DetailFeatures: wamp.Dict{
 						"subscriber_blackwhite_listing": true,
 					},
 				},
@@ -581,9 +581,9 @@ func TestPublisherExclusion(t *testing.T) {
 		publisher := newTestPeer()
 
 		details := wamp.Dict{
-			"roles": wamp.Dict{
-				"publisher": wamp.Dict{
-					"features": wamp.Dict{
+			wamp.DetailRoles: wamp.Dict{
+				wamp.RolePublisher: wamp.Dict{
+					wamp.DetailFeatures: wamp.Dict{
 						"publisher_exclusion": true,
 					},
 				},
@@ -628,9 +628,9 @@ func TestPublisherIdentification(t *testing.T) {
 	subscriber := newTestPeer()
 
 	details := wamp.Dict{
-		"roles": wamp.Dict{
-			"subscriber": wamp.Dict{
-				"features": wamp.Dict{
+		wamp.DetailRoles: wamp.Dict{
+			wamp.RoleSubscriber: wamp.Dict{
+				wamp.DetailFeatures: wamp.Dict{
 					"publisher_identification": true,
 				},
 			},
@@ -658,7 +658,7 @@ func TestPublisherIdentification(t *testing.T) {
 	rsp = <-sess.Recv()
 	evt, ok := rsp.(*wamp.Event)
 	require.True(t, ok, "expected EVENT")
-	pub, ok := evt.Details["publisher"]
+	pub, ok := evt.Details[wamp.DetailPublisher]
 	require.True(t, ok, "missing publisher ID")
 	require.Equal(t, pubSess.ID, pub.(wamp.ID), "incorrect publisher ID disclosed")
 }
@@ -677,9 +677,9 @@ func (remoteTestPeer) IsLocal() bool { return false }
 func TestRemoteSubscribersShareEvent(t *testing.T) {
 	broker := newTestBroker(t, nil)
 	pubIdentDetails := wamp.Dict{
-		"roles": wamp.Dict{
-			"subscriber": wamp.Dict{
-				"features": wamp.Dict{
+		wamp.DetailRoles: wamp.Dict{
+			wamp.RoleSubscriber: wamp.Dict{
+				wamp.DetailFeatures: wamp.Dict{
 					"publisher_identification": true,
 				},
 			},
@@ -715,7 +715,7 @@ func TestRemoteSubscribersShareEvent(t *testing.T) {
 		rsp := <-sess.Recv()
 		evt, ok := rsp.(*wamp.Event)
 		require.True(t, ok, "expected EVENT")
-		require.Equal(t, testTopic, evt.Details[detailTopic])
+		require.Equal(t, testTopic, evt.Details[wamp.DetailTopic])
 		require.Equal(t, wamp.List{"hello"}, evt.Arguments)
 		return evt
 	}
@@ -729,10 +729,10 @@ func TestRemoteSubscribersShareEvent(t *testing.T) {
 	require.NotSame(t, evt1, evtLocal)
 
 	for _, evt := range []*wamp.Event{evt1, evtLocal} {
-		_, ok := evt.Details[wamp.RolePublisher]
+		_, ok := evt.Details[wamp.DetailPublisher]
 		require.False(t, ok, "publisher disclosed without publisher_identification")
 	}
-	require.Equal(t, pubSess.ID, evtIdent.Details[wamp.RolePublisher])
+	require.Equal(t, pubSess.ID, evtIdent.Details[wamp.DetailPublisher])
 
 	// A local handler changing its EVENT must not change the shared one.
 	evtLocal.Arguments[0] = "changed"

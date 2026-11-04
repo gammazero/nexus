@@ -62,8 +62,8 @@ func main() {
 		// client send its public key, so that a router can find the client by
 		// key instead.
 		HelloDetails: wamp.Dict{
-			"authid": *authid,
-			"authextra": wamp.Dict{
+			wamp.DetailAuthID: *authid,
+			wamp.DetailAuthExtra: wamp.Dict{
 				"pubkey": hex.EncodeToString(publicKey),
 			},
 		},
@@ -86,7 +86,7 @@ func main() {
 
 	details := cli.RealmDetails()
 	logger.Printf("Authenticated as %v with authrole %v, using %v",
-		details["authid"], details["authrole"], details["authmethod"])
+		details[wamp.DetailAuthID], details[wamp.DetailAuthRole], details[wamp.DetailAuthMethod])
 }
 
 // signChallenge signs the hex encoded challenge in the router's CHALLENGE,
