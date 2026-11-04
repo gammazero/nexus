@@ -189,9 +189,9 @@ func TestCryptoSignAuthenticateUnexpectedMessageType(t *testing.T) {
 	require.Nil(t, welcome)
 }
 
-// TestCryptoSignAuthenticateUnknownAuthid checks that an authid that the
+// TestCryptoSignAuthenticateUnknownAuthID checks that an authid that the
 // keystore does not know is rejected without a CHALLENGE.
-func TestCryptoSignAuthenticateUnknownAuthid(t *testing.T) {
+func TestCryptoSignAuthenticateUnknownAuthID(t *testing.T) {
 	ks, _ := newCryptoSignKeyStore(t)
 	a := auth.NewCryptoSignAuthenticator(ks, time.Second)
 
@@ -200,9 +200,9 @@ func TestCryptoSignAuthenticateUnknownAuthid(t *testing.T) {
 	require.Nil(t, welcome)
 }
 
-// TestCryptoSignAuthenticateMissingAuthid checks that a client without an
+// TestCryptoSignAuthenticateMissingAuthID checks that a client without an
 // authid is rejected without a CHALLENGE.
-func TestCryptoSignAuthenticateMissingAuthid(t *testing.T) {
+func TestCryptoSignAuthenticateMissingAuthID(t *testing.T) {
 	ks, _ := newCryptoSignKeyStore(t)
 	a := auth.NewCryptoSignAuthenticator(ks, time.Second)
 

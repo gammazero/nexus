@@ -1200,11 +1200,11 @@ func TestClientRace(t *testing.T) {
 	// Create a websocket server
 	_, _ = createTestServer(t)
 
-	testUrl := fmt.Sprintf("ws://%s/ws", testAddress)
-	_ = newNetTestKiller(t, testUrl)
+	testURL := fmt.Sprintf("ws://%s/ws", testAddress)
+	_ = newNetTestKiller(t, testURL)
 	logger.Println("Starting callee")
 
-	_ = newNetTestCallee(t, testUrl)
+	_ = newNetTestCallee(t, testURL)
 
 	// If we hit a race condition with the client register, we do not ever return from the Register()
 	logger.Println("Finished test - cleanup")

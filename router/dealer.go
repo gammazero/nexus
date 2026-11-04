@@ -1395,8 +1395,8 @@ func (d *dealer) syncYield(callee *wamp.Session, msg *wamp.Yield, progress, canR
 		if val, ok := msg.Options[wamp.OptPPTCipher]; ok {
 			details[wamp.OptPPTCipher] = val.(string)
 		}
-		if val, ok := msg.Options[wamp.OptPPTKeyId]; ok {
-			details[wamp.OptPPTKeyId] = val.(string)
+		if val, ok := msg.Options[wamp.OptPPTKeyID]; ok {
+			details[wamp.OptPPTKeyID] = val.(string)
 		}
 	}
 

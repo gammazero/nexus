@@ -262,7 +262,7 @@ func connectClientCfgErr(cfg client.Config) (*client.Client, error) {
 	cfg.Logger = cliLogger
 
 	if compress {
-		cfg.WsCfg.EnableCompression = true
+		cfg.WSConfig.EnableCompression = true
 	}
 
 	var addr string
@@ -272,7 +272,7 @@ func connectClientCfgErr(cfg client.Config) (*client.Client, error) {
 		cli, err = client.ConnectNet(context.Background(), addr, cfg)
 	case "https", "wss", "tcps":
 		// If TLS requested, set up TLS configuration to skip verification.
-		cfg.TlsCfg = &tls.Config{
+		cfg.TLSConfig = &tls.Config{
 			InsecureSkipVerify: true,
 		}
 		addr = fmt.Sprintf("%s://%s/", scheme, tcpAddr)
@@ -294,26 +294,26 @@ func connectClientCfgErr(cfg client.Config) (*client.Client, error) {
 		// OK, websocket scheme.
 	default:
 		// Programming error in test.
-		if cfg.WsCfg.EnableCompression != false {
+		if cfg.WSConfig.EnableCompression != false {
 			panic("EnableCompression set non-websocket client")
 		}
-		if cfg.WsCfg.Jar != nil {
+		if cfg.WSConfig.Jar != nil {
 			panic("CookieJar provided for non-websocket client")
 		}
-		if cfg.WsCfg.ProxyURL != "" {
+		if cfg.WSConfig.ProxyURL != "" {
 			panic("ProsyURL provided for non-websocket client")
 		}
-		if cfg.WsCfg.KeepAlive != 0 {
+		if cfg.WSConfig.KeepAlive != 0 {
 			panic("KeepAlive provided for non-websocket client")
 		}
 	}
 
-	if cfg.WsCfg.Jar != nil {
+	if cfg.WSConfig.Jar != nil {
 		cookieURL, err := client.CookieURL(addr)
 		if err != nil {
 			return nil, err
 		}
-		cookies := cfg.WsCfg.Jar.Cookies(cookieURL)
+		cookies := cfg.WSConfig.Jar.Cookies(cookieURL)
 		cliLogger.Println("Client received cookies from router:", cookies)
 		var found bool
 		for i := range cookies {
@@ -365,8 +365,8 @@ func TestHandshake(t *testing.T) {
 			fmt.Fprintln(os.Stderr, err)
 			os.Exit(1)
 		}
-		cfg.WsCfg.Jar = jar
-		cfg.WsCfg.KeepAlive = keepAliveInterval
+		cfg.WSConfig.Jar = jar
+		cfg.WSConfig.KeepAlive = keepAliveInterval
 	}
 
 	cli, err := connectClientCfgErr(cfg)

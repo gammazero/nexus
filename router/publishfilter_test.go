@@ -15,19 +15,19 @@ func TestFilterBlacklist(t *testing.T) {
 	)
 
 	allowedID := wamp.ID(1234)
-	allowedAuthid := "root"
-	allowedAuthrole := "admin"
+	allowedAuthID := "root"
+	allowedAuthRole := "admin"
 
 	blacklistID := wamp.ID(9876)
-	blacklistAuthid := "guest"
-	blacklistAuthrole := "user"
+	blacklistAuthID := "guest"
+	blacklistAuthRole := "user"
 
 	pub := &wamp.Publish{
 		Request: wamp.GlobalID(),
 		Options: wamp.Dict{
 			"exclude":          wamp.List{blacklistID},
-			"exclude_authid":   wamp.List{blacklistAuthid},
-			"exclude_authrole": wamp.List{blacklistAuthrole},
+			"exclude_authid":   wamp.List{blacklistAuthID},
+			"exclude_authrole": wamp.List{blacklistAuthRole},
 		},
 		Topic: wamp.URI("blacklist.test"),
 	}
@@ -35,8 +35,8 @@ func TestFilterBlacklist(t *testing.T) {
 	pf := NewSimplePublishFilter(pub)
 
 	details := wamp.Dict{
-		wamp.DetailAuthID:   allowedAuthid,
-		wamp.DetailAuthRole: allowedAuthrole,
+		wamp.DetailAuthID:   allowedAuthID,
+		wamp.DetailAuthRole: allowedAuthRole,
 		"misc":              "other",
 	}
 	sess := &wamp.Session{ID: allowedID, Details: details}
@@ -48,12 +48,12 @@ func TestFilterBlacklist(t *testing.T) {
 
 	sess = &wamp.Session{ID: allowedID, Details: details}
 	// Check that session is denied by authid.
-	sess.Details[wamp.DetailAuthID] = blacklistAuthid
+	sess.Details[wamp.DetailAuthID] = blacklistAuthID
 	require.False(t, pf.Allowed(sess), shouldDenyMsg)
 
 	// Check that session is denied by authrole.
-	sess.Details[wamp.DetailAuthID] = allowedAuthid
-	sess.Details[wamp.DetailAuthRole] = blacklistAuthrole
+	sess.Details[wamp.DetailAuthID] = allowedAuthID
+	sess.Details[wamp.DetailAuthRole] = blacklistAuthRole
 	require.False(t, pf.Allowed(sess), shouldDenyMsg)
 
 	// Check that session is allowed by not having value in blacklist.
@@ -68,19 +68,19 @@ func TestFilterWhitelist(t *testing.T) {
 	)
 
 	allowedID := wamp.ID(1234)
-	allowedAuthid := "root"
-	allowedAuthrole := "admin"
+	allowedAuthID := "root"
+	allowedAuthRole := "admin"
 
 	deniedID := wamp.ID(9876)
-	deniedAuthid := "guest"
-	deniedAuthrole := "user"
+	deniedAuthID := "guest"
+	deniedAuthRole := "user"
 
 	pub := &wamp.Publish{
 		Request: wamp.GlobalID(),
 		Options: wamp.Dict{
 			"eligible":          wamp.List{allowedID},
-			"eligible_authid":   wamp.List{allowedAuthid},
-			"eligible_authrole": wamp.List{allowedAuthrole},
+			"eligible_authid":   wamp.List{allowedAuthID},
+			"eligible_authrole": wamp.List{allowedAuthRole},
 		},
 		Topic: wamp.URI("whitelist.test"),
 	}
@@ -88,8 +88,8 @@ func TestFilterWhitelist(t *testing.T) {
 	pf := NewSimplePublishFilter(pub)
 
 	details := wamp.Dict{
-		wamp.DetailAuthID:   allowedAuthid,
-		wamp.DetailAuthRole: allowedAuthrole,
+		wamp.DetailAuthID:   allowedAuthID,
+		wamp.DetailAuthRole: allowedAuthRole,
 		"misc":              "other",
 	}
 	sess := &wamp.Session{ID: allowedID, Details: details}
@@ -101,12 +101,12 @@ func TestFilterWhitelist(t *testing.T) {
 
 	sess = &wamp.Session{ID: allowedID, Details: details}
 	// Check that session is denied by authid.
-	sess.Details[wamp.DetailAuthID] = deniedAuthid
+	sess.Details[wamp.DetailAuthID] = deniedAuthID
 	require.False(t, pf.Allowed(sess), shouldDenyMsg)
 
 	// Check that session is denied by authrole.
-	sess.Details[wamp.DetailAuthID] = allowedAuthid
-	sess.Details[wamp.DetailAuthRole] = deniedAuthrole
+	sess.Details[wamp.DetailAuthID] = allowedAuthID
+	sess.Details[wamp.DetailAuthRole] = deniedAuthRole
 	require.False(t, pf.Allowed(sess), shouldDenyMsg)
 
 	// Check that session is denied by not having value in whitelise.
@@ -121,22 +121,22 @@ func TestFilterBlackWhitelistPrecedence(t *testing.T) {
 	)
 
 	allowedID := wamp.ID(1234)
-	allowedAuthid := "root"
-	allowedAuthrole := "admin"
+	allowedAuthID := "root"
+	allowedAuthRole := "admin"
 
 	blacklistID := wamp.ID(9876)
-	blacklistAuthid := "guest"
-	blacklistAuthrole := "user"
+	blacklistAuthID := "guest"
+	blacklistAuthRole := "user"
 
 	pub := &wamp.Publish{
 		Request: wamp.GlobalID(),
 		Options: wamp.Dict{
 			"exclude":           wamp.List{blacklistID},
-			"exclude_authid":    wamp.List{blacklistAuthid},
-			"exclude_authrole":  wamp.List{blacklistAuthrole},
+			"exclude_authid":    wamp.List{blacklistAuthID},
+			"exclude_authrole":  wamp.List{blacklistAuthRole},
 			"eligible":          wamp.List{allowedID, blacklistID},
-			"eligible_authid":   wamp.List{allowedAuthid, blacklistAuthid},
-			"eligible_authrole": wamp.List{allowedAuthrole},
+			"eligible_authid":   wamp.List{allowedAuthID, blacklistAuthID},
+			"eligible_authrole": wamp.List{allowedAuthRole},
 		},
 		Topic: wamp.URI("whitelist.test"),
 	}
@@ -144,8 +144,8 @@ func TestFilterBlackWhitelistPrecedence(t *testing.T) {
 	pf := NewSimplePublishFilter(pub)
 
 	details := wamp.Dict{
-		wamp.DetailAuthID:   allowedAuthid,
-		wamp.DetailAuthRole: allowedAuthrole,
+		wamp.DetailAuthID:   allowedAuthID,
+		wamp.DetailAuthRole: allowedAuthRole,
 		"misc":              "other",
 	}
 
@@ -158,6 +158,6 @@ func TestFilterBlackWhitelistPrecedence(t *testing.T) {
 
 	sess = &wamp.Session{ID: allowedID, Details: details}
 	// Check that session is denied by authid even though also whitelisted.
-	sess.Details[wamp.DetailAuthID] = blacklistAuthid
+	sess.Details[wamp.DetailAuthID] = blacklistAuthID
 	require.False(t, pf.Allowed(sess), shouldDenyMsg)
 }

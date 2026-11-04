@@ -137,9 +137,9 @@ func TestConnectNet(t *testing.T) {
 				ResponseTimeout: time.Second,
 				Logger:          logger,
 			}
-			cfg.WsCfg.Jar = jar
+			cfg.WSConfig.Jar = jar
 			if tc.tls {
-				cfg.TlsCfg = clientTLS
+				cfg.TLSConfig = clientTLS
 			}
 			cl, err := client.ConnectNet(connectContext(t), tc.url, cfg)
 			require.NoError(t, err)
@@ -172,7 +172,7 @@ func TestConnectNet(t *testing.T) {
 	require.ErrorAs(t, err, &verifyErr)
 
 	_, err = client.ConnectNet(t.Context(), "unix://"+sockPath,
-		client.Config{Realm: testRealm, Logger: logger, TlsCfg: clientTLS})
+		client.Config{Realm: testRealm, Logger: logger, TLSConfig: clientTLS})
 	require.EqualError(t, err, "tls not supported for unix")
 
 	_, err = client.ConnectNet(t.Context(), "ftp://"+tcpAddr,

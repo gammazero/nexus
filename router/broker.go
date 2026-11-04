@@ -497,13 +497,13 @@ func (b *broker) syncSubscribe(subscriber *wamp.Session, msg *wamp.Subscribe, ma
 	}
 
 	// Add the subscription ID to the set of subscriptions for the subscriber.
-	subIdSet, ok := b.sessionSubIDSet[subscriber]
+	subIDSet, ok := b.sessionSubIDSet[subscriber]
 	if !ok {
 		// This subscriber does not have any other subscriptions, so new set.
-		subIdSet = map[wamp.ID]struct{}{}
-		b.sessionSubIDSet[subscriber] = subIdSet
+		subIDSet = map[wamp.ID]struct{}{}
+		b.sessionSubIDSet[subscriber] = subIDSet
 	}
-	subIdSet[sub.id] = struct{}{}
+	subIDSet[sub.id] = struct{}{}
 
 	if !existingSub {
 		b.syncPubSubCreateMeta(subscriber.ID, sub)
@@ -1105,7 +1105,7 @@ func (b *broker) subEventHistory(msg *wamp.Invocation) wamp.Message {
 	var untilDate time.Time
 	var dateStr string
 	var topicStr string
-	var topicUri wamp.URI
+	var topicURI wamp.URI
 	var fromPub wamp.ID
 	var afterPub wamp.ID
 	var beforePub wamp.ID
@@ -1121,7 +1121,7 @@ func (b *broker) subEventHistory(msg *wamp.Invocation) wamp.Message {
 		}
 	}
 
-	subId, ok := wamp.AsID(msg.Arguments[0])
+	subID, ok := wamp.AsID(msg.Arguments[0])
 
 	if !ok {
 		return &wamp.Error{
@@ -1209,7 +1209,7 @@ func (b *broker) subEventHistory(msg *wamp.Invocation) wamp.Message {
 
 	topicStr, ok = msg.ArgumentsKw["topic"].(string)
 	if ok {
-		topicUri = wamp.URI(topicStr)
+		topicURI = wamp.URI(topicStr)
 	}
 
 	fromPubOp, ok := msg.ArgumentsKw["from_publication"]
@@ -1271,7 +1271,7 @@ func (b *broker) subEventHistory(msg *wamp.Invocation) wamp.Message {
 
 		var filteredEvents []storedEvent
 
-		if subscription, ok := b.subscriptions[subId]; ok {
+		if subscription, ok := b.subscriptions[subID]; ok {
 			if storeItem, ok := b.eventHistoryStore[subscription]; ok {
 				isLimitReached = storeItem.atLimit()
 
@@ -1320,7 +1320,7 @@ func (b *broker) subEventHistory(msg *wamp.Invocation) wamp.Message {
 					}
 
 					eventTopic, ok := entry.event.Details[wamp.DetailTopic]
-					if len(topicUri) > 0 && (!ok || eventTopic != topicUri) {
+					if len(topicURI) > 0 && (!ok || eventTopic != topicURI) {
 						continue
 					}
 

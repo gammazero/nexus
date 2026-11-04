@@ -281,8 +281,8 @@ func (r *realm) setupMetaProcedures() {
 	r.registerMetaProcedure(wamp.MetaProcSessionGet, r.sessionGet)
 	if r.enableMetaKill {
 		r.registerMetaProcedure(wamp.MetaProcSessionKill, r.sessionKill)
-		r.registerMetaProcedure(wamp.MetaProcSessionKillByAuthid, r.sessionKillByAuthid)
-		r.registerMetaProcedure(wamp.MetaProcSessionKillByAuthrole, r.sessionKillByAuthrole)
+		r.registerMetaProcedure(wamp.MetaProcSessionKillByAuthID, r.sessionKillByAuthID)
+		r.registerMetaProcedure(wamp.MetaProcSessionKillByAuthRole, r.sessionKillByAuthRole)
 		r.registerMetaProcedure(wamp.MetaProcSessionKillAll, r.sessionKillAll)
 	}
 	if r.enableMetaModify {
@@ -1179,11 +1179,11 @@ func (r *realm) sessionKill(msg *wamp.Invocation) wamp.Message {
 	}
 }
 
-// sessionKillByAuthid is a session meta procedure that closes all currently
+// sessionKillByAuthID is a session meta procedure that closes all currently
 // connected sessions that have the specified authid. If the caller's own
 // session has the specified authid, the caller's session is excluded from the
 // closed sessions.
-func (r *realm) sessionKillByAuthid(msg *wamp.Invocation) wamp.Message {
+func (r *realm) sessionKillByAuthID(msg *wamp.Invocation) wamp.Message {
 	if len(msg.Arguments) == 0 {
 		return makeError(msg.Request, wamp.ErrNoSuchSession)
 	}
@@ -1207,11 +1207,11 @@ func (r *realm) sessionKillByAuthid(msg *wamp.Invocation) wamp.Message {
 	}
 }
 
-// sessionKillByAuthrole is a session meta procedure that closes all currently
+// sessionKillByAuthRole is a session meta procedure that closes all currently
 // connected sessions that have the specified authrole. If the caller's own
 // session has the specified authrole, the caller's session is excluded from
 // the closed sessions.
-func (r *realm) sessionKillByAuthrole(msg *wamp.Invocation) wamp.Message {
+func (r *realm) sessionKillByAuthRole(msg *wamp.Invocation) wamp.Message {
 	if len(msg.Arguments) == 0 {
 		return makeError(msg.Request, wamp.ErrNoSuchSession)
 	}
