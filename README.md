@@ -41,6 +41,7 @@ The Web Application Messaging Protocol (WAMP) is an open standard WebSocket subp
 WAMP is also referred to as WAMP-proto it distinguish it from [other uses](https://en.wikipedia.org/wiki/WAMP_(disambiguation)) of the acronym.
 
 Using WAMP you can build distributed systems out of application components which are loosely coupled and communicate in (soft) real-time.
+See [Understanding WAMP](https://github.com/gammazero/nexus/blob/main/docs/what-is-wamp.md#understanding-wamp) for a more detailed description of WAMP.
 
 Nexus is a software package that provides a WAMP router library, client library, and stand-alone WAMP router service.
 This nexus package provides a messaging system for building distributed applications and services.
@@ -49,6 +50,8 @@ Endpoints using websockets, TCP sockets, Unix sockets, and in-process connection
 - The router library can be used to build custom WAMP routers or to embed a WAMP router in an application.
 - The client library can be used to build clients that connect to any WAMP server, or to communicate in-process with a WAMP router embedded in the same application.
 - The router service can be run as-is to provide WAMP routing.
+
+See [nexus overview](https://github.com/gammazero/nexus/blob/main/docs/nexus-overview.md) for more information.
 
 ## Installation
 
@@ -68,6 +71,8 @@ wget https://raw.githubusercontent.com/gammazero/nexus/main/cmd/nexusd/etc/nexus
 vi nexus.json
 nexusd -c nexus.json
 ```
+
+See [Getting Started](https://github.com/gammazero/nexus/blob/main/docs/getting-started.md#getting-started) for more detail on configuring and running the router.
 
 ### Install examples to run and test with
 
