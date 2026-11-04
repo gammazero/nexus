@@ -38,7 +38,7 @@ API documentation.
 
 The Web Application Messaging Protocol (WAMP) is an open standard WebSocket subprotocol that provides two application messaging patterns in one unified protocol:
 [Remote Procedure Calls](http://wamp-proto.org/faq/index.html#rpc) and [Publish & Subscribe](http://wamp-proto.org/faq/index.html#pubsub).
-WAMP is also referred to as WAMP-proto it distinguish it from [other uses](https://en.wikipedia.org/wiki/WAMP_(disambiguation) of the acronym.
+WAMP is also referred to as WAMP-proto it distinguish it from [other uses](https://en.wikipedia.org/wiki/WAMP_(disambiguation)) of the acronym.
 
 Using WAMP you can build distributed systems out of application components which are loosely coupled and communicate in (soft) real-time.
 
@@ -116,7 +116,7 @@ Finally, you can also run the container process as an unprivileged user.
 ## Examples
 
 Look at the examples to see how to create simple clients and servers.
-Follow the[examples/README.md](https://github.com/gammazero/nexus/blob/main/examples/README.md).
+Follow the [examples/README.md](https://github.com/gammazero/nexus/blob/main/examples/README.md).
 Examples of using advanced profile features are also available in the [documentation](docs).
 
 See [examples](https://github.com/gammazero/nexus/tree/main/examples)
