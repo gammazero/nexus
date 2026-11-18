@@ -6,6 +6,9 @@ import (
 	"sync"
 )
 
+// IDs are integers between (inclusive) 1 and 2^53 (9007199254740992)
+type ID uint64
+
 // MaxID is the maximum valid WAMP ID.
 const MaxID = 1 << 53
 
