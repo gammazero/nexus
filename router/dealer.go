@@ -1,7 +1,6 @@
 package router
 
 import (
-	"errors"
 	"fmt"
 	"maps"
 	"math/rand"
@@ -10,6 +9,7 @@ import (
 	"time"
 
 	"github.com/gammazero/deque"
+	"github.com/gammazero/nexus/v3/router/helpers"
 	"github.com/gammazero/nexus/v3/stdlog"
 	"github.com/gammazero/nexus/v3/wamp"
 )
@@ -29,16 +29,7 @@ const (
 	// before it can send any other message, so a callee that produces results
 	// faster than its caller reads them is slowed to the caller's pace.
 	maxPendingYields = 64
-	// error message for peer not announcing PPT support.
-	pptNotSupportedMsg = "peer is trying to use Payload PassThru Mode without announcing support for it"
 )
-
-// ErrPPTNotSupportedByPeer is the error for a peer that uses Payload PassThru
-// Mode without announcing support for it.
-//
-// Deprecated: The router does not return this error. Its text is sent only as
-// the message in the details of an ERROR or ABORT.
-var ErrPPTNotSupportedByPeer = errors.New(pptNotSupportedMsg)
 
 // Role information for this dealer.
 var dealerRole = wamp.Dict{ //nolint:gochecknoglobals
@@ -1000,7 +991,7 @@ func (d *dealer) syncCall(caller *wamp.Session, msg *wamp.Call) {
 
 			// Every side supports PPT feature. Let's fill PPT options for
 			// callee.
-			pptOptionsToDetails(invk.options, details)
+			helpers.PPTOptionsToDetails(invk.options, details)
 		}
 
 		// If the callee has requested disclosure of caller identity when the
@@ -1361,14 +1352,14 @@ func (d *dealer) syncYield(callee *wamp.Session, msg *wamp.Yield, progress, canR
 				Type:    msg.MessageType(),
 				Request: msg.Request,
 				Details: wamp.Dict{
-					"error": pptNotSupportedMsg,
+					"error": helpers.PPTNotSupportedMsg,
 				},
 				Error: wamp.ErrFeatureNotSupported,
 			})
 			// Protocol violation, so need to abort connection.
 			abortMsg := wamp.Abort{Reason: wamp.ErrProtocolViolation}
 			abortMsg.Details = wamp.Dict{}
-			abortMsg.Details[wamp.OptMessage] = pptNotSupportedMsg
+			abortMsg.Details[wamp.OptMessage] = helpers.PPTNotSupportedMsg
 			callee.EndRecvAbort(&abortMsg)
 			return false
 		}
@@ -1380,7 +1371,7 @@ func (d *dealer) syncYield(callee *wamp.Session, msg *wamp.Yield, progress, canR
 				Type:    msg.MessageType(),
 				Request: msg.Request,
 				Details: wamp.Dict{
-					"error": pptNotSupportedMsg,
+					"error": helpers.PPTNotSupportedMsg,
 				},
 				Error: wamp.ErrFeatureNotSupported,
 			})

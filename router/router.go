@@ -13,6 +13,7 @@ import (
 	"sync"
 	"time"
 
+	"github.com/gammazero/nexus/v3/router/broker"
 	"github.com/gammazero/nexus/v3/stdlog"
 	"github.com/gammazero/nexus/v3/wamp"
 )
@@ -353,7 +354,7 @@ func (r *router) AddRealm(config *RealmConfig) error {
 func (r *router) RouterFeatures() *wamp.Dict {
 	return &wamp.Dict{
 		wamp.DetailRoles: wamp.Dict{
-			wamp.RoleBroker: brokerRole,
+			wamp.RoleBroker: broker.Role(),
 			wamp.RoleDealer: dealerRole,
 		},
 	}

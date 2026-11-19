@@ -10,6 +10,7 @@ import (
 	"time"
 
 	"github.com/gammazero/nexus/v3/router/auth"
+	"github.com/gammazero/nexus/v3/router/broker"
 	"github.com/gammazero/nexus/v3/stdlog"
 	"github.com/gammazero/nexus/v3/transport"
 	"github.com/gammazero/nexus/v3/wamp"
@@ -51,7 +52,7 @@ type testamentBucket struct {
 type realm struct {
 	uri wamp.URI
 
-	broker *broker
+	broker *broker.Broker
 	dealer *dealer
 
 	authorizer Authorizer
@@ -109,29 +110,15 @@ var (
 	}
 )
 
-// checkRealmConfig returns an error if config is not valid for creating a
-// realm. It is called before the realm's broker and dealer are created, so
-// that an invalid config does not leave their goroutines running.
-func checkRealmConfig(config *RealmConfig) error {
-	if !config.URI.ValidURI(config.StrictURI, "") {
-		return fmt.Errorf(
-			"invalid realm URI %v (URI strict checking %v)", config.URI, config.StrictURI)
-	}
-	if config.EventBacklog < 0 {
-		return fmt.Errorf("negative event backlog: %d", config.EventBacklog)
-	}
-	return nil
-}
-
 // newRealm creates a new realm with the given RealmConfig, broker and dealer.
 // The config must have been checked with checkRealmConfig.
 func newRealm(config *RealmConfig, logger stdlog.StdLog) (*realm, error) {
-	err := checkRealmConfig(config)
+	err := config.validate()
 	if err != nil {
 		return nil, err
 	}
 
-	broker, err := newBroker(logger, config)
+	broker, err := broker.New(logger, &config.Broker)
 	if err != nil {
 		return nil, err
 	}
@@ -264,7 +251,7 @@ func (r *realm) close() {
 
 	// No new messages, so safe to close dealer and broker.
 	r.dealer.close()
-	r.broker.close()
+	r.broker.Close()
 
 	// Finally close realm's action channel.
 	close(r.actionChan)
@@ -297,16 +284,16 @@ func (r *realm) setupMetaProcedures() {
 	r.registerMetaProcedure(wamp.MetaProcRegCountCallees, r.dealer.regCountCallees)
 
 	// Register to handle subscription meta procedures.
-	r.registerMetaProcedure(wamp.MetaProcSubList, r.broker.subList)
-	r.registerMetaProcedure(wamp.MetaProcSubLookup, r.broker.subLookup)
-	r.registerMetaProcedure(wamp.MetaProcSubMatch, r.broker.subMatch)
-	r.registerMetaProcedure(wamp.MetaProcSubGet, r.broker.subGet)
-	r.registerMetaProcedure(wamp.MetaProcSubListSubscribers, r.broker.subListSubscribers)
-	r.registerMetaProcedure(wamp.MetaProcSubCountSubscribers, r.broker.subCountSubscribers)
+	r.registerMetaProcedure(wamp.MetaProcSubList, r.broker.SubList)
+	r.registerMetaProcedure(wamp.MetaProcSubLookup, r.broker.SubLookup)
+	r.registerMetaProcedure(wamp.MetaProcSubMatch, r.broker.SubMatch)
+	r.registerMetaProcedure(wamp.MetaProcSubGet, r.broker.SubGet)
+	r.registerMetaProcedure(wamp.MetaProcSubListSubscribers, r.broker.SubListSubscribers)
+	r.registerMetaProcedure(wamp.MetaProcSubCountSubscribers, r.broker.SubCountSubscribers)
 	// Deprecated: misspelled name this procedure previously registered under.
 	// Registered as an alias so that clients that call it keep working.
-	r.registerMetaProcedure(wamp.URI("wamp.subscription.count_suscribers"), r.broker.subCountSubscribers) //nolint:staticcheck // registers the deprecated alias on purpose
-	r.registerMetaProcedure(wamp.MetaProcEventHistory, r.broker.subEventHistory)
+	r.registerMetaProcedure(wamp.URI("wamp.subscription.count_suscribers"), r.broker.SubCountSubscribers) //nolint:staticcheck // registers the deprecated alias on purpose
+	r.registerMetaProcedure(wamp.MetaProcEventHistory, r.broker.SubEventHistory)
 
 	// Register to handle testament meta procedures.
 	r.registerMetaProcedure(wamp.MetaProcSessionAddTestament, r.testamentAdd)
@@ -412,7 +399,7 @@ func (r *realm) onLeave(sess *wamp.Session, shutdown, killAll bool) {
 		}
 
 		r.dealer.removeSession(sess, !shutdown)
-		r.broker.removeSession(sess, !shutdown)
+		r.broker.RemoveSession(sess, !shutdown)
 		close(sync)
 	}
 	<-sync
@@ -630,7 +617,7 @@ func (r *realm) handleInboundMessages(sess *wamp.Session) (wamp.Message, bool, b
 
 		switch msg := msg.(type) {
 		case *wamp.Publish:
-			r.broker.publish(sess, msg)
+			r.broker.Publish(sess, msg)
 		case *wamp.Yield:
 			r.dealer.yield(sess, msg)
 		case *wamp.Call:
@@ -642,11 +629,11 @@ func (r *realm) handleInboundMessages(sess *wamp.Session) (wamp.Message, bool, b
 		case *wamp.Cancel:
 			r.dealer.cancel(sess, msg)
 		case *wamp.Subscribe:
-			r.broker.subscribe(sess, msg)
+			r.broker.Subscribe(sess, msg)
 		case *wamp.Register:
 			r.dealer.register(sess, msg)
 		case *wamp.Unsubscribe:
-			r.broker.unsubscribe(sess, msg)
+			r.broker.Unsubscribe(sess, msg)
 		case *wamp.Unregister:
 			r.dealer.unregister(sess, msg)
 
@@ -818,7 +805,7 @@ func (r *realm) authClient(sid wamp.ID, client wamp.Peer, details wamp.Dict) (*w
 			wamp.DetailAuthMethod:   "local",
 			wamp.DetailAuthProvider: "static",
 			wamp.DetailRoles: wamp.Dict{
-				wamp.RoleBroker: r.broker.role(),
+				wamp.RoleBroker: broker.Role(),
 				wamp.RoleDealer: r.dealer.role(),
 			},
 		}
@@ -870,7 +857,7 @@ func (r *realm) authClient(sid wamp.ID, client wamp.Peer, details wamp.Dict) (*w
 	}
 	welcome.Details[wamp.DetailAuthMethod] = method
 	welcome.Details[wamp.DetailRoles] = wamp.Dict{
-		wamp.RoleBroker: r.broker.role(),
+		wamp.RoleBroker: broker.Role(),
 		wamp.RoleDealer: r.dealer.role(),
 	}
 	return welcome, nil

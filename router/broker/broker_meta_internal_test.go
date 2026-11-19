@@ -1,4 +1,4 @@
-package router
+package broker
 
 import (
 	"testing"
@@ -29,11 +29,11 @@ type metaSubscriber struct {
 
 // subscribeMeta subscribes a new local or remote session to topic with the
 // match policy, and returns it with its subscription ID.
-func subscribeMeta(t *testing.T, b *broker, topic wamp.URI, match string, local bool) metaSubscriber {
+func subscribeMeta(t *testing.T, b *Broker, topic wamp.URI, match string, local bool) metaSubscriber {
 	t.Helper()
 	peer := &metaTestPeer{ch: make(chan wamp.Message, 16), local: local}
 	sess := wamp.NewSession(peer, wamp.GlobalID(), nil, nil)
-	b.subscribe(sess, &wamp.Subscribe{
+	b.Subscribe(sess, &wamp.Subscribe{
 		Request: 1,
 		Topic:   topic,
 		Options: wamp.Dict{wamp.OptMatch: match},
@@ -58,7 +58,7 @@ func drainEvents(subs ...metaSubscriber) [][]wamp.Message {
 }
 
 // runOnBroker runs f on the broker goroutine, as sync functions must be.
-func runOnBroker(b *broker, f func()) {
+func runOnBroker(b *Broker, f func()) {
 	done := make(chan struct{})
 	b.actionChan <- func() {
 		f()

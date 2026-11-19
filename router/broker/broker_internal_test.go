@@ -1,14 +1,27 @@
-package router //nolint:testpackage
+package broker
 
 import (
+	"log"
+	"os"
 	"testing"
 	"testing/synctest"
 	"time"
 
 	"github.com/stretchr/testify/require"
 
+	"github.com/gammazero/nexus/v3/stdlog"
 	"github.com/gammazero/nexus/v3/wamp"
 )
+
+var (
+	debug  bool
+	logger stdlog.StdLog
+)
+
+func init() {
+	debug = false
+	logger = log.New(os.Stdout, "", log.LstdFlags)
+}
 
 type testPeer struct {
 	in chan wamp.Message
@@ -23,14 +36,36 @@ func newTestPeer() *testPeer {
 func (p *testPeer) Recv() <-chan wamp.Message { return p.in }
 func (p *testPeer) Send() chan<- wamp.Message { return p.in }
 func (p *testPeer) Close()                    {}
+func (p *testPeer) IsLocal() bool             { return true }
 
-func (p *testPeer) IsLocal() bool { return true }
+// blockedSession returns a session whose single-slot outbound queue is already
+// full, so that nothing more can be queued to it.
+func blockedSession() (*wamp.Session, *testPeer) {
+	peer := newTestPeer()
+	peer.Send() <- &wamp.Hello{}
+	return wamp.NewSession(peer, 0, nil, nil), peer
+}
 
-func newTestBroker(t *testing.T, eventCfgs []*TopicEventHistoryConfig) *broker {
-	b, err := newBroker(logger, &RealmConfig{AllowDisclose: true, Debug: debug, EventHistory: eventCfgs})
+// requireAckAfterHello checks that peer, from blockedSession, receives the
+// message that blocked it, then one ack, and nothing else. It returns the
+// ack.
+func requireAckAfterHello(t *testing.T, peer *testPeer) wamp.Message {
+	t.Helper()
+	require.IsType(t, &wamp.Hello{}, <-peer.Recv())
+	ack := <-peer.Recv()
+	select {
+	case msg := <-peer.Recv():
+		require.FailNow(t, "blocked session must receive only the ack", "got %T", msg)
+	default:
+	}
+	return ack
+}
+
+func newTestBroker(t *testing.T, eventCfgs []*TopicEventHistoryConfig) *Broker {
+	b, err := New(logger, &Config{AllowDisclose: true, Debug: debug, EventHistory: eventCfgs})
 	require.NoError(t, err, "Can not initialize broker")
 	t.Cleanup(func() {
-		b.close()
+		b.Close()
 	})
 	return b
 }
@@ -41,7 +76,7 @@ func TestBasicSubscribe(t *testing.T) {
 	subscriber := newTestPeer()
 	sess := wamp.NewSession(subscriber, 0, nil, nil)
 	testTopic := wamp.URI("nexus.test.topic")
-	broker.subscribe(sess, &wamp.Subscribe{Request: 123, Topic: testTopic})
+	broker.Subscribe(sess, &wamp.Subscribe{Request: 123, Topic: testTopic})
 
 	// Test that subscriber received SUBSCRIBED message
 	rsp := <-sess.Recv()
@@ -64,7 +99,7 @@ func TestBasicSubscribe(t *testing.T) {
 	require.True(t, ok, "broker session's subscriber ID set missing subscription ID")
 
 	// Test subscribing to same topic again.
-	broker.subscribe(sess, &wamp.Subscribe{Request: 123, Topic: testTopic})
+	broker.Subscribe(sess, &wamp.Subscribe{Request: 123, Topic: testTopic})
 	// Test that subscriber received SUBSCRIBED message
 	rsp = <-sess.Recv()
 	waitBroker(broker)
@@ -83,7 +118,7 @@ func TestBasicSubscribe(t *testing.T) {
 
 	// Test subscribing to different topic.
 	testTopic2 := wamp.URI("nexus.test.topic2")
-	broker.subscribe(sess, &wamp.Subscribe{Request: 123, Topic: testTopic2})
+	broker.Subscribe(sess, &wamp.Subscribe{Request: 123, Topic: testTopic2})
 	// Test that subscriber received SUBSCRIBED message
 	rsp = <-sess.Recv()
 	waitBroker(broker)
@@ -110,7 +145,7 @@ func TestUnsubscribe(t *testing.T) {
 	// Subscribe session1 to topic
 	subscriber := newTestPeer()
 	sess1 := wamp.NewSession(subscriber, 0, nil, nil)
-	broker.subscribe(sess1, &wamp.Subscribe{Request: 123, Topic: testTopic})
+	broker.Subscribe(sess1, &wamp.Subscribe{Request: 123, Topic: testTopic})
 	rsp := <-sess1.Recv()
 	waitBroker(broker)
 	subID := rsp.(*wamp.Subscribed).Subscription
@@ -118,7 +153,7 @@ func TestUnsubscribe(t *testing.T) {
 	// Subscribe session2 to topic
 	subscriber2 := newTestPeer()
 	sess2 := wamp.NewSession(subscriber2, 0, nil, nil)
-	broker.subscribe(sess2, &wamp.Subscribe{Request: 567, Topic: testTopic})
+	broker.Subscribe(sess2, &wamp.Subscribe{Request: 567, Topic: testTopic})
 	rsp = <-sess2.Recv()
 	waitBroker(broker)
 	subID2 := rsp.(*wamp.Subscribed).Subscription
@@ -136,7 +171,7 @@ func TestUnsubscribe(t *testing.T) {
 	require.Equal(t, 1, len(subIDSet), "wrong number of subscription ID for session 2")
 
 	// Test unsubscribing session1 from topic.
-	broker.unsubscribe(sess1, &wamp.Unsubscribe{Request: 124, Subscription: subID})
+	broker.Unsubscribe(sess1, &wamp.Unsubscribe{Request: 124, Subscription: subID})
 	// Check that session received UNSUBSCRIBED message.
 	rsp = <-sess1.Recv()
 	unsub, ok := rsp.(*wamp.Unsubscribed)
@@ -162,14 +197,14 @@ func TestUnsubscribe(t *testing.T) {
 	require.True(t, ok, "session 2 subscription ID set missing")
 
 	// Test unsubscribing session2 from invalid subscription ID.
-	broker.unsubscribe(sess2, &wamp.Unsubscribe{Request: 124, Subscription: 747})
+	broker.Unsubscribe(sess2, &wamp.Unsubscribe{Request: 124, Subscription: 747})
 	// Check that session received ERROR message.
 	rsp = <-sess2.Recv()
 	_, ok = rsp.(*wamp.Error)
 	require.True(t, ok, "expected ERROR")
 
 	// Test unsubscribing session2 from topic.
-	broker.unsubscribe(sess2, &wamp.Unsubscribe{Request: 124, Subscription: subID})
+	broker.Unsubscribe(sess2, &wamp.Unsubscribe{Request: 124, Subscription: subID})
 	// Check that session received UNSUBSCRIBED message.
 	rsp = <-sess2.Recv()
 	_, ok = rsp.(*wamp.Unsubscribed)
@@ -192,23 +227,23 @@ func TestRemove(t *testing.T) {
 	subscriber := newTestPeer()
 	sess := wamp.NewSession(subscriber, 0, nil, nil)
 	testTopic := wamp.URI("nexus.test.topic")
-	broker.subscribe(sess, &wamp.Subscribe{Request: 123, Topic: testTopic})
+	broker.Subscribe(sess, &wamp.Subscribe{Request: 123, Topic: testTopic})
 	rsp := <-sess.Recv()
 	waitBroker(broker)
 	subID := rsp.(*wamp.Subscribed).Subscription
 
 	testTopic2 := wamp.URI("nexus.test.topic2")
-	broker.subscribe(sess, &wamp.Subscribe{Request: 456, Topic: testTopic2})
+	broker.Subscribe(sess, &wamp.Subscribe{Request: 456, Topic: testTopic2})
 	rsp = <-sess.Recv()
 	waitBroker(broker)
 	subID2 := rsp.(*wamp.Subscribed).Subscription
 
-	broker.removeSession(sess, true)
+	broker.RemoveSession(sess, true)
 
 	// Wait for another subscriber as a way to wait for the RemoveSession to
 	// complete.
 	sess2 := wamp.NewSession(subscriber, 0, nil, nil)
-	broker.subscribe(sess2,
+	broker.Subscribe(sess2,
 		&wamp.Subscribe{Request: 789, Topic: wamp.URI("nexus.test.sync")})
 	<-sess2.Recv()
 	waitBroker(broker)
@@ -235,7 +270,7 @@ func TestBasicPubSub(t *testing.T) {
 		Request: 123,
 		Topic:   testTopic,
 	}
-	broker.subscribe(sess, msg)
+	broker.Subscribe(sess, msg)
 
 	// Test that subscriber received SUBSCRIBED message
 	rsp := <-sess.Recv()
@@ -245,7 +280,7 @@ func TestBasicPubSub(t *testing.T) {
 
 	publisher := newTestPeer()
 	pubSess := wamp.NewSession(publisher, 0, nil, nil)
-	broker.publish(pubSess, &wamp.Publish{Request: 124, Topic: testTopic,
+	broker.Publish(pubSess, &wamp.Publish{Request: 124, Topic: testTopic,
 		Arguments: wamp.List{"hello world"}})
 	rsp = <-sess.Recv()
 	evt, ok := rsp.(*wamp.Event)
@@ -268,7 +303,7 @@ func TestAdvancedPubSub(t *testing.T) {
 		Topic:   "invalid!@#@#$topicuri",
 		Options: wamp.Dict{},
 	}
-	broker.subscribe(sess, msg)
+	broker.Subscribe(sess, msg)
 
 	// Test that subscriber received SUBSCRIBED message
 	rsp := <-sess.Recv()
@@ -281,7 +316,7 @@ func TestAdvancedPubSub(t *testing.T) {
 		Topic:   testTopic,
 		Options: wamp.Dict{},
 	}
-	broker.subscribe(sess, msg)
+	broker.Subscribe(sess, msg)
 
 	// Test that subscriber received SUBSCRIBED message
 	rsp = <-sess.Recv()
@@ -295,7 +330,7 @@ func TestAdvancedPubSub(t *testing.T) {
 	options := wamp.Dict{
 		wamp.OptAcknowledge: true,
 	}
-	broker.publish(pubSess, &wamp.Publish{Request: 125, Topic: "invalid!@#@#$topicuri", Options: options})
+	broker.Publish(pubSess, &wamp.Publish{Request: 125, Topic: "invalid!@#@#$topicuri", Options: options})
 	rsp = <-pubSess.Recv()
 	_, ok = rsp.(*wamp.Error)
 	require.True(t, ok, "expected ERROR")
@@ -312,7 +347,7 @@ func TestPPTPubSub(t *testing.T) {
 		Topic:   testTopic,
 		Options: wamp.Dict{},
 	}
-	broker.subscribe(sess, msg)
+	broker.Subscribe(sess, msg)
 
 	// Test that subscriber received SUBSCRIBED message
 	rsp := <-sess.Recv()
@@ -328,7 +363,7 @@ func TestPPTPubSub(t *testing.T) {
 	options := wamp.Dict{
 		wamp.OptAcknowledge: true,
 	}
-	broker.publish(pubSess, &wamp.Publish{Request: 125, Topic: "invalid!@#@#$topicuri", Options: options})
+	broker.Publish(pubSess, &wamp.Publish{Request: 125, Topic: "invalid!@#@#$topicuri", Options: options})
 	rsp = <-pubSess.Recv()
 	_, ok = rsp.(*wamp.Error)
 	require.True(t, ok, "expected ERROR")
@@ -339,7 +374,7 @@ func TestPPTPubSub(t *testing.T) {
 	}
 	// The broker ends the session with an ABORT, which the realm sends once it
 	// has removed the session.
-	broker.publish(pubSess, &wamp.Publish{Request: 126, Topic: testTopic, Options: options})
+	broker.Publish(pubSess, &wamp.Publish{Request: 126, Topic: testTopic, Options: options})
 	select {
 	case <-pubSess.RecvDone():
 	case <-time.After(time.Second):
@@ -366,7 +401,7 @@ func TestPPTPubSub(t *testing.T) {
 	}
 	publisher = newTestPeer()
 	pubSess = wamp.NewSession(publisher, 0, nil, greetDetails)
-	broker.publish(pubSess, &wamp.Publish{Request: 124, Topic: testTopic, Options: options})
+	broker.Publish(pubSess, &wamp.Publish{Request: 124, Topic: testTopic, Options: options})
 	rsp = <-sess.Recv()
 	_, ok = rsp.(*wamp.Event)
 	require.True(t, ok, "expected EVENT")
@@ -384,7 +419,7 @@ func TestPrefixPatternBasedSubscription(t *testing.T) {
 		Topic:   testTopicPfx,
 		Options: wamp.Dict{"match": "prefix"},
 	}
-	broker.subscribe(sess, msg)
+	broker.Subscribe(sess, msg)
 
 	// Test that subscriber received SUBSCRIBED message
 	rsp := <-sess.Recv()
@@ -407,7 +442,7 @@ func TestPrefixPatternBasedSubscription(t *testing.T) {
 
 	publisher := newTestPeer()
 	pubSess := wamp.NewSession(publisher, 0, nil, nil)
-	broker.publish(pubSess, &wamp.Publish{Request: 124, Topic: testTopic})
+	broker.Publish(pubSess, &wamp.Publish{Request: 124, Topic: testTopic})
 	rsp = <-sess.Recv()
 	evt, ok := rsp.(*wamp.Event)
 	require.True(t, ok, "expected EVENT")
@@ -429,7 +464,7 @@ func TestWildcardPatternBasedSubscription(t *testing.T) {
 		Topic:   testTopicWc,
 		Options: wamp.Dict{"match": "wildcard"},
 	}
-	broker.subscribe(sess, msg)
+	broker.Subscribe(sess, msg)
 
 	// Test that subscriber received SUBSCRIBED message
 	rsp := <-sess.Recv()
@@ -455,7 +490,7 @@ func TestWildcardPatternBasedSubscription(t *testing.T) {
 
 	publisher := newTestPeer()
 	pubSess := wamp.NewSession(publisher, 0, nil, nil)
-	broker.publish(pubSess, &wamp.Publish{Request: 124, Topic: testTopic})
+	broker.Publish(pubSess, &wamp.Publish{Request: 124, Topic: testTopic})
 	rsp = <-sess.Recv()
 	evt, ok := rsp.(*wamp.Event)
 	require.True(t, ok, "expected EVENT")
@@ -476,7 +511,7 @@ func TestSubscriberBlackWhiteListing(t *testing.T) {
 		sess := wamp.NewSession(subscriber, wamp.GlobalID(), details, nil)
 		testTopic := wamp.URI("nexus.test.topic")
 
-		broker.subscribe(sess, &wamp.Subscribe{Request: 123, Topic: testTopic})
+		broker.Subscribe(sess, &wamp.Subscribe{Request: 123, Topic: testTopic})
 
 		// Test that subscriber received SUBSCRIBED message
 		rsp := <-sess.Recv()
@@ -498,7 +533,7 @@ func TestSubscriberBlackWhiteListing(t *testing.T) {
 		pubSess := wamp.NewSession(publisher, 0, details, nil)
 
 		// Test allow-list
-		broker.publish(pubSess, &wamp.Publish{
+		broker.Publish(pubSess, &wamp.Publish{
 			Request: 124,
 			Topic:   testTopic,
 			Options: wamp.Dict{"eligible": wamp.List{sess.ID}},
@@ -507,7 +542,7 @@ func TestSubscriberBlackWhiteListing(t *testing.T) {
 		require.NoError(t, err, "not allowed by whitelist")
 
 		// Test allow-list authrole
-		broker.publish(pubSess, &wamp.Publish{
+		broker.Publish(pubSess, &wamp.Publish{
 			Request: 125,
 			Topic:   testTopic,
 			Options: wamp.Dict{"eligible_authrole": wamp.List{"admin"}},
@@ -516,7 +551,7 @@ func TestSubscriberBlackWhiteListing(t *testing.T) {
 		require.NoError(t, err, "not allowed by authrole whitelist")
 
 		// Test allow-list authid
-		broker.publish(pubSess, &wamp.Publish{
+		broker.Publish(pubSess, &wamp.Publish{
 			Request: 126,
 			Topic:   testTopic,
 			Options: wamp.Dict{"eligible_authid": wamp.List{"jdoe"}},
@@ -525,7 +560,7 @@ func TestSubscriberBlackWhiteListing(t *testing.T) {
 		require.NoError(t, err, "not allowed by authid whitelist")
 
 		// Test deny-list.
-		broker.publish(pubSess, &wamp.Publish{
+		broker.Publish(pubSess, &wamp.Publish{
 			Request: 127,
 			Topic:   testTopic,
 			Options: wamp.Dict{"exclude": wamp.List{sess.ID}},
@@ -534,7 +569,7 @@ func TestSubscriberBlackWhiteListing(t *testing.T) {
 		require.Error(t, err, "not excluded by blacklist")
 
 		// Test deny-list authrole
-		broker.publish(pubSess, &wamp.Publish{
+		broker.Publish(pubSess, &wamp.Publish{
 			Request: 128,
 			Topic:   testTopic,
 			Options: wamp.Dict{"exclude_authrole": wamp.List{"admin"}},
@@ -543,7 +578,7 @@ func TestSubscriberBlackWhiteListing(t *testing.T) {
 		require.Error(t, err, "not excluded by authrole blacklist")
 
 		// Test deny-list authid
-		broker.publish(pubSess, &wamp.Publish{
+		broker.Publish(pubSess, &wamp.Publish{
 			Request: 129,
 			Topic:   testTopic,
 			Options: wamp.Dict{"exclude_authid": wamp.List{"jdoe"}},
@@ -552,7 +587,7 @@ func TestSubscriberBlackWhiteListing(t *testing.T) {
 		require.Error(t, err, "not excluded by authid blacklist")
 
 		// Test that deny-list takes precedence over allow-list.
-		broker.publish(pubSess, &wamp.Publish{
+		broker.Publish(pubSess, &wamp.Publish{
 			Request: 126,
 			Topic:   testTopic,
 			Options: wamp.Dict{"eligible_authid": []string{"jdoe"},
@@ -570,7 +605,7 @@ func TestPublisherExclusion(t *testing.T) {
 		sess := wamp.NewSession(subscriber, 0, nil, nil)
 		testTopic := wamp.URI("nexus.test.topic")
 
-		broker.subscribe(sess, &wamp.Subscribe{Request: 123, Topic: testTopic})
+		broker.Subscribe(sess, &wamp.Subscribe{Request: 123, Topic: testTopic})
 
 		// Test that subscriber received SUBSCRIBED message
 		rsp, err := wamp.RecvTimeout(sess, time.Second)
@@ -592,7 +627,7 @@ func TestPublisherExclusion(t *testing.T) {
 		pubSess := wamp.NewSession(publisher, 0, nil, details)
 
 		// Subscribe the publish session also.
-		broker.subscribe(pubSess, &wamp.Subscribe{Request: 123, Topic: testTopic})
+		broker.Subscribe(pubSess, &wamp.Subscribe{Request: 123, Topic: testTopic})
 		// Test that pub session received SUBSCRIBED message
 		rsp, err = wamp.RecvTimeout(pubSess, time.Second)
 		require.NoError(t, err, "publish session did not get response to SUBSCRIBE")
@@ -600,7 +635,7 @@ func TestPublisherExclusion(t *testing.T) {
 		require.True(t, ok, "expected SUBSCRIBED")
 
 		// Publish message with exclud_me = false.
-		broker.publish(pubSess, &wamp.Publish{
+		broker.Publish(pubSess, &wamp.Publish{
 			Request: 124,
 			Topic:   testTopic,
 			Options: wamp.Dict{"exclude_me": false},
@@ -611,7 +646,7 @@ func TestPublisherExclusion(t *testing.T) {
 		require.NoError(t, err, "pub session should have received event")
 
 		// Publish message with exclud_me = true.
-		broker.publish(pubSess, &wamp.Publish{
+		broker.Publish(pubSess, &wamp.Publish{
 			Request: 124,
 			Topic:   testTopic,
 			Options: wamp.Dict{"exclude_me": true},
@@ -640,7 +675,7 @@ func TestPublisherIdentification(t *testing.T) {
 
 	testTopic := wamp.URI("nexus.test.topic")
 
-	broker.subscribe(sess, &wamp.Subscribe{Request: 123, Topic: testTopic})
+	broker.Subscribe(sess, &wamp.Subscribe{Request: 123, Topic: testTopic})
 
 	// Test that subscriber received SUBSCRIBED message
 	rsp := <-sess.Recv()
@@ -650,7 +685,7 @@ func TestPublisherIdentification(t *testing.T) {
 
 	publisher := newTestPeer()
 	pubSess := wamp.NewSession(publisher, wamp.GlobalID(), nil, nil)
-	broker.publish(pubSess, &wamp.Publish{
+	broker.Publish(pubSess, &wamp.Publish{
 		Request: 124,
 		Topic:   testTopic,
 		Options: wamp.Dict{"disclose_me": true},
@@ -687,7 +722,7 @@ func TestRemoteSubscribersShareEvent(t *testing.T) {
 	}
 	subscribe := func(peer wamp.Peer, details wamp.Dict) *wamp.Session {
 		sess := wamp.NewSession(peer, wamp.GlobalID(), nil, details)
-		broker.subscribe(sess, &wamp.Subscribe{
+		broker.Subscribe(sess, &wamp.Subscribe{
 			Request: 1,
 			Topic:   wamp.URI("nexus.test"),
 			Options: wamp.Dict{wamp.OptMatch: wamp.MatchPrefix},
@@ -705,7 +740,7 @@ func TestRemoteSubscribersShareEvent(t *testing.T) {
 
 	testTopic := wamp.URI("nexus.test.topic")
 	pubSess := wamp.NewSession(newTestPeer(), wamp.GlobalID(), nil, nil)
-	broker.publish(pubSess, &wamp.Publish{
+	broker.Publish(pubSess, &wamp.Publish{
 		Request:   2,
 		Topic:     testTopic,
 		Options:   wamp.Dict{"disclose_me": true},
@@ -782,7 +817,7 @@ func TestEventHistory(t *testing.T) {
 				Arguments:   wamp.List{reqID},
 				ArgumentsKw: wamp.Dict{"topic": string(topic)},
 			}
-			broker.publish(pubSess, &publication)
+			broker.Publish(pubSess, &publication)
 			reqID++
 		}
 	}
@@ -796,7 +831,7 @@ func TestEventHistory(t *testing.T) {
 			Arguments:   wamp.List{reqID},
 			ArgumentsKw: wamp.Dict{"topic": string(topic)},
 		}
-		broker.publish(pubSess, &publication)
+		broker.Publish(pubSess, &publication)
 		reqID++
 	}
 
@@ -859,7 +894,7 @@ func TestEventHistory(t *testing.T) {
 	}
 	reqID++
 
-	msg := broker.subEventHistory(&inv)
+	msg := broker.SubEventHistory(&inv)
 	yield, ok := msg.(*wamp.Yield)
 	require.Truef(t, ok, "MetaRPC eventHistoryLast for topic %s should return Yield message", topic)
 	require.Equalf(t, 3, len(yield.Arguments), "MetaRPC eventHistoryLast for topic %s should return 3 records", topic)
@@ -878,7 +913,7 @@ func TestEventHistory(t *testing.T) {
 	}
 	reqID++
 
-	msg = broker.subEventHistory(&inv)
+	msg = broker.SubEventHistory(&inv)
 	yield, ok = msg.(*wamp.Yield)
 	require.Truef(t, ok, "MetaRPC eventHistoryLast for topic %s should return Yield message", topic)
 	require.Equalf(t, 10, len(yield.Arguments), "MetaRPC eventHistoryLast for topic %s should return 10 records", topic)
@@ -895,7 +930,7 @@ func TestEventHistory(t *testing.T) {
 	}
 	reqID++
 
-	msg = broker.subEventHistory(&inv)
+	msg = broker.SubEventHistory(&inv)
 	yield, ok = msg.(*wamp.Yield)
 	require.Truef(t, ok, "MetaRPC eventHistoryLast for topic %s should return Yield message", topic)
 	require.Equalf(t, 20, len(yield.Arguments), "MetaRPC eventHistoryLast for topic %s should return 20 records", topic)
@@ -909,7 +944,7 @@ func TestEventHistory(t *testing.T) {
 	}
 	reqID++
 
-	msg = broker.subEventHistory(&inv)
+	msg = broker.SubEventHistory(&inv)
 	yield, ok = msg.(*wamp.Yield)
 	require.Truef(t, ok, "MetaRPC subEventHistory for topic %s should return Yield message", topic)
 	require.Equalf(t, 20, len(yield.Arguments), "MetaRPC subEventHistory for topic %s should return 20 records", topic)
@@ -923,7 +958,7 @@ func TestEventHistory(t *testing.T) {
 	}
 	reqID++
 
-	msg = broker.subEventHistory(&inv)
+	msg = broker.SubEventHistory(&inv)
 	yield, ok = msg.(*wamp.Yield)
 	require.Truef(t, ok, "MetaRPC subEventHistory for topic %s should return Yield message", topic)
 	require.Equalf(t, 20, len(yield.Arguments), "MetaRPC subEventHistory for topic %s should return 20 records", topic)
@@ -937,7 +972,7 @@ func TestEventHistory(t *testing.T) {
 	}
 	reqID++
 
-	msg = broker.subEventHistory(&inv)
+	msg = broker.SubEventHistory(&inv)
 	yield, ok = msg.(*wamp.Yield)
 	require.Truef(t, ok, "MetaRPC subEventHistory for topic %s should return Yield message", topic)
 	require.Equalf(t, 20, len(yield.Arguments), "MetaRPC subEventHistory for topic %s should return 20 records", topic)
@@ -951,7 +986,7 @@ func TestEventHistory(t *testing.T) {
 	}
 	reqID++
 
-	msg = broker.subEventHistory(&inv)
+	msg = broker.SubEventHistory(&inv)
 	yield, ok = msg.(*wamp.Yield)
 	require.Truef(t, ok, "MetaRPC subEventHistory for topic %s should return Yield message", topic)
 	require.Equalf(t, 20, len(yield.Arguments), "MetaRPC subEventHistory for topic %s should return 20 records", topic)
@@ -968,7 +1003,7 @@ func TestEventHistory(t *testing.T) {
 	}
 	reqID++
 
-	msg = broker.subEventHistory(&inv)
+	msg = broker.SubEventHistory(&inv)
 	yield, ok = msg.(*wamp.Yield)
 	require.Truef(t, ok, "MetaRPC subEventHistory for topic %s should return Yield message", topic)
 	require.Equalf(t, 20, len(yield.Arguments), "MetaRPC subEventHistory for topic %s should return 20 records", topic)
@@ -982,7 +1017,7 @@ func TestEventHistory(t *testing.T) {
 	}
 	reqID++
 
-	msg = broker.subEventHistory(&inv)
+	msg = broker.SubEventHistory(&inv)
 	yield, ok = msg.(*wamp.Yield)
 	require.Truef(t, ok, "MetaRPC subEventHistory for topic %s should return Yield message", topic)
 	require.Equalf(t, 5, len(yield.Arguments), "MetaRPC subEventHistory for topic %s should return 5 records", topic)
@@ -1000,7 +1035,7 @@ func TestEventHistory(t *testing.T) {
 	}
 	reqID++
 
-	msg = broker.subEventHistory(&inv)
+	msg = broker.SubEventHistory(&inv)
 	yield, ok = msg.(*wamp.Yield)
 	require.Truef(t, ok, "MetaRPC subEventHistory for topic %s should return Yield message", topic)
 	require.Equalf(t, 16, len(yield.Arguments), "MetaRPC subEventHistory for topic %s should return 16 records", topic)
@@ -1014,7 +1049,7 @@ func TestEventHistory(t *testing.T) {
 	}
 	reqID++
 
-	msg = broker.subEventHistory(&inv)
+	msg = broker.SubEventHistory(&inv)
 	yield, ok = msg.(*wamp.Yield)
 	require.Truef(t, ok, "MetaRPC subEventHistory for topic %s should return Yield message", topic)
 	require.Equalf(t, 15, len(yield.Arguments), "MetaRPC subEventHistory for topic %s should return 15 records", topic)
@@ -1028,7 +1063,7 @@ func TestEventHistory(t *testing.T) {
 	}
 	reqID++
 
-	msg = broker.subEventHistory(&inv)
+	msg = broker.SubEventHistory(&inv)
 	yield, ok = msg.(*wamp.Yield)
 	require.Truef(t, ok, "MetaRPC subEventHistory for topic %s should return Yield message", topic)
 	require.Equalf(t, 4, len(yield.Arguments), "MetaRPC subEventHistory for topic %s should return 4 records", topic)
@@ -1042,7 +1077,7 @@ func TestEventHistory(t *testing.T) {
 	}
 	reqID++
 
-	msg = broker.subEventHistory(&inv)
+	msg = broker.SubEventHistory(&inv)
 	yield, ok = msg.(*wamp.Yield)
 	require.Truef(t, ok, "MetaRPC subEventHistory for topic %s should return Yield message", topic)
 	require.Equalf(t, 5, len(yield.Arguments), "MetaRPC subEventHistory for topic %s should return 5 records", topic)
@@ -1056,7 +1091,7 @@ func TestEventHistory(t *testing.T) {
 		ArgumentsKw:  wamp.Dict{"until_publication": pubID, "reverse": true, "limit": 3},
 	}
 
-	msg = broker.subEventHistory(&inv)
+	msg = broker.SubEventHistory(&inv)
 	yield, ok = msg.(*wamp.Yield)
 	require.Truef(t, ok, "MetaRPC subEventHistory for topic %s should return Yield message", topic)
 	require.Equalf(t, 3, len(yield.Arguments), "MetaRPC subEventHistory for topic %s should return 5 records", topic)
@@ -1075,33 +1110,10 @@ func TestEventHistory(t *testing.T) {
 		ArgumentsKw:  wamp.Dict{},
 	}
 
-	msg = broker.subEventHistory(&inv)
+	msg = broker.SubEventHistory(&inv)
 	wErr, ok := msg.(*wamp.Error)
 	require.Truef(t, ok, "MetaRPC subEventHistory for topic %s should return Error message", topic)
 	require.Equal(t, wamp.ErrInvalidArgument, wErr.Error, "Error URI must be ErrInvalidArgument when MetaRPC subEventHistory called without arguments")
-}
-
-// blockedSession returns a session whose single-slot outbound queue is already
-// full, so that nothing more can be queued to it.
-func blockedSession() (*wamp.Session, *testPeer) {
-	peer := newTestPeer()
-	peer.Send() <- &wamp.Hello{}
-	return wamp.NewSession(peer, 0, nil, nil), peer
-}
-
-// requireAckAfterHello checks that peer, from blockedSession, receives the
-// message that blocked it, then one ack, and nothing else. It returns the
-// ack.
-func requireAckAfterHello(t *testing.T, peer *testPeer) wamp.Message {
-	t.Helper()
-	require.IsType(t, &wamp.Hello{}, <-peer.Recv())
-	ack := <-peer.Recv()
-	select {
-	case msg := <-peer.Recv():
-		require.FailNow(t, "blocked session must receive only the ack", "got %T", msg)
-	default:
-	}
-	return ack
 }
 
 // TestSubscribeBlockedAckDelivered checks that when the SUBSCRIBED ack cannot
@@ -1115,7 +1127,7 @@ func TestSubscribeBlockedAckDelivered(t *testing.T) {
 
 	blockedSess, blocked := blockedSession()
 	defer blockedSess.Close()
-	broker.subscribe(blockedSess, &wamp.Subscribe{Request: 1, Topic: testTopic})
+	broker.Subscribe(blockedSess, &wamp.Subscribe{Request: 1, Topic: testTopic})
 	waitBroker(broker)
 
 	sub, ok := broker.topicSubscription[testTopic]
@@ -1126,7 +1138,7 @@ func TestSubscribeBlockedAckDelivered(t *testing.T) {
 
 	// An EVENT published while the ack waits must not overtake it.
 	pubSess := wamp.NewSession(newTestPeer(), 0, nil, nil)
-	broker.publish(pubSess, &wamp.Publish{Request: 2, Topic: testTopic})
+	broker.Publish(pubSess, &wamp.Publish{Request: 2, Topic: testTopic})
 	waitBroker(broker)
 
 	require.IsType(t, &wamp.Hello{}, <-blocked.Recv())
@@ -1146,13 +1158,13 @@ func TestSubscribeJoinBlockedAckDelivered(t *testing.T) {
 	testTopic := wamp.URI("nexus.test.topic")
 
 	sess := wamp.NewSession(newTestPeer(), 0, nil, nil)
-	broker.subscribe(sess, &wamp.Subscribe{Request: 1, Topic: testTopic})
+	broker.Subscribe(sess, &wamp.Subscribe{Request: 1, Topic: testTopic})
 	subMsg, ok := (<-sess.Recv()).(*wamp.Subscribed)
 	require.True(t, ok, "expected SUBSCRIBED")
 
 	blockedSess, blocked := blockedSession()
 	defer blockedSess.Close()
-	broker.subscribe(blockedSess, &wamp.Subscribe{Request: 2, Topic: testTopic})
+	broker.Subscribe(blockedSess, &wamp.Subscribe{Request: 2, Topic: testTopic})
 	waitBroker(broker)
 
 	sub, ok := broker.subscriptions[subMsg.Subscription]
@@ -1163,7 +1175,7 @@ func TestSubscribeJoinBlockedAckDelivered(t *testing.T) {
 
 	// An EVENT published while the ack waits must not overtake it.
 	pubSess := wamp.NewSession(newTestPeer(), 0, nil, nil)
-	broker.publish(pubSess, &wamp.Publish{Request: 3, Topic: testTopic})
+	broker.Publish(pubSess, &wamp.Publish{Request: 3, Topic: testTopic})
 	waitBroker(broker)
 	require.IsType(t, &wamp.Event{}, <-sess.Recv())
 
@@ -1178,7 +1190,7 @@ func TestSubscribeJoinBlockedAckDelivered(t *testing.T) {
 
 // waitBroker waits until broker has handled every action queued before it, so
 // that the test can then read the broker's state.
-func waitBroker(broker *broker) {
+func waitBroker(broker *Broker) {
 	done := make(chan struct{})
 	broker.actionChan <- func() { close(done) }
 	<-done
@@ -1189,25 +1201,27 @@ func waitBroker(broker *broker) {
 // full with a GOODBYE carrying CloseSlowSubscriber, and does not end it
 // before that.
 func TestEventOverflowClose(t *testing.T) {
-	b, err := newBroker(logger, &RealmConfig{AllowDisclose: true, Debug: debug, EventOverflow: EventOverflowClose})
+	b, err := New(logger, &Config{AllowDisclose: true, Debug: debug, EventOverflow: EventOverflowClose})
 	require.NoError(t, err)
-	t.Cleanup(b.close)
+	t.Cleanup(func() {
+		b.Close()
+	})
 	testTopic := wamp.URI("nexus.test.topic")
 
 	peer := &testPeer{in: make(chan wamp.Message, 1)}
 	sess := wamp.NewSession(peer, 0, nil, nil)
 	sess.SetSendLimit(1)
 	defer sess.Close()
-	b.subscribe(sess, &wamp.Subscribe{Request: 1, Topic: testTopic})
+	b.Subscribe(sess, &wamp.Subscribe{Request: 1, Topic: testTopic})
 	waitBroker(b)
 
 	// The SUBSCRIBED fills the queue, and the first EVENT the backlog.
 	pubSess := wamp.NewSession(newTestPeer(), 0, nil, nil)
-	b.publish(pubSess, &wamp.Publish{Request: 2, Topic: testTopic})
+	b.Publish(pubSess, &wamp.Publish{Request: 2, Topic: testTopic})
 	waitBroker(b)
 	require.Nil(t, sess.Goodbye(), "session ended while its backlog had room")
 
-	b.publish(pubSess, &wamp.Publish{Request: 3, Topic: testTopic})
+	b.Publish(pubSess, &wamp.Publish{Request: 3, Topic: testTopic})
 	waitBroker(b)
 	goodbye := sess.Goodbye()
 	require.NotNil(t, goodbye, "slow subscriber not closed")

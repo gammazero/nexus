@@ -5,8 +5,6 @@ import (
 	"math"
 	"reflect"
 	"strings"
-
-	"github.com/gammazero/nexus/v3/wamp"
 )
 
 // maxForwardedForLog is the most bytes of X-Forwarded-For headers to log.
@@ -28,19 +26,6 @@ func peerDescription(remoteAddr string, forwardedFor []string) string {
 		fwd = fwd[:maxForwardedForLog] + "..."
 	}
 	return fmt.Sprintf("%s, X-Forwarded-For %q", remoteAddr, fwd)
-}
-
-func pptOptionsToDetails(options wamp.Dict, details wamp.Dict) {
-	details[wamp.OptPPTScheme] = options[wamp.OptPPTScheme].(string)
-	if val, ok := options[wamp.OptPPTSerializer]; ok {
-		details[wamp.OptPPTSerializer] = val.(string)
-	}
-	if val, ok := options[wamp.OptPPTCipher]; ok {
-		details[wamp.OptPPTCipher] = val.(string)
-	}
-	if val, ok := options[wamp.OptPPTKeyID]; ok {
-		details[wamp.OptPPTKeyID] = val.(string)
-	}
 }
 
 // sameDetailValue reports whether a and b are the same session detail value.

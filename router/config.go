@@ -1,7 +1,10 @@
 package router
 
 import (
+	"fmt"
+
 	"github.com/gammazero/nexus/v3/router/auth"
+	"github.com/gammazero/nexus/v3/router/broker"
 	"github.com/gammazero/nexus/v3/wamp"
 )
 
@@ -39,13 +42,24 @@ type RealmConfig struct {
 	// Allow publisher and caller identity disclosure when requested.
 	AllowDisclose bool `json:"allow_disclose"`
 	// Debug enables debug logging for this realm, and for its broker and dealer,
-	// even when Config.Debug is not set. With Config.Debug set, debug logging is
-	// enabled for every realm, whatever the value of Debug.
 	Debug bool `json:"debug"`
 	// Slice of Authenticator interfaces.
 	Authenticators []auth.Authenticator
 	// Authorizer called for each message.
 	Authorizer Authorizer
+	// EventBacklog is the maximum number of messages that wait for each client, in
+	// addition to those in the client's outbound queue, while the client reads
+	// them more slowly than the router sends them. These are EVENTs, and the
+	// INVOCATIONs, INTERRUPTs and progressive RESULTs that the router sends to the
+	// client, which wait in order with the replies to the client's requests, and
+	// are delivered once the client reads. A value of zero, the default, uses the
+	// size of the client's outbound queue.
+	//
+	// When the backlog is full, an EVENT is handled as set by EventOverflow, a
+	// call whose INVOCATION does not fit fails with wamp.error.network_failure, an
+	// INTERRUPT is dropped, and a progressive RESULT is retried until the call is
+	// canceled.
+	EventBacklog int `json:"event_backlog"`
 	// Require authentication for local clients. Normally local clients are
 	// always trusted. Setting this treats local clients the same as remote.
 	RequireLocalAuth bool `json:"require_local_auth"`
@@ -88,58 +102,18 @@ type RealmConfig struct {
 	// per realm when all clients allocate sequential IDs.
 	StrictRequestIDs bool `json:"strict_request_ids"`
 
-	// EventBacklog is the maximum number of messages that wait for each client, in
-	// addition to those in the client's outbound queue, while the client reads
-	// them more slowly than the router sends them. These are EVENTs, and the
-	// INVOCATIONs, INTERRUPTs and progressive RESULTs that the router sends to the
-	// client, which wait in order with the replies to the client's requests, and
-	// are delivered once the client reads. A value of zero, the default, uses the
-	// size of the client's outbound queue.
-	//
-	// When the backlog is full, an EVENT is handled as set by EventOverflow, a
-	// call whose INVOCATION does not fit fails with wamp.error.network_failure, an
-	// INTERRUPT is dropped, and a progressive RESULT is retried until the call is
-	// canceled.
-	EventBacklog int `json:"event_backlog"`
-	// EventOverflow selects what the router does with an EVENT for a client whose
-	// outbound queue and backlog are full. With EventOverflowDrop ("drop"), the
-	// default, the router drops the EVENT, and the client stays connected without
-	// knowing that it missed it. With EventOverflowClose ("close"), the router
-	// closes the client, with a GOODBYE carrying CloseSlowSubscriber if there is
-	// room for it, so that the client knows that it fell behind and can
-	// reconnect.
-	//
-	// Use EventOverflowClose for a realm whose clients must not miss EVENTs, and
-	// that reconnect and resync when closed. Closing a client ends its whole
-	// session, including its registrations and the calls in progress to it, and a
-	// client that does not reconnect stops working, so EventOverflowDrop is the
-	// default.
-	EventOverflow string `json:"event_overflow"`
-
-	EventHistory []*TopicEventHistoryConfig `json:"event_history"`
-
-	// PublishFilterFactory is a function used to create a PublishFilter to
-	// check which sessions a publication should be sent to.
-	//
-	// This value is not set via json config, but is configured when embedding
-	// nexus. A value of nil enables the default filtering.
-	PublishFilterFactory FilterFactory
+	// Broker is the broker configuration.
+	Broker broker.Config
 }
 
-// Values for RealmConfig.EventOverflow.
-const (
-	// EventOverflowDrop drops an EVENT that does not fit.
-	EventOverflowDrop = "drop"
-	// EventOverflowClose closes a client for which an EVENT does not fit.
-	EventOverflowClose = "close"
-)
-
-// CloseSlowSubscriber is the reason in the GOODBYE that the router sends to a
-// client that it closes because an EVENT did not fit, with EventOverflowClose.
-const CloseSlowSubscriber = wamp.URI("nexus.close.slow_subscriber")
-
-type TopicEventHistoryConfig struct {
-	Topic       wamp.URI `json:"topic"` // Topic URI
-	MatchPolicy string   `json:"match"` // Matching policy (exact|prefix|wildcard)
-	Limit       int      `json:"limit"` // Number of most recent events to store
+// validate returns an error if config is not valid for creating a realm.
+func (c *RealmConfig) validate() error {
+	if !c.URI.ValidURI(c.StrictURI, "") {
+		return fmt.Errorf(
+			"invalid realm URI %v (URI strict checking %v)", c.URI, c.StrictURI)
+	}
+	if c.EventBacklog < 0 {
+		return fmt.Errorf("negative event backlog: %d", c.EventBacklog)
+	}
+	return nil
 }

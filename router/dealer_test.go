@@ -14,6 +14,44 @@ import (
 	"github.com/gammazero/nexus/v3/wamp"
 )
 
+type testPeer struct {
+	in chan wamp.Message
+}
+
+func newTestPeer() *testPeer {
+	return &testPeer{
+		in: make(chan wamp.Message, 1),
+	}
+}
+
+func (p *testPeer) Recv() <-chan wamp.Message { return p.in }
+func (p *testPeer) Send() chan<- wamp.Message { return p.in }
+func (p *testPeer) Close()                    {}
+func (p *testPeer) IsLocal() bool             { return true }
+
+// blockedSession returns a session whose single-slot outbound queue is already
+// full, so that nothing more can be queued to it.
+func blockedSession() (*wamp.Session, *testPeer) {
+	peer := newTestPeer()
+	peer.Send() <- &wamp.Hello{}
+	return wamp.NewSession(peer, 0, nil, nil), peer
+}
+
+// requireAckAfterHello checks that peer, from blockedSession, receives the
+// message that blocked it, then one ack, and nothing else. It returns the
+// ack.
+func requireAckAfterHello(t *testing.T, peer *testPeer) wamp.Message {
+	t.Helper()
+	require.IsType(t, &wamp.Hello{}, <-peer.Recv())
+	ack := <-peer.Recv()
+	select {
+	case msg := <-peer.Recv():
+		require.FailNow(t, "blocked session must receive only the ack", "got %T", msg)
+	default:
+	}
+	return ack
+}
+
 func newTestDealer(t *testing.T) (*dealer, wamp.Peer) {
 	d := newDealer(logger, &RealmConfig{AllowDisclose: true, Debug: debug})
 	metaClient, rtr := transport.LinkedPeers()

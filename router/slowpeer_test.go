@@ -8,6 +8,7 @@ import (
 	"github.com/stretchr/testify/require"
 	"go.uber.org/goleak"
 
+	"github.com/gammazero/nexus/v3/router/broker"
 	"github.com/gammazero/nexus/v3/transport"
 	"github.com/gammazero/nexus/v3/wamp"
 )
@@ -146,7 +147,7 @@ func TestSlowSubscriberClosed(t *testing.T) {
 	synctest.Test(t, func(t *testing.T) {
 		const qsize = 2
 		r := newTestRouterRealm(t, func(c *RealmConfig) {
-			c.EventOverflow = EventOverflowClose
+			c.Broker.EventOverflow = broker.EventOverflowClose
 		})
 		slow := joinSlow(t, r, qsize)
 		slow.Send() <- &wamp.Subscribe{Request: 1, Topic: testTopic}
@@ -293,7 +294,7 @@ func TestEventBacklogDoesNotStarveCaller(t *testing.T) {
 func TestInvalidRealmConfig(t *testing.T) {
 	defer goleak.VerifyNone(t, goleak.IgnoreCurrent())
 	for _, configure := range []func(*RealmConfig){
-		func(c *RealmConfig) { c.EventOverflow = "block" },
+		func(c *RealmConfig) { c.Broker.EventOverflow = "block" },
 		func(c *RealmConfig) { c.EventBacklog = -1 },
 		func(c *RealmConfig) { c.URI = "invalid..uri" },
 	} {
