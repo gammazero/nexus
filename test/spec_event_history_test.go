@@ -8,6 +8,7 @@ import (
 
 	"github.com/gammazero/nexus/v3/client"
 	"github.com/gammazero/nexus/v3/router"
+	"github.com/gammazero/nexus/v3/router/broker"
 	"github.com/gammazero/nexus/v3/wamp"
 )
 
@@ -23,7 +24,7 @@ func newEventHistoryRouter(t *testing.T, topic wamp.URI, limit int) router.Route
 				URI:           "nexus.test.history",
 				StrictURI:     false,
 				AnonymousAuth: true,
-				EventHistory: []*router.TopicEventHistoryConfig{
+				EventHistory: []*broker.TopicEventHistoryConfig{
 					{
 						Topic:       topic,
 						MatchPolicy: wamp.MatchExact,
