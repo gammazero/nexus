@@ -10,23 +10,18 @@ import (
 	"time"
 
 	"github.com/gammazero/nexus/v3/router/auth"
+	"github.com/gammazero/nexus/v3/router/broker"
+	"github.com/gammazero/nexus/v3/router/dealer"
+	"github.com/gammazero/nexus/v3/router/helpers"
 	"github.com/gammazero/nexus/v3/stdlog"
 	"github.com/gammazero/nexus/v3/transport"
 	"github.com/gammazero/nexus/v3/wamp"
 )
 
-// Special ID for meta session.
-const metaID = wamp.ID(1)
-
 // replyRoomTimeout is how long a session's request waits for the session to
 // read enough of its pending replies to make room for another. A session that
 // reads nothing for this long is closed.
 const replyRoomTimeout = time.Minute
-
-// trustedAuthRole is the authrole of the realm's meta session, and of local
-// clients that join the realm without authenticating. A trusted callee may
-// request caller disclosure even when the realm does not allow it.
-const trustedAuthRole = "trusted"
 
 // Testament scope.
 const (
@@ -51,8 +46,8 @@ type testamentBucket struct {
 type realm struct {
 	uri wamp.URI
 
-	broker *broker
-	dealer *dealer
+	broker *broker.Broker
+	dealer *dealer.Dealer
 
 	authorizer Authorizer
 
@@ -97,9 +92,9 @@ type realm struct {
 	// RealmConfig.StrictRequestIDs.
 	strictRequestIDs bool
 
-	// eventBacklog is the send limit of each client session. See
-	// RealmConfig.EventBacklog.
-	eventBacklog int
+	// sendBacklog is the send limit of each client session. See
+	// RealmConfig.SendBacklog.
+	sendBacklog int
 }
 
 var (
@@ -109,38 +104,30 @@ var (
 	}
 )
 
-// checkRealmConfig returns an error if config is not valid for creating a
-// realm. It is called before the realm's broker and dealer are created, so
-// that an invalid config does not leave their goroutines running.
-func checkRealmConfig(config *RealmConfig) error {
-	if !config.URI.ValidURI(config.StrictURI, "") {
-		return fmt.Errorf(
-			"invalid realm URI %v (URI strict checking %v)", config.URI, config.StrictURI)
-	}
-	if config.EventBacklog < 0 {
-		return fmt.Errorf("negative event backlog: %d", config.EventBacklog)
-	}
-	return nil
-}
-
 // newRealm creates a new realm with the given RealmConfig, broker and dealer.
 // The config must have been checked with checkRealmConfig.
 func newRealm(config *RealmConfig, logger stdlog.StdLog) (*realm, error) {
-	err := checkRealmConfig(config)
+	err := config.validate()
 	if err != nil {
 		return nil, err
 	}
 
-	broker, err := newBroker(logger, config)
-	if err != nil {
-		return nil, err
-	}
-	dealer := newDealer(logger, config)
+	b := broker.New(logger,
+		broker.WithAllowDisclose(config.AllowDisclose),
+		broker.WithCloseOnOverflow(config.EventOverflow == EventOverflowClose),
+		broker.WithEventHistory(config.EventHistory),
+		broker.WithPublishFilterFactory(config.PublishFilterFactory),
+		broker.WithStrictURI(config.StrictURI),
+	)
+	d := dealer.New(logger,
+		dealer.WithAllowDisclose(config.AllowDisclose),
+		dealer.WithStrictURI(config.StrictURI),
+	)
 
 	r := &realm{
 		uri:         config.URI,
-		broker:      broker,
-		dealer:      dealer,
+		broker:      b,
+		dealer:      d,
 		authorizer:  config.Authorizer,
 		clients:     map[wamp.ID]*wamp.Session{},
 		testaments:  map[wamp.ID]testamentBucket{},
@@ -159,7 +146,7 @@ func newRealm(config *RealmConfig, logger stdlog.StdLog) (*realm, error) {
 		enableMetaModify: config.EnableMetaModify,
 
 		strictRequestIDs: config.StrictRequestIDs,
-		eventBacklog:     config.EventBacklog,
+		sendBacklog:      config.SendBacklog,
 	}
 
 	if r.debug {
@@ -263,8 +250,14 @@ func (r *realm) close() {
 	// finished there can be no more messages to broker and dealer.
 
 	// No new messages, so safe to close dealer and broker.
-	r.dealer.close()
-	r.broker.close()
+	r.dealer.Close()
+	if r.debug {
+		r.log.Print("dealer stopped")
+	}
+	r.broker.Close()
+	if r.debug {
+		r.log.Print("broker stopped")
+	}
 
 	// Finally close realm's action channel.
 	close(r.actionChan)
@@ -289,24 +282,24 @@ func (r *realm) setupMetaProcedures() {
 		r.registerMetaProcedure(wamp.MetaProcSessionModifyDetails, r.sessionModifyDetails)
 	}
 	// Register to handle registration meta procedures.
-	r.registerMetaProcedure(wamp.MetaProcRegList, r.dealer.regList)
-	r.registerMetaProcedure(wamp.MetaProcRegLookup, r.dealer.regLookup)
-	r.registerMetaProcedure(wamp.MetaProcRegMatch, r.dealer.regMatch)
-	r.registerMetaProcedure(wamp.MetaProcRegGet, r.dealer.regGet)
-	r.registerMetaProcedure(wamp.MetaProcRegListCallees, r.dealer.regListCallees)
-	r.registerMetaProcedure(wamp.MetaProcRegCountCallees, r.dealer.regCountCallees)
+	r.registerMetaProcedure(wamp.MetaProcRegList, r.dealer.RegList)
+	r.registerMetaProcedure(wamp.MetaProcRegLookup, r.dealer.RegLookup)
+	r.registerMetaProcedure(wamp.MetaProcRegMatch, r.dealer.RegMatch)
+	r.registerMetaProcedure(wamp.MetaProcRegGet, r.dealer.RegGet)
+	r.registerMetaProcedure(wamp.MetaProcRegListCallees, r.dealer.RegListCallees)
+	r.registerMetaProcedure(wamp.MetaProcRegCountCallees, r.dealer.RegCountCallees)
 
 	// Register to handle subscription meta procedures.
-	r.registerMetaProcedure(wamp.MetaProcSubList, r.broker.subList)
-	r.registerMetaProcedure(wamp.MetaProcSubLookup, r.broker.subLookup)
-	r.registerMetaProcedure(wamp.MetaProcSubMatch, r.broker.subMatch)
-	r.registerMetaProcedure(wamp.MetaProcSubGet, r.broker.subGet)
-	r.registerMetaProcedure(wamp.MetaProcSubListSubscribers, r.broker.subListSubscribers)
-	r.registerMetaProcedure(wamp.MetaProcSubCountSubscribers, r.broker.subCountSubscribers)
+	r.registerMetaProcedure(wamp.MetaProcSubList, r.broker.SubList)
+	r.registerMetaProcedure(wamp.MetaProcSubLookup, r.broker.SubLookup)
+	r.registerMetaProcedure(wamp.MetaProcSubMatch, r.broker.SubMatch)
+	r.registerMetaProcedure(wamp.MetaProcSubGet, r.broker.SubGet)
+	r.registerMetaProcedure(wamp.MetaProcSubListSubscribers, r.broker.SubListSubscribers)
+	r.registerMetaProcedure(wamp.MetaProcSubCountSubscribers, r.broker.SubCountSubscribers)
 	// Deprecated: misspelled name this procedure previously registered under.
 	// Registered as an alias so that clients that call it keep working.
-	r.registerMetaProcedure(wamp.URI("wamp.subscription.count_suscribers"), r.broker.subCountSubscribers) //nolint:staticcheck // registers the deprecated alias on purpose
-	r.registerMetaProcedure(wamp.MetaProcEventHistory, r.broker.subEventHistory)
+	r.registerMetaProcedure(wamp.URI("wamp.subscription.count_suscribers"), r.broker.SubCountSubscribers) //nolint:staticcheck // registers the deprecated alias on purpose
+	r.registerMetaProcedure(wamp.MetaProcEventHistory, r.broker.SubEventHistory)
 
 	// Register to handle testament meta procedures.
 	r.registerMetaProcedure(wamp.MetaProcSessionAddTestament, r.testamentAdd)
@@ -323,10 +316,10 @@ func (r *realm) createMetaSession() {
 	cli, rtr := transport.LinkedPeers()
 	r.metaPeer = cli
 
-	r.dealer.setMetaPeer(cli)
+	r.dealer.SetMetaPeer(cli)
 
 	// This session is the local leg of the router uplink.
-	r.metaSess = wamp.NewSession(rtr, metaID, wamp.Dict{wamp.DetailAuthRole: trustedAuthRole}, nil)
+	r.metaSess = wamp.NewSession(rtr, helpers.MetaID, wamp.Dict{wamp.DetailAuthRole: helpers.TrustedAuthRole}, nil)
 
 	// Run the handler for messages from the meta session.
 	go func() {
@@ -411,8 +404,8 @@ func (r *realm) onLeave(sess *wamp.Session, shutdown, killAll bool) {
 			delete(r.testaments, sess.ID)
 		}
 
-		r.dealer.removeSession(sess, !shutdown)
-		r.broker.removeSession(sess, !shutdown)
+		r.dealer.RemoveSession(sess, !shutdown)
+		r.broker.RemoveSession(sess, !shutdown)
 		close(sync)
 	}
 	<-sync
@@ -469,7 +462,7 @@ func (r *realm) handleSession(sess *wamp.Session, welcome wamp.Message) error {
 
 	// Set before the session is visible, so that nothing is sent to it under the
 	// default limit.
-	sess.SetSendLimit(r.eventBacklog)
+	sess.SetSendLimit(r.sendBacklog)
 
 	r.waitHandlers.Add(1)
 
@@ -630,25 +623,25 @@ func (r *realm) handleInboundMessages(sess *wamp.Session) (wamp.Message, bool, b
 
 		switch msg := msg.(type) {
 		case *wamp.Publish:
-			r.broker.publish(sess, msg)
+			r.broker.Publish(sess, msg)
 		case *wamp.Yield:
-			r.dealer.yield(sess, msg)
+			r.dealer.Yield(sess, msg)
 		case *wamp.Call:
 			if continuation {
-				r.dealer.continueCall(sess, msg)
+				r.dealer.ContinueCall(sess, msg)
 			} else {
-				r.dealer.call(sess, msg)
+				r.dealer.Call(sess, msg)
 			}
 		case *wamp.Cancel:
-			r.dealer.cancel(sess, msg)
+			r.dealer.Cancel(sess, msg)
 		case *wamp.Subscribe:
-			r.broker.subscribe(sess, msg)
+			r.broker.Subscribe(sess, msg)
 		case *wamp.Register:
-			r.dealer.register(sess, msg)
+			r.dealer.Register(sess, msg)
 		case *wamp.Unsubscribe:
-			r.broker.unsubscribe(sess, msg)
+			r.broker.Unsubscribe(sess, msg)
 		case *wamp.Unregister:
-			r.dealer.unregister(sess, msg)
+			r.dealer.Unregister(sess, msg)
 
 		case *wamp.Error:
 			// An INVOCATION error is the only type of ERROR message the router
@@ -656,7 +649,7 @@ func (r *realm) handleInboundMessages(sess *wamp.Session) (wamp.Message, bool, b
 			if msg.Type != wamp.INVOCATION {
 				return nil, false, false, fmt.Errorf("invalid ERROR received: %v", msg)
 			}
-			r.dealer.error(sess, msg)
+			r.dealer.Error(sess, msg)
 
 		case *wamp.Goodbye:
 			// Handle client leaving realm.
@@ -814,12 +807,12 @@ func (r *realm) authClient(sid wamp.ID, client wamp.Peer, details wamp.Dict) (*w
 		}
 		details = wamp.Dict{
 			wamp.DetailAuthID:       authid,
-			wamp.DetailAuthRole:     trustedAuthRole,
+			wamp.DetailAuthRole:     helpers.TrustedAuthRole,
 			wamp.DetailAuthMethod:   "local",
 			wamp.DetailAuthProvider: "static",
 			wamp.DetailRoles: wamp.Dict{
-				wamp.RoleBroker: r.broker.role(),
-				wamp.RoleDealer: r.dealer.role(),
+				wamp.RoleBroker: broker.Role(),
+				wamp.RoleDealer: dealer.Role(),
 			},
 		}
 		return &wamp.Welcome{Details: details}, nil
@@ -870,8 +863,8 @@ func (r *realm) authClient(sid wamp.ID, client wamp.Peer, details wamp.Dict) (*w
 	}
 	welcome.Details[wamp.DetailAuthMethod] = method
 	welcome.Details[wamp.DetailRoles] = wamp.Dict{
-		wamp.RoleBroker: r.broker.role(),
-		wamp.RoleDealer: r.dealer.role(),
+		wamp.RoleBroker: broker.Role(),
+		wamp.RoleDealer: dealer.Role(),
 	}
 	return welcome, nil
 }

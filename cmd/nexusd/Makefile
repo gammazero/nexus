@@ -6,7 +6,7 @@ all: nexusd
 
 build: nexusd
 
-nexusd: ../../wamp/*.go ../../wamp/crsign/*.go ../../router/*.go ../../router/auth/*.go ../../transport/*.go ../../transport/serialize/*.go ./*.go
+nexusd: ../../wamp/*.go ../../wamp/crsign/*.go ../../router/*.go ../../router/auth/*.go ../../router/broker/*.go ../../router/dealer/*.go ../../transport/*.go ../../transport/serialize/*.go ./*.go
 	go build -ldflags="-X 'github.com/gammazero/nexus/v3/router.Version=${VERSION}'"
 
 install:

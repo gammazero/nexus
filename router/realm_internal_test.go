@@ -9,8 +9,32 @@ import (
 
 	"github.com/stretchr/testify/require"
 
+	"github.com/gammazero/nexus/v3/router/broker"
+	"github.com/gammazero/nexus/v3/router/dealer"
 	"github.com/gammazero/nexus/v3/wamp"
 )
+
+type testPeer struct {
+	in chan wamp.Message
+}
+
+func newTestPeer() *testPeer {
+	return &testPeer{
+		in: make(chan wamp.Message, 1),
+	}
+}
+
+func (p *testPeer) Recv() <-chan wamp.Message { return p.in }
+func (p *testPeer) Send() chan<- wamp.Message { return p.in }
+func (p *testPeer) Close()                    {}
+func (p *testPeer) IsLocal() bool             { return true }
+
+// remoteTestPeer is a testPeer that the broker treats as a remote peer.
+type remoteTestPeer struct {
+	*testPeer
+}
+
+func (remoteTestPeer) IsLocal() bool { return false }
 
 // testSessionDetails returns session details with standard and non-standard
 // entries, and a transport detail that has auth.
@@ -570,8 +594,8 @@ func TestAuthClient(t *testing.T) {
 		rlm := r.(*router).realms[testRealm]
 		remote := remoteTestPeer{newTestPeer()}
 		roles := wamp.Dict{
-			wamp.RoleBroker: rlm.broker.role(),
-			wamp.RoleDealer: rlm.dealer.role(),
+			wamp.RoleBroker: broker.Role(),
+			wamp.RoleDealer: dealer.Role(),
 		}
 
 		// With no authmethods, anonymous is used. Authmethods that are not strings, or
