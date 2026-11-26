@@ -44,21 +44,6 @@ func blockedSession() (*wamp.Session, *testPeer) {
 	return wamp.NewSession(peer, 0, nil, nil), peer
 }
 
-// requireAckAfterHello checks that peer, from blockedSession, receives the
-// message that blocked it, then one ack, and nothing else. It returns the
-// ack.
-func requireAckAfterHello(t *testing.T, peer *testPeer) wamp.Message {
-	t.Helper()
-	require.IsType(t, &wamp.Hello{}, <-peer.Recv())
-	ack := <-peer.Recv()
-	select {
-	case msg := <-peer.Recv():
-		require.FailNow(t, "blocked session must receive only the ack", "got %T", msg)
-	default:
-	}
-	return ack
-}
-
 func newTestBroker(t *testing.T, eventCfgs []*TopicEventHistoryConfig) *Broker {
 	b := New(logger, WithAllowDisclose(true), WithEventHistory(eventCfgs))
 	t.Cleanup(func() {
