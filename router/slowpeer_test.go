@@ -8,7 +8,7 @@ import (
 	"github.com/stretchr/testify/require"
 	"go.uber.org/goleak"
 
-	"github.com/gammazero/nexus/v3/router/broker"
+	"github.com/gammazero/nexus/v3/router/dealer"
 	"github.com/gammazero/nexus/v3/transport"
 	"github.com/gammazero/nexus/v3/wamp"
 )
@@ -100,12 +100,12 @@ func requireEvents(t *testing.T, cli *wamp.Session, first, last int) {
 	}
 }
 
-// TestSlowSubscriberEventBacklog checks that the EVENTs that do not fit in a
-// subscriber's queue wait in its backlog, up to EventBacklog of them, and are
+// TestSlowSubscriberSendBacklog checks that the EVENTs that do not fit in a
+// subscriber's queue wait in its backlog, up to SendBacklog of them, and are
 // delivered in order once the subscriber reads. With the default "drop"
-// EventOverflow, the EVENTs that do not fit in the backlog either are
-// dropped, and the subscriber stays connected.
-func TestSlowSubscriberEventBacklog(t *testing.T) {
+// EventOverflow, the EVENTs that do not fit in the backlog either are dropped,
+// and the subscriber stays connected.
+func TestSlowSubscriberSendBacklog(t *testing.T) {
 	const qsize = 2
 	for _, tc := range []struct {
 		name    string
@@ -118,7 +118,7 @@ func TestSlowSubscriberEventBacklog(t *testing.T) {
 		t.Run(tc.name, func(t *testing.T) {
 			synctest.Test(t, func(t *testing.T) {
 				r := newTestRouterRealm(t, func(c *RealmConfig) {
-					c.EventBacklog = tc.backlog
+					c.SendBacklog = tc.backlog
 				})
 				slow := joinSlow(t, r, qsize)
 				slow.Send() <- &wamp.Subscribe{Request: 1, Topic: testTopic}
@@ -147,7 +147,7 @@ func TestSlowSubscriberClosed(t *testing.T) {
 	synctest.Test(t, func(t *testing.T) {
 		const qsize = 2
 		r := newTestRouterRealm(t, func(c *RealmConfig) {
-			c.Broker.EventOverflow = broker.EventOverflowClose
+			c.EventOverflow = EventOverflowClose
 		})
 		slow := joinSlow(t, r, qsize)
 		slow.Send() <- &wamp.Subscribe{Request: 1, Topic: testTopic}
@@ -190,15 +190,15 @@ var progressiveRoles = wamp.Dict{ //nolint:gochecknoglobals
 	},
 }
 
-// TestEventBacklogDoesNotStarveCallee checks that a callee that is also a
-// slow subscriber gets its INVOCATIONs and INTERRUPTs, in order after the
-// EVENTs that wait for it, instead of the call failing for as long as any
-// EVENT waits.
-func TestEventBacklogDoesNotStarveCallee(t *testing.T) {
+// TestSendBacklogDoesNotStarveCallee checks that a callee that is also a slow
+// subscriber gets its INVOCATIONs and INTERRUPTs, in order after the EVENTs
+// that wait for it, instead of the call failing for as long as any EVENT
+// waits.
+func TestSendBacklogDoesNotStarveCallee(t *testing.T) {
 	synctest.Test(t, func(t *testing.T) {
 		const qsize = 2
 		r := newTestRouterRealm(t, func(c *RealmConfig) {
-			c.EventBacklog = 4
+			c.SendBacklog = 4
 		})
 		callee := joinSlowRoles(t, r, qsize, progressiveRoles)
 		callee.Send() <- &wamp.Subscribe{Request: 1, Topic: testTopic}
@@ -230,15 +230,15 @@ func TestEventBacklogDoesNotStarveCallee(t *testing.T) {
 	})
 }
 
-// TestEventBacklogDoesNotStarveCaller checks that a caller that is also a slow
+// TestSendBacklogDoesNotStarveCaller checks that a caller that is also a slow
 // subscriber gets its progressive RESULTs, in order after the EVENTs that wait
 // for it, instead of the call being canceled because the RESULTs cannot be
 // sent until no EVENT waits.
-func TestEventBacklogDoesNotStarveCaller(t *testing.T) {
+func TestSendBacklogDoesNotStarveCaller(t *testing.T) {
 	synctest.Test(t, func(t *testing.T) {
 		const qsize = 2
 		r := newTestRouterRealm(t, func(c *RealmConfig) {
-			c.EventBacklog = 4
+			c.SendBacklog = 4
 		})
 		callee := joinSlowRoles(t, r, 0, progressiveRoles)
 		const proc = wamp.URI("nexus.test.starve")
@@ -272,7 +272,7 @@ func TestEventBacklogDoesNotStarveCaller(t *testing.T) {
 
 		// The RESULTs wait in the backlog, so the dealer does not cancel the call
 		// however long the caller takes to read.
-		time.Sleep(2 * sendResultDeadline)
+		time.Sleep(2 * dealer.SendResultDeadline)
 		synctest.Wait()
 		requireNoMessage(t, callee)
 
@@ -288,14 +288,14 @@ func TestEventBacklogDoesNotStarveCaller(t *testing.T) {
 	})
 }
 
-// TestInvalidRealmConfig checks that the router does not start with an
-// unknown EventOverflow, a negative EventBacklog or an invalid realm URI, and
-// that it leaves no goroutines running when it does not start.
+// TestInvalidRealmConfig checks that the router does not start with an unknown
+// EventOverflow, a negative SendBacklog or an invalid realm URI, and that it
+// leaves no goroutines running when it does not start.
 func TestInvalidRealmConfig(t *testing.T) {
 	defer goleak.VerifyNone(t, goleak.IgnoreCurrent())
 	for _, configure := range []func(*RealmConfig){
-		func(c *RealmConfig) { c.Broker.EventOverflow = "block" },
-		func(c *RealmConfig) { c.EventBacklog = -1 },
+		func(c *RealmConfig) { c.EventOverflow = "block" },
+		func(c *RealmConfig) { c.SendBacklog = -1 },
 		func(c *RealmConfig) { c.URI = "invalid..uri" },
 	} {
 		realmConfig := &RealmConfig{URI: testRealm, AnonymousAuth: true}

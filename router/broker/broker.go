@@ -41,6 +41,23 @@ type subscription struct {
 	subscribers map[*wamp.Session]struct{}
 }
 
+type TopicEventHistoryConfig struct {
+	Topic       wamp.URI `json:"topic"` // Topic URI
+	MatchPolicy string   `json:"match"` // Matching policy (exact|prefix|wildcard)
+	Limit       int      `json:"limit"` // Number of most recent events to store
+}
+
+func (c *TopicEventHistoryConfig) Validate(strictURI bool) error {
+	const errSubject = "event history"
+	if !c.Topic.ValidURI(strictURI, c.MatchPolicy) {
+		return fmt.Errorf("%s: invalid topic/match: %s %s", errSubject, c.Topic, c.MatchPolicy)
+	}
+	if c.Limit <= 0 {
+		return fmt.Errorf("%s: invalid limit: %d %s", errSubject, c.Limit, c.Topic)
+	}
+	return nil
+}
+
 // storedEvent is a wrapper around wamp event message with timestamp to be used
 // in event history.
 type storedEvent struct {
@@ -95,29 +112,50 @@ type Broker struct {
 	// of dropping the EVENT.
 	closeSlow bool
 
+	eventHistory []*TopicEventHistoryConfig
+
 	log           stdlog.StdLog
-	debug         bool
 	filterFactory FilterFactory
+}
+
+func WithAllowDisclose(disclose bool) func(*Broker) {
+	return func(b *Broker) {
+		b.allowDisclose = disclose
+	}
+}
+
+func WithEventHistory(eventHistory []*TopicEventHistoryConfig) func(*Broker) {
+	return func(b *Broker) {
+		b.eventHistory = eventHistory
+	}
+}
+
+func WithCloseOnOverflow(closeSlow bool) func(*Broker) {
+	return func(b *Broker) {
+		b.closeSlow = closeSlow
+	}
+}
+
+// WithPublishFilterFactory gives the broker a function to create a
+// PublishFilter to check which sessions a publication should be sent to.
+func WithPublishFilterFactory(filterFactory FilterFactory) func(*Broker) {
+	return func(b *Broker) {
+		b.filterFactory = filterFactory
+	}
+}
+
+func WithStrictURI(strict bool) func(*Broker) {
+	return func(b *Broker) {
+		b.strictURI = strict
+	}
 }
 
 // New returns a new default broker implementation instance, with the
 // broker settings of the realm config. The broker copies the settings that it
 // uses, so config is not used after newBroker returns.
-func New(logger stdlog.StdLog, config *Config) (*Broker, error) {
+func New(logger stdlog.StdLog, options ...func(*Broker)) *Broker {
 	if logger == nil {
 		panic("logger is nil")
-	}
-	var closeSlow bool
-	switch config.EventOverflow {
-	case "", EventOverflowDrop:
-	case EventOverflowClose:
-		closeSlow = true
-	default:
-		return nil, fmt.Errorf("broker config: invalid event overflow: %q", config.EventOverflow)
-	}
-	publishFilter := config.PublishFilterFactory
-	if publishFilter == nil {
-		publishFilter = NewSimplePublishFilter
 	}
 	b := &Broker{
 		topicSubscription:    map[wamp.URI]*subscription{},
@@ -136,19 +174,21 @@ func New(logger stdlog.StdLog, config *Config) (*Broker, error) {
 
 		idGen: new(wamp.IDGen),
 
-		strictURI:     config.StrictURI,
-		allowDisclose: config.AllowDisclose,
-		closeSlow:     closeSlow,
+		log: logger,
+	}
+	// Apply options.
+	for _, o := range options {
+		o(b)
+	}
 
-		log:           logger,
-		debug:         config.Debug,
-		filterFactory: publishFilter,
+	if b.filterFactory == nil {
+		b.filterFactory = NewSimplePublishFilter
 	}
-	if err := b.initEventHistory(config.EventHistory); err != nil {
-		return nil, fmt.Errorf("broker config: %w", err)
-	}
+	b.initEventHistory(b.eventHistory)
+	b.eventHistory = nil
+
 	go b.run()
-	return b, nil
+	return b
 }
 
 // Role returns the role information for the "broker" role. The data returned
@@ -159,23 +199,19 @@ func Role() wamp.Dict {
 
 // initEventHistory initializes storage for event history enabled topics. It
 // must run before the broker goroutine starts.
-func (b *Broker) initEventHistory(evntHistCfg []*TopicEventHistoryConfig) error {
-	const errSubject = "event history"
-	for _, topicCfg := range evntHistCfg {
-		if !topicCfg.Topic.ValidURI(b.strictURI, topicCfg.MatchPolicy) {
-			return fmt.Errorf("%s: invalid topic/match: %s %s", errSubject, topicCfg.Topic, topicCfg.MatchPolicy)
+func (b *Broker) initEventHistory(eventHistCfg []*TopicEventHistoryConfig) {
+	for _, topicCfg := range eventHistCfg {
+		if err := topicCfg.Validate(b.strictURI); err != nil {
+			b.log.Println("Skipping invalid event history config:", err)
+			continue
 		}
-		if topicCfg.Limit <= 0 {
-			return fmt.Errorf("%s: invalid limit: %d %s", errSubject, topicCfg.Limit, topicCfg.Topic)
-		}
-
+		b.log.Println("Init even history for topic:", topicCfg.Topic)
 		sub, _ := b.syncInitSubscription(topicCfg.Topic, topicCfg.MatchPolicy, nil)
 		b.eventHistoryStore[sub] = &historyStore{
 			matchPolicy: topicCfg.MatchPolicy,
 			limit:       topicCfg.Limit,
 		}
 	}
-	return nil
 }
 
 // Publish finds all subscriptions for the topic being published to, including
@@ -201,8 +237,7 @@ func (b *Broker) Publish(pub *wamp.Session, msg *wamp.Publish) {
 		if !pubAck {
 			return
 		}
-		errMsg := fmt.Sprintf(
-			"publish with invalid topic URI %v (URI strict checking %v)",
+		errMsg := fmt.Sprintf("publish with invalid topic URI %v (URI strict checking %v)",
 			msg.Topic, b.strictURI)
 
 		pub.SendReply(&wamp.Error{
@@ -307,8 +342,7 @@ func (b *Broker) Subscribe(sub *wamp.Session, msg *wamp.Subscribe) {
 	// non-empty for all but the last component for prefix subscriptions.
 	match, _ := wamp.AsString(msg.Options[wamp.OptMatch])
 	if !msg.Topic.ValidURI(b.strictURI, match) {
-		errMsg := fmt.Sprintf(
-			"subscribe for invalid topic URI %v (URI strict checking %v)",
+		errMsg := fmt.Sprintf("subscribe for invalid topic URI %v (URI strict checking %v)",
 			msg.Topic, b.strictURI)
 		sub.SendReply(&wamp.Error{
 			Type:      msg.MessageType(),
@@ -360,9 +394,6 @@ func (b *Broker) RemoveSession(sess *wamp.Session, notify bool) {
 func (b *Broker) Close() {
 	close(b.actionChan)
 	<-b.stopped
-	if b.debug {
-		b.log.Print("Broker stopped")
-	}
 }
 
 func (b *Broker) run() {
@@ -461,9 +492,9 @@ func (b *Broker) syncAddSubscription(id wamp.ID, topic wamp.URI, match string, s
 }
 
 // syncInitSubscription returns the subscription to topic with the given match
-// policy, creating it if there is none. existingSub is true if it existed.
-func (b *Broker) syncInitSubscription(topic wamp.URI, match string, subscriber *wamp.Session) (sub *subscription, existingSub bool) { //nolint:lll
-	if sub = b.syncFindSubscription(topic, match); sub != nil {
+// policy, creating it if there is none. Returns true if subscription existed.
+func (b *Broker) syncInitSubscription(topic wamp.URI, match string, subscriber *wamp.Session) (*subscription, bool) { //nolint:lll
+	if sub := b.syncFindSubscription(topic, match); sub != nil {
 		return sub, true
 	}
 	return b.syncAddSubscription(b.idGen.Next(), topic, match, subscriber), false

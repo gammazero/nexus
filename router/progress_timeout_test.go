@@ -311,11 +311,7 @@ func finalResultMidStream(t *testing.T, r Router) (callee, caller *wamp.Session,
 func requireNoCalls(t *testing.T, r Router) {
 	t.Helper()
 	d := r.(*router).realms[testRealm].dealer
-	count := make(chan int)
-	d.actionChan <- func() {
-		count <- len(d.calls) + len(d.invocations) + len(d.invocationByCall)
-	}
-	require.Zero(t, <-count, "finished call not removed")
+	require.False(t, d.HasCalls(), "finished call not removed")
 }
 
 // requireNothing fails if sess has a message to read.

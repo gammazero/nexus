@@ -14,12 +14,10 @@ import (
 )
 
 var (
-	debug  bool
 	logger stdlog.StdLog
 )
 
 func init() {
-	debug = false
 	logger = log.New(os.Stdout, "", log.LstdFlags)
 }
 
@@ -62,8 +60,7 @@ func requireAckAfterHello(t *testing.T, peer *testPeer) wamp.Message {
 }
 
 func newTestBroker(t *testing.T, eventCfgs []*TopicEventHistoryConfig) *Broker {
-	b, err := New(logger, &Config{AllowDisclose: true, Debug: debug, EventHistory: eventCfgs})
-	require.NoError(t, err, "Can not initialize broker")
+	b := New(logger, WithAllowDisclose(true), WithEventHistory(eventCfgs))
 	t.Cleanup(func() {
 		b.Close()
 	})
@@ -1201,8 +1198,7 @@ func waitBroker(broker *Broker) {
 // full with a GOODBYE carrying CloseSlowSubscriber, and does not end it
 // before that.
 func TestEventOverflowClose(t *testing.T) {
-	b, err := New(logger, &Config{AllowDisclose: true, Debug: debug, EventOverflow: EventOverflowClose})
-	require.NoError(t, err)
+	b := New(logger, WithAllowDisclose(true), WithCloseOnOverflow(true))
 	t.Cleanup(func() {
 		b.Close()
 	})

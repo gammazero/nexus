@@ -1,52 +1,53 @@
 {
-    "websocket": {
-        "address": ":8080",
-        "cert_file": "",
-        "key_file": "",
-        "keep_alive": 30,
-        "enable_compression": false,
-        "allow_origins": ["*"]
-    },
-    "rawsocket": {
-        "tcp_address": "",
-        "tcp_keepalive_interval": 180,
-        "unix_address": "",
-        "max_msg_len": 0,
-        "cert_file": "",
-        "key_file": ""
-    },
-    "log_path": "",
-    "router": {
-        "realms": [
-            {
-                "uri": "realm1",
-                "strict_uri": false,
-                "allow_disclose": true,
-                "anonymous_auth": true,
-                "debug": true,
-                "meta_strict": false,
-                "meta_include_session_details": [],
-                "enable_meta_kill": false,
-                "enable_meta_modify": false,
-                "event_history": [
-                    {
-                        "topic": "exact.topic.uri",
-                        "match": "exact",
-                        "limit": 100
-                    },
-                    {
-                        "topic": "prefix.topic.uri",
-                        "match": "prefix",
-                        "limit": 500
-                    },
-                    {
-                        "topic": "wildcard.topic.uri",
-                        "match": "wildcard",
-                        "limit": 250
-                    }
-                ]
-            }
-        ],
-        "mem_stats_log_sec": 0
-    }
+  "websocket": {
+    "address": ":8080",
+    "cert_file": "",
+    "key_file": "",
+    "keep_alive": 30,
+      "enable_compression": false,
+      "allow_origins": ["*"]
+  },
+  "rawsocket": {
+    "tcp_address": "",
+    "tcp_keepalive_interval": 180,
+    "unix_address": "",
+    "max_msg_len": 0,
+    "cert_file": "",
+    "key_file": ""
+  },
+  "log_path": "",
+  "router": {
+    "realms": [
+      {
+        "uri": "realm1",
+        "strict_uri": false,
+        "allow_disclose": true,
+        "anonymous_auth": true,
+        "debug": true,
+        "meta_strict": false,
+        "meta_include_session_details": [],
+        "enable_meta_kill": false,
+        "enable_meta_modify": false,
+        "event_overflow": "drop",
+        "event_history": [
+          {
+            "topic": "exact.topic.uri",
+            "match": "exact",
+            "limit": 100
+          },
+          {
+            "topic": "prefix.topic.uri",
+            "match": "prefix",
+            "limit": 500
+          },
+          {
+            "topic": "wildcard.topic.uri",
+            "match": "wildcard",
+            "limit": 250
+          }
+        ]
+      }
+    ],
+    "mem_stats_log_sec": 0
+  }
 }
